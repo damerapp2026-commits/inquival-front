@@ -1,0 +1,208 @@
+import React, { useState } from 'react';
+import { useCashRegisterToday, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
+import { Modal } from '../../../shared/components/Modal';
+import { Wallet, Plus, Edit2, Trash2, Lock } from 'lucide-react';
+import type { CashRegisterEntry } from '../../../shared/types';
+
+export function CashRegisterPage() {
+  const { data: register, isLoading } = useCashRegisterToday();
+  const addEntry = useAddCashEntry();
+  const editEntry = useEditCashEntry();
+  const deleteEntryMutation = useDeleteCashEntry();
+  const closeRegister = useCloseCashRegister();
+
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<CashRegisterEntry | null>(null);
+
+  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, hasBoleta: false });
+  const [editForm, setEditForm] = useState({ amount: 0, reason: '' });
+  const [deleteReason, setDeleteReason] = useState('');
+  const [closeNotes, setCloseNotes] = useState('');
+
+  const isClosed = register?.status === 'CLOSED';
+  const entries: CashRegisterEntry[] = register?.entries || [];
+  const activeEntries = entries.filter(e => !e.isDeleted);
+  const totalIncome = activeEntries.filter(e => e.type === 'INCOME').reduce((sum, e) => sum + e.amount, 0);
+  const totalExpense = activeEntries.filter(e => e.type === 'EXPENSE').reduce((sum, e) => sum + e.amount, 0);
+  const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
+
+  const openAdd = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, hasBoleta: false }); setShowAddModal(true); };
+  const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '' }); setShowEditModal(true); };
+  const openDelete = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setDeleteReason(''); setShowDeleteModal(true); };
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await addEntry.mutateAsync({ registerId: register.id, data: addForm });
+    setShowAddModal(false);
+  };
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await editEntry.mutateAsync({ registerId: register.id, entryId: selectedEntry!.id, data: editForm });
+    setShowEditModal(false);
+  };
+  const handleDelete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await deleteEntryMutation.mutateAsync({ registerId: register.id, entryId: selectedEntry!.id, data: { reason: deleteReason } });
+    setShowDeleteModal(false);
+  };
+  const handleClose = async () => {
+    await closeRegister.mutateAsync({ registerId: register.id, data: { notes: closeNotes } });
+    setShowCloseModal(false);
+  };
+
+  const categoryLabels: Record<string, string> = { SALE: 'Venta', CREDIT_PAYMENT: 'Pago Credito', PURCHASE: 'Compra', ADJUSTMENT: 'Ajuste', OTHER: 'Otro' };
+  const categoryOptions = [
+    { value: 'SALE', label: 'Venta' }, { value: 'CREDIT_PAYMENT', label: 'Pago Credito' },
+    { value: 'PURCHASE', label: 'Compra' }, { value: 'ADJUSTMENT', label: 'Ajuste' }, { value: 'OTHER', label: 'Otro' },
+  ];
+
+  if (isLoading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" /></div>;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Wallet size={24} /> Caja del Dia</h1>
+        <div className="flex gap-2">
+          {!isClosed && <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"><Plus size={18} /> Agregar Entrada</button>}
+          {!isClosed && <button onClick={() => { setCloseNotes(''); setShowCloseModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"><Lock size={18} /> Cerrar Caja</button>}
+        </div>
+      </div>
+
+      <div className="mb-4 flex items-center gap-4">
+        <span className="text-sm text-gray-500">Fecha: <span className="font-medium text-gray-800">{register?.date}</span></span>
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${isClosed ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{isClosed ? 'CERRADA' : 'ABIERTA'}</span>
+      </div>
+
+      <div className="bg-white rounded-lg border overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categoria</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripcion</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Boleta</th>
+              {!isClosed && <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Acciones</th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {entries.map((entry) => (
+              <tr key={entry.id} className={entry.isDeleted ? 'bg-red-50 opacity-50' : ''}>
+                <td className="px-4 py-3">
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${entry.type === 'INCOME' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    {entry.type === 'INCOME' ? 'Ingreso' : 'Egreso'}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-sm">{categoryLabels[entry.category] || entry.category}</td>
+                <td className="px-4 py-3 text-sm">
+                  {entry.description}
+                  {entry.isDeleted && <span className="ml-2 text-red-500 text-xs">(Eliminado: {entry.deleteReason})</span>}
+                  {entry.editHistory?.length > 0 && <span className="ml-2 text-blue-500 text-xs">(Editado {entry.editHistory.length}x)</span>}
+                </td>
+                <td className={`px-4 py-3 text-sm text-right font-medium ${entry.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
+                  {entry.type === 'INCOME' ? '+' : '-'} S/ {entry.amount.toFixed(2)}
+                </td>
+                <td className="px-4 py-3 text-center text-sm">{entry.hasBoleta ? 'Si' : 'No'}</td>
+                {!isClosed && (
+                  <td className="px-4 py-3 text-center">
+                    {!entry.isDeleted && (
+                      <div className="flex gap-2 justify-center">
+                        <button onClick={() => openEdit(entry)} className="text-blue-600 hover:text-blue-800"><Edit2 size={14} /></button>
+                        <button onClick={() => openDelete(entry)} className="text-red-600 hover:text-red-800"><Trash2 size={14} /></button>
+                      </div>
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+            {entries.length === 0 && (
+              <tr><td colSpan={isClosed ? 5 : 6} className="px-4 py-8 text-center text-gray-400">No hay entradas registradas</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-4 grid grid-cols-4 gap-4">
+        <div className="bg-gray-50 p-4 rounded-lg"><div className="text-sm text-gray-500">Balance Apertura</div><div className="text-lg font-bold">S/ {(register?.openingBalance || 0).toFixed(2)}</div></div>
+        <div className="bg-green-50 p-4 rounded-lg"><div className="text-sm text-green-600">Total Ingresos</div><div className="text-lg font-bold text-green-600">+ S/ {totalIncome.toFixed(2)}</div></div>
+        <div className="bg-red-50 p-4 rounded-lg"><div className="text-sm text-red-600">Total Egresos</div><div className="text-lg font-bold text-red-600">- S/ {totalExpense.toFixed(2)}</div></div>
+        <div className="bg-blue-50 p-4 rounded-lg"><div className="text-sm text-blue-600">Balance Neto</div><div className="text-lg font-bold text-blue-600">S/ {netBalance.toFixed(2)}</div></div>
+      </div>
+
+      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Agregar Entrada">
+        <form onSubmit={handleAdd} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+              <select value={addForm.type} onChange={(e) => setAddForm({ ...addForm, type: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
+                <option value="INCOME">Ingreso</option>
+                <option value="EXPENSE">Egreso</option>
+              </select>
+            </div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
+              <select value={addForm.category} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
+                {categoryOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripcion</label>
+            <input value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
+              <input type="number" min="0.01" step="0.01" value={addForm.amount || ''} onChange={(e) => setAddForm({ ...addForm, amount: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border rounded-lg" required />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 cursor-pointer pb-2">
+                <input type="checkbox" checked={addForm.hasBoleta} onChange={(e) => setAddForm({ ...addForm, hasBoleta: e.target.checked })} className="w-4 h-4 text-green-600 rounded" />
+                <span className="text-sm font-medium text-gray-700">Con Boleta</span>
+              </label>
+            </div>
+          </div>
+          <button type="submit" className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Agregar</button>
+        </form>
+      </Modal>
+
+      <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Editar Monto">
+        <form onSubmit={handleEdit} className="space-y-4">
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto anterior: S/ {selectedEntry?.amount.toFixed(2)}</label></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Nuevo Monto</label>
+            <input type="number" min="0.01" step="0.01" value={editForm.amount || ''} onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border rounded-lg" required />
+          </div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Razon del cambio</label>
+            <textarea value={editForm.reason} onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} required />
+          </div>
+          <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Guardar Cambio</button>
+        </form>
+      </Modal>
+
+      <Modal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)} title="Eliminar Entrada">
+        <form onSubmit={handleDelete} className="space-y-4">
+          <p className="text-sm text-gray-600">Esta accion marcara la entrada como eliminada. No se puede deshacer.</p>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Razon de eliminacion</label>
+            <textarea value={deleteReason} onChange={(e) => setDeleteReason(e.target.value)} className="w-full px-3 py-2 border rounded-lg" rows={2} required />
+          </div>
+          <button type="submit" className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Eliminar</button>
+        </form>
+      </Modal>
+
+      <Modal isOpen={showCloseModal} onClose={() => setShowCloseModal(false)} title="Cerrar Caja">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">Al cerrar la caja no se podran agregar, editar ni eliminar entradas.</p>
+          <div className="bg-gray-50 p-3 rounded-lg text-sm">
+            <div>Balance Apertura: S/ {(register?.openingBalance || 0).toFixed(2)}</div>
+            <div className="text-green-600">+ Ingresos: S/ {totalIncome.toFixed(2)}</div>
+            <div className="text-red-600">- Egresos: S/ {totalExpense.toFixed(2)}</div>
+            <div className="font-bold mt-1 pt-1 border-t">Balance Cierre: S/ {netBalance.toFixed(2)}</div>
+          </div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
+            <textarea value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" rows={2} />
+          </div>
+          <button onClick={handleClose} className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Confirmar Cierre</button>
+        </div>
+      </Modal>
+    </div>
+  );
+}

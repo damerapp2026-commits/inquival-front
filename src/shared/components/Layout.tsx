@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../app/providers/AuthProvider';
-import { Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight, LogOut, Menu, X } from 'lucide-react';
+import { Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight, LogOut, Menu, X, Wallet, CreditCard, BarChart3 } from 'lucide-react';
 
 const navItems = [
+  { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { path: '/products', label: 'Productos', icon: Package },
   { path: '/purchases', label: 'Compras', icon: TrendingUp },
   { path: '/sales', label: 'Ventas', icon: ShoppingCart },
   { path: '/stock', label: 'Stock', icon: ArrowLeftRight },
+  { path: '/cash-register', label: 'Caja', icon: Wallet },
+  { path: '/credits', label: 'Creditos', icon: CreditCard },
   { path: '/clients', label: 'Clientes', icon: Users },
   { path: '/companies', label: 'Empresas', icon: Building2 },
   { path: '/price-tiers', label: 'Rangos de Precio', icon: Layers },
@@ -39,7 +42,7 @@ export function Layout() {
         </nav>
         <div className="absolute bottom-0 w-full p-4 border-t border-green-700">
           <div className="text-sm text-green-200 mb-2">{user?.fullName}</div>
-          <button onClick={logout} className="flex items-center gap-2 text-sm text-green-200 hover:text-white"><LogOut size={16} />Cerrar sesión</button>
+          <button onClick={logout} className="flex items-center gap-2 text-sm text-green-200 hover:text-white"><LogOut size={16} />Cerrar sesion</button>
         </div>
       </aside>
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />}

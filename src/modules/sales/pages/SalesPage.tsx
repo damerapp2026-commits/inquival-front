@@ -22,11 +22,19 @@ export function SalesPage() {
   const { data: priceTiers } = usePriceTiers();
   const createSale = useCreateSale();
 
-  const [form, setForm] = useState({ companyId: '', clientId: '', items: [{ productId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }] as { productId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number }[] });
+  const [form, setForm] = useState({
+    clientId: '',
+    hasBoleta: false,
+    paymentMethod: 'CASH' as 'CASH' | 'CREDIT',
+    items: [{ productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }],
+  });
 
-  const openCreate = () => { setForm({ companyId: '', clientId: '', items: [{ productId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }] }); setShowModal(true); };
+  const openCreate = () => {
+    setForm({ clientId: '', hasBoleta: false, paymentMethod: 'CASH', items: [{ productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }] });
+    setShowModal(true);
+  };
 
-  const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }] }));
+  const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }] }));
   const removeItem = (idx: number) => setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
 
   const updateItem = (idx: number, field: string, value: any) => {
@@ -35,8 +43,7 @@ export function SalesPage() {
       items[idx] = { ...items[idx], [field]: value };
       if (field === 'productId' && items[idx].priceTier) {
         const product = products.find((p: Product) => p.id === value);
-        const tier = tiers.find((t: PriceTier) => t.id === items[idx].priceTier);
-        const priceEntry = product?.prices?.find((p: ProductPrice) => p.priceTierId === tier?.id);
+        const priceEntry = product?.prices?.find((p: ProductPrice) => p.priceTierId === items[idx].priceTier);
         if (priceEntry) items[idx].unitPrice = priceEntry.price;
       }
       if (field === 'priceTier' && items[idx].productId) {
@@ -63,15 +70,21 @@ export function SalesPage() {
   const sales = data?.data || [];
   const total = data?.total || 0;
 
-  const getCompanyName = (id: string) => companyList.find((c: Company) => c.id === id)?.name || 'N/A';
+  const getCompanyName = (id?: string) => id ? companyList.find((c: Company) => c.id === id)?.name || 'N/A' : 'Mixta';
   const getClientName = (id?: string) => id ? clients.find((c: Client) => c.id === id)?.name || 'N/A' : 'Sin cliente';
 
   const columns = [
     { key: 'date', header: 'Fecha', render: (item: Sale) => new Date(item.date).toLocaleDateString('es-PE') },
-    { key: 'companyId', header: 'Empresa', render: (item: Sale) => getCompanyName(item.companyId) },
+    { key: 'companyId', header: 'Empresa', render: (item: Sale) => {
+      const companyIds = [...new Set(item.items.map(i => i.companyId))];
+      if (companyIds.length === 1) return getCompanyName(companyIds[0]);
+      return <span className="text-purple-600 font-medium">Mixta</span>;
+    }},
     { key: 'clientId', header: 'Cliente', render: (item: Sale) => getClientName(item.clientId) },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'total', header: 'Total', render: (item: Sale) => `S/ ${item.total.toFixed(2)}` },
+    { key: 'hasBoleta', header: 'Boleta', render: (item: Sale) => item.hasBoleta ? <span className="text-green-600 font-medium">Si</span> : <span className="text-gray-400">No</span> },
+    { key: 'paymentMethod', header: 'Pago', render: (item: Sale) => item.paymentMethod === 'CREDIT' ? <span className="text-orange-600 font-medium">Credito</span> : <span className="text-green-600">Efectivo</span> },
   ];
 
   return (
@@ -88,27 +101,44 @@ export function SalesPage() {
       </div>
       <DataTable columns={columns} data={sales} isLoading={isLoading} />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Venta">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
-              <select value={form.companyId} onChange={(e) => setForm({ ...form, companyId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required>
-                <option value="">Seleccionar...</option>
-                {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Cliente (opcional)</label>
-              <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cliente {form.paymentMethod === 'CREDIT' ? '(obligatorio)' : '(opcional)'}</label>
+              <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required={form.paymentMethod === 'CREDIT'}>
                 <option value="">Sin cliente</option>
                 {clients.map((c: Client) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
+            <div className="flex items-end gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={form.hasBoleta} onChange={(e) => setForm({ ...form, hasBoleta: e.target.checked })} className="w-4 h-4 text-green-600 rounded" />
+                <span className="text-sm font-medium text-gray-700">Boleta</span>
+              </label>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="paymentMethod" value="CASH" checked={form.paymentMethod === 'CASH'} onChange={() => setForm({ ...form, paymentMethod: 'CASH' })} className="text-green-600" />
+                  <span className="text-sm">Efectivo</span>
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="paymentMethod" value="CREDIT" checked={form.paymentMethod === 'CREDIT'} onChange={() => setForm({ ...form, paymentMethod: 'CREDIT' })} className="text-green-600" />
+                  <span className="text-sm">Credito</span>
+                </label>
+              </div>
+            </div>
           </div>
+
           <div>
             <div className="flex items-center justify-between mb-2"><label className="text-sm font-medium text-gray-700">Items</label><button type="button" onClick={addItem} className="text-sm text-green-600 hover:text-green-800">+ Agregar item</button></div>
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {form.items.map((item, idx) => (
                 <div key={idx} className="flex gap-2 items-center">
+                  <select value={item.companyId} onChange={(e) => updateItem(idx, 'companyId', e.target.value)} className="w-28 px-2 py-1 border rounded text-sm" required>
+                    <option value="">Empresa...</option>
+                    {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
                   <select value={item.productId} onChange={(e) => updateItem(idx, 'productId', e.target.value)} className="flex-1 px-2 py-1 border rounded text-sm" required>
                     <option value="">Producto...</option>
                     {products.map((p: Product) => <option key={p.id} value={p.id}>{p.name}</option>)}
