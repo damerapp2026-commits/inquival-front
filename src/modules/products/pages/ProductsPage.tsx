@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct } from '../hooks/useProducts';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
+import { useCategories } from '../../categories/hooks/useCategories';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
@@ -17,14 +18,15 @@ export function ProductsPage() {
 
   const { data, isLoading } = useProducts({ page, limit: 20, search: debouncedSearch });
   const { data: priceTiers } = usePriceTiers();
+  const { data: categories } = useCategories();
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
 
-  const [form, setForm] = useState({ name: '', description: '', category: '', unit: 'kg', prices: [] as { priceTierId: string; price: number }[] });
+  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: 'kg', prices: [] as { priceTierId: string; price: number }[] });
 
-  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', category: '', unit: 'kg', prices: [] }); setShowModal(true); };
-  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', category: product.category, unit: product.unit, prices: product.prices || [] }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: 'kg', prices: [] }); setShowModal(true); };
+  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, prices: product.prices || [] }); setShowModal(true); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,10 +48,11 @@ export function ProductsPage() {
   const products = data?.data || [];
   const total = data?.total || 0;
   const tiers = Array.isArray(priceTiers) ? priceTiers : [];
+  const cats = Array.isArray(categories) ? categories : [];
 
   const columns = [
     { key: 'name', header: 'Nombre' },
-    { key: 'category', header: 'Categoría' },
+    { key: 'categoryId', header: 'Categoría', render: (item: Product) => { const cat = cats.find((c: any) => c.id === item.categoryId); return cat?.name || item.categoryId; } },
     { key: 'unit', header: 'Unidad' },
     { key: 'prices', header: 'Precios', render: (item: Product) => (
       <div className="text-xs space-y-1">
@@ -82,7 +85,7 @@ export function ProductsPage() {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label><select value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required><option value="">Seleccionar...</option>{cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label><select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="kg">Kilogramo</option><option value="litro">Litro</option><option value="saco">Saco</option><option value="unidad">Unidad</option><option value="galon">Galón</option></select></div>
           </div>
           {tiers.length > 0 && <div><label className="block text-sm font-medium text-gray-700 mb-2">Precios por Rango</label><div className="space-y-2">{tiers.map((tier: any) => (<div key={tier.id} className="flex items-center gap-3"><span className="text-sm w-32">{tier.name}</span><input type="number" step="0.01" min="0" placeholder="0.00" value={form.prices.find((p) => p.priceTierId === tier.id)?.price || ''} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0)} className="flex-1 px-3 py-2 border rounded-lg" /></div>))}</div></div>}

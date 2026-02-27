@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../app/providers/AuthProvider';
-import { Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight, LogOut, Menu, X, Wallet, CreditCard, BarChart3 } from 'lucide-react';
+import { Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight, LogOut, Menu, X, Wallet, CreditCard, BarChart3, FolderTree } from 'lucide-react';
 
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -12,6 +12,7 @@ const navItems = [
   { path: '/cash-register', label: 'Caja', icon: Wallet },
   { path: '/credits', label: 'Creditos', icon: CreditCard },
   { path: '/clients', label: 'Clientes', icon: Users },
+  { path: '/categories', label: 'Categorías', icon: FolderTree },
   { path: '/companies', label: 'Empresas', icon: Building2 },
   { path: '/price-tiers', label: 'Rangos de Precio', icon: Layers },
 ];
