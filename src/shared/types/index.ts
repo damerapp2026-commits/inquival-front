@@ -1,7 +1,15 @@
 export interface PaginatedResponse<T> { data: T[]; total: number; }
 export interface ApiResponse<T> { data: T; message: string; }
 
-export interface Product { id: string; name: string; description?: string; category: string; unit: string; prices: ProductPrice[]; isActive: boolean; createdAt: string; }
+export type ProductCategory = 'BIOESTIMULANTE' | 'HERBICIDA_AGRICOLA' | 'INSECTICIDA_AGRICOLA' | 'FUNGICIDA' | 'FOLIARES';
+export const PRODUCT_CATEGORIES: { value: ProductCategory; label: string }[] = [
+  { value: 'BIOESTIMULANTE', label: 'Bioestimulante' },
+  { value: 'HERBICIDA_AGRICOLA', label: 'Herbicida Agrícola' },
+  { value: 'INSECTICIDA_AGRICOLA', label: 'Insecticida Agrícola' },
+  { value: 'FUNGICIDA', label: 'Fungicida' },
+  { value: 'FOLIARES', label: 'Foliares' },
+];
+export interface Product { id: string; name: string; description?: string; category: ProductCategory; unit: string; prices: ProductPrice[]; isActive: boolean; createdAt: string; }
 export interface ProductPrice { priceTierId: string; price: number; }
 export interface Company { id: string; name: string; ruc: string; address?: string; phone?: string; isActive: boolean; }
 export interface PriceTier { id: string; name: string; description?: string; priority: number; isActive: boolean; }
