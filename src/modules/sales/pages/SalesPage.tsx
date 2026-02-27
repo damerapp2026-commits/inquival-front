@@ -58,8 +58,11 @@ export function SalesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const total = form.items.reduce((sum, item) => sum + item.subtotal, 0);
-    await createSale.mutateAsync({ ...form, total });
+    const payload = {
+      ...form,
+      items: form.items.map(({ subtotal, ...item }) => item),
+    };
+    await createSale.mutateAsync(payload);
     setShowModal(false);
   };
 
