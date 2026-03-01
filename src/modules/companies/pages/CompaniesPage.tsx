@@ -20,7 +20,7 @@ export function CompaniesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) await updateCompany.mutateAsync({ id: editing.id, data: form });
+    if (editing) { const { ruc, ...updateData } = form; await updateCompany.mutateAsync({ id: editing.id, data: updateData }); }
     else await createCompany.mutateAsync(form);
     setShowModal(false);
   };

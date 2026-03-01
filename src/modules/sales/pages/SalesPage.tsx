@@ -15,7 +15,7 @@ export function SalesPage() {
   const [companyFilter, setCompanyFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
 
-  const { data, isLoading } = useSales({ page, limit: 20, companyId: companyFilter || undefined });
+  const { data, isLoading } = useSales({ page, limit: 10, companyId: companyFilter || undefined });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 200 });
   const { data: clientsData } = useClients({ limit: 200 });
@@ -103,63 +103,99 @@ export function SalesPage() {
         </select>
       </div>
       <DataTable columns={columns} data={sales} isLoading={isLoading} />
-      <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+      <Pagination page={page} totalPages={Math.ceil(total / 10)} onPageChange={setPage} />
 
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Venta">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Método de pago */}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setForm({ ...form, paymentMethod: 'CASH' })}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${form.paymentMethod === 'CASH' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+              Efectivo
+            </button>
+            <button type="button" onClick={() => setForm({ ...form, paymentMethod: 'CREDIT' })}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${form.paymentMethod === 'CREDIT' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+              Crédito
+            </button>
+          </div>
+
+          {/* Cliente y Boleta */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Cliente {form.paymentMethod === 'CREDIT' ? '(obligatorio)' : '(opcional)'}</label>
-              <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required={form.paymentMethod === 'CREDIT'}>
+              <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required={form.paymentMethod === 'CREDIT'}>
                 <option value="">Sin cliente</option>
                 {clients.map((c: Client) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-            <div className="flex items-end gap-4">
+            <div className="flex items-end pb-1">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={form.hasBoleta} onChange={(e) => setForm({ ...form, hasBoleta: e.target.checked })} className="w-4 h-4 text-green-600 rounded" />
-                <span className="text-sm font-medium text-gray-700">Boleta</span>
+                <span className="text-sm font-medium text-gray-700">Con Boleta</span>
               </label>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1 cursor-pointer">
-                  <input type="radio" name="paymentMethod" value="CASH" checked={form.paymentMethod === 'CASH'} onChange={() => setForm({ ...form, paymentMethod: 'CASH' })} className="text-green-600" />
-                  <span className="text-sm">Efectivo</span>
-                </label>
-                <label className="flex items-center gap-1 cursor-pointer">
-                  <input type="radio" name="paymentMethod" value="CREDIT" checked={form.paymentMethod === 'CREDIT'} onChange={() => setForm({ ...form, paymentMethod: 'CREDIT' })} className="text-green-600" />
-                  <span className="text-sm">Credito</span>
-                </label>
-              </div>
             </div>
           </div>
 
+          {/* Items */}
           <div>
-            <div className="flex items-center justify-between mb-2"><label className="text-sm font-medium text-gray-700">Items</label><button type="button" onClick={addItem} className="text-sm text-green-600 hover:text-green-800">+ Agregar item</button></div>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700">Productos</label>
+              <button type="button" onClick={addItem} className="text-sm text-green-600 hover:text-green-800 font-medium">+ Agregar producto</button>
+            </div>
+            <div className="space-y-3 max-h-72 overflow-y-auto">
               {form.items.map((item, idx) => (
-                <div key={idx} className="flex gap-2 items-center">
-                  <select value={item.companyId} onChange={(e) => updateItem(idx, 'companyId', e.target.value)} className="w-28 px-2 py-1 border rounded text-sm" required>
-                    <option value="">Empresa...</option>
-                    {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  <select value={item.productId} onChange={(e) => updateItem(idx, 'productId', e.target.value)} className="flex-1 px-2 py-1 border rounded text-sm" required>
-                    <option value="">Producto...</option>
-                    {products.map((p: Product) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  <select value={item.priceTier} onChange={(e) => updateItem(idx, 'priceTier', e.target.value)} className="w-28 px-2 py-1 border rounded text-sm" required>
-                    <option value="">Rango...</option>
-                    {tiers.map((t: PriceTier) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                  <input type="number" placeholder="Cant." min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-20 px-2 py-1 border rounded text-sm" required />
-                  <input type="number" placeholder="Precio" min="0.01" step="0.01" value={item.unitPrice || ''} onChange={(e) => updateItem(idx, 'unitPrice', parseFloat(e.target.value) || 0)} className="w-24 px-2 py-1 border rounded text-sm" required />
-                  <span className="text-xs text-gray-500 w-20 text-right">S/ {item.subtotal.toFixed(2)}</span>
-                  {form.items.length > 1 && <button type="button" onClick={() => removeItem(idx)} className="text-red-500"><Trash2 size={14} /></button>}
+                <div key={idx} className="bg-gray-50 rounded-lg p-3 relative">
+                  {form.items.length > 1 && (
+                    <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Empresa</label>
+                      <select value={item.companyId} onChange={(e) => updateItem(idx, 'companyId', e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm bg-white" required>
+                        <option value="">Seleccionar...</option>
+                        {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Producto</label>
+                      <select value={item.productId} onChange={(e) => updateItem(idx, 'productId', e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm bg-white" required>
+                        <option value="">Seleccionar...</option>
+                        {products.map((p: Product) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Rango precio</label>
+                      <select value={item.priceTier} onChange={(e) => updateItem(idx, 'priceTier', e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm bg-white" required>
+                        <option value="">Seleccionar...</option>
+                        {tiers.map((t: PriceTier) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
+                      <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Precio unit.</label>
+                      <input type="number" min="0.01" step="0.01" value={item.unitPrice || ''} onChange={(e) => updateItem(idx, 'unitPrice', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Subtotal</label>
+                      <div className="px-2 py-1.5 bg-white border rounded text-sm font-medium text-gray-700">S/ {item.subtotal.toFixed(2)}</div>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
-            <div className="mt-2 text-right text-sm font-bold text-gray-700">Total: S/ {form.items.reduce((s, i) => s + i.subtotal, 0).toFixed(2)}</div>
           </div>
-          <button type="submit" className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Registrar Venta</button>
+
+          {/* Total y Submit */}
+          <div className="bg-green-50 p-3 rounded-lg flex items-center justify-between">
+            <span className="text-sm font-medium text-green-800">Total de la venta</span>
+            <span className="text-xl font-bold text-green-700">S/ {form.items.reduce((s, i) => s + i.subtotal, 0).toFixed(2)}</span>
+          </div>
+          <button type="submit" className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">Registrar Venta</button>
         </form>
       </Modal>
     </div>

@@ -21,7 +21,7 @@ export function PriceTiersPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editing) await updateTier.mutateAsync({ id: editing.id, data: form });
-    else await createTier.mutateAsync(form);
+    else { const { isActive, ...createData } = form; await createTier.mutateAsync(createData); }
     setShowModal(false);
   };
 

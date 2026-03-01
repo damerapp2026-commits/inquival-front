@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useCashRegisterToday, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
 import { Modal } from '../../../shared/components/Modal';
-import { Wallet, Plus, Edit2, Trash2, Lock } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, Edit2, Trash2, Lock, History } from 'lucide-react';
 import type { CashRegisterEntry } from '../../../shared/types';
 
 export function CashRegisterPage() {
@@ -29,7 +30,8 @@ export function CashRegisterPage() {
   const totalExpense = activeEntries.filter(e => e.type === 'EXPENSE').reduce((sum, e) => sum + e.amount, 0);
   const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
 
-  const openAdd = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, hasBoleta: false }); setShowAddModal(true); };
+  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, hasBoleta: false }); setShowAddModal(true); };
+  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, hasBoleta: false }); setShowAddModal(true); };
   const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '' }); setShowEditModal(true); };
   const openDelete = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setDeleteReason(''); setShowDeleteModal(true); };
 
@@ -54,21 +56,23 @@ export function CashRegisterPage() {
   };
 
   const categoryLabels: Record<string, string> = { SALE: 'Venta', CREDIT_PAYMENT: 'Pago Credito', PURCHASE: 'Compra', ADJUSTMENT: 'Ajuste', OTHER: 'Otro' };
-  const categoryOptions = [
-    { value: 'SALE', label: 'Venta' }, { value: 'CREDIT_PAYMENT', label: 'Pago Credito' },
-    { value: 'PURCHASE', label: 'Compra' }, { value: 'ADJUSTMENT', label: 'Ajuste' }, { value: 'OTHER', label: 'Otro' },
-  ];
 
   if (isLoading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" /></div>;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Wallet size={24} /> Caja del Dia</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Wallet size={24} /> Caja del Día</h1>
         <div className="flex gap-2">
-          {!isClosed && <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"><Plus size={18} /> Agregar Entrada</button>}
-          {!isClosed && <button onClick={() => { setCloseNotes(''); setShowCloseModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"><Lock size={18} /> Cerrar Caja</button>}
+          {!isClosed && <button onClick={openAddIncome} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"><TrendingUp size={18} /> Ingreso</button>}
+          {!isClosed && <button onClick={openAddExpense} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"><TrendingDown size={18} /> Egreso</button>}
+          {!isClosed && <button onClick={() => { setCloseNotes(''); setShowCloseModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"><Lock size={18} /> Cerrar Caja</button>}
         </div>
+      </div>
+
+      <div className="flex gap-2 mb-6">
+        <span className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium">Hoy</span>
+        <Link to="/cash-register/history" className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200"><History size={16} /> Historial de Cajas</Link>
       </div>
 
       <div className="mb-4 flex items-center gap-4">
@@ -132,22 +136,12 @@ export function CashRegisterPage() {
         <div className="bg-blue-50 p-4 rounded-lg"><div className="text-sm text-blue-600">Balance Neto</div><div className="text-lg font-bold text-blue-600">S/ {netBalance.toFixed(2)}</div></div>
       </div>
 
-      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Agregar Entrada">
+      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title={addForm.type === 'INCOME' ? 'Nuevo Ingreso' : 'Nuevo Egreso'}>
         <form onSubmit={handleAdd} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
-              <select value={addForm.type} onChange={(e) => setAddForm({ ...addForm, type: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
-                <option value="INCOME">Ingreso</option>
-                <option value="EXPENSE">Egreso</option>
-              </select>
-            </div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
-              <select value={addForm.category} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
-                {categoryOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${addForm.type === 'INCOME' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            {addForm.type === 'INCOME' ? <><TrendingUp size={16} /> Registrando un ingreso</> : <><TrendingDown size={16} /> Registrando un egreso</>}
           </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripcion</label>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
             <input value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required />
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -161,7 +155,9 @@ export function CashRegisterPage() {
               </label>
             </div>
           </div>
-          <button type="submit" className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Agregar</button>
+          <button type="submit" className={`w-full py-2 text-white rounded-lg ${addForm.type === 'INCOME' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
+            {addForm.type === 'INCOME' ? 'Registrar Ingreso' : 'Registrar Egreso'}
+          </button>
         </form>
       </Modal>
 

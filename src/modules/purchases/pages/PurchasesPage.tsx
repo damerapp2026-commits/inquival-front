@@ -28,8 +28,7 @@ export function PurchasesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const totalCost = form.items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
-    await createPurchase.mutateAsync({ ...form, totalCost });
+    await createPurchase.mutateAsync(form);
     setShowModal(false);
   };
 
