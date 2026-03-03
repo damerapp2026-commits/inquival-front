@@ -7,13 +7,15 @@ import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
-import { Plus, Receipt, Trash2 } from 'lucide-react';
+import { SearchableSelect } from '../../../shared/components/SearchableSelect';
+import { Plus, Receipt, Trash2, Eye } from 'lucide-react';
 import type { Sale, Company, Product, ProductPrice, Client, PriceTier } from '../../../shared/types';
 
 export function SalesPage() {
   const [page, setPage] = useState(1);
   const [companyFilter, setCompanyFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [viewingSale, setViewingSale] = useState<Sale | null>(null);
 
   const { data, isLoading } = useSales({ page, limit: 10, companyId: companyFilter || undefined });
   const { data: companies } = useCompanies();
@@ -87,7 +89,10 @@ export function SalesPage() {
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'total', header: 'Total', render: (item: Sale) => `S/ ${item.total.toFixed(2)}` },
     { key: 'hasBoleta', header: 'Boleta', render: (item: Sale) => item.hasBoleta ? <span className="text-green-600 font-medium">Si</span> : <span className="text-gray-400">No</span> },
-    { key: 'paymentMethod', header: 'Pago', render: (item: Sale) => item.paymentMethod === 'CREDIT' ? <span className="text-orange-600 font-medium">Credito</span> : <span className="text-green-600">Efectivo</span> },
+    { key: 'paymentMethod', header: 'Pago', render: (item: Sale) => item.paymentMethod === 'CREDIT' ? <span className="text-orange-600 font-medium">Crédito</span> : <span className="text-green-600">Efectivo</span> },
+    { key: 'actions', header: '', render: (item: Sale) => (
+      <button onClick={(e) => { e.stopPropagation(); setViewingSale(item); }} className="text-green-600 hover:text-green-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
+    )},
   ];
 
   return (
@@ -102,7 +107,7 @@ export function SalesPage() {
           {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name} - {c.ruc}</option>)}
         </select>
       </div>
-      <DataTable columns={columns} data={sales} isLoading={isLoading} />
+      <DataTable columns={columns} data={sales} isLoading={isLoading} rowClassName={(sale: Sale) => sale.paymentMethod === 'CREDIT' ? 'hover:bg-yellow-50' : 'hover:bg-green-50'} />
       <Pagination page={page} totalPages={Math.ceil(total / 10)} onPageChange={setPage} />
 
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Venta">
@@ -158,10 +163,13 @@ export function SalesPage() {
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Producto</label>
-                      <select value={item.productId} onChange={(e) => updateItem(idx, 'productId', e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm bg-white" required>
-                        <option value="">Seleccionar...</option>
-                        {products.map((p: Product) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
+                      <SearchableSelect
+                        options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
+                        value={item.productId}
+                        onChange={(v) => updateItem(idx, 'productId', v)}
+                        placeholder="Buscar producto..."
+                        required
+                      />
                     </div>
                   </div>
                   <div className="grid grid-cols-4 gap-2">
@@ -197,6 +205,78 @@ export function SalesPage() {
           </div>
           <button type="submit" className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">Registrar Venta</button>
         </form>
+      </Modal>
+
+      {/* Modal detalle de venta */}
+      <Modal isOpen={!!viewingSale} onClose={() => setViewingSale(null)} title="Detalle de Venta">
+        {viewingSale && (
+          <div className="space-y-4">
+            {/* Info general */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50 rounded-lg p-3">
+                <span className="block text-xs text-gray-500">Fecha</span>
+                <span className="text-sm font-medium">{new Date(viewingSale.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <span className="block text-xs text-gray-500">Cliente</span>
+                <span className="text-sm font-medium">{getClientName(viewingSale.clientId)}</span>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <span className="block text-xs text-gray-500">Método de pago</span>
+                <span className={`text-sm font-medium ${viewingSale.paymentMethod === 'CREDIT' ? 'text-orange-600' : 'text-green-600'}`}>
+                  {viewingSale.paymentMethod === 'CREDIT' ? 'Crédito' : 'Efectivo'}
+                </span>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <span className="block text-xs text-gray-500">Boleta</span>
+                <span className={`text-sm font-medium ${viewingSale.hasBoleta ? 'text-green-600' : 'text-gray-500'}`}>{viewingSale.hasBoleta ? 'Sí' : 'No'}</span>
+              </div>
+            </div>
+
+            {/* Productos */}
+            <div>
+              <h3 className="text-sm font-medium text-gray-700 mb-2">Productos ({viewingSale.items.length})</h3>
+              <div className="border rounded-lg overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Producto</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Empresa</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Cant.</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">P. Unit.</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {viewingSale.items.map((item, idx) => {
+                      const product = products.find((p: Product) => p.id === item.productId);
+                      const company = companyList.find((c: Company) => c.id === item.companyId);
+                      const tier = tiers.find((t: PriceTier) => t.id === item.priceTier);
+                      return (
+                        <tr key={idx}>
+                          <td className="px-3 py-2">
+                            <div className="font-medium">{product?.name || item.productId}</div>
+                            {tier && <div className="text-xs text-gray-400">{tier.name}</div>}
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">{company?.name || 'N/A'}</td>
+                          <td className="px-3 py-2 text-right">{item.quantity}</td>
+                          <td className="px-3 py-2 text-right">S/ {item.unitPrice.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right font-medium">S/ {item.subtotal.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Total */}
+            <div className="bg-green-50 p-3 rounded-lg flex items-center justify-between">
+              <span className="text-sm font-medium text-green-800">Total</span>
+              <span className="text-xl font-bold text-green-700">S/ {viewingSale.total.toFixed(2)}</span>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

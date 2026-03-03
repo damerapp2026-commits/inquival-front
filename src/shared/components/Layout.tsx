@@ -47,12 +47,12 @@ export function Layout() {
         </div>
       </aside>
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 flex flex-col min-h-screen min-w-0">
         <header className="h-16 bg-white border-b flex items-center px-4 lg:px-6">
           <button onClick={() => setSidebarOpen(true)} className="lg:hidden mr-4"><Menu size={20} /></button>
           <div className="text-sm text-gray-500">Rol: <span className="font-medium text-gray-700">{user?.role}</span></div>
         </header>
-        <main className="flex-1 p-4 lg:p-6 overflow-auto"><Outlet /></main>
+        <main className="flex-1 p-4 lg:p-6 overflow-auto min-w-0"><Outlet /></main>
       </div>
     </div>
   );

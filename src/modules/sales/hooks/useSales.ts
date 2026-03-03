@@ -7,5 +7,5 @@ export function useSales(params?: any) {
 }
 export function useCreateSale() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: saleService.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['sales'] }); qc.invalidateQueries({ queryKey: ['stock'] }); toast.success('Venta registrada'); }, onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error') });
+  return useMutation({ mutationFn: saleService.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['sales'] }); qc.invalidateQueries({ queryKey: ['stock'] }); qc.invalidateQueries({ queryKey: ['cash-register-today'] }); toast.success('Venta registrada'); }, onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error') });
 }

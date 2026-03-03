@@ -25,8 +25,9 @@ export function ClientsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) await updateClient.mutateAsync({ id: editing.id, data: form });
-    else await createClient.mutateAsync(form);
+    const cleanForm = Object.fromEntries(Object.entries(form).filter(([, v]) => v !== ''));
+    if (editing) await updateClient.mutateAsync({ id: editing.id, data: cleanForm });
+    else await createClient.mutateAsync(cleanForm);
     setShowModal(false);
   };
 

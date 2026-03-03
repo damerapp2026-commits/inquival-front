@@ -4,7 +4,7 @@ import { useClients } from '../../clients/hooks/useClients';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
-import { CreditCard, DollarSign } from 'lucide-react';
+import { CreditCard, DollarSign, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { CreditAccount, Client } from '../../../shared/types';
 
@@ -33,8 +33,11 @@ export function CreditsPage() {
     setShowPayModal(true);
   };
 
+  const exceedsPending = selectedCredit ? payForm.amount > selectedCredit.pendingAmount : false;
+
   const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (exceedsPending) return;
     await registerPayment.mutateAsync({ creditId: selectedCredit!.id, data: payForm });
     setShowPayModal(false);
   };
@@ -89,13 +92,17 @@ export function CreditsPage() {
             <div>Pagado: S/ {selectedCredit?.paidAmount.toFixed(2)}</div>
             <div className="font-bold text-red-600">Pendiente: S/ {selectedCredit?.pendingAmount.toFixed(2)}</div>
           </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto a pagar</label>
-            <input type="number" min="0.01" step="0.01" max={selectedCredit?.pendingAmount} value={payForm.amount || ''} onChange={(e) => setPayForm({ ...payForm, amount: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border rounded-lg" required />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Monto a pagar</label>
+            <input type="number" min="0.01" step="0.01" max={selectedCredit?.pendingAmount} value={payForm.amount || ''} onChange={(e) => setPayForm({ ...payForm, amount: parseFloat(e.target.value) || 0 })} className={`w-full px-3 py-2 border rounded-lg ${exceedsPending ? 'border-red-500' : ''}`} required />
+            {exceedsPending && (
+              <p className="mt-1 text-xs text-red-600 flex items-center gap-1"><AlertCircle size={12} /> El monto no puede exceder el pendiente (S/ {selectedCredit?.pendingAmount.toFixed(2)})</p>
+            )}
           </div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
             <textarea value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} />
           </div>
-          <button type="submit" className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Registrar Pago</button>
+          <button type="submit" disabled={exceedsPending} className={`w-full py-2 text-white rounded-lg ${exceedsPending ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}>Registrar Pago</button>
         </form>
       </Modal>
     </div>

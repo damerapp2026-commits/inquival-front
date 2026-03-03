@@ -6,6 +6,7 @@ import { useProducts } from '../../products/hooks/useProducts';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
+import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { Package, ArrowRightLeft, AlertTriangle, Trash2, Plus, ClipboardList } from 'lucide-react';
 import type { Stock, Company, Product, StockAdjustment } from '../../../shared/types';
 
@@ -155,10 +156,15 @@ export function StockPage() {
             <div className="space-y-2">
               {transferForm.items.map((item, idx) => (
                 <div key={idx} className="flex gap-2 items-center">
-                  <select value={item.productId} onChange={(e) => updateTransferItem(idx, 'productId', e.target.value)} className="flex-1 px-2 py-1 border rounded text-sm" required>
-                    <option value="">Producto...</option>
-                    {products.map((p: Product) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                  <div className="flex-1">
+                    <SearchableSelect
+                      options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
+                      value={item.productId}
+                      onChange={(v) => updateTransferItem(idx, 'productId', v)}
+                      placeholder="Buscar producto..."
+                      required
+                    />
+                  </div>
                   <input type="number" placeholder="Cantidad" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateTransferItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-28 px-2 py-1 border rounded text-sm" required />
                   {transferForm.items.length > 1 && <button type="button" onClick={() => removeTransferItem(idx)} className="text-red-500"><Trash2 size={14} /></button>}
                 </div>
@@ -178,10 +184,13 @@ export function StockPage() {
             </select>
           </div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Producto</label>
-            <select value={adjForm.productId} onChange={(e) => setAdjForm({ ...adjForm, productId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required>
-              <option value="">Seleccionar...</option>
-              {products.map((p: Product) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
+              value={adjForm.productId}
+              onChange={(v) => setAdjForm({ ...adjForm, productId: v })}
+              placeholder="Buscar producto..."
+              required
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
