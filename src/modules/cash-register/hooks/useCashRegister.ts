@@ -3,7 +3,15 @@ import { cashRegisterService } from '../services/cashRegisterService';
 import toast from 'react-hot-toast';
 
 export function useCashRegisterToday() {
-  return useQuery({ queryKey: ['cash-register-today'], queryFn: () => cashRegisterService.open() });
+  return useQuery({ queryKey: ['cash-register-today'], queryFn: () => cashRegisterService.getToday() });
+}
+export function useOpenCashRegister() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data?: any) => cashRegisterService.open(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cash-register-today'] }); toast.success('Caja abierta'); },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al abrir caja'),
+  });
 }
 export function useCashRegisters(params?: any) {
   return useQuery({ queryKey: ['cash-registers', params], queryFn: () => cashRegisterService.getAll(params) });

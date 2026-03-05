@@ -13,7 +13,7 @@ export interface Sale { id: string; companyId?: string; clientId?: string; items
 export interface SaleItem { productId: string; companyId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number; }
 export interface Purchase { id: string; companyId: string; supplier: string; items: PurchaseItem[]; totalCost: number; date: string; createdAt: string; }
 export interface PurchaseItem { productId: string; quantity: number; unitCost: number; }
-export interface User { id: string; email: string; fullName: string; role: string; }
+export interface User { id: string; username: string; email?: string; fullName: string; role: string; isActive?: boolean; createdAt?: string; updatedAt?: string; }
 
 export interface StockAdjustment { id: string; productId: string; companyId: string; type: 'INCREASE' | 'DECREASE'; quantity: number; reason: string; previousQuantity: number; newQuantity: number; adjustedBy?: string; date: string; createdAt: string; }
 

@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../app/providers/AuthProvider';
-import { Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight, LogOut, Menu, X, Wallet, CreditCard, BarChart3, FolderTree } from 'lucide-react';
+import { Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight, LogOut, Menu, X, Wallet, CreditCard, BarChart3, FolderTree, Shield, ClipboardList } from 'lucide-react';
 
-const navItems = [
+const navItems: { path: string; label: string; icon: any; roles?: string[] }[] = [
   { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { path: '/products', label: 'Productos', icon: Package },
   { path: '/purchases', label: 'Compras', icon: TrendingUp },
   { path: '/sales', label: 'Ventas', icon: ShoppingCart },
   { path: '/stock', label: 'Stock', icon: ArrowLeftRight },
+  { path: '/kardex', label: 'Kardex', icon: ClipboardList },
   { path: '/cash-register', label: 'Caja', icon: Wallet },
   { path: '/credits', label: 'Creditos', icon: CreditCard },
   { path: '/clients', label: 'Clientes', icon: Users },
   { path: '/categories', label: 'Categorías', icon: FolderTree },
   { path: '/companies', label: 'Empresas', icon: Building2 },
   { path: '/price-tiers', label: 'Rangos de Precio', icon: Layers },
+  { path: '/users', label: 'Usuarios', icon: Shield, roles: ['ADMIN'] },
 ];
 
 export function Layout() {
@@ -30,7 +32,7 @@ export function Layout() {
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden"><X size={20} /></button>
         </div>
         <nav className="mt-4 space-y-1 px-2">
-          {navItems.map((item) => {
+          {navItems.filter((item) => !item.roles || item.roles.includes(user?.role || '')).map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname.startsWith(item.path);
             return (

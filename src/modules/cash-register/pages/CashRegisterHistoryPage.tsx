@@ -6,13 +6,7 @@ import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
 import { History, Wallet, Lock } from 'lucide-react';
 import type { CashRegister, CashRegisterEntry } from '../../../shared/types';
-
-function getMonthRange() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
-}
+import { getTodayDateString, getMonthRange } from '../../../shared/utils/date.util';
 
 export function CashRegisterHistoryPage() {
   const monthRange = getMonthRange();
@@ -31,7 +25,7 @@ export function CashRegisterHistoryPage() {
 
   const registers = data?.data || [];
   const total = data?.total || 0;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayDateString();
 
   const openDetail = (reg: CashRegister) => { setSelectedId(reg.id); setShowDetail(true); };
   const openClose = (reg: CashRegister) => { setCloseTarget(reg); setCloseNotes(''); setShowCloseModal(true); };

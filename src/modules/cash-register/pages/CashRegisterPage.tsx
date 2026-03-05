@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useCashRegisterToday, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
+import { useCashRegisterToday, useOpenCashRegister, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
 import { Modal } from '../../../shared/components/Modal';
 import { Wallet, TrendingUp, TrendingDown, Edit2, Trash2, Lock, History } from 'lucide-react';
 import type { CashRegisterEntry } from '../../../shared/types';
 
 export function CashRegisterPage() {
   const { data: register, isLoading } = useCashRegisterToday();
+  const openCashRegister = useOpenCashRegister();
   const addEntry = useAddCashEntry();
   const editEntry = useEditCashEntry();
   const deleteEntryMutation = useDeleteCashEntry();
   const closeRegister = useCloseCashRegister();
 
+  const [openingAmount, setOpeningAmount] = useState(0);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -35,6 +37,10 @@ export function CashRegisterPage() {
   const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '' }); setShowEditModal(true); };
   const openDelete = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setDeleteReason(''); setShowDeleteModal(true); };
 
+  const handleOpen = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await openCashRegister.mutateAsync({ openingBalance: openingAmount });
+  };
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     await addEntry.mutateAsync({ registerId: register.id, data: addForm });
@@ -59,6 +65,49 @@ export function CashRegisterPage() {
 
   if (isLoading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" /></div>;
 
+  // Estado: Sin caja abierta
+  if (!register) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh]">
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
+          <div className="flex justify-center mb-4">
+            <div className="bg-green-100 p-4 rounded-full">
+              <Wallet size={48} className="text-green-600" />
+            </div>
+          </div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">No hay caja abierta</h2>
+          <p className="text-sm text-gray-500 mb-6">Ingresa el monto inicial para abrir la caja del dia</p>
+          <form onSubmit={handleOpen} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Monto inicial (S/)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={openingAmount || ''}
+                onChange={(e) => setOpeningAmount(parseFloat(e.target.value) || 0)}
+                className="w-full px-4 py-3 border rounded-lg text-center text-lg"
+                placeholder="0.00"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={openCashRegister.isPending}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
+            >
+              <Wallet size={20} />
+              {openCashRegister.isPending ? 'Abriendo...' : 'Abrir Caja'}
+            </button>
+          </form>
+          <Link to="/cash-register/history" className="inline-flex items-center gap-2 mt-4 text-sm text-gray-500 hover:text-gray-700">
+            <History size={16} /> Ver historial de cajas
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado: Caja abierta o cerrada
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
