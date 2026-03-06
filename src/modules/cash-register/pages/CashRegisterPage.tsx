@@ -210,7 +210,7 @@ export function CashRegisterPage() {
                 <p className="text-sm text-gray-400">Cargando métodos de pago...</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {paymentMethods.map((pm) => (
+                  {paymentMethods.map((pm: { id: string; name: string }) => (
                     <button
                       key={pm.id}
                       type="button"
