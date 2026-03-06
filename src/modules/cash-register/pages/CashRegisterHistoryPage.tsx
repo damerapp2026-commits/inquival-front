@@ -67,7 +67,7 @@ export function CashRegisterHistoryPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><History size={24} /> Historial de Cajas</h1>
       </div>
 
@@ -111,7 +111,7 @@ export function CashRegisterHistoryPage() {
               </tbody>
             </table>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-sm bg-gray-50 p-3 rounded-lg">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm bg-gray-50 p-3 rounded-lg">
             <div>Apertura: <span className="font-medium">S/ {(detail?.openingBalance || 0).toFixed(2)}</span></div>
             <div>Cierre: <span className="font-medium">S/ {(detail?.closingBalance || 0).toFixed(2)}</span></div>
           </div>

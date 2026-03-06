@@ -28,7 +28,7 @@ export function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-green-100">
       <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
         <div className="text-center mb-8">
-          <img src="/Icon/logosin.png" alt="Agrosemilleria Troncossy S.A.C." className="mx-auto w-40 h-40 object-contain mb-3" />
+          <img src="/Icon/logosin.png" alt="Agrosemilleria Troncossy S.A.C." className="mx-auto w-32 h-32 sm:w-40 sm:h-40 object-contain mb-3" />
           <h1 className="text-2xl font-bold text-green-800">Agrosemilleria Troncossy S.A.C.</h1>
           <p className="text-gray-500 mt-1 text-sm">Sistema de Gestión</p>
         </div>

@@ -54,7 +54,7 @@ export function PurchasesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><ShoppingCart size={24} /> Compras / Ingresos</h1>
         <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"><Plus size={18} /> Nueva Compra</button>
       </div>
@@ -69,7 +69,7 @@ export function PurchasesPage() {
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Compra">
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Empresa y Proveedor */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
               <select value={form.companyId} onChange={(e) => setForm({ ...form, companyId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required>
@@ -105,7 +105,7 @@ export function PurchasesPage() {
                       required
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
                       <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
@@ -138,7 +138,7 @@ export function PurchasesPage() {
         {viewingPurchase && (
           <div className="space-y-4">
             {/* Info general */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Fecha</span>
                 <span className="text-sm font-medium">{new Date(viewingPurchase.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}</span>

@@ -116,9 +116,9 @@ export function CashRegisterPage() {
   // Estado: Caja abierta o cerrada
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Wallet size={24} /> Caja del Día</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {!isClosed && <button onClick={openAddIncome} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"><TrendingUp size={18} /> Ingreso</button>}
           {!isClosed && <button onClick={openAddExpense} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"><TrendingDown size={18} /> Egreso</button>}
           {!isClosed && <button onClick={() => { setCloseNotes(''); setShowCloseModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"><Lock size={18} /> Cerrar Caja</button>}
@@ -135,7 +135,7 @@ export function CashRegisterPage() {
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${isClosed ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{isClosed ? 'CERRADA' : 'ABIERTA'}</span>
       </div>
 
-      <div className="mb-4 grid grid-cols-4 gap-4">
+      <div className="mb-4 grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gray-50 p-4 rounded-lg"><div className="text-sm text-gray-500">Balance Apertura</div><div className="text-lg font-bold">S/ {(register?.openingBalance || 0).toFixed(2)}</div></div>
         <div className="bg-green-50 p-4 rounded-lg"><div className="text-sm text-green-600">Total Ingresos</div><div className="text-lg font-bold text-green-600">+ S/ {totalIncome.toFixed(2)}</div></div>
         <div className="bg-red-50 p-4 rounded-lg"><div className="text-sm text-red-600">Total Egresos</div><div className="text-lg font-bold text-red-600">- S/ {totalExpense.toFixed(2)}</div></div>
@@ -231,7 +231,7 @@ export function CashRegisterPage() {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
             <input value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
               <input type="number" min="0.01" step="0.01" value={addForm.amount || ''} onChange={(e) => setAddForm({ ...addForm, amount: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border rounded-lg" required />
             </div>

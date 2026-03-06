@@ -10,14 +10,14 @@ export function DataTable<T extends { id?: string }>({ columns, data, isLoading,
     <div className="overflow-x-auto bg-white rounded-lg shadow">
       <table className="min-w-full divide-y divide-gray-200">
         <thead className="bg-gray-50">
-          <tr>{columns.map((col) => <th key={col.key} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{col.header}</th>)}</tr>
+          <tr>{columns.map((col) => <th key={col.key} className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{col.header}</th>)}</tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
           {data.length === 0 ? (
-            <tr><td colSpan={columns.length} className="px-6 py-8 text-center text-gray-500">No hay datos disponibles</td></tr>
+            <tr><td colSpan={columns.length} className="px-3 sm:px-6 py-8 text-center text-gray-500">No hay datos disponibles</td></tr>
           ) : data.map((item, index) => (
             <tr key={item.id || index} onClick={() => onRowClick?.(item)} className={`${onRowClick ? 'cursor-pointer' : ''} ${rowClassName ? rowClassName(item) : hoverClass || (onRowClick ? 'hover:bg-gray-50' : '')}`.trim()}>
-              {columns.map((col) => <td key={col.key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{col.render ? col.render(item) : (item as any)[col.key]}</td>)}
+              {columns.map((col) => <td key={col.key} className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-900">{col.render ? col.render(item) : (item as any)[col.key]}</td>)}
             </tr>
           ))}
         </tbody>

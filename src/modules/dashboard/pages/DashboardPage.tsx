@@ -53,7 +53,7 @@ export function DashboardPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><BarChart3 size={24} /> Dashboard</h1>
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           {['daily', 'weekly', 'monthly'].map(p => (
@@ -65,22 +65,22 @@ export function DashboardPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-white border rounded-lg p-4">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><TrendingUp size={16} className="text-green-600" /> Ingresos</div>
-          <div className="text-2xl font-bold text-green-600">S/ {(summary?.totalIncome || 0).toFixed(2)}</div>
+          <div className="text-xl sm:text-2xl font-bold text-green-600">S/ {(summary?.totalIncome || 0).toFixed(2)}</div>
         </div>
         <div className="bg-white border rounded-lg p-4">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><TrendingDown size={16} className="text-red-600" /> Egresos</div>
-          <div className="text-2xl font-bold text-red-600">S/ {(summary?.totalExpense || 0).toFixed(2)}</div>
+          <div className="text-xl sm:text-2xl font-bold text-red-600">S/ {(summary?.totalExpense || 0).toFixed(2)}</div>
         </div>
         <div className="bg-white border rounded-lg p-4">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><DollarSign size={16} className="text-blue-600" /> Ganancia Neta</div>
-          <div className="text-2xl font-bold text-blue-600">S/ {(summary?.netProfit || 0).toFixed(2)}</div>
+          <div className="text-xl sm:text-2xl font-bold text-blue-600">S/ {(summary?.netProfit || 0).toFixed(2)}</div>
         </div>
         <div className="bg-white border rounded-lg p-4">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><CreditCard size={16} className="text-orange-600" /> Creditos Pendientes</div>
-          <div className="text-2xl font-bold text-orange-600">S/ {(creditsSummary?.totalPending || 0).toFixed(2)}</div>
+          <div className="text-xl sm:text-2xl font-bold text-orange-600">S/ {(creditsSummary?.totalPending || 0).toFixed(2)}</div>
           <div className="text-xs text-gray-400 mt-1">{creditsSummary?.activeCredits || 0} creditos activos</div>
         </div>
       </div>
@@ -106,7 +106,7 @@ export function DashboardPage() {
       </div>
 
       {/* Top Products + Sales by Hour */}
-      <div className="grid grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-white border rounded-lg p-4">
           <h2 className="text-lg font-semibold text-gray-700 mb-3">Top 5 Productos (Ultimo Mes)</h2>
           {topProductsChart.length > 0 ? (
@@ -144,7 +144,7 @@ export function DashboardPage() {
       </div>
 
       {/* Payment Breakdown + Top Debtors */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white border rounded-lg p-4">
           <h2 className="text-lg font-semibold text-gray-700 mb-3">Efectivo vs Credito (30 dias)</h2>
           {pieTotal > 0 ? (

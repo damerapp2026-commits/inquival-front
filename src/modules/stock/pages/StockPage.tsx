@@ -77,9 +77,9 @@ export function StockPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Package size={24} /> Stock</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {activeTab === 'inventory' && <button onClick={openAdjustment} className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"><Plus size={18} /> Ajuste</button>}
           {activeTab === 'inventory' && <button onClick={openTransfer} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"><ArrowRightLeft size={18} /> Transferir</button>}
         </div>
@@ -137,7 +137,7 @@ export function StockPage() {
 
       <Modal isOpen={showTransfer} onClose={() => setShowTransfer(false)} title="Transferir Stock entre Empresas">
         <form onSubmit={handleTransfer} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Desde</label>
               <select value={transferForm.fromCompanyId} onChange={(e) => setTransferForm({ ...transferForm, fromCompanyId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required>
                 <option value="">Seleccionar...</option>
@@ -192,7 +192,7 @@ export function StockPage() {
               required
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
               <select value={adjForm.type} onChange={(e) => setAdjForm({ ...adjForm, type: e.target.value as 'INCREASE' | 'DECREASE' })} className="w-full px-3 py-2 border rounded-lg">
                 <option value="INCREASE">Aumento</option>

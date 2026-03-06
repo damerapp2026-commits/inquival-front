@@ -292,9 +292,9 @@ export function SalesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt size={24} /> Ventas</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <button onClick={openLoanCreate} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
             <HandshakeIcon size={18} /> Préstamo
           </button>
@@ -371,7 +371,7 @@ export function SalesPage() {
       )}
 
       {/* Modal crear venta */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Venta">
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Venta" size="lg">
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Método de pago */}
           <div>
@@ -449,8 +449,8 @@ export function SalesPage() {
           )}
 
           {/* Cliente y Boleta */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Cliente {isCredit ? '(obligatorio)' : '(opcional)'}</label>
               <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required={isCredit}>
                 <option value="">Sin cliente</option>
@@ -477,7 +477,7 @@ export function SalesPage() {
                   {form.items.length > 1 && (
                     <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
                   )}
-                  <div className="grid grid-cols-2 gap-2 mb-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Empresa</label>
                       <select value={item.companyId} onChange={(e) => updateItem(idx, 'companyId', e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm bg-white" required>
@@ -496,7 +496,7 @@ export function SalesPage() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Rango precio</label>
                       <select value={item.priceTier} onChange={(e) => updateItem(idx, 'priceTier', e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm bg-white" required>
@@ -546,7 +546,7 @@ export function SalesPage() {
             )}
 
             {/* Info general */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Fecha</span>
                 <span className="text-sm font-medium">{new Date(viewingSale.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
@@ -639,7 +639,7 @@ export function SalesPage() {
       </Modal>
 
       {/* Modal crear préstamo */}
-      <Modal isOpen={showLoanModal} onClose={() => setShowLoanModal(false)} title="Nuevo Préstamo">
+      <Modal isOpen={showLoanModal} onClose={() => setShowLoanModal(false)} title="Nuevo Préstamo" size="lg">
         <form onSubmit={handleLoanSubmit} className="space-y-5 pb-4">
           {/* Prestatario (obligatorio) */}
           <div>
@@ -659,7 +659,7 @@ export function SalesPage() {
                   {loanForm.items.length > 1 && (
                     <button type="button" onClick={() => removeLoanItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
                   )}
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Empresa</label>
                       <select value={item.companyId} onChange={(e) => updateLoanItem(idx, 'companyId', e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm bg-white" required>
@@ -704,7 +704,7 @@ export function SalesPage() {
       <Modal isOpen={!!viewingLoan} onClose={() => setViewingLoan(null)} title="Detalle de Préstamo">
         {viewingLoan && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Fecha</span>
                 <span className="text-sm font-medium">{new Date(viewingLoan.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
