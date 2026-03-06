@@ -10,3 +10,6 @@ export function useProfitability() {
 export function useCreditsSummary() {
   return useQuery({ queryKey: ['dashboard-credits-summary'], queryFn: () => dashboardService.getCreditsSummary() });
 }
+export function useSalesChart() {
+  return useQuery({ queryKey: ['dashboard-sales-chart'], queryFn: () => dashboardService.getSalesChart() });
+}

@@ -4,9 +4,10 @@ import { useClients } from '../../clients/hooks/useClients';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
+import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { CreditCard, DollarSign, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { CreditAccount, Client } from '../../../shared/types';
+import type { CreditAccount, Client, PaymentMethod } from '../../../shared/types';
 
 export function CreditsPage() {
   const navigate = useNavigate();
@@ -15,21 +16,24 @@ export function CreditsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showPayModal, setShowPayModal] = useState(false);
   const [selectedCredit, setSelectedCredit] = useState<CreditAccount | null>(null);
-  const [payForm, setPayForm] = useState({ amount: 0, notes: '' });
+  const [payForm, setPayForm] = useState({ amount: 0, paymentMethodId: '', notes: '' });
 
   const { data, isLoading } = useCredits({ page, limit: 20, clientId: clientFilter || undefined, status: statusFilter || undefined });
   const { data: clientsData } = useClients({ limit: 200 });
+  const { data: paymentMethodsData } = usePaymentMethods();
   const registerPayment = useRegisterPayment();
 
   const credits = data?.data || [];
   const total = data?.total || 0;
   const clients = clientsData?.data || [];
 
+  const paymentMethods: PaymentMethod[] = Array.isArray(paymentMethodsData) ? paymentMethodsData.filter((m: PaymentMethod) => m.isActive) : [];
+
   const getClientName = (id: string) => clients.find((c: Client) => c.id === id)?.name || 'N/A';
 
   const openPayment = (credit: CreditAccount) => {
     setSelectedCredit(credit);
-    setPayForm({ amount: 0, notes: '' });
+    setPayForm({ amount: 0, paymentMethodId: paymentMethods[0]?.id || '', notes: '' });
     setShowPayModal(true);
   };
 
@@ -91,6 +95,13 @@ export function CreditsPage() {
             <div>Total: S/ {selectedCredit?.totalAmount.toFixed(2)}</div>
             <div>Pagado: S/ {selectedCredit?.paidAmount.toFixed(2)}</div>
             <div className="font-bold text-red-600">Pendiente: S/ {selectedCredit?.pendingAmount.toFixed(2)}</div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Método de pago</label>
+            <select value={payForm.paymentMethodId} onChange={(e) => setPayForm({ ...payForm, paymentMethodId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required>
+              <option value="">Seleccionar método...</option>
+              {paymentMethods.map((m: PaymentMethod) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Monto a pagar</label>

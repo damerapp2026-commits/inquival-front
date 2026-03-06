@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCashRegisterToday, useOpenCashRegister, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
+import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { Modal } from '../../../shared/components/Modal';
 import { Wallet, TrendingUp, TrendingDown, Edit2, Trash2, Lock, History } from 'lucide-react';
 import type { CashRegisterEntry } from '../../../shared/types';
@@ -20,8 +21,9 @@ export function CashRegisterPage() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<CashRegisterEntry | null>(null);
 
-  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, hasBoleta: false });
-  const [editForm, setEditForm] = useState({ amount: 0, reason: '' });
+  const { data: paymentMethods = [] } = usePaymentMethods();
+  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, hasBoleta: false, paymentMethodName: '' });
+  const [editForm, setEditForm] = useState({ amount: 0, reason: '', hasBoleta: false });
   const [deleteReason, setDeleteReason] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
 
@@ -32,9 +34,9 @@ export function CashRegisterPage() {
   const totalExpense = activeEntries.filter(e => e.type === 'EXPENSE').reduce((sum, e) => sum + e.amount, 0);
   const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
 
-  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, hasBoleta: false }); setShowAddModal(true); };
-  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, hasBoleta: false }); setShowAddModal(true); };
-  const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '' }); setShowEditModal(true); };
+  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, hasBoleta: false, paymentMethodName: '' }); setShowAddModal(true); };
+  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, hasBoleta: false, paymentMethodName: 'Efectivo' }); setShowAddModal(true); };
+  const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', hasBoleta: entry.hasBoleta }); setShowEditModal(true); };
   const openDelete = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setDeleteReason(''); setShowDeleteModal(true); };
 
   const handleOpen = async (e: React.FormEvent) => {
@@ -43,7 +45,11 @@ export function CashRegisterPage() {
   };
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    await addEntry.mutateAsync({ registerId: register.id, data: addForm });
+    const desc = addForm.paymentMethodName
+      ? `${addForm.description} [${addForm.paymentMethodName}]`
+      : addForm.description;
+    const { paymentMethodName, ...rest } = addForm;
+    await addEntry.mutateAsync({ registerId: register.id, data: { ...rest, description: desc } });
     setShowAddModal(false);
   };
   const handleEdit = async (e: React.FormEvent) => {
@@ -129,6 +135,13 @@ export function CashRegisterPage() {
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${isClosed ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{isClosed ? 'CERRADA' : 'ABIERTA'}</span>
       </div>
 
+      <div className="mb-4 grid grid-cols-4 gap-4">
+        <div className="bg-gray-50 p-4 rounded-lg"><div className="text-sm text-gray-500">Balance Apertura</div><div className="text-lg font-bold">S/ {(register?.openingBalance || 0).toFixed(2)}</div></div>
+        <div className="bg-green-50 p-4 rounded-lg"><div className="text-sm text-green-600">Total Ingresos</div><div className="text-lg font-bold text-green-600">+ S/ {totalIncome.toFixed(2)}</div></div>
+        <div className="bg-red-50 p-4 rounded-lg"><div className="text-sm text-red-600">Total Egresos</div><div className="text-lg font-bold text-red-600">- S/ {totalExpense.toFixed(2)}</div></div>
+        <div className="bg-blue-50 p-4 rounded-lg"><div className="text-sm text-blue-600">Balance Neto</div><div className="text-lg font-bold text-blue-600">S/ {netBalance.toFixed(2)}</div></div>
+      </div>
+
       <div className="bg-white rounded-lg border overflow-hidden">
         <table className="w-full">
           <thead className="bg-gray-50">
@@ -136,6 +149,7 @@ export function CashRegisterPage() {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categoria</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripcion</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Método</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
               <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Boleta</th>
               {!isClosed && <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Acciones</th>}
@@ -151,9 +165,15 @@ export function CashRegisterPage() {
                 </td>
                 <td className="px-4 py-3 text-sm">{categoryLabels[entry.category] || entry.category}</td>
                 <td className="px-4 py-3 text-sm">
-                  {entry.description}
+                  {entry.description.replace(/\s*\[.*?\]\s*$/, '')}
                   {entry.isDeleted && <span className="ml-2 text-red-500 text-xs">(Eliminado: {entry.deleteReason})</span>}
                   {entry.editHistory?.length > 0 && <span className="ml-2 text-blue-500 text-xs">(Editado {entry.editHistory.length}x)</span>}
+                </td>
+                <td className="px-4 py-3 text-sm">
+                  {(() => {
+                    const match = entry.description.match(/\[(.+?)\]$/);
+                    return match ? <span className="text-blue-600 font-medium">{match[1]}</span> : <span className="text-gray-400">-</span>;
+                  })()}
                 </td>
                 <td className={`px-4 py-3 text-sm text-right font-medium ${entry.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
                   {entry.type === 'INCOME' ? '+' : '-'} S/ {entry.amount.toFixed(2)}
@@ -172,17 +192,10 @@ export function CashRegisterPage() {
               </tr>
             ))}
             {entries.length === 0 && (
-              <tr><td colSpan={isClosed ? 5 : 6} className="px-4 py-8 text-center text-gray-400">No hay entradas registradas</td></tr>
+              <tr><td colSpan={isClosed ? 6 : 7} className="px-4 py-8 text-center text-gray-400">No hay entradas registradas</td></tr>
             )}
           </tbody>
         </table>
-      </div>
-
-      <div className="mt-4 grid grid-cols-4 gap-4">
-        <div className="bg-gray-50 p-4 rounded-lg"><div className="text-sm text-gray-500">Balance Apertura</div><div className="text-lg font-bold">S/ {(register?.openingBalance || 0).toFixed(2)}</div></div>
-        <div className="bg-green-50 p-4 rounded-lg"><div className="text-sm text-green-600">Total Ingresos</div><div className="text-lg font-bold text-green-600">+ S/ {totalIncome.toFixed(2)}</div></div>
-        <div className="bg-red-50 p-4 rounded-lg"><div className="text-sm text-red-600">Total Egresos</div><div className="text-lg font-bold text-red-600">- S/ {totalExpense.toFixed(2)}</div></div>
-        <div className="bg-blue-50 p-4 rounded-lg"><div className="text-sm text-blue-600">Balance Neto</div><div className="text-lg font-bold text-blue-600">S/ {netBalance.toFixed(2)}</div></div>
       </div>
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title={addForm.type === 'INCOME' ? 'Nuevo Ingreso' : 'Nuevo Egreso'}>
@@ -190,6 +203,31 @@ export function CashRegisterPage() {
           <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${addForm.type === 'INCOME' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
             {addForm.type === 'INCOME' ? <><TrendingUp size={16} /> Registrando un ingreso</> : <><TrendingDown size={16} /> Registrando un egreso</>}
           </div>
+          {addForm.type === 'INCOME' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Método de Pago</label>
+              {paymentMethods.length === 0 ? (
+                <p className="text-sm text-gray-400">Cargando métodos de pago...</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {paymentMethods.map((pm) => (
+                    <button
+                      key={pm.id}
+                      type="button"
+                      onClick={() => setAddForm({ ...addForm, paymentMethodName: pm.name })}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                        addForm.paymentMethodName === pm.name
+                          ? 'bg-green-600 text-white border-green-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
+                      }`}
+                    >
+                      {pm.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
             <input value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required />
           </div>
@@ -210,11 +248,17 @@ export function CashRegisterPage() {
         </form>
       </Modal>
 
-      <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Editar Monto">
+      <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Editar Entrada">
         <form onSubmit={handleEdit} className="space-y-4">
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto anterior: S/ {selectedEntry?.amount.toFixed(2)}</label></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Nuevo Monto</label>
             <input type="number" min="0.01" step="0.01" value={editForm.amount || ''} onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border rounded-lg" required />
+          </div>
+          <div className="flex items-center">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={editForm.hasBoleta} onChange={(e) => setEditForm({ ...editForm, hasBoleta: e.target.checked })} className="w-4 h-4 text-green-600 rounded" />
+              <span className="text-sm font-medium text-gray-700">Con Boleta</span>
+            </label>
           </div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Razon del cambio</label>
             <textarea value={editForm.reason} onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} required />
@@ -234,19 +278,65 @@ export function CashRegisterPage() {
       </Modal>
 
       <Modal isOpen={showCloseModal} onClose={() => setShowCloseModal(false)} title="Cerrar Caja">
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600">Al cerrar la caja no se podran agregar, editar ni eliminar entradas.</p>
-          <div className="bg-gray-50 p-3 rounded-lg text-sm">
-            <div>Balance Apertura: S/ {(register?.openingBalance || 0).toFixed(2)}</div>
-            <div className="text-green-600">+ Ingresos: S/ {totalIncome.toFixed(2)}</div>
-            <div className="text-red-600">- Egresos: S/ {totalExpense.toFixed(2)}</div>
-            <div className="font-bold mt-1 pt-1 border-t">Balance Cierre: S/ {netBalance.toFixed(2)}</div>
-          </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
-            <textarea value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" rows={2} />
-          </div>
-          <button onClick={handleClose} className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Confirmar Cierre</button>
-        </div>
+        {(() => {
+          const methodBreakdown: Record<string, { income: number; expense: number }> = {};
+          activeEntries.forEach(entry => {
+            const match = entry.description.match(/\[(.+?)\]$/);
+            const method = match ? match[1] : 'Sin método';
+            if (!methodBreakdown[method]) methodBreakdown[method] = { income: 0, expense: 0 };
+            if (entry.type === 'INCOME') methodBreakdown[method].income += entry.amount;
+            else methodBreakdown[method].expense += entry.amount;
+          });
+          const methods = Object.entries(methodBreakdown).sort((a, b) => (b[1].income + b[1].expense) - (a[1].income + a[1].expense));
+
+          return (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">Al cerrar la caja no se podran agregar, editar ni eliminar entradas.</p>
+
+              {/* Resumen general */}
+              <div className="bg-gray-50 p-3 rounded-lg text-sm">
+                <div>Balance Apertura: S/ {(register?.openingBalance || 0).toFixed(2)}</div>
+                <div className="text-green-600">+ Ingresos: S/ {totalIncome.toFixed(2)}</div>
+                <div className="text-red-600">- Egresos: S/ {totalExpense.toFixed(2)}</div>
+                <div className="font-bold mt-1 pt-1 border-t">Balance Cierre: S/ {netBalance.toFixed(2)}</div>
+              </div>
+
+              {/* Desglose por método de pago */}
+              {methods.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Desglose por método de pago</label>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Método</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-green-600">Ingresos</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-red-600">Egresos</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Neto</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {methods.map(([method, totals]) => (
+                          <tr key={method}>
+                            <td className="px-3 py-2 font-medium">{method}</td>
+                            <td className="px-3 py-2 text-right text-green-600">{totals.income > 0 ? `+ S/ ${totals.income.toFixed(2)}` : '-'}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{totals.expense > 0 ? `- S/ ${totals.expense.toFixed(2)}` : '-'}</td>
+                            <td className="px-3 py-2 text-right font-medium">S/ {(totals.income - totals.expense).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
+                <textarea value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" rows={2} />
+              </div>
+              <button onClick={handleClose} className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Confirmar Cierre</button>
+            </div>
+          );
+        })()}
       </Modal>
     </div>
   );

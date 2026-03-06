@@ -9,7 +9,9 @@ export interface PriceTier { id: string; name: string; description?: string; pri
 export interface Stock { id: string; productId: string; companyId: string; quantity: number; lastUpdated: string; }
 export interface Client { id: string; name: string; documentNumber?: string; phone?: string; email?: string; address?: string; isActive: boolean; }
 
-export interface Sale { id: string; companyId?: string; clientId?: string; items: SaleItem[]; total: number; hasBoleta: boolean; paymentMethod: 'CASH' | 'CREDIT'; date: string; createdAt: string; }
+export interface PaymentMethod { id: string; name: string; isActive: boolean; }
+export interface SalePayment { paymentMethodId: string; paymentMethodName: string; amount: number; }
+export interface Sale { id: string; companyId?: string; clientId?: string; items: SaleItem[]; total: number; hasBoleta: boolean; isCredit: boolean; payments: SalePayment[]; isCancelled?: boolean; cancelledBy?: string; cancelledAt?: string; cancelReason?: string; date: string; createdAt: string; }
 export interface SaleItem { productId: string; companyId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number; }
 export interface Purchase { id: string; companyId: string; supplier: string; items: PurchaseItem[]; totalCost: number; date: string; createdAt: string; }
 export interface PurchaseItem { productId: string; quantity: number; unitCost: number; }
@@ -20,5 +22,11 @@ export interface StockAdjustment { id: string; productId: string; companyId: str
 export interface CashRegisterEntry { id: string; type: 'INCOME' | 'EXPENSE'; category: 'SALE' | 'CREDIT_PAYMENT' | 'PURCHASE' | 'ADJUSTMENT' | 'OTHER'; description: string; amount: number; referenceId?: string; referenceType?: string; hasBoleta: boolean; isDeleted: boolean; deletedBy?: string; deletedAt?: string; deleteReason?: string; editHistory: { previousAmount: number; newAmount: number; reason: string; editedBy: string; editedAt: string }[]; createdBy?: string; }
 export interface CashRegister { id: string; date: string; openingBalance: number; status: 'OPEN' | 'CLOSED'; entries: CashRegisterEntry[]; closingBalance?: number; closedBy?: string; closedAt?: string; notes?: string; createdBy?: string; }
 
-export interface CreditPayment { id: string; amount: number; paymentDate: string; cashRegisterEntryId?: string; notes?: string; receivedBy?: string; }
-export interface CreditAccount { id: string; clientId: string; saleId: string; totalAmount: number; paidAmount: number; pendingAmount: number; status: 'PENDING' | 'PARTIAL' | 'PAID'; payments: CreditPayment[]; createdBy?: string; createdAt: string; }
+export interface CreditPayment { id: string; amount: number; paymentDate: string; paymentMethodId?: string; paymentMethodName?: string; cashRegisterEntryId?: string; notes?: string; receivedBy?: string; receivedByName?: string; }
+export interface CreditSaleDetail { date: string; total: number; items: { productName: string; companyName: string; quantity: number; unitPrice: number; subtotal: number; }[]; }
+export interface CreditAccount { id: string; clientId: string; saleId: string; saleDetail?: CreditSaleDetail; totalAmount: number; paidAmount: number; pendingAmount: number; status: 'PENDING' | 'PARTIAL' | 'PAID'; payments: CreditPayment[]; createdBy?: string; createdAt: string; }
+
+export interface LoanItem { productId: string; companyId: string; quantity: number; returnedQuantity: number; }
+export interface LoanReturnItem { productId: string; companyId: string; quantity: number; }
+export interface LoanReturn { id?: string; items: LoanReturnItem[]; notes?: string; returnedBy?: string; date: string; }
+export interface Loan { id: string; borrowerName: string; items: LoanItem[]; status: 'ACTIVE' | 'PARTIAL' | 'RETURNED'; returns: LoanReturn[]; notes?: string; date: string; createdBy?: string; createdAt: string; }
