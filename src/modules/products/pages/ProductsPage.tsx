@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct } from '../hooks/useProducts';
+import { productService } from '../services/productService';
+import { categoryService } from '../../categories/services/categoryService';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useCategories } from '../../categories/hooks/useCategories';
 import { useCompanies } from '../../companies/hooks/useCompanies';
@@ -7,8 +10,21 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import { Plus, Search, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, Download, Upload } from 'lucide-react';
+import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 import type { Product } from '../../../shared/types';
+
+interface BulkProduct {
+  name: string;
+  description: string;
+  categoryId: string;
+  unit: string;
+  prices: { priceTierId: string; price: number }[];
+  initialStock: number;
+  companyId: string;
+  expanded: boolean;
+}
 
 export function ProductsPage() {
   const [page, setPage] = useState(1);
@@ -17,6 +33,7 @@ export function ProductsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
 
+  const queryClient = useQueryClient();
   const { data, isLoading } = useProducts({ page, limit: 20, search: debouncedSearch });
   const { data: priceTiers } = usePriceTiers();
   const { data: categories } = useCategories();
@@ -26,9 +43,16 @@ export function ProductsPage() {
   const deleteProduct = useDeleteProduct();
 
   const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: 'kg', prices: [] as { priceTierId: string; price: number }[], initialStock: 0, companyId: '' });
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', unit: 'kg', prices: [], initialStock: 0, companyId: '', expanded: true });
 
   const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: 'kg', prices: [], initialStock: 0, companyId: '' }); setShowModal(true); };
   const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, prices: product.prices || [], initialStock: 0, companyId: '' }); setShowModal(true); };
+  const openBulk = () => { setBulkProducts([emptyBulkProduct()]); setShowBulkModal(true); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +78,162 @@ export function ProductsPage() {
       else prices.push({ priceTierId: tierId, price });
       return { ...prev, prices };
     });
+  };
+
+  const updateBulkProduct = (index: number, field: string, value: any) => {
+    setBulkProducts(prev => prev.map((p, i) => i === index ? { ...p, [field]: value } : p));
+  };
+
+  const updateBulkPrice = (index: number, tierId: string, price: number) => {
+    setBulkProducts(prev => prev.map((p, i) => {
+      if (i !== index) return p;
+      const prices = [...p.prices];
+      const idx = prices.findIndex(pr => pr.priceTierId === tierId);
+      if (idx >= 0) prices[idx] = { priceTierId: tierId, price };
+      else prices.push({ priceTierId: tierId, price });
+      return { ...p, prices };
+    }));
+  };
+
+  const removeBulkProduct = (index: number) => {
+    setBulkProducts(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const duplicateBulkProduct = (index: number) => {
+    setBulkProducts(prev => {
+      const copy = { ...prev[index], prices: [...prev[index].prices], name: prev[index].name + ' (copia)', expanded: true };
+      const next = [...prev];
+      next.splice(index + 1, 0, copy);
+      return next;
+    });
+  };
+
+  const toggleExpand = (index: number) => {
+    setBulkProducts(prev => prev.map((p, i) => i === index ? { ...p, expanded: !p.expanded } : p));
+  };
+
+  const handleBulkSubmit = async () => {
+    const valid = bulkProducts.filter(p => p.name && p.categoryId);
+    if (valid.length === 0) { toast.error('Agrega al menos un producto con nombre y categoría'); return; }
+    setBulkLoading(true);
+    let created = 0;
+    let errors = 0;
+    for (const p of valid) {
+      try {
+        const payload: any = { name: p.name, description: p.description, categoryId: p.categoryId, unit: p.unit, prices: p.prices };
+        if (p.initialStock > 0 && p.companyId) { payload.initialStock = p.initialStock; payload.companyId = p.companyId; }
+        await createProduct.mutateAsync(payload);
+        created++;
+      } catch { errors++; }
+    }
+    setBulkLoading(false);
+    toast.success(`${created} producto(s) creado(s)${errors > 0 ? `, ${errors} con error` : ''}`);
+    if (created > 0) setShowBulkModal(false);
+  };
+
+  const handleExport = async () => {
+    try {
+      const allData = await productService.getAll({ page: 1, limit: 9999 });
+      const allProducts: Product[] = allData?.data || allData || [];
+      const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
+      const catsList = Array.isArray(categories) ? categories : [];
+
+      const rows = allProducts.map((p: Product) => {
+        const row: any = {
+          Nombre: p.name,
+          Descripcion: p.description || '',
+          Categoria: catsList.find((c: any) => c.id === p.categoryId)?.name || '',
+          Unidad: p.unit,
+          Estado: p.isActive ? 'Activo' : 'Inactivo',
+        };
+        tiersList.forEach((t: any) => {
+          const price = p.prices?.find(pr => pr.priceTierId === t.id);
+          row[`Precio_${t.name}`] = price?.price || 0;
+        });
+        return row;
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Productos');
+      XLSX.writeFile(wb, `productos_${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast.success(`${allProducts.length} producto(s) exportado(s)`);
+    } catch { toast.error('Error al exportar'); }
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const wb = XLSX.read(evt.target?.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(ws);
+        if (rows.length === 0) { toast.error('El archivo está vacío'); return; }
+
+        const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
+        let catsList: any[] = Array.isArray(categories) ? [...categories] : [];
+
+        // Auto-crear categorías que no existen
+        const uniqueCatNames = [...new Set(rows.map(r => String(r.Categoria || '').trim()).filter(Boolean))];
+        let createdCats = 0;
+        for (const catName of uniqueCatNames) {
+          const exists = catsList.find((c: any) => c.name?.toLowerCase() === catName.toLowerCase());
+          if (!exists) {
+            try {
+              const newCat = await categoryService.create({ name: catName });
+              catsList.push(newCat);
+              createdCats++;
+            } catch { /* categoría ya existe o error */ }
+          }
+        }
+        if (createdCats > 0) {
+          await queryClient.invalidateQueries({ queryKey: ['categories'] });
+          toast.success(`${createdCats} categoría(s) creada(s) automáticamente`);
+        }
+
+        const imported: BulkProduct[] = rows.map(row => {
+          const catName = String(row.Categoria || '').trim();
+          const cat = catsList.find((c: any) => c.name?.toLowerCase() === catName.toLowerCase());
+          const prices: { priceTierId: string; price: number }[] = [];
+          tiersList.forEach((t: any) => {
+            const val = row[`Precio_${t.name}`];
+            if (val && Number(val) > 0) prices.push({ priceTierId: t.id, price: Number(val) });
+          });
+          return {
+            name: String(row.Nombre || ''),
+            description: String(row.Descripcion || ''),
+            categoryId: cat?.id || '',
+            unit: String(row.Unidad || 'kg'),
+            prices,
+            initialStock: Number(row.Stock_Inicial || 0),
+            companyId: '',
+            expanded: false,
+          };
+        });
+
+        setBulkProducts(imported);
+        setShowBulkModal(true);
+        toast.success(`${imported.length} producto(s) cargados desde Excel`);
+      } catch { toast.error('Error al leer el archivo'); }
+    };
+    reader.readAsBinaryString(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleDownloadTemplate = () => {
+    const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
+    const catsList = Array.isArray(categories) ? categories : [];
+    const header: any = { Nombre: 'Ejemplo Producto', Descripcion: '', Categoria: catsList[0]?.name || 'Fertilizantes', Unidad: 'kg', Stock_Inicial: 0 };
+    tiersList.forEach((t: any) => { header[`Precio_${t.name}`] = 0; });
+
+    const ws = XLSX.utils.json_to_sheet([header]);
+    const catNames = catsList.filter((c: any) => c.isActive).map((c: any) => c.name).join(', ');
+    XLSX.utils.sheet_add_aoa(ws, [[`Categorías válidas: ${catNames}`], [`Unidades válidas: kg, litro, saco, unidad, galon`]], { origin: `A${3}` });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Plantilla');
+    XLSX.writeFile(wb, 'plantilla_productos.xlsx');
   };
 
   const products = data?.data || [];
@@ -84,7 +264,13 @@ export function ProductsPage() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Productos</h1>
-        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"><Plus size={18} /> Nuevo Producto</button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={handleExport} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Download size={16} /> Exportar</button>
+          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Upload size={16} /> Importar</button>
+          <button onClick={openBulk} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"><Layers size={16} /> Carga Masiva</button>
+          <button onClick={openCreate} className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"><Plus size={16} /> Nuevo Producto</button>
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" />
+        </div>
       </div>
       <div className="mb-4 relative">
         <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -113,6 +299,60 @@ export function ProductsPage() {
           {tiers.length > 0 && <div><label className="block text-sm font-medium text-gray-700 mb-2">Precios por Rango</label><div className="space-y-2">{tiers.map((tier: any) => (<div key={tier.id} className="flex items-center gap-3"><span className="text-sm w-32">{tier.name}</span><input type="number" step="0.01" min="0" placeholder="0.00" value={form.prices.find((p) => p.priceTierId === tier.id)?.price || ''} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0)} className="flex-1 px-3 py-2 border rounded-lg" /></div>))}</div></div>}
           <button type="submit" className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">{editing ? 'Actualizar' : 'Crear'}</button>
         </form>
+      </Modal>
+      <Modal isOpen={showBulkModal} onClose={() => setShowBulkModal(false)} title={`Carga Masiva de Productos (${bulkProducts.length})`} size="xl">
+        <div className="space-y-3">
+          {bulkProducts.map((bp, idx) => (
+            <div key={idx} className="border rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-gray-50 cursor-pointer" onClick={() => toggleExpand(idx)}>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-gray-500">#{idx + 1}</span>
+                  <span className="font-medium">{bp.name || 'Sin nombre'}</span>
+                  {bp.categoryId && <span className="text-xs text-gray-500">{cats.find((c: any) => c.id === bp.categoryId)?.name}</span>}
+                  {!bp.name && <span className="text-xs text-red-500">* Requerido</span>}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={(e) => { e.stopPropagation(); duplicateBulkProduct(idx); }} className="p-1 text-gray-400 hover:text-blue-600" title="Duplicar"><Copy size={15} /></button>
+                  {bulkProducts.length > 1 && <button type="button" onClick={(e) => { e.stopPropagation(); removeBulkProduct(idx); }} className="p-1 text-gray-400 hover:text-red-600" title="Eliminar"><X size={15} /></button>}
+                  {bp.expanded ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
+                </div>
+              </div>
+              {bp.expanded && (
+                <div className="p-4 space-y-3 border-t">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label><input value={bp.name} onChange={(e) => updateBulkProduct(idx, 'name', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Nombre del producto" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input value={bp.description} onChange={(e) => updateBulkProduct(idx, 'description', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Opcional" /></div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría *</label><select value={bp.categoryId} onChange={(e) => updateBulkProduct(idx, 'categoryId', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Seleccionar...</option>{cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label><select value={bp.unit} onChange={(e) => updateBulkProduct(idx, 'unit', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="kg">Kilogramo</option><option value="litro">Litro</option><option value="saco">Saco</option><option value="unidad">Unidad</option><option value="galon">Galón</option></select></div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Stock Inicial</label><input type="number" step="0.01" min="0" placeholder="0" value={bp.initialStock || ''} onChange={(e) => updateBulkProduct(idx, 'initialStock', parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label><select value={bp.companyId} onChange={(e) => updateBulkProduct(idx, 'companyId', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Ninguna</option>{comps.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                  </div>
+                  {tiers.length > 0 && (
+                    <div><label className="block text-sm font-medium text-gray-700 mb-2">Precios por Rango</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">{tiers.map((tier: any) => (
+                        <div key={tier.id} className="flex items-center gap-2">
+                          <span className="text-xs w-20 truncate">{tier.name}</span>
+                          <input type="number" step="0.01" min="0" placeholder="0.00" value={bp.prices.find(p => p.priceTierId === tier.id)?.price || ''} onChange={(e) => updateBulkPrice(idx, tier.id, parseFloat(e.target.value) || 0)} className="flex-1 px-2 py-1.5 border rounded-lg text-sm" />
+                        </div>
+                      ))}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setBulkProducts(prev => [...prev, emptyBulkProduct()])} className="flex-1 py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-green-400 hover:text-green-600 text-sm">+ Agregar otro producto</button>
+            <button type="button" onClick={handleDownloadTemplate} className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-gray-500 hover:text-blue-600 text-sm"><Download size={14} /> Plantilla Excel</button>
+          </div>
+          <button type="button" onClick={handleBulkSubmit} disabled={bulkLoading} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium">
+            {bulkLoading ? 'Creando productos...' : `Crear ${bulkProducts.filter(p => p.name && p.categoryId).length} producto(s)`}
+          </button>
+        </div>
       </Modal>
     </div>
   );
