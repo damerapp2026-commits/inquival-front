@@ -21,8 +21,7 @@ interface BulkProduct {
   categoryId: string;
   unit: string;
   prices: { priceTierId: string; price: number }[];
-  initialStock: number;
-  companyId: string;
+  initialStocks: { companyId: string; quantity: number }[];
   expanded: boolean;
 }
 
@@ -42,7 +41,7 @@ export function ProductsPage() {
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
 
-  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: 'kg', prices: [] as { priceTierId: string; price: number }[], initialStock: 0, companyId: '' });
+  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: 'kg', prices: [] as { priceTierId: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -53,7 +52,7 @@ export function ProductsPage() {
   const [newUnit, setNewUnit] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', unit: 'kg', prices: [], initialStock: 0, companyId: '', expanded: true });
+  const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', unit: 'kg', prices: [], initialStocks: [], expanded: true });
 
   const addCustomUnit = () => {
     const trimmed = newUnit.trim().toLowerCase();
@@ -68,24 +67,32 @@ export function ProductsPage() {
     toast.success(`Unidad "${trimmed}" agregada`);
   };
 
-  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: 'kg', prices: [], initialStock: 0, companyId: '' }); setShowModal(true); };
-  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, prices: product.prices || [], initialStock: 0, companyId: '' }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: 'kg', prices: [], initialStocks: [] }); setShowModal(true); };
+  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, prices: product.prices || [], initialStocks: [] }); setShowModal(true); };
   const openBulk = () => { setBulkProducts([emptyBulkProduct()]); setShowBulkModal(true); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editing) {
-      const { initialStock, companyId, ...editData } = form;
+      const { initialStocks, ...editData } = form;
       await updateProduct.mutateAsync({ id: editing.id, data: editData });
     } else {
       const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, prices: form.prices };
-      if (form.initialStock > 0 && form.companyId) {
-        payload.initialStock = form.initialStock;
-        payload.companyId = form.companyId;
-      }
+      const validStocks = form.initialStocks.filter(s => s.quantity > 0 && s.companyId);
+      if (validStocks.length > 0) payload.initialStocks = validStocks;
       await createProduct.mutateAsync(payload);
     }
     setShowModal(false);
+  };
+
+  const handleStockChange = (companyId: string, quantity: number) => {
+    setForm(prev => {
+      const stocks = [...prev.initialStocks];
+      const idx = stocks.findIndex(s => s.companyId === companyId);
+      if (idx >= 0) stocks[idx] = { companyId, quantity };
+      else stocks.push({ companyId, quantity });
+      return { ...prev, initialStocks: stocks };
+    });
   };
 
   const handlePriceChange = (tierId: string, price: number) => {
@@ -110,6 +117,17 @@ export function ProductsPage() {
       if (idx >= 0) prices[idx] = { priceTierId: tierId, price };
       else prices.push({ priceTierId: tierId, price });
       return { ...p, prices };
+    }));
+  };
+
+  const updateBulkStock = (index: number, companyId: string, quantity: number) => {
+    setBulkProducts(prev => prev.map((p, i) => {
+      if (i !== index) return p;
+      const stocks = [...p.initialStocks];
+      const idx = stocks.findIndex(s => s.companyId === companyId);
+      if (idx >= 0) stocks[idx] = { companyId, quantity };
+      else stocks.push({ companyId, quantity });
+      return { ...p, initialStocks: stocks };
     }));
   };
 
@@ -139,7 +157,8 @@ export function ProductsPage() {
     for (const p of valid) {
       try {
         const payload: any = { name: p.name, description: p.description, categoryId: p.categoryId, unit: p.unit, prices: p.prices };
-        if (p.initialStock > 0 && p.companyId) { payload.initialStock = p.initialStock; payload.companyId = p.companyId; }
+        const validStocks = p.initialStocks.filter(s => s.quantity > 0 && s.companyId);
+        if (validStocks.length > 0) payload.initialStocks = validStocks;
         await createProduct.mutateAsync(payload);
         created++;
       } catch { errors++; }
@@ -155,6 +174,7 @@ export function ProductsPage() {
       const allProducts: Product[] = allData?.data || allData || [];
       const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
       const catsList = Array.isArray(categories) ? categories : [];
+      const compsList = Array.isArray(companies) ? companies : [];
 
       const rows = allProducts.map((p: Product) => {
         const row: any = {
@@ -168,6 +188,7 @@ export function ProductsPage() {
           const price = p.prices?.find(pr => pr.priceTierId === t.id);
           row[`Precio_${t.name}`] = price?.price || 0;
         });
+        compsList.forEach((c: any) => { row[`Stock_${c.name}`] = 0; });
         return row;
       });
 
@@ -227,14 +248,19 @@ export function ProductsPage() {
             const val = row[`Precio_${t.name}`];
             if (val && Number(val) > 0) prices.push({ priceTierId: t.id, price: Number(val) });
           });
+          const compsList = Array.isArray(companies) ? companies : [];
+          const initialStocks: { companyId: string; quantity: number }[] = [];
+          compsList.forEach((c: any) => {
+            const val = row[`Stock_${c.name}`];
+            if (val && Number(val) > 0) initialStocks.push({ companyId: c.id, quantity: Number(val) });
+          });
           return {
             name: String(row.Nombre || ''),
             description: String(row.Descripcion || ''),
             categoryId: cat?.id || '',
             unit: String(row.Unidad || 'kg'),
             prices,
-            initialStock: Number(row.Stock_Inicial || 0),
-            companyId: '',
+            initialStocks,
             expanded: false,
           };
         });
@@ -251,8 +277,10 @@ export function ProductsPage() {
   const handleDownloadTemplate = () => {
     const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
     const catsList = Array.isArray(categories) ? categories : [];
-    const header: any = { Nombre: 'Ejemplo Producto', Descripcion: '', Categoria: catsList[0]?.name || 'Fertilizantes', Unidad: 'kg', Stock_Inicial: 0 };
+    const compsList = Array.isArray(companies) ? companies : [];
+    const header: any = { Nombre: 'Ejemplo Producto', Descripcion: '', Categoria: catsList[0]?.name || 'Fertilizantes', Unidad: 'kg' };
     tiersList.forEach((t: any) => { header[`Precio_${t.name}`] = 0; });
+    compsList.forEach((c: any) => { header[`Stock_${c.name}`] = 0; });
 
     const ws = XLSX.utils.json_to_sheet([header]);
     const catNames = catsList.filter((c: any) => c.isActive).map((c: any) => c.name).join(', ');
@@ -327,13 +355,17 @@ export function ProductsPage() {
               )}
             </div>
           </div>
-          {!editing && (
+          {!editing && comps.length > 0 && (
             <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
-              <label className="block text-sm font-medium text-blue-800">Stock Inicial (opcional)</label>
-              <p className="text-xs text-blue-600">Si ya tienes existencias de este producto, ingresa la cantidad y selecciona la empresa.</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Cantidad</label><input type="number" step="0.01" min="0" placeholder="0" value={form.initialStock || ''} onChange={(e) => setForm({ ...form, initialStock: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border rounded-lg" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label><select value={form.companyId} onChange={(e) => setForm({ ...form, companyId: e.target.value })} className="w-full px-3 py-2 border rounded-lg">{form.initialStock > 0 ? <option value="">Seleccionar empresa...</option> : <option value="">Ninguna</option>}{comps.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+              <label className="block text-sm font-medium text-blue-800">Stock Inicial por Empresa (opcional)</label>
+              <p className="text-xs text-blue-600">Si ya tienes existencias de este producto, ingresa la cantidad por cada empresa.</p>
+              <div className="space-y-2">
+                {comps.filter((c: any) => c.isActive).map((c: any) => (
+                  <div key={c.id} className="flex items-center gap-3">
+                    <span className="text-sm w-40 truncate font-medium">{c.name}</span>
+                    <input type="number" step="0.01" min="0" placeholder="0" value={form.initialStocks.find(s => s.companyId === c.id)?.quantity || ''} onChange={(e) => handleStockChange(c.id, parseFloat(e.target.value) || 0)} className="flex-1 px-3 py-2 border rounded-lg" />
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -368,10 +400,16 @@ export function ProductsPage() {
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría *</label><select value={bp.categoryId} onChange={(e) => updateBulkProduct(idx, 'categoryId', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Seleccionar...</option>{cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label><select value={bp.unit} onChange={(e) => updateBulkProduct(idx, 'unit', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">{allUnits.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select></div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Stock Inicial</label><input type="number" step="0.01" min="0" placeholder="0" value={bp.initialStock || ''} onChange={(e) => updateBulkProduct(idx, 'initialStock', parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label><select value={bp.companyId} onChange={(e) => updateBulkProduct(idx, 'companyId', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Ninguna</option>{comps.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-                  </div>
+                  {comps.length > 0 && (
+                    <div><label className="block text-sm font-medium text-gray-700 mb-2">Stock Inicial por Empresa</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">{comps.filter((c: any) => c.isActive).map((c: any) => (
+                        <div key={c.id} className="flex items-center gap-2">
+                          <span className="text-xs w-20 truncate">{c.name}</span>
+                          <input type="number" step="0.01" min="0" placeholder="0" value={bp.initialStocks.find(s => s.companyId === c.id)?.quantity || ''} onChange={(e) => updateBulkStock(idx, c.id, parseFloat(e.target.value) || 0)} className="flex-1 px-2 py-1.5 border rounded-lg text-sm" />
+                        </div>
+                      ))}</div>
+                    </div>
+                  )}
                   {tiers.length > 0 && (
                     <div><label className="block text-sm font-medium text-gray-700 mb-2">Precios por Rango</label>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">{tiers.map((tier: any) => (
