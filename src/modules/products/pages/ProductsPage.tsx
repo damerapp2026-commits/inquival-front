@@ -15,11 +15,18 @@ import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import type { Product } from '../../../shared/types';
 
+const TAX_TYPES = [
+  { value: 'GRAVADO', label: 'Gravado (IGV 18%)' },
+  { value: 'EXONERADO', label: 'Exonerado' },
+  { value: 'INAFECTO', label: 'Inafecto' },
+];
+
 interface BulkProduct {
   name: string;
   description: string;
   categoryId: string;
   unit: string;
+  taxType: string;
   prices: { priceTierId: string; price: number }[];
   initialStocks: { companyId: string; quantity: number }[];
   expanded: boolean;
@@ -41,7 +48,7 @@ export function ProductsPage() {
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
 
-  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: 'kg', prices: [] as { priceTierId: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
+  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: 'kg', taxType: 'GRAVADO', prices: [] as { priceTierId: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -52,7 +59,7 @@ export function ProductsPage() {
   const [newUnit, setNewUnit] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', unit: 'kg', prices: [], initialStocks: [], expanded: true });
+  const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', unit: 'kg', taxType: 'GRAVADO', prices: [], initialStocks: [], expanded: true });
 
   const addCustomUnit = () => {
     const trimmed = newUnit.trim().toLowerCase();
@@ -67,8 +74,8 @@ export function ProductsPage() {
     toast.success(`Unidad "${trimmed}" agregada`);
   };
 
-  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: 'kg', prices: [], initialStocks: [] }); setShowModal(true); };
-  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, prices: product.prices || [], initialStocks: [] }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: 'kg', taxType: 'GRAVADO', prices: [], initialStocks: [] }); setShowModal(true); };
+  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, taxType: product.taxType || 'GRAVADO', prices: product.prices || [], initialStocks: [] }); setShowModal(true); };
   const openBulk = () => { setBulkProducts([emptyBulkProduct()]); setShowBulkModal(true); };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -77,7 +84,7 @@ export function ProductsPage() {
       const { initialStocks, ...editData } = form;
       await updateProduct.mutateAsync({ id: editing.id, data: editData });
     } else {
-      const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, prices: form.prices };
+      const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, taxType: form.taxType, prices: form.prices };
       const validStocks = form.initialStocks.filter(s => s.quantity > 0 && s.companyId);
       if (validStocks.length > 0) payload.initialStocks = validStocks;
       await createProduct.mutateAsync(payload);
@@ -156,7 +163,7 @@ export function ProductsPage() {
     let errors = 0;
     for (const p of valid) {
       try {
-        const payload: any = { name: p.name, description: p.description, categoryId: p.categoryId, unit: p.unit, prices: p.prices };
+        const payload: any = { name: p.name, description: p.description, categoryId: p.categoryId, unit: p.unit, taxType: p.taxType, prices: p.prices };
         const validStocks = p.initialStocks.filter(s => s.quantity > 0 && s.companyId);
         if (validStocks.length > 0) payload.initialStocks = validStocks;
         await createProduct.mutateAsync(payload);
@@ -182,6 +189,7 @@ export function ProductsPage() {
           Descripcion: p.description || '',
           Categoria: catsList.find((c: any) => c.id === p.categoryId)?.name || '',
           Unidad: p.unit,
+          Tipo_IGV: p.taxType || 'GRAVADO',
           Estado: p.isActive ? 'Activo' : 'Inactivo',
         };
         tiersList.forEach((t: any) => {
@@ -254,11 +262,14 @@ export function ProductsPage() {
             const val = row[`Stock_${c.name}`];
             if (val && Number(val) > 0) initialStocks.push({ companyId: c.id, quantity: Number(val) });
           });
+          const rawTaxType = String(row.Tipo_IGV || '').trim().toUpperCase();
+          const taxType = ['GRAVADO', 'EXONERADO', 'INAFECTO'].includes(rawTaxType) ? rawTaxType : 'GRAVADO';
           return {
             name: String(row.Nombre || ''),
             description: String(row.Descripcion || ''),
             categoryId: cat?.id || '',
             unit: String(row.Unidad || 'kg'),
+            taxType,
             prices,
             initialStocks,
             expanded: false,
@@ -278,14 +289,14 @@ export function ProductsPage() {
     const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
     const catsList = Array.isArray(categories) ? categories : [];
     const compsList = Array.isArray(companies) ? companies : [];
-    const header: any = { Nombre: 'Ejemplo Producto', Descripcion: '', Categoria: catsList[0]?.name || 'Fertilizantes', Unidad: 'kg' };
+    const header: any = { Nombre: 'Ejemplo Producto', Descripcion: '', Categoria: catsList[0]?.name || 'Fertilizantes', Unidad: 'kg', Tipo_IGV: 'GRAVADO' };
     tiersList.forEach((t: any) => { header[`Precio_${t.name}`] = 0; });
     compsList.forEach((c: any) => { header[`Stock_${c.name}`] = 0; });
 
     const ws = XLSX.utils.json_to_sheet([header]);
     const catNames = catsList.filter((c: any) => c.isActive).map((c: any) => c.name).join(', ');
     const unitNames = allUnits.map(u => u.value).join(', ');
-    XLSX.utils.sheet_add_aoa(ws, [[`Categorías válidas: ${catNames}`], [`Unidades disponibles: ${unitNames} (o cualquier otra, se agrega automáticamente)`]], { origin: `A${3}` });
+    XLSX.utils.sheet_add_aoa(ws, [[`Categorías válidas: ${catNames}`], [`Unidades disponibles: ${unitNames} (o cualquier otra, se agrega automáticamente)`], [`Tipo_IGV válidos: GRAVADO, EXONERADO, INAFECTO`]], { origin: `A${3}` });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Plantilla');
     XLSX.writeFile(wb, 'plantilla_productos.xlsx');
@@ -301,6 +312,11 @@ export function ProductsPage() {
     { key: 'name', header: 'Nombre' },
     { key: 'categoryId', header: 'Categoría', render: (item: Product) => { const cat = cats.find((c: any) => c.id === item.categoryId); return cat?.name || item.categoryId; } },
     { key: 'unit', header: 'Unidad' },
+    { key: 'taxType', header: 'IGV', render: (item: Product) => {
+      const t = TAX_TYPES.find(tx => tx.value === (item.taxType || 'GRAVADO'));
+      const colors = item.taxType === 'EXONERADO' ? 'bg-yellow-100 text-yellow-800' : item.taxType === 'INAFECTO' ? 'bg-gray-100 text-gray-800' : 'bg-blue-100 text-blue-800';
+      return <span className={`px-2 py-1 rounded-full text-xs ${colors}`}>{t?.label || 'Gravado'}</span>;
+    }},
     { key: 'prices', header: 'Precios', render: (item: Product) => (
       <div className="text-xs space-y-1">
         {item.prices?.map((p) => { const tier = tiers.find((t: any) => t.id === p.priceTierId); return <div key={p.priceTierId}><span className="font-medium">{tier?.name || 'N/A'}:</span> S/ {p.price.toFixed(2)}</div>; })}
@@ -333,11 +349,11 @@ export function ProductsPage() {
       </div>
       <DataTable columns={columns} data={products} isLoading={isLoading} />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar Producto' : 'Nuevo Producto'}>
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar Producto' : 'Nuevo Producto'} size="lg">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label><select value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required><option value="">Seleccionar...</option>{cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label>
@@ -354,6 +370,7 @@ export function ProductsPage() {
                 </div>
               )}
             </div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo IGV</label><select value={form.taxType} onChange={(e) => setForm({ ...form, taxType: e.target.value })} className="w-full px-3 py-2 border rounded-lg">{TAX_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
           </div>
           {!editing && comps.length > 0 && (
             <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
@@ -396,9 +413,10 @@ export function ProductsPage() {
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label><input value={bp.name} onChange={(e) => updateBulkProduct(idx, 'name', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Nombre del producto" /></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input value={bp.description} onChange={(e) => updateBulkProduct(idx, 'description', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Opcional" /></div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría *</label><select value={bp.categoryId} onChange={(e) => updateBulkProduct(idx, 'categoryId', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Seleccionar...</option>{cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label><select value={bp.unit} onChange={(e) => updateBulkProduct(idx, 'unit', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">{allUnits.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo IGV</label><select value={bp.taxType} onChange={(e) => updateBulkProduct(idx, 'taxType', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">{TAX_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
                   </div>
                   {comps.length > 0 && (
                     <div><label className="block text-sm font-medium text-gray-700 mb-2">Stock Inicial por Empresa</label>
