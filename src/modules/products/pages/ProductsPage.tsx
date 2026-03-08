@@ -254,7 +254,7 @@ export function ProductsPage() {
           const prices: { priceTierId: string; price: number }[] = [];
           tiersList.forEach((t: any) => {
             const val = row[`Precio_${t.name}`];
-            if (val && Number(val) > 0) prices.push({ priceTierId: t.id, price: Number(val) });
+            prices.push({ priceTierId: t.id, price: Number(val) || 0 });
           });
           const compsList = Array.isArray(companies) ? companies : [];
           const initialStocks: { companyId: string; quantity: number }[] = [];
