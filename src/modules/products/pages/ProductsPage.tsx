@@ -46,9 +46,27 @@ export function ProductsPage() {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const defaultUnits = [{ value: 'kg', label: 'Kilogramo' }, { value: 'litro', label: 'Litro' }, { value: 'saco', label: 'Saco' }, { value: 'unidad', label: 'Unidad' }, { value: 'galon', label: 'Galón' }];
+  const [customUnits, setCustomUnits] = useState<string[]>([]);
+  const allUnits = [...defaultUnits, ...customUnits.map(u => ({ value: u, label: u }))];
+  const [showCustomUnit, setShowCustomUnit] = useState(false);
+  const [newUnit, setNewUnit] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', unit: 'kg', prices: [], initialStock: 0, companyId: '', expanded: true });
+
+  const addCustomUnit = () => {
+    const trimmed = newUnit.trim().toLowerCase();
+    if (!trimmed) return;
+    if (defaultUnits.some(u => u.value === trimmed) || customUnits.includes(trimmed)) {
+      toast.error('Esa unidad ya existe');
+      return;
+    }
+    setCustomUnits(prev => [...prev, trimmed]);
+    setNewUnit('');
+    setShowCustomUnit(false);
+    toast.success(`Unidad "${trimmed}" agregada`);
+  };
 
   const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: 'kg', prices: [], initialStock: 0, companyId: '' }); setShowModal(true); };
   const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, prices: product.prices || [], initialStock: 0, companyId: '' }); setShowModal(true); };
@@ -175,6 +193,14 @@ export function ProductsPage() {
         const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
         let catsList: any[] = Array.isArray(categories) ? [...categories] : [];
 
+        // Auto-agregar unidades que no existen
+        const uniqueUnits = [...new Set(rows.map(r => String(r.Unidad || '').trim().toLowerCase()).filter(Boolean))];
+        const newUnits = uniqueUnits.filter(u => !defaultUnits.some(d => d.value === u) && !customUnits.includes(u));
+        if (newUnits.length > 0) {
+          setCustomUnits(prev => [...prev, ...newUnits]);
+          toast.success(`${newUnits.length} unidad(es) nueva(s) agregada(s): ${newUnits.join(', ')}`);
+        }
+
         // Auto-crear categorías que no existen
         const uniqueCatNames = [...new Set(rows.map(r => String(r.Categoria || '').trim()).filter(Boolean))];
         let createdCats = 0;
@@ -230,7 +256,8 @@ export function ProductsPage() {
 
     const ws = XLSX.utils.json_to_sheet([header]);
     const catNames = catsList.filter((c: any) => c.isActive).map((c: any) => c.name).join(', ');
-    XLSX.utils.sheet_add_aoa(ws, [[`Categorías válidas: ${catNames}`], [`Unidades válidas: kg, litro, saco, unidad, galon`]], { origin: `A${3}` });
+    const unitNames = allUnits.map(u => u.value).join(', ');
+    XLSX.utils.sheet_add_aoa(ws, [[`Categorías válidas: ${catNames}`], [`Unidades disponibles: ${unitNames} (o cualquier otra, se agrega automáticamente)`]], { origin: `A${3}` });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Plantilla');
     XLSX.writeFile(wb, 'plantilla_productos.xlsx');
@@ -284,7 +311,21 @@ export function ProductsPage() {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label><select value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required><option value="">Seleccionar...</option>{cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label><select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="kg">Kilogramo</option><option value="litro">Litro</option><option value="saco">Saco</option><option value="unidad">Unidad</option><option value="galon">Galón</option></select></div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label>
+              {showCustomUnit ? (
+                <div className="flex gap-2">
+                  <input value={newUnit} onChange={(e) => setNewUnit(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomUnit())} className="flex-1 px-3 py-2 border rounded-lg" placeholder="Ej: bolsa, sobre..." autoFocus />
+                  <button type="button" onClick={addCustomUnit} className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm">Agregar</button>
+                  <button type="button" onClick={() => setShowCustomUnit(false)} className="px-3 py-2 border rounded-lg text-sm">Cancelar</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="flex-1 px-3 py-2 border rounded-lg">{allUnits.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select>
+                  <button type="button" onClick={() => setShowCustomUnit(true)} className="px-3 py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 hover:text-green-600 text-sm" title="Agregar unidad">+</button>
+                </div>
+              )}
+            </div>
           </div>
           {!editing && (
             <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
@@ -325,7 +366,7 @@ export function ProductsPage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría *</label><select value={bp.categoryId} onChange={(e) => updateBulkProduct(idx, 'categoryId', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Seleccionar...</option>{cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label><select value={bp.unit} onChange={(e) => updateBulkProduct(idx, 'unit', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="kg">Kilogramo</option><option value="litro">Litro</option><option value="saco">Saco</option><option value="unidad">Unidad</option><option value="galon">Galón</option></select></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label><select value={bp.unit} onChange={(e) => updateBulkProduct(idx, 'unit', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">{allUnits.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select></div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Stock Inicial</label><input type="number" step="0.01" min="0" placeholder="0" value={bp.initialStock || ''} onChange={(e) => updateBulkProduct(idx, 'initialStock', parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
