@@ -7,7 +7,7 @@ export function useProducts(params?: any) {
 }
 export function useCreateProduct() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: productService.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['products'] }); toast.success('Producto creado'); }, onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error') });
+  return useMutation({ mutationFn: productService.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['products'] }); toast.success('Producto creado'); }, onError: (err: any) => { const msg = err.response?.data?.message; toast.error(Array.isArray(msg) ? msg[0] : msg || 'Error'); } });
 }
 export function useUpdateProduct() {
   const qc = useQueryClient();
