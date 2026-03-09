@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { useDashboardSummary, useProfitability, useCreditsSummary, useSalesChart } from '../hooks/useDashboard';
 import { useClients } from '../../clients/hooks/useClients';
 import { useProducts } from '../../products/hooks/useProducts';
-import { BarChart3, TrendingUp, TrendingDown, DollarSign, CreditCard, Users } from 'lucide-react';
+import { useAPAlerts } from '../../accounts-payable/hooks/useAccountsPayable';
+import { BarChart3, TrendingUp, TrendingDown, DollarSign, CreditCard, Users, FileText, AlertTriangle, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell,
 } from 'recharts';
-import type { Client, Product } from '../../../shared/types';
+import type { Client, Product, AccountPayable } from '../../../shared/types';
 
 const COLORS = ['#10b981', '#f59e0b'];
 
@@ -21,6 +22,7 @@ export function DashboardPage() {
   const { data: salesChart } = useSalesChart();
   const { data: clientsData } = useClients({ limit: 200 });
   const { data: productsData } = useProducts({ limit: 200 });
+  const { data: apAlerts } = useAPAlerts(3);
 
   const clients = clientsData?.data || [];
   const products = productsData?.data || [];
@@ -65,7 +67,7 @@ export function DashboardPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <div className="bg-white border rounded-lg p-4">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><TrendingUp size={16} className="text-green-600" /> Ingresos</div>
           <div className="text-xl sm:text-2xl font-bold text-green-600">S/ {(summary?.totalIncome || 0).toFixed(2)}</div>
@@ -82,6 +84,11 @@ export function DashboardPage() {
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><CreditCard size={16} className="text-orange-600" /> Creditos Pendientes</div>
           <div className="text-xl sm:text-2xl font-bold text-orange-600">S/ {(creditsSummary?.totalPending || 0).toFixed(2)}</div>
           <div className="text-xs text-gray-400 mt-1">{creditsSummary?.activeCredits || 0} creditos activos</div>
+        </div>
+        <div className="bg-white border rounded-lg p-4">
+          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><FileText size={16} className="text-purple-600" /> Deuda Proveedores</div>
+          <div className="text-xl sm:text-2xl font-bold text-purple-600">S/ {(apAlerts?.summary?.totalPending || 0).toFixed(2)}</div>
+          <div className="text-xs text-gray-400 mt-1">{apAlerts?.summary?.count || 0} cuentas activas</div>
         </div>
       </div>
 
@@ -211,6 +218,56 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+      {/* Accounts Payable Alerts */}
+      {((apAlerts?.overdue?.length || 0) > 0 || (apAlerts?.upcoming?.length || 0) > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          {/* Overdue */}
+          {(apAlerts?.overdue?.length || 0) > 0 && (
+            <div className="bg-white border-2 border-red-300 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-red-700 flex items-center gap-2"><AlertTriangle size={18} /> Pagos Vencidos a Proveedores</h2>
+                <button onClick={() => navigate('/accounts-payable')} className="text-sm text-blue-600 hover:underline">Ver todos</button>
+              </div>
+              <div className="space-y-2">
+                {apAlerts!.overdue.slice(0, 5).map((ap: AccountPayable) => (
+                  <div key={ap.id} className="flex items-center justify-between text-sm bg-red-50 p-2 rounded">
+                    <div>
+                      <div className="font-medium text-gray-700">{ap.supplier}</div>
+                      <div className="text-xs text-red-500">
+                        Vencido: {ap.dueDate ? new Date(ap.dueDate).toLocaleDateString('es-PE') : ap.installments?.find(i => i.status === 'PENDING')?.dueDate ? new Date(ap.installments.find(i => i.status === 'PENDING')!.dueDate).toLocaleDateString('es-PE') : '-'}
+                      </div>
+                    </div>
+                    <span className="font-bold text-red-600">S/ {ap.pendingAmount.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Upcoming */}
+          {(apAlerts?.upcoming?.length || 0) > 0 && (
+            <div className="bg-white border-2 border-yellow-300 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-yellow-700 flex items-center gap-2"><Clock size={18} /> Pagos Proximos a Vencer (3 dias)</h2>
+                <button onClick={() => navigate('/accounts-payable')} className="text-sm text-blue-600 hover:underline">Ver todos</button>
+              </div>
+              <div className="space-y-2">
+                {apAlerts!.upcoming.slice(0, 5).map((ap: AccountPayable) => (
+                  <div key={ap.id} className="flex items-center justify-between text-sm bg-yellow-50 p-2 rounded">
+                    <div>
+                      <div className="font-medium text-gray-700">{ap.supplier}</div>
+                      <div className="text-xs text-yellow-600">
+                        Vence: {ap.dueDate ? new Date(ap.dueDate).toLocaleDateString('es-PE') : ap.installments?.find(i => i.status === 'PENDING')?.dueDate ? new Date(ap.installments.find(i => i.status === 'PENDING')!.dueDate).toLocaleDateString('es-PE') : '-'}
+                      </div>
+                    </div>
+                    <span className="font-bold text-yellow-700">S/ {ap.pendingAmount.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

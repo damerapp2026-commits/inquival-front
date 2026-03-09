@@ -20,9 +20,14 @@ export function PurchasesPage() {
   const { data: productsData } = useProducts({ limit: 200 });
   const createPurchase = useCreatePurchase();
 
-  const [form, setForm] = useState({ companyId: '', supplier: '', items: [{ productId: '', quantity: 0, unitCost: 0 }] as { productId: string; quantity: number; unitCost: number }[] });
+  const [form, setForm] = useState({
+    companyId: '', supplier: '', paymentType: 'CONTADO' as 'CONTADO' | 'CREDITO',
+    paymentScheduleType: 'SINGLE_DATE' as 'SINGLE_DATE' | 'INSTALLMENTS', dueDate: '',
+    installments: [] as { amount: number; dueDate: string }[],
+    items: [{ productId: '', quantity: 0, unitCost: 0 }] as { productId: string; quantity: number; unitCost: number }[],
+  });
 
-  const openCreate = () => { setForm({ companyId: '', supplier: '', items: [{ productId: '', quantity: 0, unitCost: 0 }] }); setShowModal(true); };
+  const openCreate = () => { setForm({ companyId: '', supplier: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0, unitCost: 0 }] }); setShowModal(true); };
 
   const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0, unitCost: 0 }] }));
   const removeItem = (idx: number) => setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
@@ -30,7 +35,13 @@ export function PurchasesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await createPurchase.mutateAsync(form);
+    const payload: any = { companyId: form.companyId, supplier: form.supplier, items: form.items, paymentType: form.paymentType };
+    if (form.paymentType === 'CREDITO') {
+      payload.paymentScheduleType = form.paymentScheduleType;
+      if (form.paymentScheduleType === 'SINGLE_DATE') payload.dueDate = form.dueDate;
+      if (form.paymentScheduleType === 'INSTALLMENTS') payload.installments = form.installments;
+    }
+    await createPurchase.mutateAsync(payload);
     setShowModal(false);
   };
 
@@ -47,6 +58,11 @@ export function PurchasesPage() {
     { key: 'supplier', header: 'Proveedor' },
     { key: 'items', header: 'Items', render: (item: Purchase) => `${item.items.length} producto(s)` },
     { key: 'totalCost', header: 'Total', render: (item: Purchase) => `S/ ${item.totalCost.toFixed(2)}` },
+    { key: 'paymentType', header: 'Tipo', render: (item: Purchase) => (
+      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${item.paymentType === 'CREDITO' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+        {item.paymentType === 'CREDITO' ? 'Crédito' : 'Contado'}
+      </span>
+    )},
     { key: 'actions', header: '', render: (item: Purchase) => (
       <button onClick={(e) => { e.stopPropagation(); setViewingPurchase(item); }} className="text-green-600 hover:text-green-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
     )},
@@ -82,6 +98,56 @@ export function PurchasesPage() {
               <input value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Nombre del proveedor" required />
             </div>
           </div>
+
+          {/* Tipo de pago */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Pago</label>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setForm({ ...form, paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [] })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CONTADO' ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Contado</button>
+              <button type="button" onClick={() => setForm({ ...form, paymentType: 'CREDITO' })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CREDITO' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Crédito</button>
+            </div>
+          </div>
+
+          {/* Campos de crédito */}
+          {form.paymentType === 'CREDITO' && (
+            <div className="space-y-3 bg-orange-50 p-3 rounded-lg border border-orange-200">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Modalidad</label>
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setForm({ ...form, paymentScheduleType: 'SINGLE_DATE', installments: [] })} className={`flex-1 py-1.5 rounded text-xs font-medium border ${form.paymentScheduleType === 'SINGLE_DATE' ? 'border-orange-400 bg-white text-orange-700' : 'border-gray-200 text-gray-500'}`}>Fecha única</button>
+                  <button type="button" onClick={() => setForm({ ...form, paymentScheduleType: 'INSTALLMENTS', dueDate: '' })} className={`flex-1 py-1.5 rounded text-xs font-medium border ${form.paymentScheduleType === 'INSTALLMENTS' ? 'border-orange-400 bg-white text-orange-700' : 'border-gray-200 text-gray-500'}`}>Cuotas</button>
+                </div>
+              </div>
+              {form.paymentScheduleType === 'SINGLE_DATE' && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Fecha de vencimiento</label>
+                  <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required />
+                </div>
+              )}
+              {form.paymentScheduleType === 'INSTALLMENTS' && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs text-gray-500">Cuotas</label>
+                    <button type="button" onClick={() => setForm({ ...form, installments: [...form.installments, { amount: 0, dueDate: '' }] })} className="text-xs text-orange-600 hover:text-orange-800 font-medium">+ Agregar cuota</button>
+                  </div>
+                  {form.installments.map((inst, idx) => (
+                    <div key={idx} className="flex gap-2 mb-2 items-end">
+                      <div className="flex-1">
+                        <label className="block text-xs text-gray-500 mb-1">Monto</label>
+                        <input type="number" min="0.01" step="0.01" value={inst.amount || ''} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], amount: parseFloat(e.target.value) || 0 }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs text-gray-500 mb-1">Fecha</label>
+                        <input type="date" value={inst.dueDate} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], dueDate: e.target.value }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                      </div>
+                      <button type="button" onClick={() => setForm({ ...form, installments: form.installments.filter((_, i) => i !== idx) })} className="text-red-400 hover:text-red-600 pb-1"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                  {form.installments.length === 0 && <p className="text-xs text-gray-400">Agrega al menos una cuota</p>}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Productos */}
           <div>
@@ -147,9 +213,15 @@ export function PurchasesPage() {
                 <span className="block text-xs text-gray-500">Empresa</span>
                 <span className="text-sm font-medium">{getCompanyName(viewingPurchase.companyId)}</span>
               </div>
-              <div className="bg-gray-50 rounded-lg p-3 col-span-2">
+              <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Proveedor</span>
                 <span className="text-sm font-medium">{viewingPurchase.supplier}</span>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <span className="block text-xs text-gray-500">Tipo de Pago</span>
+                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${viewingPurchase.paymentType === 'CREDITO' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                  {viewingPurchase.paymentType === 'CREDITO' ? 'Crédito' : 'Contado'}
+                </span>
               </div>
             </div>
 

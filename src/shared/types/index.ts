@@ -13,8 +13,13 @@ export interface PaymentMethod { id: string; name: string; isActive: boolean; }
 export interface SalePayment { paymentMethodId: string; paymentMethodName: string; amount: number; }
 export interface Sale { id: string; companyId?: string; clientId?: string; items: SaleItem[]; total: number; hasBoleta: boolean; isCredit: boolean; payments: SalePayment[]; isCancelled?: boolean; cancelledBy?: string; cancelledAt?: string; cancelReason?: string; date: string; createdAt: string; }
 export interface SaleItem { productId: string; companyId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number; }
-export interface Purchase { id: string; companyId: string; supplier: string; items: PurchaseItem[]; totalCost: number; date: string; createdAt: string; }
+export interface Purchase { id: string; companyId: string; supplier: string; items: PurchaseItem[]; totalCost: number; paymentType: 'CONTADO' | 'CREDITO'; paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS'; dueDate?: string; date: string; createdAt: string; }
 export interface PurchaseItem { productId: string; quantity: number; unitCost: number; }
+
+export interface AccountPayableInstallment { id?: string; amount: number; dueDate: string; status: 'PENDING' | 'PAID'; paidDate?: string; }
+export interface AccountPayablePayment { id?: string; amount: number; paymentDate: string; notes?: string; registeredBy?: string; registeredByName?: string; }
+export interface AccountPayable { id: string; purchaseId: string; supplier: string; totalAmount: number; paidAmount: number; pendingAmount: number; status: 'PENDING' | 'PARTIAL' | 'PAID'; paymentScheduleType: 'SINGLE_DATE' | 'INSTALLMENTS'; dueDate?: string; installments: AccountPayableInstallment[]; payments: AccountPayablePayment[]; createdBy?: string; createdAt: string; }
+export interface APAlerts { overdue: AccountPayable[]; upcoming: AccountPayable[]; summary: { totalPending: number; totalOverdue: number; count: number }; }
 export interface User { id: string; username: string; email?: string; fullName: string; role: string; isActive?: boolean; createdAt?: string; updatedAt?: string; }
 
 export interface StockAdjustment { id: string; productId: string; companyId: string; type: 'INCREASE' | 'DECREASE'; quantity: number; reason: string; previousQuantity: number; newQuantity: number; adjustedBy?: string; date: string; createdAt: string; }
