@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useSales, useCreateSale, useCancelSale } from '../hooks/useSales';
+import { useSales, useCreateSale, useCancelSale, useUpdateVoucher } from '../hooks/useSales';
+import { saleService } from '../services/saleService';
 import { useLoans, useCreateLoan, useReturnLoanItems } from '../../loans/hooks/useLoans';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
@@ -10,7 +11,9 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle } from 'lucide-react';
+import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download } from 'lucide-react';
+import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod } from '../../../shared/types';
 
 function getMonthStart() {
@@ -32,8 +35,10 @@ interface PaymentSplit {
 type PaymentMode = string; // paymentMethodId | 'MIXED' | 'CREDIT'
 
 export function SalesPage() {
-  const [activeTab, setActiveTab] = useState<'sales' | 'loans'>('sales');
+  const [activeTab, setActiveTab] = useState<'sales' | 'boletas' | 'facturas' | 'loans'>('sales');
   const [page, setPage] = useState(1);
+  const [boletaPage, setBoletaPage] = useState(1);
+  const [facturaPage, setFacturaPage] = useState(1);
   const [loanPage, setLoanPage] = useState(1);
   const [companyFilter, setCompanyFilter] = useState('');
   const [startDate, setStartDate] = useState(getMonthStart);
@@ -46,6 +51,8 @@ export function SalesPage() {
   const [loanStatusFilter, setLoanStatusFilter] = useState('');
 
   const { data, isLoading } = useSales({ page, limit: 10, companyId: companyFilter || undefined, startDate, endDate });
+  const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 10, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'BOLETA' });
+  const { data: facturasData, isLoading: facturasLoading } = useSales({ page: facturaPage, limit: 10, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'FACTURA' });
   const { data: loansData, isLoading: loansLoading } = useLoans({ page: loanPage, limit: 10, status: loanStatusFilter || undefined, startDate, endDate });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 200 });
@@ -54,6 +61,7 @@ export function SalesPage() {
   const { data: paymentMethodsData } = usePaymentMethods();
   const createSale = useCreateSale();
   const cancelSale = useCancelSale();
+  const updateVoucher = useUpdateVoucher();
   const createLoan = useCreateLoan();
   const returnLoanItems = useReturnLoanItems();
 
@@ -62,7 +70,7 @@ export function SalesPage() {
 
   const [form, setForm] = useState({
     clientId: '',
-    hasBoleta: false,
+    voucherType: 'NONE' as string,
     paymentMode: '' as PaymentMode, // paymentMethodId, 'MIXED', or 'CREDIT'
     mixedPayments: [{ paymentMethodId: '', amount: 0 }] as PaymentSplit[],
     items: [{ productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }],
@@ -84,7 +92,7 @@ export function SalesPage() {
   const openCreate = () => {
     const defaultMethodId = paymentMethods.length > 0 ? paymentMethods[0].id : '';
     setForm({
-      clientId: '', hasBoleta: false, paymentMode: defaultMethodId,
+      clientId: '', voucherType: 'NONE', paymentMode: defaultMethodId,
       mixedPayments: [{ paymentMethodId: '', amount: 0 }],
       items: [{ productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }],
     });
@@ -144,7 +152,7 @@ export function SalesPage() {
     e.preventDefault();
     const payload: any = {
       clientId: form.clientId || undefined,
-      hasBoleta: form.hasBoleta,
+      voucherType: form.voucherType,
       isCredit,
       items: form.items.map(({ subtotal, ...item }) => item),
     };
@@ -222,12 +230,74 @@ export function SalesPage() {
   const sales = data?.data || [];
   const total = data?.total || 0;
   const totalAmount = data?.totalAmount || 0;
+  const boletas = boletasData?.data || [];
+  const boletasTotal = boletasData?.total || 0;
+  const boletasTotalAmount = boletasData?.totalAmount || 0;
+  const boletasBaseAmount = boletasData?.totalBaseAmount || 0;
+  const boletasIgv = boletasData?.totalIgv || 0;
+  const facturas = facturasData?.data || [];
+  const facturasTotal = facturasData?.total || 0;
+  const facturasTotalAmount = facturasData?.totalAmount || 0;
+  const facturasBaseAmount = facturasData?.totalBaseAmount || 0;
+  const facturasIgv = facturasData?.totalIgv || 0;
   const loans = loansData?.data || [];
   const loansTotal = loansData?.total || 0;
 
   const getCompanyName = (id?: string) => id ? companyList.find((c: Company) => c.id === id)?.name || 'N/A' : 'Mixta';
   const getClientName = (id?: string) => id ? clients.find((c: Client) => c.id === id)?.name || 'N/A' : 'Sin cliente';
   const getProductName = (id: string) => products.find((p: Product) => p.id === id)?.name || id;
+
+  const getSaleBaseAmount = (sale: Sale) => {
+    return sale.items.reduce((sum, item) => {
+      const product = products.find((p: Product) => p.id === item.productId);
+      const taxType = product?.taxType || 'GRAVADO';
+      const base = taxType === 'GRAVADO' ? Math.round((item.subtotal / 1.18) * 100) / 100 : item.subtotal;
+      return sum + base;
+    }, 0);
+  };
+
+  const getSaleIgv = (sale: Sale) => {
+    return Math.round((sale.total - getSaleBaseAmount(sale)) * 100) / 100;
+  };
+
+  const handleExportVouchers = async (voucherType: 'BOLETA' | 'FACTURA') => {
+    try {
+      const result = await saleService.getAll({ limit: 9999, companyId: companyFilter || undefined, startDate, endDate, voucherType });
+      const allSales: Sale[] = result?.data || [];
+      if (allSales.length === 0) { toast.error('No hay datos para exportar'); return; }
+
+      const rows = allSales.filter(s => !s.isCancelled).map(sale => {
+        const companyIds = [...new Set(sale.items.map((i: any) => i.companyId))];
+        const empresa = companyIds.length === 1 ? getCompanyName(companyIds[0]) : 'Mixta';
+        const productosStr = sale.items.map((i: any) => `${getProductName(i.productId)} x${i.quantity}`).join(', ');
+        const baseAmount = getSaleBaseAmount(sale);
+        const igv = getSaleIgv(sale);
+        const paymentLabel = sale.isCredit ? 'Crédito' : sale.payments?.map(p => p.paymentMethodName).join(' + ') || 'Efectivo';
+
+        return {
+          'Fecha': new Date(sale.date).toLocaleDateString('es-PE'),
+          'Cliente': getClientName(sale.clientId),
+          'Empresa': empresa,
+          'Productos': productosStr,
+          'Valor Venta': Math.round(baseAmount * 100) / 100,
+          'IGV': Math.round(igv * 100) / 100,
+          'Total': Math.round(sale.total * 100) / 100,
+          'Método de Pago': paymentLabel,
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      const sheetName = voucherType === 'BOLETA' ? 'Boletas' : 'Facturas';
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      const prefix = voucherType === 'BOLETA' ? 'boletas' : 'facturas';
+      const monthStr = startDate.slice(0, 7);
+      XLSX.writeFile(wb, `${prefix}_${monthStr}.xlsx`);
+      toast.success(`${rows.length} ${sheetName.toLowerCase()} exportada(s)`);
+    } catch {
+      toast.error('Error al exportar');
+    }
+  };
 
   const getPaymentLabel = (sale: Sale) => {
     if (sale.isCredit) return <span className="text-orange-600 font-medium">Crédito</span>;
@@ -248,7 +318,40 @@ export function SalesPage() {
     { key: 'clientId', header: 'Cliente', render: (item: Sale) => getClientName(item.clientId) },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'total', header: 'Total', render: (item: Sale) => item.isCancelled ? <span className="line-through text-gray-400">S/ {item.total.toFixed(2)}</span> : `S/ ${item.total.toFixed(2)}` },
-    { key: 'hasBoleta', header: 'Boleta', render: (item: Sale) => item.hasBoleta ? <span className="text-green-600 font-medium">Si</span> : <span className="text-gray-400">No</span> },
+    { key: 'voucherType', header: 'Comprobante', render: (item: Sale) => {
+      if (item.voucherType === 'BOLETA') return <span className="text-green-600 font-medium">Boleta</span>;
+      if (item.voucherType === 'FACTURA') return <span className="text-blue-600 font-medium">Factura</span>;
+      return <span className="text-gray-400">-</span>;
+    }},
+    { key: 'payment', header: 'Pago', render: (item: Sale) => item.isCancelled ? <span className="text-red-600 font-medium">Anulada</span> : getPaymentLabel(item) },
+    { key: 'actions', header: '', render: (item: Sale) => (
+      <div className="flex items-center gap-2">
+        <button onClick={(e) => { e.stopPropagation(); setViewingSale(item); }} className="text-green-600 hover:text-green-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
+        {!item.isCancelled && (
+          <button onClick={(e) => { e.stopPropagation(); setCancellingSale(item); setCancelReason(''); }} className="text-red-500 hover:text-red-700 flex items-center gap-1 text-xs font-medium"><XCircle size={15} /> Anular</button>
+        )}
+      </div>
+    )},
+  ];
+
+  const voucherColumns = [
+    { key: 'date', header: 'Fecha', render: (item: Sale) => new Date(item.date).toLocaleDateString('es-PE') },
+    { key: 'companyId', header: 'Empresa', render: (item: Sale) => {
+      const companyIds = [...new Set(item.items.map(i => i.companyId))];
+      if (companyIds.length === 1) return getCompanyName(companyIds[0]);
+      return <span className="text-purple-600 font-medium">Mixta</span>;
+    }},
+    { key: 'clientId', header: 'Cliente', render: (item: Sale) => getClientName(item.clientId) },
+    { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
+    { key: 'baseAmount', header: 'Valor Venta', render: (item: Sale) => {
+      const base = getSaleBaseAmount(item);
+      return item.isCancelled ? <span className="line-through text-gray-400">S/ {base.toFixed(2)}</span> : `S/ ${base.toFixed(2)}`;
+    }},
+    { key: 'igv', header: 'IGV', render: (item: Sale) => {
+      const igv = getSaleIgv(item);
+      return item.isCancelled ? <span className="line-through text-gray-400">S/ {igv.toFixed(2)}</span> : igv > 0 ? <span className="text-orange-600">S/ {igv.toFixed(2)}</span> : <span className="text-gray-400">S/ 0.00</span>;
+    }},
+    { key: 'total', header: 'Total', render: (item: Sale) => item.isCancelled ? <span className="line-through text-gray-400">S/ {item.total.toFixed(2)}</span> : <span className="font-medium">S/ {item.total.toFixed(2)}</span> },
     { key: 'payment', header: 'Pago', render: (item: Sale) => item.isCancelled ? <span className="text-red-600 font-medium">Anulada</span> : getPaymentLabel(item) },
     { key: 'actions', header: '', render: (item: Sale) => (
       <div className="flex items-center gap-2">
@@ -306,8 +409,8 @@ export function SalesPage() {
 
       {/* Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        {activeTab === 'sales' && (
-          <select value={companyFilter} onChange={(e) => { setCompanyFilter(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg">
+        {(activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && (
+          <select value={companyFilter} onChange={(e) => { setCompanyFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }} className="px-3 py-2 border rounded-lg">
             <option value="">Todas las empresas</option>
             {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name} - {c.ruc}</option>)}
           </select>
@@ -320,11 +423,11 @@ export function SalesPage() {
             <option value="RETURNED">Devuelto</option>
           </select>
         )}
-        <input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(1); setLoanPage(1); }} className="px-3 py-2 border rounded-lg" />
+        <input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); setLoanPage(1); }} className="px-3 py-2 border rounded-lg" />
         <span className="text-gray-500 text-sm">hasta</span>
-        <input type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(1); setLoanPage(1); }} className="px-3 py-2 border rounded-lg" />
+        <input type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); setLoanPage(1); }} className="px-3 py-2 border rounded-lg" />
         {(startDate !== getMonthStart() || endDate !== getToday()) && (
-          <button onClick={() => { setStartDate(getMonthStart()); setEndDate(getToday()); setPage(1); setLoanPage(1); }} className="flex items-center gap-1 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100">
+          <button onClick={() => { setStartDate(getMonthStart()); setEndDate(getToday()); setPage(1); setBoletaPage(1); setFacturaPage(1); setLoanPage(1); }} className="flex items-center gap-1 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100">
             <CalendarDays size={14} /> Este mes
           </button>
         )}
@@ -337,6 +440,40 @@ export function SalesPage() {
           <span className="text-lg font-bold text-green-700">Total: S/ {totalAmount.toFixed(2)}</span>
         </div>
       )}
+      {activeTab === 'boletas' && (
+        <div className="mb-4 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm text-green-700">{boletasTotal} boleta(s) en el período</span>
+            <div className="flex items-center gap-3">
+              <span className="text-lg font-bold text-green-700">Valor Venta: S/ {boletasBaseAmount.toFixed(2)}</span>
+              <button onClick={() => handleExportVouchers('BOLETA')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded hover:bg-green-200 transition-colors">
+                <Download size={14} /> Excel
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-4 text-xs text-green-600">
+            <span>Total: S/ {boletasTotalAmount.toFixed(2)}</span>
+            <span>IGV: S/ {boletasIgv.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
+      {activeTab === 'facturas' && (
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm text-blue-700">{facturasTotal} factura(s) en el período</span>
+            <div className="flex items-center gap-3">
+              <span className="text-lg font-bold text-blue-700">Valor Venta: S/ {facturasBaseAmount.toFixed(2)}</span>
+              <button onClick={() => handleExportVouchers('FACTURA')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded hover:bg-blue-200 transition-colors">
+                <Download size={14} /> Excel
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-4 text-xs text-blue-600">
+            <span>Total: S/ {facturasTotalAmount.toFixed(2)}</span>
+            <span>IGV: S/ {facturasIgv.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
 
       {/* Tab switcher */}
       <div className="flex border-b mb-4">
@@ -345,6 +482,18 @@ export function SalesPage() {
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'sales' ? 'border-green-600 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
           Ventas
+        </button>
+        <button
+          onClick={() => setActiveTab('boletas')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'boletas' ? 'border-green-600 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          Boletas
+        </button>
+        <button
+          onClick={() => setActiveTab('facturas')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'facturas' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          Facturas
         </button>
         <button
           onClick={() => setActiveTab('loans')}
@@ -359,6 +508,22 @@ export function SalesPage() {
         <>
           <DataTable columns={salesColumns} data={sales} isLoading={isLoading} rowClassName={(sale: Sale) => sale?.isCancelled ? 'bg-red-50 opacity-60' : sale?.isCredit ? 'hover:bg-yellow-50' : 'hover:bg-green-50'} />
           <Pagination page={page} totalPages={Math.ceil(total / 10)} onPageChange={setPage} />
+        </>
+      )}
+
+      {/* Boletas Tab */}
+      {activeTab === 'boletas' && (
+        <>
+          <DataTable columns={voucherColumns} data={boletas} isLoading={boletasLoading} rowClassName={(sale: Sale) => sale?.isCancelled ? 'bg-red-50 opacity-60' : sale?.isCredit ? 'hover:bg-yellow-50' : 'hover:bg-green-50'} />
+          <Pagination page={boletaPage} totalPages={Math.ceil(boletasTotal / 10)} onPageChange={setBoletaPage} />
+        </>
+      )}
+
+      {/* Facturas Tab */}
+      {activeTab === 'facturas' && (
+        <>
+          <DataTable columns={voucherColumns} data={facturas} isLoading={facturasLoading} rowClassName={(sale: Sale) => sale?.isCancelled ? 'bg-red-50 opacity-60' : sale?.isCredit ? 'hover:bg-yellow-50' : 'hover:bg-blue-50'} />
+          <Pagination page={facturaPage} totalPages={Math.ceil(facturasTotal / 10)} onPageChange={setFacturaPage} />
         </>
       )}
 
@@ -457,11 +622,18 @@ export function SalesPage() {
                 {clients.map((c: Client) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-            <div className="flex items-end pb-1">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={form.hasBoleta} onChange={(e) => setForm({ ...form, hasBoleta: e.target.checked })} className="w-4 h-4 text-green-600 rounded" />
-                <span className="text-sm font-medium text-gray-700">Con Boleta</span>
-              </label>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Comprobante</label>
+              <div className="flex gap-1">
+                {[{ value: 'NONE', label: 'No' }, { value: 'BOLETA', label: 'Boleta' }, { value: 'FACTURA', label: 'Factura' }].map(opt => (
+                  <button key={opt.value} type="button" onClick={() => setForm({ ...form, voucherType: opt.value })}
+                    className={`flex-1 py-1.5 rounded text-xs font-medium border transition-colors ${form.voucherType === opt.value
+                      ? opt.value === 'BOLETA' ? 'bg-green-600 text-white border-green-600' : opt.value === 'FACTURA' ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-600 text-white border-gray-600'
+                      : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -534,7 +706,7 @@ export function SalesPage() {
       </Modal>
 
       {/* Modal detalle de venta */}
-      <Modal isOpen={!!viewingSale} onClose={() => setViewingSale(null)} title="Detalle de Venta">
+      <Modal isOpen={!!viewingSale} onClose={() => setViewingSale(null)} title="Detalle de Venta" size="lg">
         {viewingSale && (
           <div className="space-y-4">
             {/* Banner anulada */}
@@ -562,8 +734,28 @@ export function SalesPage() {
                 </span>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
-                <span className="block text-xs text-gray-500">Boleta</span>
-                <span className={`text-sm font-medium ${viewingSale.hasBoleta ? 'text-green-600' : 'text-gray-500'}`}>{viewingSale.hasBoleta ? 'Sí' : 'No'}</span>
+                <span className="block text-xs text-gray-500 mb-1">Comprobante</span>
+                {viewingSale.isCancelled ? (
+                  <span className={`text-sm font-medium ${viewingSale.voucherType === 'BOLETA' ? 'text-green-600' : viewingSale.voucherType === 'FACTURA' ? 'text-blue-600' : 'text-gray-500'}`}>
+                    {viewingSale.voucherType === 'BOLETA' ? 'Boleta' : viewingSale.voucherType === 'FACTURA' ? 'Factura' : 'Sin comprobante'}
+                  </span>
+                ) : (
+                  <div className="flex gap-1">
+                    {([['NONE', 'No'], ['BOLETA', 'Boleta'], ['FACTURA', 'Factura']] as const).map(([val, label]) => (
+                      <button key={val} type="button"
+                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${viewingSale.voucherType === val ? (val === 'BOLETA' ? 'bg-green-600 text-white' : val === 'FACTURA' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-white') : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+                        disabled={updateVoucher.isPending}
+                        onClick={() => {
+                          if (viewingSale.voucherType !== val) {
+                            updateVoucher.mutate({ id: viewingSale.id, voucherType: val }, {
+                              onSuccess: () => setViewingSale({ ...viewingSale, voucherType: val }),
+                            });
+                          }
+                        }}
+                      >{label}</button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -603,6 +795,7 @@ export function SalesPage() {
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Empresa</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Cant.</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">P. Unit.</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">IGV Unit.</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Subtotal</th>
                     </tr>
                   </thead>
@@ -611,6 +804,8 @@ export function SalesPage() {
                       const product = products.find((p: Product) => p.id === item.productId);
                       const company = companyList.find((c: Company) => c.id === item.companyId);
                       const tier = tiers.find((t: PriceTier) => t.id === item.priceTier);
+                      const taxType = product?.taxType || 'GRAVADO';
+                      const igvUnit = taxType === 'GRAVADO' ? Math.round((item.unitPrice - item.unitPrice / 1.18) * 100) / 100 : 0;
                       return (
                         <tr key={idx}>
                           <td className="px-3 py-2">
@@ -620,6 +815,23 @@ export function SalesPage() {
                           <td className="px-3 py-2 text-gray-600">{company?.name || 'N/A'}</td>
                           <td className="px-3 py-2 text-right">{item.quantity}</td>
                           <td className="px-3 py-2 text-right">S/ {item.unitPrice.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right">
+                            {igvUnit > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-orange-600">
+                                S/ {igvUnit.toFixed(2)}
+                                <button
+                                  type="button"
+                                  onClick={() => { navigator.clipboard.writeText(igvUnit.toFixed(2)); toast.success('IGV copiado'); }}
+                                  className="text-gray-400 hover:text-orange-600 transition-colors"
+                                  title="Copiar IGV"
+                                >
+                                  <Copy size={13} />
+                                </button>
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 text-right font-medium">S/ {item.subtotal.toFixed(2)}</td>
                         </tr>
                       );

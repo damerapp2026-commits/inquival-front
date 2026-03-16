@@ -49,6 +49,7 @@ export function ProductsPage() {
   const deleteProduct = useDeleteProduct();
 
   const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: 'kg', taxType: 'GRAVADO', prices: [] as { priceTierId: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -326,7 +327,7 @@ export function ProductsPage() {
     { key: 'actions', header: 'Acciones', render: (item: Product) => (
       <div className="flex gap-2">
         <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800"><Edit2 size={16} /></button>
-        <button onClick={() => deleteProduct.mutate(item.id)} className="text-red-600 hover:text-red-800"><Trash2 size={16} /></button>
+        <button onClick={() => setDeleteTarget(item)} className="text-red-600 hover:text-red-800"><Trash2 size={16} /></button>
       </div>
     )},
   ];
@@ -389,6 +390,15 @@ export function ProductsPage() {
           {tiers.length > 0 && <div><label className="block text-sm font-medium text-gray-700 mb-2">Precios por Rango</label><div className="space-y-2">{tiers.map((tier: any) => (<div key={tier.id} className="flex items-center gap-3"><span className="text-sm w-32">{tier.name}</span><input type="number" step="0.01" min="0" placeholder="0.00" value={form.prices.find((p) => p.priceTierId === tier.id)?.price || ''} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0)} className="flex-1 px-3 py-2 border rounded-lg" /></div>))}</div></div>}
           <button type="submit" className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">{editing ? 'Actualizar' : 'Crear'}</button>
         </form>
+      </Modal>
+      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Eliminar Producto">
+        <div className="space-y-4">
+          <p className="text-gray-600">¿Estás seguro de que deseas eliminar el producto <strong>{deleteTarget?.name}</strong>? Esta acción no se puede deshacer.</p>
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancelar</button>
+            <button onClick={async () => { if (deleteTarget) { await deleteProduct.mutateAsync(deleteTarget.id); setDeleteTarget(null); } }} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Eliminar</button>
+          </div>
+        </div>
       </Modal>
       <Modal isOpen={showBulkModal} onClose={() => setShowBulkModal(false)} title={`Carga Masiva de Productos (${bulkProducts.length})`} size="xl">
         <div className="space-y-3">

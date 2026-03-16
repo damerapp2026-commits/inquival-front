@@ -11,9 +11,10 @@ export interface Client { id: string; name: string; documentNumber?: string; pho
 
 export interface PaymentMethod { id: string; name: string; isActive: boolean; }
 export interface SalePayment { paymentMethodId: string; paymentMethodName: string; amount: number; }
-export interface Sale { id: string; companyId?: string; clientId?: string; items: SaleItem[]; total: number; hasBoleta: boolean; isCredit: boolean; payments: SalePayment[]; isCancelled?: boolean; cancelledBy?: string; cancelledAt?: string; cancelReason?: string; date: string; createdAt: string; }
+export interface Sale { id: string; companyId?: string; clientId?: string; items: SaleItem[]; total: number; voucherType: string; isCredit: boolean; payments: SalePayment[]; isCancelled?: boolean; cancelledBy?: string; cancelledAt?: string; cancelReason?: string; date: string; createdAt: string; }
 export interface SaleItem { productId: string; companyId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number; }
-export interface Purchase { id: string; companyId: string; supplier: string; items: PurchaseItem[]; totalCost: number; paymentType: 'CONTADO' | 'CREDITO'; paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS'; dueDate?: string; date: string; createdAt: string; }
+export interface Supplier { id: string; ruc: string; businessName: string; address?: string; phone?: string; isActive: boolean; }
+export interface Purchase { id: string; companyId: string; supplier: string; supplierId?: string; supplierRuc?: string; items: PurchaseItem[]; totalCost: number; paymentType: 'CONTADO' | 'CREDITO'; paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS'; dueDate?: string; date: string; createdAt: string; }
 export interface PurchaseItem { productId: string; quantity: number; unitCost: number; }
 
 export interface AccountPayableInstallment { id?: string; amount: number; dueDate: string; status: 'PENDING' | 'PAID'; paidDate?: string; }

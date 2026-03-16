@@ -2,12 +2,15 @@ import React, { useState } from 'react';
 import { usePurchases, useCreatePurchase } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
+import { useRucLookup } from '../../../shared/hooks/useLookup';
+import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { Plus, ShoppingCart, Trash2, Eye } from 'lucide-react';
+import { Plus, ShoppingCart, Trash2, Eye, Search, Loader2 } from 'lucide-react';
 import type { Purchase, Company, Product } from '../../../shared/types';
+import toast from 'react-hot-toast';
 
 export function PurchasesPage() {
   const [page, setPage] = useState(1);
@@ -19,23 +22,80 @@ export function PurchasesPage() {
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 200 });
   const createPurchase = useCreatePurchase();
+  const rucLookup = useRucLookup();
+  const supplierByRuc = useSupplierByRuc();
+  const createSupplier = useCreateSupplier();
 
   const [form, setForm] = useState({
-    companyId: '', supplier: '', paymentType: 'CONTADO' as 'CONTADO' | 'CREDITO',
+    companyId: '', supplier: '', supplierRuc: '', supplierId: '',
+    paymentType: 'CONTADO' as 'CONTADO' | 'CREDITO',
     paymentScheduleType: 'SINGLE_DATE' as 'SINGLE_DATE' | 'INSTALLMENTS', dueDate: '',
     installments: [] as { amount: number; dueDate: string }[],
     items: [{ productId: '', quantity: 0, unitCost: 0 }] as { productId: string; quantity: number; unitCost: number }[],
   });
+  const [supplierLocked, setSupplierLocked] = useState(false);
+  const [supplierLoading, setSupplierLoading] = useState(false);
 
-  const openCreate = () => { setForm({ companyId: '', supplier: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0, unitCost: 0 }] }); setShowModal(true); };
+  const openCreate = () => {
+    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0, unitCost: 0 }] });
+    setSupplierLocked(false);
+    setShowModal(true);
+  };
 
   const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0, unitCost: 0 }] }));
   const removeItem = (idx: number) => setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
   const updateItem = (idx: number, field: string, value: any) => setForm(prev => { const items = [...prev.items]; items[idx] = { ...items[idx], [field]: value }; return { ...prev, items }; });
 
+  const handleSupplierLookup = async () => {
+    const ruc = form.supplierRuc.trim();
+    if (ruc.length !== 11) { toast.error('El RUC debe tener 11 dígitos'); return; }
+
+    setSupplierLoading(true);
+    try {
+      // First check local DB
+      const localSupplier = await supplierByRuc.mutateAsync(ruc);
+      if (localSupplier) {
+        setForm(prev => ({ ...prev, supplier: localSupplier.businessName, supplierId: localSupplier.id }));
+        setSupplierLocked(true);
+        toast.success('Proveedor encontrado en el sistema');
+        setSupplierLoading(false);
+        return;
+      }
+    } catch {
+      // Not found locally, continue to Decolecta
+    }
+
+    try {
+      // Try Decolecta
+      const result = await rucLookup.mutateAsync(ruc);
+      if (result.razonSocial) {
+        // Auto-create supplier in DB
+        const newSupplier = await createSupplier.mutateAsync({
+          ruc,
+          businessName: result.razonSocial,
+          address: result.direccion || '',
+        });
+        setForm(prev => ({ ...prev, supplier: result.razonSocial, supplierId: newSupplier?.id || '' }));
+        setSupplierLocked(true);
+        toast.success('Proveedor encontrado en SUNAT y registrado');
+      }
+    } catch {
+      // Error already handled by hook toast
+    } finally {
+      setSupplierLoading(false);
+    }
+  };
+
+  const clearSupplier = () => {
+    setForm(prev => ({ ...prev, supplier: '', supplierId: '', supplierRuc: '' }));
+    setSupplierLocked(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const payload: any = { companyId: form.companyId, supplier: form.supplier, items: form.items, paymentType: form.paymentType };
+    if (form.supplierId) payload.supplierId = form.supplierId;
+    if (form.supplierRuc) payload.supplierRuc = form.supplierRuc;
     if (form.paymentType === 'CREDITO') {
       payload.paymentScheduleType = form.paymentScheduleType;
       if (form.paymentScheduleType === 'SINGLE_DATE') payload.dueDate = form.dueDate;
@@ -84,19 +144,49 @@ export function PurchasesPage() {
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Compra">
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Empresa y Proveedor */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
-              <select value={form.companyId} onChange={(e) => setForm({ ...form, companyId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required>
-                <option value="">Seleccionar...</option>
-                {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+          {/* Empresa */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
+            <select value={form.companyId} onChange={(e) => setForm({ ...form, companyId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required>
+              <option value="">Seleccionar...</option>
+              {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+
+          {/* Proveedor con búsqueda RUC */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">Proveedor</label>
+            <div className="flex gap-2">
+              <input
+                value={form.supplierRuc}
+                onChange={(e) => { const v = e.target.value.replace(/\D/g, '').slice(0, 11); setForm({ ...form, supplierRuc: v }); if (supplierLocked) clearSupplier(); }}
+                className="w-40 px-3 py-2 border rounded-lg text-sm"
+                placeholder="RUC (11 dígitos)"
+                maxLength={11}
+              />
+              <button
+                type="button"
+                onClick={handleSupplierLookup}
+                disabled={form.supplierRuc.length !== 11 || supplierLoading}
+                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 text-sm"
+              >
+                {supplierLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                Buscar
+              </button>
+              <input
+                value={form.supplier}
+                onChange={(e) => setForm({ ...form, supplier: e.target.value })}
+                className={`flex-1 px-3 py-2 border rounded-lg text-sm ${supplierLocked ? 'bg-green-50 border-green-300' : ''}`}
+                placeholder="Nombre del proveedor"
+                readOnly={supplierLocked}
+                required
+              />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Proveedor</label>
-              <input value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Nombre del proveedor" required />
-            </div>
+            {supplierLocked && (
+              <button type="button" onClick={clearSupplier} className="text-xs text-gray-500 hover:text-red-500">
+                Limpiar proveedor y buscar otro
+              </button>
+            )}
           </div>
 
           {/* Tipo de pago */}
@@ -215,7 +305,7 @@ export function PurchasesPage() {
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Proveedor</span>
-                <span className="text-sm font-medium">{viewingPurchase.supplier}</span>
+                <span className="text-sm font-medium">{viewingPurchase.supplier}{viewingPurchase.supplierRuc ? ` (${viewingPurchase.supplierRuc})` : ''}</span>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Tipo de Pago</span>
