@@ -805,7 +805,11 @@ export function SalesPage() {
                       const company = companyList.find((c: Company) => c.id === item.companyId);
                       const tier = tiers.find((t: PriceTier) => t.id === item.priceTier);
                       const taxType = product?.taxType || 'GRAVADO';
-                      const igvUnit = taxType === 'GRAVADO' ? Math.round((item.unitPrice - item.unitPrice / 1.18) * 100) / 100 : 0;
+                      const sunatTier = tiers.find((t: PriceTier) => t.name === 'PRECIO SUNAT');
+                      const sunatPrice = sunatTier ? product?.prices?.find((p: ProductPrice) => p.priceTierId === sunatTier.id)?.price : undefined;
+                      const precioVenta = sunatPrice != null
+                        ? (taxType === 'GRAVADO' ? sunatPrice - sunatPrice * 0.18 : sunatPrice)
+                        : null;
                       return (
                         <tr key={idx}>
                           <td className="px-3 py-2">
@@ -816,14 +820,14 @@ export function SalesPage() {
                           <td className="px-3 py-2 text-right">{item.quantity}</td>
                           <td className="px-3 py-2 text-right">S/ {item.unitPrice.toFixed(2)}</td>
                           <td className="px-3 py-2 text-right">
-                            {igvUnit > 0 ? (
-                              <span className="inline-flex items-center gap-1 text-orange-600">
-                                S/ {igvUnit.toFixed(2)}
+                            {precioVenta != null ? (
+                              <span className="inline-flex items-center gap-1">
+                                S/ {precioVenta.toFixed(8)}
                                 <button
                                   type="button"
-                                  onClick={() => { navigator.clipboard.writeText(igvUnit.toFixed(2)); toast.success('IGV copiado'); }}
-                                  className="text-gray-400 hover:text-orange-600 transition-colors"
-                                  title="Copiar IGV"
+                                  onClick={() => { navigator.clipboard.writeText(precioVenta.toFixed(8)); toast.success('Precio copiado'); }}
+                                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                                  title="Copiar precio"
                                 >
                                   <Copy size={13} />
                                 </button>

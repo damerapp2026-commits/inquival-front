@@ -19,3 +19,19 @@ export function useRegisterPayment() {
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error al registrar pago'),
   });
 }
+export function useEditCredit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ creditId, data }: { creditId: string; data: any }) => creditService.edit(creditId, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['credits'] }); toast.success('Crédito actualizado'); },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al editar crédito'),
+  });
+}
+export function useDeleteCredit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (creditId: string) => creditService.delete(creditId),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['credits'] }); qc.invalidateQueries({ queryKey: ['sales'] }); qc.invalidateQueries({ queryKey: ['dashboard-sales-chart'] }); qc.invalidateQueries({ queryKey: ['dashboard-credits-summary'] }); qc.invalidateQueries({ queryKey: ['dashboard-summary'] }); qc.invalidateQueries({ queryKey: ['stock'] }); toast.success('Crédito eliminado'); },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al eliminar crédito'),
+  });
+}
