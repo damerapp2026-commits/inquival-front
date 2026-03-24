@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { usePurchases, useCreatePurchase } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
-import { useProducts } from '../../products/hooks/useProducts';
-import { useRucLookup } from '../../../shared/hooks/useLookup';
+import { useProducts, useCreateProduct } from '../../products/hooks/useProducts';
+import { useCategories } from '../../categories/hooks/useCategories';
+import { useRucLookup, useTipoCambio } from '../../../shared/hooks/useLookup';
 import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { Plus, ShoppingCart, Trash2, Eye, Search, Loader2 } from 'lucide-react';
-import type { Purchase, Company, Product } from '../../../shared/types';
+import { Plus, ShoppingCart, Trash2, Eye, Search, Loader2, DollarSign, PackagePlus } from 'lucide-react';
+import type { Purchase, Company, Product, Category } from '../../../shared/types';
 import toast from 'react-hot-toast';
 
 export function PurchasesPage() {
@@ -25,26 +26,72 @@ export function PurchasesPage() {
   const rucLookup = useRucLookup();
   const supplierByRuc = useSupplierByRuc();
   const createSupplier = useCreateSupplier();
+  const tipoCambioMutation = useTipoCambio();
+  const { data: categoriesData } = useCategories();
+  const createProduct = useCreateProduct();
+  const categories: Category[] = Array.isArray(categoriesData) ? categoriesData : (categoriesData as any)?.data || [];
 
   const [form, setForm] = useState({
     companyId: '', supplier: '', supplierRuc: '', supplierId: '',
     paymentType: 'CONTADO' as 'CONTADO' | 'CREDITO',
     paymentScheduleType: 'SINGLE_DATE' as 'SINGLE_DATE' | 'INSTALLMENTS', dueDate: '',
     installments: [] as { amount: number; dueDate: string }[],
-    items: [{ productId: '', quantity: 0, unitCost: 0 }] as { productId: string; quantity: number; unitCost: number }[],
+    items: [{ productId: '', quantity: 0 }] as { productId: string; quantity: number }[],
+    purchaseDate: new Date().toISOString().slice(0, 10),
+    totalCostUsd: 0,
   });
+  const [exchangeRate, setExchangeRate] = useState<number | null>(null);
+  const [exchangeRateDate, setExchangeRateDate] = useState('');
   const [supplierLocked, setSupplierLocked] = useState(false);
   const [supplierLoading, setSupplierLoading] = useState(false);
+  const [showNewProduct, setShowNewProduct] = useState(false);
+  const [newProductForIdx, setNewProductForIdx] = useState<number>(-1);
+  const [newProduct, setNewProduct] = useState({ name: '', categoryId: '', unit: 'unidad' });
 
   const openCreate = () => {
-    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0, unitCost: 0 }] });
+    const today = new Date().toISOString().slice(0, 10);
+    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0 }], purchaseDate: today, totalCostUsd: 0 });
+    setExchangeRate(null);
+    setExchangeRateDate('');
     setSupplierLocked(false);
     setShowModal(true);
+    tipoCambioMutation.mutate(today, {
+      onSuccess: (data) => { setExchangeRate(data.venta); setExchangeRateDate(data.fecha); },
+    });
   };
 
-  const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0, unitCost: 0 }] }));
+  const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0 }] }));
   const removeItem = (idx: number) => setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
   const updateItem = (idx: number, field: string, value: any) => setForm(prev => { const items = [...prev.items]; items[idx] = { ...items[idx], [field]: value }; return { ...prev, items }; });
+
+  const handleDateChange = (date: string) => {
+    setForm(prev => ({ ...prev, purchaseDate: date }));
+    if (date) {
+      tipoCambioMutation.mutate(date, {
+        onSuccess: (data) => { setExchangeRate(data.venta); setExchangeRateDate(data.fecha); },
+        onError: () => { setExchangeRate(null); setExchangeRateDate(''); },
+      });
+    }
+  };
+
+  const totalSoles = exchangeRate && form.totalCostUsd ? Math.round(form.totalCostUsd * exchangeRate * 100) / 100 : 0;
+
+  const openQuickProduct = (idx: number) => {
+    setNewProductForIdx(idx);
+    setNewProduct({ name: '', categoryId: '', unit: 'unidad' });
+    setShowNewProduct(true);
+  };
+
+  const handleCreateQuickProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const created = await createProduct.mutateAsync({ name: newProduct.name, categoryId: newProduct.categoryId, unit: newProduct.unit, prices: [] });
+      if (created && newProductForIdx >= 0) {
+        updateItem(newProductForIdx, 'productId', created.id);
+      }
+      setShowNewProduct(false);
+    } catch { /* error handled by hook */ }
+  };
 
   const handleSupplierLookup = async () => {
     const ruc = form.supplierRuc.trim();
@@ -93,7 +140,16 @@ export function PurchasesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload: any = { companyId: form.companyId, supplier: form.supplier, items: form.items, paymentType: form.paymentType };
+    if (!exchangeRate || !form.totalCostUsd) { toast.error('Ingrese el monto en USD y verifique el tipo de cambio'); return; }
+    const payload: any = {
+      companyId: form.companyId, supplier: form.supplier,
+      items: form.items.map(i => ({ productId: i.productId, quantity: i.quantity })),
+      paymentType: form.paymentType,
+      date: form.purchaseDate,
+      totalCostUsd: form.totalCostUsd,
+      exchangeRate,
+      exchangeRateDate,
+    };
     if (form.supplierId) payload.supplierId = form.supplierId;
     if (form.supplierRuc) payload.supplierRuc = form.supplierRuc;
     if (form.paymentType === 'CREDITO') {
@@ -117,7 +173,12 @@ export function PurchasesPage() {
     { key: 'companyId', header: 'Empresa', render: (item: Purchase) => getCompanyName(item.companyId) },
     { key: 'supplier', header: 'Proveedor' },
     { key: 'items', header: 'Items', render: (item: Purchase) => `${item.items.length} producto(s)` },
-    { key: 'totalCost', header: 'Total', render: (item: Purchase) => `S/ ${item.totalCost.toFixed(2)}` },
+    { key: 'totalCost', header: 'Total', render: (item: Purchase) => (
+      <div>
+        <span>S/ {item.totalCost.toFixed(2)}</span>
+        {item.totalCostUsd && <span className="block text-xs text-green-600">$ {item.totalCostUsd.toFixed(2)} USD</span>}
+      </div>
+    )},
     { key: 'paymentType', header: 'Tipo', render: (item: Purchase) => (
       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${item.paymentType === 'CREDITO' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
         {item.paymentType === 'CREDITO' ? 'Crédito' : 'Contado'}
@@ -189,6 +250,26 @@ export function PurchasesPage() {
             )}
           </div>
 
+          {/* Fecha de compra + Tipo de cambio */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de compra</label>
+              <input type="date" value={form.purchaseDate} onChange={(e) => handleDateChange(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de cambio (venta)</label>
+              <div className="px-3 py-2 border rounded-lg text-sm bg-gray-50 flex items-center gap-2">
+                {tipoCambioMutation.isPending && <Loader2 size={14} className="animate-spin text-blue-500" />}
+                {exchangeRate != null && !tipoCambioMutation.isPending && (
+                  <span className="font-medium text-gray-800">S/ {exchangeRate.toFixed(4)}</span>
+                )}
+                {!exchangeRate && !tipoCambioMutation.isPending && (
+                  <span className="text-gray-400">Sin datos</span>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Tipo de pago */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Pago</label>
@@ -245,34 +326,34 @@ export function PurchasesPage() {
               <label className="text-sm font-medium text-gray-700">Productos</label>
               <button type="button" onClick={addItem} className="text-sm text-green-600 hover:text-green-800 font-medium">+ Agregar producto</button>
             </div>
-            <div className="space-y-3 max-h-72 overflow-y-auto">
+            <div className="space-y-3">
               {form.items.map((item, idx) => (
                 <div key={idx} className="bg-gray-50 rounded-lg p-3 relative">
                   {form.items.length > 1 && (
                     <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
                   )}
-                  <div className="mb-2">
-                    <label className="block text-xs text-gray-500 mb-1">Producto</label>
-                    <SearchableSelect
-                      options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
-                      value={item.productId}
-                      onChange={(v) => updateItem(idx, 'productId', v)}
-                      placeholder="Buscar producto..."
-                      required
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
                     <div>
+                      <label className="block text-xs text-gray-500 mb-1">Producto</label>
+                      <div className="flex gap-1">
+                        <div className="flex-1">
+                          <SearchableSelect
+                            options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
+                            value={item.productId}
+                            onChange={(v) => updateItem(idx, 'productId', v)}
+                            placeholder="Buscar producto..."
+                            minChars={1}
+                            required
+                          />
+                        </div>
+                        <button type="button" onClick={() => openQuickProduct(idx)} className="px-2 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 shrink-0" title="Crear nuevo producto">
+                          <PackagePlus size={16} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="w-28">
                       <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
                       <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Costo unit.</label>
-                      <input type="number" min="0.01" step="0.01" value={item.unitCost || ''} onChange={(e) => updateItem(idx, 'unitCost', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Subtotal</label>
-                      <div className="px-2 py-1.5 bg-white border rounded text-sm font-medium text-gray-700">S/ {(item.quantity * item.unitCost).toFixed(2)}</div>
                     </div>
                   </div>
                 </div>
@@ -280,12 +361,38 @@ export function PurchasesPage() {
             </div>
           </div>
 
-          {/* Total y Submit */}
-          <div className="bg-blue-50 p-3 rounded-lg flex items-center justify-between">
-            <span className="text-sm font-medium text-blue-800">Total de la compra</span>
-            <span className="text-xl font-bold text-blue-700">S/ {form.items.reduce((s, i) => s + i.quantity * i.unitCost, 0).toFixed(2)}</span>
+          {/* Monto Total USD */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Monto Total (USD)</label>
+            <div className="relative">
+              <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="number" min="0.01" step="0.01"
+                value={form.totalCostUsd || ''}
+                onChange={(e) => setForm({ ...form, totalCostUsd: parseFloat(e.target.value) || 0 })}
+                className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm"
+                placeholder="0.00"
+                required
+              />
+            </div>
           </div>
-          <button type="submit" className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">Registrar Compra</button>
+
+          {/* Total conversion */}
+          <div className="bg-blue-50 p-3 rounded-lg space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-blue-800">Total USD</span>
+              <span className="text-lg font-bold text-blue-700">$ {(form.totalCostUsd || 0).toFixed(2)}</span>
+            </div>
+            {exchangeRate != null && form.totalCostUsd > 0 && (
+              <div className="flex items-center justify-between border-t border-blue-200 pt-1">
+                <span className="text-sm text-blue-600">Total en Soles (×{exchangeRate.toFixed(4)})</span>
+                <span className="text-xl font-bold text-green-700">S/ {totalSoles.toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+          <button type="submit" disabled={!exchangeRate || !form.totalCostUsd || createPurchase.isPending} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+            {createPurchase.isPending ? 'Registrando...' : 'Registrar Compra'}
+          </button>
         </form>
       </Modal>
 
@@ -324,8 +431,12 @@ export function PurchasesPage() {
                     <tr>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Producto</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Cant.</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Costo unit.</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Subtotal</th>
+                      {!viewingPurchase.totalCostUsd && (
+                        <>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Costo unit.</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Subtotal</th>
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -335,8 +446,12 @@ export function PurchasesPage() {
                         <tr key={idx}>
                           <td className="px-3 py-2 font-medium">{product?.name || item.productId}</td>
                           <td className="px-3 py-2 text-right">{item.quantity}</td>
-                          <td className="px-3 py-2 text-right">S/ {item.unitCost.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right font-medium">S/ {(item.quantity * item.unitCost).toFixed(2)}</td>
+                          {!viewingPurchase.totalCostUsd && (
+                            <>
+                              <td className="px-3 py-2 text-right">S/ {(item.unitCost || 0).toFixed(2)}</td>
+                              <td className="px-3 py-2 text-right font-medium">S/ {(item.quantity * (item.unitCost || 0)).toFixed(2)}</td>
+                            </>
+                          )}
                         </tr>
                       );
                     })}
@@ -346,12 +461,54 @@ export function PurchasesPage() {
             </div>
 
             {/* Total */}
+            {viewingPurchase.totalCostUsd && viewingPurchase.exchangeRate && (
+              <div className="bg-green-50 p-3 rounded-lg space-y-1 border border-green-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-green-700">Monto USD</span>
+                  <span className="text-lg font-bold text-green-800">$ {viewingPurchase.totalCostUsd.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-green-600">
+                  <span>Tipo de cambio (venta)</span>
+                  <span>S/ {viewingPurchase.exchangeRate.toFixed(4)}</span>
+                </div>
+              </div>
+            )}
             <div className="bg-blue-50 p-3 rounded-lg flex items-center justify-between">
-              <span className="text-sm font-medium text-blue-800">Total</span>
+              <span className="text-sm font-medium text-blue-800">Total en Soles</span>
               <span className="text-xl font-bold text-blue-700">S/ {viewingPurchase.totalCost.toFixed(2)}</span>
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal crear producto rápido */}
+      <Modal isOpen={showNewProduct} onClose={() => setShowNewProduct(false)} title="Crear Producto Rápido">
+        <form onSubmit={handleCreateQuickProduct} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del producto</label>
+            <input value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Ej: Agrifo, Campal..." required />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+            <select value={newProduct.categoryId} onChange={(e) => setNewProduct({ ...newProduct, categoryId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required>
+              <option value="">Seleccionar...</option>
+              {categories.map((c: Category) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label>
+            <select value={newProduct.unit} onChange={(e) => setNewProduct({ ...newProduct, unit: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm">
+              <option value="unidad">Unidad</option>
+              <option value="kg">Kilogramo</option>
+              <option value="litro">Litro</option>
+              <option value="saco">Saco</option>
+              <option value="caja">Caja</option>
+            </select>
+          </div>
+          <button type="submit" disabled={createProduct.isPending} className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
+            {createProduct.isPending ? 'Creando...' : 'Crear Producto'}
+          </button>
+        </form>
       </Modal>
     </div>
   );

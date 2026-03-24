@@ -15,3 +15,10 @@ export function useRucLookup() {
     onError: (err: any) => toast.error(err.response?.data?.message || 'RUC no encontrado'),
   });
 }
+
+export function useTipoCambio() {
+  return useMutation({
+    mutationFn: (date?: string) => lookupService.getTipoCambio(date),
+    onError: (err: any) => toast.error(err.response?.data?.message || 'No se pudo obtener el tipo de cambio'),
+  });
+}

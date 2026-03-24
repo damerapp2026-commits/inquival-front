@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Option { value: string; label: string; }
 interface SearchableSelectProps {
@@ -14,6 +15,7 @@ interface SearchableSelectProps {
 export function SearchableSelect({ options, value, onChange, placeholder = 'Buscar...', required, className = '', minChars = 2 }: SearchableSelectProps) {
   const [search, setSearch] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -23,9 +25,18 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
     ? options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()))
     : [];
 
+  const updatePosition = useCallback(() => {
+    if (inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+  }, []);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        const dropdown = document.getElementById('ss-dropdown');
+        if (dropdown && dropdown.contains(e.target as Node)) return;
         setIsOpen(false);
         if (!value) setSearch('');
         else setSearch(selectedLabel);
@@ -35,9 +46,22 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [value, selectedLabel]);
 
+  useEffect(() => {
+    if (isOpen) {
+      updatePosition();
+      const scrollParent = inputRef.current?.closest('.overflow-y-auto');
+      if (scrollParent) {
+        const onScroll = () => updatePosition();
+        scrollParent.addEventListener('scroll', onScroll);
+        return () => scrollParent.removeEventListener('scroll', onScroll);
+      }
+    }
+  }, [isOpen, updatePosition]);
+
   const handleFocus = () => {
     setIsOpen(true);
     setSearch('');
+    updatePosition();
   };
 
   const handleSelect = (optionValue: string, label: string) => {
@@ -51,6 +75,32 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
     setSearch('');
     inputRef.current?.focus();
   };
+
+  const dropdown = isOpen ? createPortal(
+    <div
+      id="ss-dropdown"
+      style={{ position: 'fixed', top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width, zIndex: 9999 }}
+      className="bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto"
+    >
+      {search.length < minChars ? (
+        <div className="px-3 py-2 text-xs text-gray-400">Escribe al menos {minChars} caracter{minChars > 1 ? 'es' : ''}...</div>
+      ) : filtered.length === 0 ? (
+        <div className="px-3 py-2 text-xs text-gray-400">Sin resultados</div>
+      ) : (
+        filtered.map(o => (
+          <button
+            key={o.value}
+            type="button"
+            onMouseDown={(e) => { e.preventDefault(); handleSelect(o.value, o.label); }}
+            className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 ${o.value === value ? 'bg-green-50 font-medium' : ''}`}
+          >
+            {o.label}
+          </button>
+        ))
+      )}
+    </div>,
+    document.body,
+  ) : null;
 
   return (
     <div ref={containerRef} className="relative">
@@ -70,26 +120,7 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
           <button type="button" onClick={handleClear} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs leading-none">&times;</button>
         )}
       </div>
-      {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
-          {search.length < minChars ? (
-            <div className="px-3 py-2 text-xs text-gray-400">Escribe al menos {minChars} caracteres...</div>
-          ) : filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-gray-400">Sin resultados</div>
-          ) : (
-            filtered.map(o => (
-              <button
-                key={o.value}
-                type="button"
-                onClick={() => handleSelect(o.value, o.label)}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 ${o.value === value ? 'bg-green-50 font-medium' : ''}`}
-              >
-                {o.label}
-              </button>
-            ))
-          )}
-        </div>
-      )}
+      {dropdown}
     </div>
   );
 }
