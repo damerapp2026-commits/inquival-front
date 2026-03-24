@@ -71,7 +71,7 @@ export function SalesPage() {
   const stockQueries = useQueries({
     queries: activeCompanies.map((c) => ({
       queryKey: ['stock', c.id],
-      queryFn: () => stockService.getByCompany(c.id),
+      queryFn: () => stockService.getByCompany(c.id, { limit: 9999 }),
       staleTime: 60_000,
     })),
   });
