@@ -3,7 +3,7 @@ export interface ApiResponse<T> { data: T; message: string; }
 
 export interface Category { id: string; name: string; description?: string; isActive: boolean; }
 export interface Product { id: string; name: string; description?: string; categoryId: string; unit: string; taxType?: string; prices: ProductPrice[]; isActive: boolean; createdAt: string; }
-export interface ProductPrice { priceTierId: string; price: number; }
+export interface ProductPrice { priceTierId: string; companyId?: string; price: number; }
 export interface Company { id: string; name: string; ruc: string; address?: string; phone?: string; isActive: boolean; }
 export interface PriceTier { id: string; name: string; description?: string; priority: number; isActive: boolean; }
 export interface Stock { id: string; productId: string; companyId: string; quantity: number; lastUpdated: string; }

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import { useSales, useCreateSale, useCancelSale, useUpdateVoucher } from '../hooks/useSales';
 import { saleService } from '../services/saleService';
 import { useLoans, useCreateLoan, useReturnLoanItems } from '../../loans/hooks/useLoans';
@@ -7,6 +8,7 @@ import { useProducts } from '../../products/hooks/useProducts';
 import { useClients } from '../../clients/hooks/useClients';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
+import { stockService } from '../../stock/services/stockService';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
@@ -14,7 +16,7 @@ import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
-import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod } from '../../../shared/types';
+import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod, Stock } from '../../../shared/types';
 
 function getMonthStart() {
   const now = new Date();
@@ -65,6 +67,31 @@ export function SalesPage() {
   const createLoan = useCreateLoan();
   const returnLoanItems = useReturnLoanItems();
 
+  const activeCompanies: Company[] = (Array.isArray(companies) ? companies : []).filter((c: Company) => c.isActive);
+  const stockQueries = useQueries({
+    queries: activeCompanies.map((c) => ({
+      queryKey: ['stock', c.id],
+      queryFn: () => stockService.getByCompany(c.id),
+      staleTime: 60_000,
+    })),
+  });
+  const stockByCompany = useMemo(() => {
+    const map: Record<string, Set<string>> = {};
+    activeCompanies.forEach((c, i) => {
+      const raw = stockQueries[i]?.data;
+      const stocks: Stock[] = Array.isArray(raw) ? raw : (raw as any)?.data || [];
+      map[c.id] = new Set(stocks.filter(s => s.quantity > 0).map(s => s.productId));
+    });
+    return map;
+  }, [activeCompanies, stockQueries]);
+
+  const getProductsForCompany = (companyId: string): Product[] => {
+    if (!companyId) return products;
+    const productIds = stockByCompany[companyId];
+    if (!productIds) return products;
+    return products.filter((p: Product) => productIds.has(p.id));
+  };
+
   const [cancellingsale, setCancellingSale] = useState<Sale | null>(null);
   const [cancelReason, setCancelReason] = useState('');
 
@@ -102,19 +129,31 @@ export function SalesPage() {
   const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }] }));
   const removeItem = (idx: number) => setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
 
+  const getUnitPrice = (product: Product | undefined, tierId: string, companyId: string): number | undefined => {
+    if (!product?.prices?.length) return undefined;
+    const companyPrice = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && p.companyId === companyId);
+    if (companyPrice) return companyPrice.price;
+    const globalPrice = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId);
+    return globalPrice?.price;
+  };
+
   const updateItem = (idx: number, field: string, value: any) => {
     setForm(prev => {
       const items = [...prev.items];
       items[idx] = { ...items[idx], [field]: value };
-      if (field === 'productId' && items[idx].priceTier) {
-        const product = products.find((p: Product) => p.id === value);
-        const priceEntry = product?.prices?.find((p: ProductPrice) => p.priceTierId === items[idx].priceTier);
-        if (priceEntry) items[idx].unitPrice = priceEntry.price;
+      if (field === 'companyId') {
+        const available = getProductsForCompany(value);
+        if (!available.find(p => p.id === items[idx].productId)) {
+          items[idx].productId = '';
+          items[idx].unitPrice = 0;
+          items[idx].subtotal = 0;
+        }
       }
-      if (field === 'priceTier' && items[idx].productId) {
-        const product = products.find((p: Product) => p.id === items[idx].productId);
-        const priceEntry = product?.prices?.find((p: ProductPrice) => p.priceTierId === value);
-        if (priceEntry) items[idx].unitPrice = priceEntry.price;
+      const item = items[idx];
+      if ((field === 'productId' || field === 'priceTier' || field === 'companyId') && item.productId && item.priceTier && item.companyId) {
+        const product = products.find((p: Product) => p.id === item.productId);
+        const price = getUnitPrice(product, item.priceTier, item.companyId);
+        if (price != null) items[idx].unitPrice = price;
       }
       items[idx].subtotal = items[idx].quantity * items[idx].unitPrice;
       return { ...prev, items };
@@ -660,10 +699,10 @@ export function SalesPage() {
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Producto</label>
                       <SearchableSelect
-                        options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
+                        options={getProductsForCompany(item.companyId).map((p: Product) => ({ value: p.id, label: p.name }))}
                         value={item.productId}
                         onChange={(v) => updateItem(idx, 'productId', v)}
-                        placeholder="Buscar producto..."
+                        placeholder={item.companyId ? "Buscar producto..." : "Selecciona empresa primero"}
                         required
                       />
                     </div>
