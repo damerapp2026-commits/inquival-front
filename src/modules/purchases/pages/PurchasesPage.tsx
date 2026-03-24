@@ -31,6 +31,7 @@ export function PurchasesPage() {
   const createProduct = useCreateProduct();
   const categories: Category[] = Array.isArray(categoriesData) ? categoriesData : (categoriesData as any)?.data || [];
 
+  const [currency, setCurrency] = useState<'PEN' | 'USD'>('PEN');
   const [form, setForm] = useState({
     companyId: '', supplier: '', supplierRuc: '', supplierId: '',
     paymentType: 'CONTADO' as 'CONTADO' | 'CREDITO',
@@ -39,6 +40,7 @@ export function PurchasesPage() {
     items: [{ productId: '', quantity: 0 }] as { productId: string; quantity: number }[],
     purchaseDate: new Date().toISOString().slice(0, 10),
     totalCostUsd: 0,
+    totalCostPen: 0,
   });
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
   const [exchangeRateDate, setExchangeRateDate] = useState('');
@@ -50,14 +52,12 @@ export function PurchasesPage() {
 
   const openCreate = () => {
     const today = new Date().toISOString().slice(0, 10);
-    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0 }], purchaseDate: today, totalCostUsd: 0 });
+    setCurrency('PEN');
+    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0 }], purchaseDate: today, totalCostUsd: 0, totalCostPen: 0 });
     setExchangeRate(null);
     setExchangeRateDate('');
     setSupplierLocked(false);
     setShowModal(true);
-    tipoCambioMutation.mutate(today, {
-      onSuccess: (data) => { setExchangeRate(data.venta); setExchangeRateDate(data.fecha); },
-    });
   };
 
   const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0 }] }));
@@ -66,7 +66,7 @@ export function PurchasesPage() {
 
   const handleDateChange = (date: string) => {
     setForm(prev => ({ ...prev, purchaseDate: date }));
-    if (date) {
+    if (date && currency === 'USD') {
       tipoCambioMutation.mutate(date, {
         onSuccess: (data) => { setExchangeRate(data.venta); setExchangeRateDate(data.fecha); },
         onError: () => { setExchangeRate(null); setExchangeRateDate(''); },
@@ -74,7 +74,17 @@ export function PurchasesPage() {
     }
   };
 
-  const totalSoles = exchangeRate && form.totalCostUsd ? Math.round(form.totalCostUsd * exchangeRate * 100) / 100 : 0;
+  const handleCurrencyChange = (cur: 'PEN' | 'USD') => {
+    setCurrency(cur);
+    if (cur === 'USD' && form.purchaseDate) {
+      tipoCambioMutation.mutate(form.purchaseDate, {
+        onSuccess: (data) => { setExchangeRate(data.venta); setExchangeRateDate(data.fecha); },
+        onError: () => { setExchangeRate(null); setExchangeRateDate(''); },
+      });
+    }
+  };
+
+  const totalSoles = currency === 'USD' && exchangeRate && form.totalCostUsd ? Math.round(form.totalCostUsd * exchangeRate * 100) / 100 : 0;
 
   const openQuickProduct = (idx: number) => {
     setNewProductForIdx(idx);
@@ -140,16 +150,21 @@ export function PurchasesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!exchangeRate || !form.totalCostUsd) { toast.error('Ingrese el monto en USD y verifique el tipo de cambio'); return; }
+    if (currency === 'USD' && (!exchangeRate || !form.totalCostUsd)) { toast.error('Ingrese el monto en USD y verifique el tipo de cambio'); return; }
+    if (currency === 'PEN' && !form.totalCostPen) { toast.error('Ingrese el monto en soles'); return; }
     const payload: any = {
       companyId: form.companyId, supplier: form.supplier,
       items: form.items.map(i => ({ productId: i.productId, quantity: i.quantity })),
       paymentType: form.paymentType,
       date: form.purchaseDate,
-      totalCostUsd: form.totalCostUsd,
-      exchangeRate,
-      exchangeRateDate,
     };
+    if (currency === 'USD') {
+      payload.totalCostUsd = form.totalCostUsd;
+      payload.exchangeRate = exchangeRate;
+      payload.exchangeRateDate = exchangeRateDate;
+    } else {
+      payload.totalCost = form.totalCostPen;
+    }
     if (form.supplierId) payload.supplierId = form.supplierId;
     if (form.supplierRuc) payload.supplierRuc = form.supplierRuc;
     if (form.paymentType === 'CREDITO') {
@@ -250,25 +265,36 @@ export function PurchasesPage() {
             )}
           </div>
 
-          {/* Fecha de compra + Tipo de cambio */}
+          {/* Fecha de compra + Moneda */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de compra</label>
               <input type="date" value={form.purchaseDate} onChange={(e) => handleDateChange(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" required />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de cambio (venta)</label>
-              <div className="px-3 py-2 border rounded-lg text-sm bg-gray-50 flex items-center gap-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Moneda</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => handleCurrencyChange('PEN')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'PEN' ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>S/ Soles</button>
+                <button type="button" onClick={() => handleCurrencyChange('USD')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>$ Dólares</button>
+              </div>
+            </div>
+          </div>
+
+          {/* Tipo de cambio (solo USD) */}
+          {currency === 'USD' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+              <span className="text-sm text-blue-700">Tipo de cambio (venta)</span>
+              <div className="flex items-center gap-2">
                 {tipoCambioMutation.isPending && <Loader2 size={14} className="animate-spin text-blue-500" />}
                 {exchangeRate != null && !tipoCambioMutation.isPending && (
-                  <span className="font-medium text-gray-800">S/ {exchangeRate.toFixed(4)}</span>
+                  <span className="font-medium text-blue-800">S/ {exchangeRate.toFixed(4)}</span>
                 )}
                 {!exchangeRate && !tipoCambioMutation.isPending && (
                   <span className="text-gray-400">Sin datos</span>
                 )}
               </div>
             </div>
-          </div>
+          )}
 
           {/* Tipo de pago */}
           <div>
@@ -361,36 +387,62 @@ export function PurchasesPage() {
             </div>
           </div>
 
-          {/* Monto Total USD */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Monto Total (USD)</label>
-            <div className="relative">
-              <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="number" min="0.01" step="0.01"
-                value={form.totalCostUsd || ''}
-                onChange={(e) => setForm({ ...form, totalCostUsd: parseFloat(e.target.value) || 0 })}
-                className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm"
-                placeholder="0.00"
-                required
-              />
-            </div>
-          </div>
-
-          {/* Total conversion */}
-          <div className="bg-blue-50 p-3 rounded-lg space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-blue-800">Total USD</span>
-              <span className="text-lg font-bold text-blue-700">$ {(form.totalCostUsd || 0).toFixed(2)}</span>
-            </div>
-            {exchangeRate != null && form.totalCostUsd > 0 && (
-              <div className="flex items-center justify-between border-t border-blue-200 pt-1">
-                <span className="text-sm text-blue-600">Total en Soles (×{exchangeRate.toFixed(4)})</span>
-                <span className="text-xl font-bold text-green-700">S/ {totalSoles.toFixed(2)}</span>
+          {/* Monto Total */}
+          {currency === 'PEN' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Monto Total (Soles)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">S/</span>
+                <input
+                  type="number" min="0.01" step="0.01"
+                  value={form.totalCostPen || ''}
+                  onChange={(e) => setForm({ ...form, totalCostPen: parseFloat(e.target.value) || 0 })}
+                  className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm"
+                  placeholder="0.00"
+                  required
+                />
               </div>
-            )}
-          </div>
-          <button type="submit" disabled={!exchangeRate || !form.totalCostUsd || createPurchase.isPending} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+            </div>
+          )}
+          {currency === 'USD' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Monto Total (USD)</label>
+              <div className="relative">
+                <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="number" min="0.01" step="0.01"
+                  value={form.totalCostUsd || ''}
+                  onChange={(e) => setForm({ ...form, totalCostUsd: parseFloat(e.target.value) || 0 })}
+                  className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm"
+                  placeholder="0.00"
+                  required
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Total */}
+          {currency === 'PEN' && form.totalCostPen > 0 && (
+            <div className="bg-green-50 p-3 rounded-lg flex items-center justify-between">
+              <span className="text-sm font-medium text-green-800">Total de la compra</span>
+              <span className="text-xl font-bold text-green-700">S/ {form.totalCostPen.toFixed(2)}</span>
+            </div>
+          )}
+          {currency === 'USD' && (
+            <div className="bg-blue-50 p-3 rounded-lg space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-blue-800">Total USD</span>
+                <span className="text-lg font-bold text-blue-700">$ {(form.totalCostUsd || 0).toFixed(2)}</span>
+              </div>
+              {exchangeRate != null && form.totalCostUsd > 0 && (
+                <div className="flex items-center justify-between border-t border-blue-200 pt-1">
+                  <span className="text-sm text-blue-600">Total en Soles (×{exchangeRate.toFixed(4)})</span>
+                  <span className="text-xl font-bold text-green-700">S/ {totalSoles.toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+          )}
+          <button type="submit" disabled={(currency === 'USD' ? (!exchangeRate || !form.totalCostUsd) : !form.totalCostPen) || createPurchase.isPending} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
             {createPurchase.isPending ? 'Registrando...' : 'Registrar Compra'}
           </button>
         </form>
