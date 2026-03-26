@@ -53,7 +53,7 @@ export function PurchasesPage() {
   const openCreate = () => {
     const today = new Date().toISOString().slice(0, 10);
     setCurrency('PEN');
-    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0 }], purchaseDate: today, totalCostUsd: 0, totalCostPen: 0 });
+    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [], purchaseDate: today, totalCostUsd: 0, totalCostPen: 0 });
     setExchangeRate(null);
     setExchangeRateDate('');
     setSupplierLocked(false);
@@ -152,12 +152,15 @@ export function PurchasesPage() {
     e.preventDefault();
     if (currency === 'USD' && (!exchangeRate || !form.totalCostUsd)) { toast.error('Ingrese el monto en USD y verifique el tipo de cambio'); return; }
     if (currency === 'PEN' && !form.totalCostPen) { toast.error('Ingrese el monto en soles'); return; }
+    const validItems = form.items.filter(i => i.productId && i.quantity > 0);
     const payload: any = {
       companyId: form.companyId, supplier: form.supplier,
-      items: form.items.map(i => ({ productId: i.productId, quantity: i.quantity })),
       paymentType: form.paymentType,
       date: form.purchaseDate,
     };
+    if (validItems.length > 0) {
+      payload.items = validItems.map(i => ({ productId: i.productId, quantity: i.quantity }));
+    }
     if (currency === 'USD') {
       payload.totalCostUsd = form.totalCostUsd;
       payload.exchangeRate = exchangeRate;
@@ -346,18 +349,21 @@ export function PurchasesPage() {
             </div>
           )}
 
-          {/* Productos */}
+          {/* Productos (opcional) */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">Productos</label>
+              <label className="text-sm font-medium text-gray-700">Productos <span className="text-xs text-gray-400 font-normal">(opcional)</span></label>
               <button type="button" onClick={addItem} className="text-sm text-green-600 hover:text-green-800 font-medium">+ Agregar producto</button>
             </div>
+            {form.items.length === 0 && (
+              <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-3 text-center text-sm text-gray-400">
+                Sin productos — solo se registrará el monto
+              </div>
+            )}
             <div className="space-y-3">
               {form.items.map((item, idx) => (
                 <div key={idx} className="bg-gray-50 rounded-lg p-3 relative">
-                  {form.items.length > 1 && (
-                    <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-                  )}
+                  <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
                   <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Producto</label>
@@ -369,7 +375,6 @@ export function PurchasesPage() {
                             onChange={(v) => updateItem(idx, 'productId', v)}
                             placeholder="Buscar producto..."
                             minChars={1}
-                            required
                           />
                         </div>
                         <button type="button" onClick={() => openQuickProduct(idx)} className="px-2 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 shrink-0" title="Crear nuevo producto">
@@ -379,7 +384,7 @@ export function PurchasesPage() {
                     </div>
                     <div className="w-28">
                       <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
-                      <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                      <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" />
                     </div>
                   </div>
                 </div>
