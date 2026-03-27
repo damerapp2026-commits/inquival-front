@@ -334,13 +334,13 @@ export function PurchasesPage() {
                     <div key={idx} className="flex gap-2 mb-2 items-end">
                       <div className="flex-1">
                         <label className="block text-xs text-gray-500 mb-1">Monto</label>
-                        <input type="number" min="0.01" step="0.01" value={inst.amount || ''} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], amount: parseFloat(e.target.value) || 0 }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                        <input type="number" min="0.01" step="0.01" value={inst.amount || ''} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], amount: parseFloat(e.target.value) || 0 }; const total = Math.round(installments.reduce((s, i) => s + i.amount, 0) * 100) / 100; if (currency === 'PEN') { setForm({ ...form, installments, totalCostPen: total }); } else { setForm({ ...form, installments, totalCostUsd: total }); } }} className="w-full px-2 py-1.5 border rounded text-sm" required />
                       </div>
                       <div className="flex-1">
                         <label className="block text-xs text-gray-500 mb-1">Fecha</label>
                         <input type="date" value={inst.dueDate} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], dueDate: e.target.value }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
                       </div>
-                      <button type="button" onClick={() => setForm({ ...form, installments: form.installments.filter((_, i) => i !== idx) })} className="text-red-400 hover:text-red-600 pb-1"><Trash2 size={14} /></button>
+                      <button type="button" onClick={() => { const installments = form.installments.filter((_, i) => i !== idx); const total = Math.round(installments.reduce((s, i) => s + i.amount, 0) * 100) / 100; if (currency === 'PEN') { setForm({ ...form, installments, totalCostPen: total }); } else { setForm({ ...form, installments, totalCostUsd: total }); } }} className="text-red-400 hover:text-red-600 pb-1"><Trash2 size={14} /></button>
                     </div>
                   ))}
                   {form.installments.length === 0 && <p className="text-xs text-gray-400">Agrega al menos una cuota</p>}

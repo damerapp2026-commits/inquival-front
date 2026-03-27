@@ -847,7 +847,7 @@ export function SalesPage() {
                       const sunatTier = tiers.find((t: PriceTier) => t.name === 'PRECIO SUNAT');
                       const sunatPrice = sunatTier ? product?.prices?.find((p: ProductPrice) => p.priceTierId === sunatTier.id)?.price : undefined;
                       const precioVenta = sunatPrice != null
-                        ? (taxType === 'GRAVADO' ? sunatPrice - sunatPrice * 0.18 : sunatPrice)
+                        ? (taxType === 'GRAVADO' ? sunatPrice / 1.18 : sunatPrice)
                         : null;
                       return (
                         <tr key={idx}>
