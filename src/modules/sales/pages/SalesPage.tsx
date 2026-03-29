@@ -299,6 +299,7 @@ export function SalesPage() {
     return Math.round((sale.total - getSaleBaseAmount(sale)) * 100) / 100;
   };
 
+
   const handleExportVouchers = async (voucherType: 'BOLETA' | 'FACTURA') => {
     try {
       const result = await saleService.getAll({ limit: 9999, companyId: companyFilter || undefined, startDate, endDate, voucherType });
@@ -337,6 +338,7 @@ export function SalesPage() {
       toast.error('Error al exportar');
     }
   };
+
 
   const getPaymentLabel = (sale: Sale) => {
     if (sale.isCredit) return <span className="text-orange-600 font-medium">Crédito</span>;

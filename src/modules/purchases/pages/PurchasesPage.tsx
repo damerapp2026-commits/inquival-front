@@ -181,7 +181,11 @@ export function PurchasesPage() {
 
   const companyList = Array.isArray(companies) ? companies : [];
   const products = productsData?.data || [];
-  const purchases = data?.data || [];
+  const purchases = (data?.data || []).slice().sort((a: Purchase, b: Purchase) => {
+    const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+    if (dateDiff !== 0) return dateDiff;
+    return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+  });
   const total = data?.total || 0;
 
   const getCompanyName = (id: string) => companyList.find((c: Company) => c.id === id)?.name || 'N/A';
