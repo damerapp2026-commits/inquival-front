@@ -1,18 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import { useSales, useCreateSale, useCancelSale, useUpdateVoucher } from '../hooks/useSales';
+import { saleService } from '../services/saleService';
 import { useLoans, useCreateLoan, useReturnLoanItems } from '../../loans/hooks/useLoans';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useClients } from '../../clients/hooks/useClients';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
+import { stockService } from '../../stock/services/stockService';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy } from 'lucide-react';
+import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
-import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod } from '../../../shared/types';
+import * as XLSX from 'xlsx';
+import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod, Stock } from '../../../shared/types';
 
 function getMonthStart() {
   const now = new Date();
@@ -63,6 +67,31 @@ export function SalesPage() {
   const createLoan = useCreateLoan();
   const returnLoanItems = useReturnLoanItems();
 
+  const activeCompanies: Company[] = (Array.isArray(companies) ? companies : []).filter((c: Company) => c.isActive);
+  const stockQueries = useQueries({
+    queries: activeCompanies.map((c) => ({
+      queryKey: ['stock', c.id],
+      queryFn: () => stockService.getByCompany(c.id, { limit: 9999 }),
+      staleTime: 60_000,
+    })),
+  });
+  const stockByCompany = useMemo(() => {
+    const map: Record<string, Set<string>> = {};
+    activeCompanies.forEach((c, i) => {
+      const raw = stockQueries[i]?.data;
+      const stocks: Stock[] = Array.isArray(raw) ? raw : (raw as any)?.data || [];
+      map[c.id] = new Set(stocks.filter(s => s.quantity > 0).map(s => s.productId));
+    });
+    return map;
+  }, [activeCompanies, stockQueries]);
+
+  const getProductsForCompany = (companyId: string): Product[] => {
+    if (!companyId) return products;
+    const productIds = stockByCompany[companyId];
+    if (!productIds) return products;
+    return products.filter((p: Product) => productIds.has(p.id));
+  };
+
   const [cancellingsale, setCancellingSale] = useState<Sale | null>(null);
   const [cancelReason, setCancelReason] = useState('');
 
@@ -100,19 +129,31 @@ export function SalesPage() {
   const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }] }));
   const removeItem = (idx: number) => setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
 
+  const getUnitPrice = (product: Product | undefined, tierId: string, companyId: string): number | undefined => {
+    if (!product?.prices?.length) return undefined;
+    const companyPrice = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && p.companyId === companyId);
+    if (companyPrice) return companyPrice.price;
+    const globalPrice = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId);
+    return globalPrice?.price;
+  };
+
   const updateItem = (idx: number, field: string, value: any) => {
     setForm(prev => {
       const items = [...prev.items];
       items[idx] = { ...items[idx], [field]: value };
-      if (field === 'productId' && items[idx].priceTier) {
-        const product = products.find((p: Product) => p.id === value);
-        const priceEntry = product?.prices?.find((p: ProductPrice) => p.priceTierId === items[idx].priceTier);
-        if (priceEntry) items[idx].unitPrice = priceEntry.price;
+      if (field === 'companyId') {
+        const available = getProductsForCompany(value);
+        if (!available.find(p => p.id === items[idx].productId)) {
+          items[idx].productId = '';
+          items[idx].unitPrice = 0;
+          items[idx].subtotal = 0;
+        }
       }
-      if (field === 'priceTier' && items[idx].productId) {
-        const product = products.find((p: Product) => p.id === items[idx].productId);
-        const priceEntry = product?.prices?.find((p: ProductPrice) => p.priceTierId === value);
-        if (priceEntry) items[idx].unitPrice = priceEntry.price;
+      const item = items[idx];
+      if ((field === 'productId' || field === 'priceTier' || field === 'companyId') && item.productId && item.priceTier && item.companyId) {
+        const product = products.find((p: Product) => p.id === item.productId);
+        const price = getUnitPrice(product, item.priceTier, item.companyId);
+        if (price != null) items[idx].unitPrice = price;
       }
       items[idx].subtotal = items[idx].quantity * items[idx].unitPrice;
       return { ...prev, items };
@@ -257,6 +298,47 @@ export function SalesPage() {
   const getSaleIgv = (sale: Sale) => {
     return Math.round((sale.total - getSaleBaseAmount(sale)) * 100) / 100;
   };
+
+
+  const handleExportVouchers = async (voucherType: 'BOLETA' | 'FACTURA') => {
+    try {
+      const result = await saleService.getAll({ limit: 9999, companyId: companyFilter || undefined, startDate, endDate, voucherType });
+      const allSales: Sale[] = result?.data || [];
+      if (allSales.length === 0) { toast.error('No hay datos para exportar'); return; }
+
+      const rows = allSales.filter(s => !s.isCancelled).map(sale => {
+        const companyIds = [...new Set(sale.items.map((i: any) => i.companyId))];
+        const empresa = companyIds.length === 1 ? getCompanyName(companyIds[0]) : 'Mixta';
+        const productosStr = sale.items.map((i: any) => `${getProductName(i.productId)} x${i.quantity}`).join(', ');
+        const baseAmount = getSaleBaseAmount(sale);
+        const igv = getSaleIgv(sale);
+        const paymentLabel = sale.isCredit ? 'Crédito' : sale.payments?.map(p => p.paymentMethodName).join(' + ') || 'Efectivo';
+
+        return {
+          'Fecha': new Date(sale.date).toLocaleDateString('es-PE'),
+          'Cliente': getClientName(sale.clientId),
+          'Empresa': empresa,
+          'Productos': productosStr,
+          'Valor Venta': Math.round(baseAmount * 100) / 100,
+          'IGV': Math.round(igv * 100) / 100,
+          'Total': Math.round(sale.total * 100) / 100,
+          'Método de Pago': paymentLabel,
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      const sheetName = voucherType === 'BOLETA' ? 'Boletas' : 'Facturas';
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      const prefix = voucherType === 'BOLETA' ? 'boletas' : 'facturas';
+      const monthStr = startDate.slice(0, 7);
+      XLSX.writeFile(wb, `${prefix}_${monthStr}.xlsx`);
+      toast.success(`${rows.length} ${sheetName.toLowerCase()} exportada(s)`);
+    } catch {
+      toast.error('Error al exportar');
+    }
+  };
+
 
   const getPaymentLabel = (sale: Sale) => {
     if (sale.isCredit) return <span className="text-orange-600 font-medium">Crédito</span>;
@@ -403,7 +485,12 @@ export function SalesPage() {
         <div className="mb-4 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-green-700">{boletasTotal} boleta(s) en el período</span>
-            <span className="text-lg font-bold text-green-700">Valor Venta: S/ {boletasBaseAmount.toFixed(2)}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-lg font-bold text-green-700">Valor Venta: S/ {boletasBaseAmount.toFixed(2)}</span>
+              <button onClick={() => handleExportVouchers('BOLETA')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded hover:bg-green-200 transition-colors">
+                <Download size={14} /> Excel
+              </button>
+            </div>
           </div>
           <div className="flex items-center justify-end gap-4 text-xs text-green-600">
             <span>Total: S/ {boletasTotalAmount.toFixed(2)}</span>
@@ -415,7 +502,12 @@ export function SalesPage() {
         <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-blue-700">{facturasTotal} factura(s) en el período</span>
-            <span className="text-lg font-bold text-blue-700">Valor Venta: S/ {facturasBaseAmount.toFixed(2)}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-lg font-bold text-blue-700">Valor Venta: S/ {facturasBaseAmount.toFixed(2)}</span>
+              <button onClick={() => handleExportVouchers('FACTURA')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded hover:bg-blue-200 transition-colors">
+                <Download size={14} /> Excel
+              </button>
+            </div>
           </div>
           <div className="flex items-center justify-end gap-4 text-xs text-blue-600">
             <span>Total: S/ {facturasTotalAmount.toFixed(2)}</span>
@@ -609,10 +701,10 @@ export function SalesPage() {
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Producto</label>
                       <SearchableSelect
-                        options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
+                        options={getProductsForCompany(item.companyId).map((p: Product) => ({ value: p.id, label: p.name }))}
                         value={item.productId}
                         onChange={(v) => updateItem(idx, 'productId', v)}
-                        placeholder="Buscar producto..."
+                        placeholder={item.companyId ? "Buscar producto..." : "Selecciona empresa primero"}
                         required
                       />
                     </div>
@@ -754,7 +846,11 @@ export function SalesPage() {
                       const company = companyList.find((c: Company) => c.id === item.companyId);
                       const tier = tiers.find((t: PriceTier) => t.id === item.priceTier);
                       const taxType = product?.taxType || 'GRAVADO';
-                      const igvUnit = taxType === 'GRAVADO' ? Math.round((item.unitPrice - item.unitPrice / 1.18) * 100) / 100 : 0;
+                      const sunatTier = tiers.find((t: PriceTier) => t.name === 'PRECIO SUNAT');
+                      const sunatPrice = sunatTier ? product?.prices?.find((p: ProductPrice) => p.priceTierId === sunatTier.id)?.price : undefined;
+                      const precioVenta = sunatPrice != null
+                        ? (taxType === 'GRAVADO' ? sunatPrice / 1.18 : sunatPrice)
+                        : null;
                       return (
                         <tr key={idx}>
                           <td className="px-3 py-2">
@@ -765,14 +861,14 @@ export function SalesPage() {
                           <td className="px-3 py-2 text-right">{item.quantity}</td>
                           <td className="px-3 py-2 text-right">S/ {item.unitPrice.toFixed(2)}</td>
                           <td className="px-3 py-2 text-right">
-                            {igvUnit > 0 ? (
-                              <span className="inline-flex items-center gap-1 text-orange-600">
-                                S/ {igvUnit.toFixed(2)}
+                            {precioVenta != null ? (
+                              <span className="inline-flex items-center gap-1">
+                                S/ {precioVenta.toFixed(8)}
                                 <button
                                   type="button"
-                                  onClick={() => { navigator.clipboard.writeText(igvUnit.toFixed(2)); toast.success('IGV copiado'); }}
-                                  className="text-gray-400 hover:text-orange-600 transition-colors"
-                                  title="Copiar IGV"
+                                  onClick={() => { navigator.clipboard.writeText(precioVenta.toFixed(8)); toast.success('Precio copiado'); }}
+                                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                                  title="Copiar precio"
                                 >
                                   <Copy size={13} />
                                 </button>

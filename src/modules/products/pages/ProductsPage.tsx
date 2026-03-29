@@ -27,7 +27,7 @@ interface BulkProduct {
   categoryId: string;
   unit: string;
   taxType: string;
-  prices: { priceTierId: string; price: number }[];
+  prices: { priceTierId: string; companyId?: string; price: number }[];
   initialStocks: { companyId: string; quantity: number }[];
   expanded: boolean;
 }
@@ -38,6 +38,7 @@ export function ProductsPage() {
   const debouncedSearch = useDebounce(search);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
+  const [priceCompanyFilter, setPriceCompanyFilter] = useState('');
 
   const queryClient = useQueryClient();
   const { data, isLoading } = useProducts({ page, limit: 20, search: debouncedSearch });
@@ -48,7 +49,8 @@ export function ProductsPage() {
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
 
-  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: 'kg', taxType: 'GRAVADO', prices: [] as { priceTierId: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
+  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: 'kg', taxType: 'GRAVADO', prices: [] as { priceTierId: string; companyId?: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -102,12 +104,12 @@ export function ProductsPage() {
     });
   };
 
-  const handlePriceChange = (tierId: string, price: number) => {
+  const handlePriceChange = (tierId: string, price: number, companyId?: string) => {
     setForm((prev) => {
       const prices = [...prev.prices];
-      const idx = prices.findIndex((p) => p.priceTierId === tierId);
-      if (idx >= 0) prices[idx] = { priceTierId: tierId, price };
-      else prices.push({ priceTierId: tierId, price });
+      const idx = prices.findIndex((p) => p.priceTierId === tierId && (p.companyId || undefined) === companyId);
+      if (idx >= 0) prices[idx] = { priceTierId: tierId, ...(companyId ? { companyId } : {}), price };
+      else prices.push({ priceTierId: tierId, ...(companyId ? { companyId } : {}), price });
       return { ...prev, prices };
     });
   };
@@ -116,13 +118,13 @@ export function ProductsPage() {
     setBulkProducts(prev => prev.map((p, i) => i === index ? { ...p, [field]: value } : p));
   };
 
-  const updateBulkPrice = (index: number, tierId: string, price: number) => {
+  const updateBulkPrice = (index: number, tierId: string, price: number, companyId?: string) => {
     setBulkProducts(prev => prev.map((p, i) => {
       if (i !== index) return p;
       const prices = [...p.prices];
-      const idx = prices.findIndex(pr => pr.priceTierId === tierId);
-      if (idx >= 0) prices[idx] = { priceTierId: tierId, price };
-      else prices.push({ priceTierId: tierId, price });
+      const idx = prices.findIndex(pr => pr.priceTierId === tierId && (pr.companyId || undefined) === companyId);
+      if (idx >= 0) prices[idx] = { priceTierId: tierId, ...(companyId ? { companyId } : {}), price };
+      else prices.push({ priceTierId: tierId, ...(companyId ? { companyId } : {}), price });
       return { ...p, prices };
     }));
   };
@@ -193,8 +195,14 @@ export function ProductsPage() {
           Estado: p.isActive ? 'Activo' : 'Inactivo',
         };
         tiersList.forEach((t: any) => {
-          const price = p.prices?.find(pr => pr.priceTierId === t.id);
-          row[`Precio_${t.name}`] = price?.price || 0;
+          const globalPrice = p.prices?.find(pr => pr.priceTierId === t.id && !pr.companyId);
+          row[`Precio_${t.name}`] = globalPrice?.price || 0;
+        });
+        compsList.forEach((c: any) => {
+          tiersList.forEach((t: any) => {
+            const companyPrice = p.prices?.find(pr => pr.priceTierId === t.id && pr.companyId === c.id);
+            row[`Precio_${c.name}_${t.name}`] = companyPrice?.price || 0;
+          });
         });
         compsList.forEach((c: any) => { row[`Stock_${c.name}`] = 0; });
         return row;
@@ -251,12 +259,18 @@ export function ProductsPage() {
         const imported: BulkProduct[] = rows.map(row => {
           const catName = String(row.Categoria || '').trim();
           const cat = catsList.find((c: any) => c.name?.toLowerCase() === catName.toLowerCase());
-          const prices: { priceTierId: string; price: number }[] = [];
+          const prices: { priceTierId: string; companyId?: string; price: number }[] = [];
           tiersList.forEach((t: any) => {
             const val = row[`Precio_${t.name}`];
             prices.push({ priceTierId: t.id, price: Number(val) || 0 });
           });
           const compsList = Array.isArray(companies) ? companies : [];
+          compsList.forEach((c: any) => {
+            tiersList.forEach((t: any) => {
+              const val = row[`Precio_${c.name}_${t.name}`];
+              if (val && Number(val) > 0) prices.push({ priceTierId: t.id, companyId: c.id, price: Number(val) });
+            });
+          });
           const initialStocks: { companyId: string; quantity: number }[] = [];
           compsList.forEach((c: any) => {
             const val = row[`Stock_${c.name}`];
@@ -291,6 +305,7 @@ export function ProductsPage() {
     const compsList = Array.isArray(companies) ? companies : [];
     const header: any = { Nombre: 'Ejemplo Producto', Descripcion: '', Categoria: catsList[0]?.name || 'Fertilizantes', Unidad: 'kg', Tipo_IGV: 'GRAVADO' };
     tiersList.forEach((t: any) => { header[`Precio_${t.name}`] = 0; });
+    compsList.forEach((c: any) => { tiersList.forEach((t: any) => { header[`Precio_${c.name}_${t.name}`] = 0; }); });
     compsList.forEach((c: any) => { header[`Stock_${c.name}`] = 0; });
 
     const ws = XLSX.utils.json_to_sheet([header]);
@@ -308,6 +323,18 @@ export function ProductsPage() {
   const cats = Array.isArray(categories) ? categories : [];
   const comps = Array.isArray(companies) ? companies : [];
 
+  const getPricesForDisplay = (product: Product) => {
+    if (!priceCompanyFilter) {
+      return product.prices?.filter(p => !p.companyId) || [];
+    }
+    return tiers.map((t: any) => {
+      const companyPrice = product.prices?.find(p => p.priceTierId === t.id && p.companyId === priceCompanyFilter);
+      if (companyPrice) return companyPrice;
+      const globalPrice = product.prices?.find(p => p.priceTierId === t.id && !p.companyId);
+      return globalPrice || null;
+    }).filter(Boolean) as typeof product.prices;
+  };
+
   const columns = [
     { key: 'name', header: 'Nombre' },
     { key: 'categoryId', header: 'Categoría', render: (item: Product) => { const cat = cats.find((c: any) => c.id === item.categoryId); return cat?.name || item.categoryId; } },
@@ -317,16 +344,28 @@ export function ProductsPage() {
       const colors = item.taxType === 'EXONERADO' ? 'bg-yellow-100 text-yellow-800' : item.taxType === 'INAFECTO' ? 'bg-gray-100 text-gray-800' : 'bg-blue-100 text-blue-800';
       return <span className={`px-2 py-1 rounded-full text-xs ${colors}`}>{t?.label || 'Gravado'}</span>;
     }},
-    { key: 'prices', header: 'Precios', render: (item: Product) => (
-      <div className="text-xs space-y-1">
-        {item.prices?.map((p) => { const tier = tiers.find((t: any) => t.id === p.priceTierId); return <div key={p.priceTierId}><span className="font-medium">{tier?.name || 'N/A'}:</span> S/ {p.price.toFixed(2)}</div>; })}
-      </div>
-    )},
+    { key: 'prices', header: 'Precios', render: (item: Product) => {
+      const displayPrices = getPricesForDisplay(item);
+      return (
+        <div className="text-xs space-y-1">
+          {displayPrices.map((p) => {
+            const tier = tiers.find((t: any) => t.id === p.priceTierId);
+            const isCompanySpecific = !!p.companyId;
+            return (
+              <div key={`${p.priceTierId}-${p.companyId || 'global'}`}>
+                <span className="font-medium">{tier?.name || 'N/A'}:</span> S/ {p.price.toFixed(2)}
+                {priceCompanyFilter && !isCompanySpecific && <span className="text-gray-400 ml-1">(global)</span>}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }},
     { key: 'isActive', header: 'Estado', render: (item: Product) => <span className={`px-2 py-1 rounded-full text-xs ${item.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.isActive ? 'Activo' : 'Inactivo'}</span> },
     { key: 'actions', header: 'Acciones', render: (item: Product) => (
       <div className="flex gap-2">
         <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800"><Edit2 size={16} /></button>
-        <button onClick={() => deleteProduct.mutate(item.id)} className="text-red-600 hover:text-red-800"><Trash2 size={16} /></button>
+        <button onClick={() => setDeleteTarget(item)} className="text-red-600 hover:text-red-800"><Trash2 size={16} /></button>
       </div>
     )},
   ];
@@ -343,9 +382,17 @@ export function ProductsPage() {
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" />
         </div>
       </div>
-      <div className="mb-4 relative">
-        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input type="text" placeholder="Buscar productos..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+      <div className="mb-4 flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder="Buscar productos..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+        </div>
+        {comps.length > 0 && (
+          <select value={priceCompanyFilter} onChange={(e) => setPriceCompanyFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
+            <option value="">Precios globales</option>
+            {comps.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>Precios: {c.name}</option>)}
+          </select>
+        )}
       </div>
       <DataTable columns={columns} data={products} isLoading={isLoading} />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
@@ -386,9 +433,43 @@ export function ProductsPage() {
               </div>
             </div>
           )}
-          {tiers.length > 0 && <div><label className="block text-sm font-medium text-gray-700 mb-2">Precios por Rango</label><div className="space-y-2">{tiers.map((tier: any) => (<div key={tier.id} className="flex items-center gap-3"><span className="text-sm w-32">{tier.name}</span><input type="number" step="0.01" min="0" placeholder="0.00" value={form.prices.find((p) => p.priceTierId === tier.id)?.price || ''} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0)} className="flex-1 px-3 py-2 border rounded-lg" /></div>))}</div></div>}
+          {tiers.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Precios Globales (por defecto)</label>
+              <div className="space-y-2">
+                {tiers.map((tier: any) => (
+                  <div key={tier.id} className="flex items-center gap-3">
+                    <span className="text-sm w-32">{tier.name}</span>
+                    <input type="number" step="0.01" min="0" placeholder="0.00" value={form.prices.find((p) => p.priceTierId === tier.id && !p.companyId)?.price || ''} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0)} className="flex-1 px-3 py-2 border rounded-lg" />
+                  </div>
+                ))}
+              </div>
+              {comps.filter((c: any) => c.isActive).map((company: any) => (
+                <div key={company.id} className="mt-4 border border-orange-200 bg-orange-50 rounded-lg p-3">
+                  <label className="block text-sm font-medium text-orange-800 mb-2">Precios para {company.name} (opcional)</label>
+                  <div className="space-y-2">
+                    {tiers.map((tier: any) => (
+                      <div key={tier.id} className="flex items-center gap-3">
+                        <span className="text-sm w-32">{tier.name}</span>
+                        <input type="number" step="0.01" min="0" placeholder={`Global: ${form.prices.find((p: any) => p.priceTierId === tier.id && !p.companyId)?.price || '0.00'}`} value={form.prices.find((p: any) => p.priceTierId === tier.id && p.companyId === company.id)?.price || ''} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0, company.id)} className="flex-1 px-3 py-2 border rounded-lg" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <button type="submit" className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">{editing ? 'Actualizar' : 'Crear'}</button>
         </form>
+      </Modal>
+      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Eliminar Producto">
+        <div className="space-y-4">
+          <p className="text-gray-600">¿Estás seguro de que deseas eliminar el producto <strong>{deleteTarget?.name}</strong>? Esta acción no se puede deshacer.</p>
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancelar</button>
+            <button onClick={async () => { if (deleteTarget) { await deleteProduct.mutateAsync(deleteTarget.id); setDeleteTarget(null); } }} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Eliminar</button>
+          </div>
+        </div>
       </Modal>
       <Modal isOpen={showBulkModal} onClose={() => setShowBulkModal(false)} title={`Carga Masiva de Productos (${bulkProducts.length})`} size="xl">
         <div className="space-y-3">

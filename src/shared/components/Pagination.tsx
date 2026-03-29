@@ -1,14 +1,36 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface PaginationProps { page: number; totalPages: number; onPageChange: (page: number) => void; }
 
 export function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
+  const [inputValue, setInputValue] = useState(String(page));
+
+  useEffect(() => { setInputValue(String(page)); }, [page]);
+
+  const handleSubmit = () => {
+    const num = parseInt(inputValue, 10);
+    if (!isNaN(num) && num >= 1 && num <= totalPages) {
+      onPageChange(num);
+    } else {
+      setInputValue(String(page));
+    }
+  };
+
   if (totalPages <= 1) return null;
   return (
     <div className="flex items-center justify-center gap-2 mt-4">
       <button onClick={() => onPageChange(page - 1)} disabled={page <= 1} className="p-2 rounded-lg border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"><ChevronLeft size={16} /></button>
-      <span className="text-sm text-gray-600">Página {page} de {totalPages}</span>
+      <span className="text-sm text-gray-600">Página</span>
+      <input
+        type="text"
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onBlur={handleSubmit}
+        onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+        className="w-12 text-center text-sm border rounded-lg py-1 focus:ring-2 focus:ring-green-500 focus:outline-none"
+      />
+      <span className="text-sm text-gray-600">de {totalPages}</span>
       <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages} className="p-2 rounded-lg border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"><ChevronRight size={16} /></button>
     </div>
   );

@@ -22,8 +22,8 @@ export function CashRegisterPage() {
   const [selectedEntry, setSelectedEntry] = useState<CashRegisterEntry | null>(null);
 
   const { data: paymentMethods = [] } = usePaymentMethods();
-  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, hasBoleta: false, paymentMethodName: '' });
-  const [editForm, setEditForm] = useState({ amount: 0, reason: '', hasBoleta: false });
+  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, voucherType: 'NONE' as string, paymentMethodName: '' });
+  const [editForm, setEditForm] = useState({ amount: 0, reason: '', voucherType: 'NONE' as string });
   const [deleteReason, setDeleteReason] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
 
@@ -34,9 +34,9 @@ export function CashRegisterPage() {
   const totalExpense = activeEntries.filter(e => e.type === 'EXPENSE').reduce((sum, e) => sum + e.amount, 0);
   const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
 
-  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, hasBoleta: false, paymentMethodName: '' }); setShowAddModal(true); };
-  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, hasBoleta: false, paymentMethodName: 'Efectivo' }); setShowAddModal(true); };
-  const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', hasBoleta: entry.hasBoleta }); setShowEditModal(true); };
+  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', paymentMethodName: '' }); setShowAddModal(true); };
+  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', paymentMethodName: 'Efectivo' }); setShowAddModal(true); };
+  const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', voucherType: entry.voucherType || 'NONE' }); setShowEditModal(true); };
   const openDelete = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setDeleteReason(''); setShowDeleteModal(true); };
 
   const handleOpen = async (e: React.FormEvent) => {
@@ -151,7 +151,7 @@ export function CashRegisterPage() {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripcion</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Método</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Boleta</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Comprobante</th>
               {!isClosed && <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Acciones</th>}
             </tr>
           </thead>
@@ -178,7 +178,11 @@ export function CashRegisterPage() {
                 <td className={`px-4 py-3 text-sm text-right font-medium ${entry.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
                   {entry.type === 'INCOME' ? '+' : '-'} S/ {entry.amount.toFixed(2)}
                 </td>
-                <td className="px-4 py-3 text-center text-sm">{entry.hasBoleta ? 'Si' : 'No'}</td>
+                <td className="px-4 py-3 text-center text-sm">
+                  {entry.voucherType === 'BOLETA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Boleta</span>
+                    : entry.voucherType === 'FACTURA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Factura</span>
+                    : <span className="text-gray-400">-</span>}
+                </td>
                 {!isClosed && (
                   <td className="px-4 py-3 text-center">
                     {!entry.isDeleted && (
@@ -235,11 +239,26 @@ export function CashRegisterPage() {
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
               <input type="number" min="0.01" step="0.01" value={addForm.amount || ''} onChange={(e) => setAddForm({ ...addForm, amount: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border rounded-lg" required />
             </div>
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 cursor-pointer pb-2">
-                <input type="checkbox" checked={addForm.hasBoleta} onChange={(e) => setAddForm({ ...addForm, hasBoleta: e.target.checked })} className="w-4 h-4 text-green-600 rounded" />
-                <span className="text-sm font-medium text-gray-700">Con Boleta</span>
-              </label>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Comprobante</label>
+              <div className="flex gap-2">
+                {[{ value: 'NONE', label: 'Ninguno' }, { value: 'BOLETA', label: 'Boleta' }, { value: 'FACTURA', label: 'Factura' }].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setAddForm({ ...addForm, voucherType: opt.value })}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                      addForm.voucherType === opt.value
+                        ? opt.value === 'BOLETA' ? 'bg-green-600 text-white border-green-600'
+                          : opt.value === 'FACTURA' ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-gray-600 text-white border-gray-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <button type="submit" className={`w-full py-2 text-white rounded-lg ${addForm.type === 'INCOME' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
@@ -254,11 +273,26 @@ export function CashRegisterPage() {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Nuevo Monto</label>
             <input type="number" min="0.01" step="0.01" value={editForm.amount || ''} onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border rounded-lg" required />
           </div>
-          <div className="flex items-center">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={editForm.hasBoleta} onChange={(e) => setEditForm({ ...editForm, hasBoleta: e.target.checked })} className="w-4 h-4 text-green-600 rounded" />
-              <span className="text-sm font-medium text-gray-700">Con Boleta</span>
-            </label>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Comprobante</label>
+            <div className="flex gap-2">
+              {[{ value: 'NONE', label: 'Ninguno' }, { value: 'BOLETA', label: 'Boleta' }, { value: 'FACTURA', label: 'Factura' }].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setEditForm({ ...editForm, voucherType: opt.value })}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                    editForm.voucherType === opt.value
+                      ? opt.value === 'BOLETA' ? 'bg-green-600 text-white border-green-600'
+                        : opt.value === 'FACTURA' ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-gray-600 text-white border-gray-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Razon del cambio</label>
             <textarea value={editForm.reason} onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} required />

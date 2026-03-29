@@ -96,6 +96,7 @@ export function CashRegisterHistoryPage() {
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Tipo</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Categoria</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Descripcion</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">Comprobante</th>
                   <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Monto</th>
                 </tr>
               </thead>
@@ -105,6 +106,11 @@ export function CashRegisterHistoryPage() {
                     <td className="px-3 py-2"><span className={`text-xs ${e.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>{e.type === 'INCOME' ? 'Ingreso' : 'Egreso'}</span></td>
                     <td className="px-3 py-2 text-xs">{categoryLabels[e.category] || e.category}</td>
                     <td className="px-3 py-2 text-xs">{e.description}</td>
+                    <td className="px-3 py-2 text-center">
+                      {e.voucherType === 'BOLETA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Boleta</span>
+                        : e.voucherType === 'FACTURA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Factura</span>
+                        : <span className="text-gray-400 text-xs">-</span>}
+                    </td>
                     <td className={`px-3 py-2 text-right ${e.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>S/ {e.amount.toFixed(2)}</td>
                   </tr>
                 ))}

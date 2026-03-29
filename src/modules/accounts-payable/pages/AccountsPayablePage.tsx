@@ -22,12 +22,21 @@ export function AccountsPayablePage() {
   const items = data?.data || [];
   const total = data?.total || 0;
 
+  const getNextInstallment = (ap: AccountPayable) => {
+    if (ap.paymentScheduleType === 'INSTALLMENTS' && ap.installments?.length) {
+      return ap.installments.find(i => i.status === 'PENDING') || null;
+    }
+    return null;
+  };
+
   const openPayment = (ap: AccountPayable) => {
     setSelectedAP(ap);
-    setPayForm({ amount: 0, notes: '' });
+    const nextInst = getNextInstallment(ap);
+    setPayForm({ amount: nextInst ? nextInst.amount : 0, notes: '' });
     setShowPayModal(true);
   };
 
+  const nextInstallment = selectedAP ? getNextInstallment(selectedAP) : null;
   const exceedsPending = selectedAP ? payForm.amount > selectedAP.pendingAmount : false;
 
   const handlePayment = async (e: React.FormEvent) => {
@@ -108,11 +117,17 @@ export function AccountsPayablePage() {
       {/* Payment Modal */}
       <Modal isOpen={showPayModal} onClose={() => setShowPayModal(false)} title="Registrar Pago a Proveedor">
         <form onSubmit={handlePayment} className="space-y-4">
-          <div className="bg-gray-50 p-3 rounded-lg text-sm">
+          <div className="bg-gray-50 p-3 rounded-lg text-sm space-y-1">
             <div className="font-medium text-gray-700 mb-1">{selectedAP?.supplier}</div>
-            <div>Total: S/ {selectedAP?.totalAmount.toFixed(2)}</div>
+            <div>Total deuda: S/ {selectedAP?.totalAmount.toFixed(2)}</div>
             <div>Pagado: S/ {selectedAP?.paidAmount.toFixed(2)}</div>
-            <div className="font-bold text-red-600">Pendiente: S/ {selectedAP?.pendingAmount.toFixed(2)}</div>
+            <div className="font-bold text-red-600">Pendiente total: S/ {selectedAP?.pendingAmount.toFixed(2)}</div>
+            {nextInstallment && (
+              <div className="mt-2 pt-2 border-t border-gray-200">
+                <div className="font-medium text-blue-700">Proxima cuota: S/ {nextInstallment.amount.toFixed(2)}</div>
+                <div className="text-xs text-gray-500">Vence: {new Date(nextInstallment.dueDate).toLocaleDateString('es-PE')}</div>
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Monto a pagar</label>

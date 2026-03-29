@@ -4,8 +4,11 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import { Plus, Search, Edit2, Users } from 'lucide-react';
+import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
+import { Plus, Search, Edit2, Users, Loader2 } from 'lucide-react';
 import type { Client } from '../../../shared/types';
+import { clientService } from '../services/clientService';
+import toast from 'react-hot-toast';
 
 export function ClientsPage() {
   const [page, setPage] = useState(1);
@@ -17,11 +20,62 @@ export function ClientsPage() {
   const { data, isLoading } = useClients({ page, limit: 20, search: debouncedSearch });
   const createClient = useCreateClient();
   const updateClient = useUpdateClient();
+  const dniLookup = useDniLookup();
+  const rucLookup = useRucLookup();
 
+  const [docType, setDocType] = useState<'DNI' | 'RUC'>('DNI');
   const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '' });
+  const [lookupLoading, setLookupLoading] = useState(false);
 
-  const openCreate = () => { setEditing(null); setForm({ name: '', documentNumber: '', phone: '', email: '', address: '' }); setShowModal(true); };
-  const openEdit = (client: Client) => { setEditing(client); setForm({ name: client.name, documentNumber: client.documentNumber || '', phone: client.phone || '', email: client.email || '', address: client.address || '' }); setShowModal(true); };
+  const openCreate = () => {
+    setEditing(null);
+    setDocType('DNI');
+    setForm({ name: '', documentNumber: '', phone: '', email: '', address: '' });
+    setShowModal(true);
+  };
+
+  const openEdit = (client: Client) => {
+    setEditing(client);
+    const dn = client.documentNumber || '';
+    setDocType(dn.length === 11 ? 'RUC' : 'DNI');
+    setForm({ name: client.name, documentNumber: dn, phone: client.phone || '', email: client.email || '', address: client.address || '' });
+    setShowModal(true);
+  };
+
+  const handleLookup = async () => {
+    const numero = form.documentNumber.trim();
+    if (docType === 'DNI' && numero.length !== 8) { toast.error('El DNI debe tener 8 dígitos'); return; }
+    if (docType === 'RUC' && numero.length !== 11) { toast.error('El RUC debe tener 11 dígitos'); return; }
+
+    setLookupLoading(true);
+    try {
+      // First check local DB
+      const allClients = await clientService.getAll({ search: numero, limit: 1 });
+      const localMatch = (allClients?.data || allClients || []).find?.((c: Client) => c.documentNumber === numero);
+      if (localMatch) {
+        setForm({ name: localMatch.name, documentNumber: localMatch.documentNumber || '', phone: localMatch.phone || '', email: localMatch.email || '', address: localMatch.address || '' });
+        toast.success('Cliente encontrado en el sistema');
+        setLookupLoading(false);
+        return;
+      }
+
+      // Then try Decolecta
+      if (docType === 'DNI') {
+        const result = await dniLookup.mutateAsync(numero);
+        const fullName = `${result.apellidoPaterno} ${result.apellidoMaterno}, ${result.nombre}`;
+        setForm(prev => ({ ...prev, name: fullName }));
+        toast.success('Datos encontrados en RENIEC');
+      } else {
+        const result = await rucLookup.mutateAsync(numero);
+        setForm(prev => ({ ...prev, name: result.razonSocial, address: result.direccion || prev.address }));
+        toast.success('Datos encontrados en SUNAT');
+      }
+    } catch {
+      // Error already handled by hook toast
+    } finally {
+      setLookupLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +99,8 @@ export function ClientsPage() {
     )},
   ];
 
+  const isValidDoc = docType === 'DNI' ? form.documentNumber.length === 8 : form.documentNumber.length === 11;
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
@@ -59,8 +115,44 @@ export function ClientsPage() {
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar Cliente' : 'Nuevo Cliente'}>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">DNI/RUC</label><input value={form.documentNumber} onChange={(e) => setForm({ ...form, documentNumber: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+          {/* Document type selector + number + search */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Documento</label>
+            <div className="flex gap-2 mb-2">
+              <button type="button" onClick={() => { setDocType('DNI'); setForm(prev => ({ ...prev, documentNumber: '' })); }}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-medium border-2 transition ${docType === 'DNI' ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                DNI
+              </button>
+              <button type="button" onClick={() => { setDocType('RUC'); setForm(prev => ({ ...prev, documentNumber: '' })); }}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-medium border-2 transition ${docType === 'RUC' ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                RUC
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={form.documentNumber}
+                onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); setForm({ ...form, documentNumber: v.slice(0, docType === 'DNI' ? 8 : 11) }); }}
+                className="flex-1 px-3 py-2 border rounded-lg"
+                placeholder={docType === 'DNI' ? '8 dígitos' : '11 dígitos'}
+                maxLength={docType === 'DNI' ? 8 : 11}
+              />
+              <button
+                type="button"
+                onClick={handleLookup}
+                disabled={!isValidDoc || lookupLoading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                {lookupLoading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                Buscar
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
