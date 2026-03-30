@@ -54,7 +54,7 @@ export function ProductsPage() {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
-  const defaultUnits = [{ value: 'kg', label: 'Kilogramo' }, { value: 'litro', label: 'Litro' }, { value: 'saco', label: 'Saco' }, { value: 'unidad', label: 'Unidad' }, { value: 'galon', label: 'Galón' }];
+  const defaultUnits = [{ value: 'kg', label: 'Kilogramo' }, { value: 'litro', label: 'Litro' }, { value: 'saco', label: 'Saco' }, { value: 'unidad', label: 'Unidad' }, { value: 'galon', label: 'Galón' }, { value: 'caja', label: 'Caja' }];
   const [customUnits, setCustomUnits] = useState<string[]>([]);
   const allUnits = [...defaultUnits, ...customUnits.map(u => ({ value: u, label: u }))];
   const [showCustomUnit, setShowCustomUnit] = useState(false);
