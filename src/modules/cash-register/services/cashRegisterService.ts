@@ -9,4 +9,6 @@ export const cashRegisterService = {
   editEntry: (id: string, entryId: string, data: any) => api.patch(`/cash-registers/${id}/entries/${entryId}`, data).then((r) => r.data.data),
   deleteEntry: (id: string, entryId: string, data: any) => api.delete(`/cash-registers/${id}/entries/${entryId}`, { data }).then((r) => r.data.data),
   close: (id: string, data?: any) => api.post(`/cash-registers/${id}/close`, data || {}).then((r) => r.data.data),
+  adjustOpening: (id: string, data: { openingBalance: number; reason: string }) =>
+    api.patch(`/cash-registers/${id}/opening-balance`, data).then((r) => r.data.data),
 };

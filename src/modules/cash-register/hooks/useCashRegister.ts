@@ -39,7 +39,19 @@ export function useDeleteCashEntry() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ registerId, entryId, data }: { registerId: string; entryId: string; data: any }) => cashRegisterService.deleteEntry(registerId, entryId, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cash-register-today'] }); qc.invalidateQueries({ queryKey: ['cash-registers'] }); toast.success('Entrada eliminada'); },
+    onSuccess: () => {
+      // Eliminar una entrada de caja puede disparar la cancelación de la venta original
+      // (ver delete-entry.use-case.ts), lo que afecta ventas, stock, créditos y movimientos.
+      // Invalidamos todos los queries relacionados para que las pantallas reflejen el cambio.
+      qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['stock'] });
+      qc.invalidateQueries({ queryKey: ['credit-accounts'] });
+      qc.invalidateQueries({ queryKey: ['stock-movements'] });
+      qc.invalidateQueries({ queryKey: ['products'] });
+      toast.success('Entrada eliminada');
+    },
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error'),
   });
 }
@@ -48,6 +60,15 @@ export function useCloseCashRegister() {
   return useMutation({
     mutationFn: ({ registerId, data }: { registerId: string; data?: any }) => cashRegisterService.close(registerId, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['cash-register-today'] }); qc.invalidateQueries({ queryKey: ['cash-registers'] }); toast.success('Caja cerrada'); },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error'),
+  });
+}
+export function useAdjustOpeningBalance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ registerId, data }: { registerId: string; data: { openingBalance: number; reason: string } }) =>
+      cashRegisterService.adjustOpening(registerId, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cash-register-today'] }); qc.invalidateQueries({ queryKey: ['cash-registers'] }); toast.success('Apertura ajustada'); },
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error'),
   });
 }

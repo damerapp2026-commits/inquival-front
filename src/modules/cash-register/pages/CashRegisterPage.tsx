@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useCashRegisterToday, useOpenCashRegister, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
+import { useCashRegisterToday, useOpenCashRegister, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister, useAdjustOpeningBalance } from '../hooks/useCashRegister';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { Modal } from '../../../shared/components/Modal';
-import { Wallet, TrendingUp, TrendingDown, Edit2, Trash2, Lock, History } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, Edit2, Trash2, Lock, History, Settings } from 'lucide-react';
 import type { CashRegisterEntry } from '../../../shared/types';
 
 export function CashRegisterPage() {
@@ -13,12 +13,15 @@ export function CashRegisterPage() {
   const editEntry = useEditCashEntry();
   const deleteEntryMutation = useDeleteCashEntry();
   const closeRegister = useCloseCashRegister();
+  const adjustOpening = useAdjustOpeningBalance();
 
   const [openingAmount, setOpeningAmount] = useState(0);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [showAdjustOpeningModal, setShowAdjustOpeningModal] = useState(false);
+  const [adjustOpeningForm, setAdjustOpeningForm] = useState({ openingBalance: 0, reason: '' });
   const [selectedEntry, setSelectedEntry] = useState<CashRegisterEntry | null>(null);
 
   const { data: paymentMethods = [] } = usePaymentMethods();
@@ -65,6 +68,15 @@ export function CashRegisterPage() {
   const handleClose = async () => {
     await closeRegister.mutateAsync({ registerId: register.id, data: { notes: closeNotes } });
     setShowCloseModal(false);
+  };
+  const openAdjustOpening = () => {
+    setAdjustOpeningForm({ openingBalance: register?.openingBalance || 0, reason: '' });
+    setShowAdjustOpeningModal(true);
+  };
+  const handleAdjustOpening = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await adjustOpening.mutateAsync({ registerId: register.id, data: adjustOpeningForm });
+    setShowAdjustOpeningModal(false);
   };
 
   const categoryLabels: Record<string, string> = { SALE: 'Venta', CREDIT_PAYMENT: 'Pago Credito', PURCHASE: 'Compra', ADJUSTMENT: 'Ajuste', OTHER: 'Otro' };
@@ -119,6 +131,7 @@ export function CashRegisterPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Wallet size={24} /> Caja del Día</h1>
         <div className="flex flex-wrap gap-2">
+          {!isClosed && <button onClick={openAdjustOpening} className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600" title="Ajustar el monto de apertura de la caja"><Settings size={18} /> Ajustar apertura</button>}
           {!isClosed && <button onClick={openAddIncome} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"><TrendingUp size={18} /> Ingreso</button>}
           {!isClosed && <button onClick={openAddExpense} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"><TrendingDown size={18} /> Egreso</button>}
           {!isClosed && <button onClick={() => { setCloseNotes(''); setShowCloseModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"><Lock size={18} /> Cerrar Caja</button>}
@@ -311,6 +324,60 @@ export function CashRegisterPage() {
         </form>
       </Modal>
 
+      <Modal isOpen={showAdjustOpeningModal} onClose={() => setShowAdjustOpeningModal(false)} title="Ajustar apertura de caja">
+        <form onSubmit={handleAdjustOpening} className="space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+            Usá esto cuando la caja se abrió automáticamente con un monto incorrecto (ej: arrancó en S/0 pero ya había caja chica de S/50). El cambio queda registrado en el historial con tu razón.
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Monto actual de apertura</label>
+            <div className="px-3 py-2 bg-gray-100 rounded-lg text-gray-700">S/ {(register?.openingBalance || 0).toFixed(2)}</div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nuevo monto de apertura (S/)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={adjustOpeningForm.openingBalance || ''}
+              onChange={(e) => setAdjustOpeningForm({ ...adjustOpeningForm, openingBalance: parseFloat(e.target.value) || 0 })}
+              className="w-full px-3 py-2 border rounded-lg text-lg"
+              placeholder="0.00"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Razón del ajuste</label>
+            <textarea
+              value={adjustOpeningForm.reason}
+              onChange={(e) => setAdjustOpeningForm({ ...adjustOpeningForm, reason: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg"
+              rows={2}
+              placeholder="Ej: caja chica de S/50 que no se registró al abrir"
+              required
+              minLength={3}
+            />
+          </div>
+          {register?.openingBalanceHistory && register.openingBalanceHistory.length > 0 && (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-gray-600 hover:text-gray-800">Ver ajustes anteriores ({register.openingBalanceHistory.length})</summary>
+              <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
+                {register.openingBalanceHistory.map((h: any, i: number) => (
+                  <div key={i} className="bg-gray-50 p-2 rounded text-xs">
+                    <div>S/ {h.previousAmount.toFixed(2)} → <strong>S/ {h.newAmount.toFixed(2)}</strong></div>
+                    <div className="text-gray-600">{h.reason}</div>
+                    <div className="text-gray-400">{new Date(h.adjustedAt).toLocaleString()}</div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+          <button type="submit" disabled={adjustOpening.isPending} className="w-full py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50">
+            {adjustOpening.isPending ? 'Ajustando...' : 'Confirmar ajuste'}
+          </button>
+        </form>
+      </Modal>
+
       <Modal isOpen={showCloseModal} onClose={() => setShowCloseModal(false)} title="Cerrar Caja">
         {(() => {
           const methodBreakdown: Record<string, { income: number; expense: number }> = {};
@@ -323,46 +390,56 @@ export function CashRegisterPage() {
           });
           const methods = Object.entries(methodBreakdown).sort((a, b) => (b[1].income + b[1].expense) - (a[1].income + a[1].expense));
 
+          // Calcular efectivo físico en caja: apertura + ingresos en efectivo - egresos en efectivo
+          const opening = register?.openingBalance || 0;
+          const cashEntry = methods.find(([m]) => m.toLowerCase() === 'efectivo');
+          const cashIncome = cashEntry?.[1].income || 0;
+          const cashExpense = cashEntry?.[1].expense || 0;
+          const cashInBox = opening + cashIncome - cashExpense;
+          const otherMethods = methods.filter(([m]) => m.toLowerCase() !== 'efectivo');
+
           return (
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">Al cerrar la caja no se podran agregar, editar ni eliminar entradas.</p>
-
-              {/* Resumen general */}
-              <div className="bg-gray-50 p-3 rounded-lg text-sm">
-                <div>Balance Apertura: S/ {(register?.openingBalance || 0).toFixed(2)}</div>
-                <div className="text-green-600">+ Ingresos: S/ {totalIncome.toFixed(2)}</div>
-                <div className="text-red-600">- Egresos: S/ {totalExpense.toFixed(2)}</div>
-                <div className="font-bold mt-1 pt-1 border-t">Balance Cierre: S/ {netBalance.toFixed(2)}</div>
+              {/* EFECTIVO EN CAJA — lo más importante para el cajero */}
+              <div className="bg-green-50 border-2 border-green-500 rounded-lg p-4 text-center">
+                <div className="text-sm font-semibold text-green-800 uppercase tracking-wide">Efectivo en caja</div>
+                <div className="text-xs text-green-700 mb-2">Esto es lo que debes tener físicamente</div>
+                <div className="text-4xl font-bold text-green-700">S/ {cashInBox.toFixed(2)}</div>
+                <div className="text-xs text-gray-600 mt-2">
+                  Apertura S/ {opening.toFixed(2)} + Ingresos S/ {cashIncome.toFixed(2)} − Egresos S/ {cashExpense.toFixed(2)}
+                </div>
               </div>
 
-              {/* Desglose por método de pago */}
-              {methods.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Desglose por método de pago</label>
-                  <div className="border rounded-lg overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Método</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-green-600">Ingresos</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-red-600">Egresos</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Neto</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {methods.map(([method, totals]) => (
-                          <tr key={method}>
-                            <td className="px-3 py-2 font-medium">{method}</td>
-                            <td className="px-3 py-2 text-right text-green-600">{totals.income > 0 ? `+ S/ ${totals.income.toFixed(2)}` : '-'}</td>
-                            <td className="px-3 py-2 text-right text-red-600">{totals.expense > 0 ? `- S/ ${totals.expense.toFixed(2)}` : '-'}</td>
-                            <td className="px-3 py-2 text-right font-medium">S/ {(totals.income - totals.expense).toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+              {/* Otros métodos: digitales — no se entregan físicamente */}
+              {otherMethods.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="text-xs font-semibold text-blue-800 uppercase mb-2">Otros métodos (no van en caja física)</div>
+                  <div className="space-y-1 text-sm">
+                    {otherMethods.map(([method, totals]) => {
+                      const net = totals.income - totals.expense;
+                      return (
+                        <div key={method} className="flex justify-between">
+                          <span className="text-gray-700">{method}</span>
+                          <span className="font-medium text-blue-700">S/ {net.toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
+
+              {/* Resumen secundario, colapsado visualmente */}
+              <details className="text-sm">
+                <summary className="cursor-pointer text-gray-600 hover:text-gray-800">Ver totales del día</summary>
+                <div className="bg-gray-50 p-3 rounded-lg mt-2 space-y-1">
+                  <div>Balance Apertura: S/ {opening.toFixed(2)}</div>
+                  <div className="text-green-600">+ Ingresos totales: S/ {totalIncome.toFixed(2)}</div>
+                  <div className="text-red-600">− Egresos totales: S/ {totalExpense.toFixed(2)}</div>
+                  <div className="font-bold mt-1 pt-1 border-t">Balance neto del día: S/ {netBalance.toFixed(2)}</div>
+                </div>
+              </details>
+
+              <p className="text-xs text-gray-500">Al cerrar la caja no se podrán agregar, editar ni eliminar entradas.</p>
 
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
                 <textarea value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" rows={2} />
