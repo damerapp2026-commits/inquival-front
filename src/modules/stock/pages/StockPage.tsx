@@ -7,7 +7,7 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { Package, ArrowRightLeft, AlertTriangle, Trash2, Plus, ClipboardList } from 'lucide-react';
+import { Package, ArrowRightLeft, AlertTriangle, Trash2, Plus, ClipboardList, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Stock, Company, Product, StockAdjustment } from '../../../shared/types';
 
 export function StockPage() {
@@ -17,6 +17,8 @@ export function StockPage() {
   const [showTransfer, setShowTransfer] = useState(false);
   const [showAdjustment, setShowAdjustment] = useState(false);
   const [adjPage, setAdjPage] = useState(1);
+  const [showLowStockDetail, setShowLowStockDetail] = useState(false);
+  const [showAllLowStock, setShowAllLowStock] = useState(false);
 
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 200 });
@@ -41,7 +43,16 @@ export function StockPage() {
   const getCompanyName = (id: string) => companyList.find((c: Company) => c.id === id)?.name || 'N/A';
 
   const openTransfer = () => { setTransferForm({ fromCompanyId: companyId || '', toCompanyId: '', items: [{ productId: '', quantity: 0 }] }); setShowTransfer(true); };
-  const openAdjustment = () => { setAdjForm({ productId: '', companyId: companyId || (companyList[0]?.id || ''), type: 'INCREASE', quantity: 0, reason: '' }); setShowAdjustment(true); };
+  const openAdjustment = (preset?: { productId?: string; companyId?: string }) => {
+    setAdjForm({
+      productId: preset?.productId || '',
+      companyId: preset?.companyId || companyId || (companyList[0]?.id || ''),
+      type: 'INCREASE',
+      quantity: 0,
+      reason: '',
+    });
+    setShowAdjustment(true);
+  };
 
   const addTransferItem = () => setTransferForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0 }] }));
   const removeTransferItem = (idx: number) => setTransferForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
@@ -94,12 +105,103 @@ export function StockPage() {
         ); })}
       </div>
 
-      {alertList.length > 0 && activeTab === 'inventory' && (
-        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <div className="flex items-center gap-2 text-yellow-800 font-medium mb-1"><AlertTriangle size={16} /> Stock bajo ({alertList.length} productos)</div>
-          <div className="text-sm text-yellow-700">{alertList.map((a: Stock) => `${getProductName(a.productId)}: ${a.quantity}`).join(' | ')}</div>
-        </div>
-      )}
+      {alertList.length > 0 && activeTab === 'inventory' && (() => {
+        // Clasificar alertas en 3 grupos: agotados, críticos, sin referencia
+        type AlertItem = Stock & { _name: string };
+        const enriched: AlertItem[] = alertList.map((a: Stock) => ({ ...a, _name: getProductName(a.productId) }));
+        const orphan = enriched.filter(a => a._name === 'N/A');
+        const known = enriched.filter(a => a._name !== 'N/A');
+        const outOfStock = known.filter(a => a.quantity === 0).sort((a, b) => a._name.localeCompare(b._name));
+        const critical = known.filter(a => a.quantity > 0).sort((a, b) => a.quantity - b.quantity || a._name.localeCompare(b._name));
+
+        const MAX_VISIBLE = 30;
+        const visibleCritical = showAllLowStock ? critical : critical.slice(0, MAX_VISIBLE);
+        const hiddenCount = Math.max(0, critical.length - MAX_VISIBLE);
+
+        return (
+          <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setShowLowStockDetail(v => !v)}
+              className="w-full flex items-center justify-between gap-2 p-3 text-left hover:bg-yellow-100 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-yellow-900">
+                <AlertTriangle size={18} className="flex-shrink-0" />
+                <div>
+                  <div className="font-semibold">Stock bajo ({alertList.length} productos)</div>
+                  <div className="text-xs text-yellow-800 mt-0.5">
+                    {outOfStock.length > 0 && <span className="text-red-700 font-medium">{outOfStock.length} agotados</span>}
+                    {outOfStock.length > 0 && critical.length > 0 && <span className="mx-1">·</span>}
+                    {critical.length > 0 && <span>{critical.length} con poco stock</span>}
+                    {orphan.length > 0 && <span className="ml-1 text-gray-600">· {orphan.length} sin referencia</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 text-yellow-800 text-sm font-medium flex-shrink-0">
+                {showLowStockDetail ? <>Ocultar <ChevronUp size={16} /></> : <>Ver detalle <ChevronDown size={16} /></>}
+              </div>
+            </button>
+
+            {showLowStockDetail && (
+              <div className="px-3 pb-3 pt-1 space-y-3 border-t border-yellow-200">
+                {outOfStock.length > 0 && (
+                  <div>
+                    <div className="text-xs font-bold text-red-700 uppercase tracking-wide mb-2">Agotados ({outOfStock.length})</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {outOfStock.map((a) => (
+                        <button
+                          key={`${a.productId}-${a.companyId}`}
+                          onClick={() => openAdjustment({ productId: a.productId, companyId: a.companyId })}
+                          className="px-2 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded text-xs font-medium border border-red-200 transition-colors"
+                          title="Click para ajustar stock"
+                        >
+                          {a._name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {critical.length > 0 && (
+                  <div>
+                    <div className="text-xs font-bold text-yellow-800 uppercase tracking-wide mb-2">Stock crítico ({critical.length})</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {visibleCritical.map((a) => (
+                        <button
+                          key={`${a.productId}-${a.companyId}`}
+                          onClick={() => openAdjustment({ productId: a.productId, companyId: a.companyId })}
+                          className="px-2 py-1 bg-yellow-100 hover:bg-yellow-200 text-yellow-900 rounded text-xs font-medium border border-yellow-300 transition-colors"
+                          title="Click para ajustar stock"
+                        >
+                          {a._name} <span className="text-yellow-700">· {a.quantity}</span>
+                        </button>
+                      ))}
+                      {!showAllLowStock && hiddenCount > 0 && (
+                        <button
+                          onClick={() => setShowAllLowStock(true)}
+                          className="px-2 py-1 bg-white hover:bg-gray-50 text-gray-700 rounded text-xs font-medium border border-gray-300"
+                        >
+                          Ver más (+{hiddenCount})
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {orphan.length > 0 && (
+                  <div className="pt-2 border-t border-yellow-200">
+                    <div className="text-xs font-medium text-gray-600 mb-1">
+                      {orphan.length} {orphan.length === 1 ? 'registro sin referencia' : 'registros sin referencia'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Estos registros referencian productos que ya no existen en la base. Es seguro ignorarlos o limpiarlos manualmente desde Mongo.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {(activeTab === 'inventory' || activeTab === 'adjustments') && (
         <div className="mb-4 flex gap-2">
