@@ -46,7 +46,7 @@ export function DashboardPage() {
     : [];
 
   const topProductsChart = topProducts.map((p: any) => ({
-    name: getProductName(p.productId),
+    name: p.productName || getProductName(p.productId),
     revenue: p.totalRevenue,
     units: p.totalSold,
   }));
