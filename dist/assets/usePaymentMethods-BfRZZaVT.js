@@ -1,0 +1,1 @@
+import{a as t,b as a}from"./index-CN3Sb0aY.js";const n={getAll:()=>t.get("/payment-methods").then(e=>e.data.data)};function r(){return a({queryKey:["payment-methods"],queryFn:n.getAll})}export{r as u};

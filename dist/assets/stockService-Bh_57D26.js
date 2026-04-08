@@ -1,0 +1,1 @@
+import{a as s}from"./index-CN3Sb0aY.js";const r={getByCompany:(t,a)=>s.get(`/stock/company/${t}`,{params:a}).then(e=>e.data.data),transfer:t=>s.post("/stock/transfer",t).then(a=>a.data.data),getAlerts:(t,a)=>s.get(`/stock/alerts/${t}`,{params:{threshold:a}}).then(e=>e.data.data)};export{r as s};

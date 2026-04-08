@@ -96,16 +96,28 @@ export function CashRegisterHistoryPage() {
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Tipo</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Categoria</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Descripcion</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">Método</th>
                   <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">Comprobante</th>
                   <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Monto</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {detailEntries.map((e) => (
+                {detailEntries.map((e) => {
+                  const methodMatch = e.description.match(/\[(.+?)\]$/);
+                  const method = methodMatch ? methodMatch[1] : null;
+                  const cleanDesc = methodMatch ? e.description.replace(/\s*\[.+?\]$/, '') : e.description;
+                  const methodColor = method?.toLowerCase() === 'efectivo' ? 'bg-green-100 text-green-800'
+                    : method?.toLowerCase() === 'yape' ? 'bg-purple-100 text-purple-800'
+                    : method?.toLowerCase() === 'plin' ? 'bg-cyan-100 text-cyan-800'
+                    : 'bg-gray-100 text-gray-700';
+                  return (
                   <tr key={e.id} className={e.isDeleted ? 'opacity-40 line-through' : ''}>
                     <td className="px-3 py-2"><span className={`text-xs ${e.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>{e.type === 'INCOME' ? 'Ingreso' : 'Egreso'}</span></td>
                     <td className="px-3 py-2 text-xs">{categoryLabels[e.category] || e.category}</td>
-                    <td className="px-3 py-2 text-xs">{e.description}</td>
+                    <td className="px-3 py-2 text-xs">{cleanDesc}</td>
+                    <td className="px-3 py-2 text-center">
+                      {method ? <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${methodColor}`}>{method}</span> : <span className="text-gray-400 text-xs">-</span>}
+                    </td>
                     <td className="px-3 py-2 text-center">
                       {e.voucherType === 'BOLETA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Boleta</span>
                         : e.voucherType === 'FACTURA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Factura</span>
@@ -113,7 +125,8 @@ export function CashRegisterHistoryPage() {
                     </td>
                     <td className={`px-3 py-2 text-right ${e.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>S/ {e.amount.toFixed(2)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -125,18 +138,75 @@ export function CashRegisterHistoryPage() {
       </Modal>
 
       <Modal isOpen={showCloseModal} onClose={() => setShowCloseModal(false)} title={`Cerrar Caja - ${closeTarget?.date || ''}`}>
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600">Esta caja quedó abierta. Al cerrarla no se podrán modificar sus entradas.</p>
-          <div className="bg-gray-50 p-3 rounded-lg text-sm">
-            <div>Balance Apertura: S/ {(closeTarget?.openingBalance || 0).toFixed(2)}</div>
-            <div className="text-green-600">+ Ingresos: S/ {(closeTarget?.entries.filter(e => !e.isDeleted && e.type === 'INCOME').reduce((s, e) => s + e.amount, 0) || 0).toFixed(2)}</div>
-            <div className="text-red-600">- Egresos: S/ {(closeTarget?.entries.filter(e => !e.isDeleted && e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0) || 0).toFixed(2)}</div>
-          </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
-            <textarea value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" rows={2} />
-          </div>
-          <button onClick={handleClose} className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Confirmar Cierre</button>
-        </div>
+        {(() => {
+          const activeEntries = closeTarget?.entries.filter(e => !e.isDeleted) || [];
+          const totalIncome = activeEntries.filter(e => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
+          const totalExpense = activeEntries.filter(e => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
+          const opening = closeTarget?.openingBalance || 0;
+          const netBalance = opening + totalIncome - totalExpense;
+
+          const methodBreakdown: Record<string, { income: number; expense: number }> = {};
+          activeEntries.forEach(entry => {
+            const match = entry.description.match(/\[(.+?)\]$/);
+            const method = match ? match[1] : 'Sin método';
+            if (!methodBreakdown[method]) methodBreakdown[method] = { income: 0, expense: 0 };
+            if (entry.type === 'INCOME') methodBreakdown[method].income += entry.amount;
+            else methodBreakdown[method].expense += entry.amount;
+          });
+          const methods = Object.entries(methodBreakdown).sort((a, b) => (b[1].income + b[1].expense) - (a[1].income + a[1].expense));
+          const cashEntry = methods.find(([m]) => m.toLowerCase() === 'efectivo');
+          const cashIncome = cashEntry?.[1].income || 0;
+          const cashExpense = cashEntry?.[1].expense || 0;
+          const cashInBox = opening + cashIncome - cashExpense;
+          const otherMethods = methods.filter(([m]) => m.toLowerCase() !== 'efectivo');
+
+          return (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">Esta caja quedó abierta. Al cerrarla no se podrán modificar sus entradas.</p>
+
+              <div className="bg-green-50 border-2 border-green-500 rounded-lg p-4 text-center">
+                <div className="text-sm font-semibold text-green-800 uppercase tracking-wide">Efectivo en caja</div>
+                <div className="text-xs text-green-700 mb-2">Esto es lo que debes tener físicamente</div>
+                <div className="text-4xl font-bold text-green-700">S/ {cashInBox.toFixed(2)}</div>
+                <div className="text-xs text-gray-600 mt-2">
+                  Apertura S/ {opening.toFixed(2)} + Ingresos S/ {cashIncome.toFixed(2)} − Egresos S/ {cashExpense.toFixed(2)}
+                </div>
+              </div>
+
+              {otherMethods.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="text-xs font-semibold text-blue-800 uppercase mb-2">Otros métodos (no van en caja física)</div>
+                  <div className="space-y-1 text-sm">
+                    {otherMethods.map(([method, totals]) => {
+                      const net = totals.income - totals.expense;
+                      return (
+                        <div key={method} className="flex justify-between">
+                          <span className="text-gray-700">{method}</span>
+                          <span className="font-medium text-blue-700">S/ {net.toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <details className="text-sm">
+                <summary className="cursor-pointer text-gray-600 hover:text-gray-800">Ver totales del día</summary>
+                <div className="bg-gray-50 p-3 rounded-lg mt-2 space-y-1">
+                  <div>Balance Apertura: S/ {opening.toFixed(2)}</div>
+                  <div className="text-green-600">+ Ingresos totales: S/ {totalIncome.toFixed(2)}</div>
+                  <div className="text-red-600">− Egresos totales: S/ {totalExpense.toFixed(2)}</div>
+                  <div className="font-bold mt-1 pt-1 border-t">Balance neto del día: S/ {netBalance.toFixed(2)}</div>
+                </div>
+              </details>
+
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
+                <textarea value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" rows={2} />
+              </div>
+              <button onClick={handleClose} className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Confirmar Cierre</button>
+            </div>
+          );
+        })()}
       </Modal>
     </div>
   );
