@@ -462,12 +462,12 @@ export function ProductsPage() {
           <button type="submit" className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">{editing ? 'Actualizar' : 'Crear'}</button>
         </form>
       </Modal>
-      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Eliminar Producto">
+      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Desactivar Producto">
         <div className="space-y-4">
-          <p className="text-gray-600">¿Estás seguro de que deseas eliminar el producto <strong>{deleteTarget?.name}</strong>? Esta acción no se puede deshacer.</p>
+          <p className="text-gray-600">¿Deseas desactivar el producto <strong>{deleteTarget?.name}</strong>? No volverá a aparecer en listados ni en nuevas ventas, pero su historial se mantiene intacto.</p>
           <div className="flex gap-3 justify-end">
             <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancelar</button>
-            <button onClick={async () => { if (deleteTarget) { await deleteProduct.mutateAsync(deleteTarget.id); setDeleteTarget(null); } }} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Eliminar</button>
+            <button onClick={async () => { if (deleteTarget) { await deleteProduct.mutateAsync(deleteTarget.id); setDeleteTarget(null); } }} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Desactivar</button>
           </div>
         </div>
       </Modal>

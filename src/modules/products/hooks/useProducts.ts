@@ -15,5 +15,5 @@ export function useUpdateProduct() {
 }
 export function useDeleteProduct() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: productService.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ['products'] }); toast.success('Producto eliminado'); } });
+  return useMutation({ mutationFn: productService.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ['products'] }); toast.success('Producto desactivado'); } });
 }
