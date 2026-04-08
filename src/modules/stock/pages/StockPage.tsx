@@ -91,7 +91,7 @@ export function StockPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Package size={24} /> Stock</h1>
         <div className="flex flex-wrap gap-2">
-          {activeTab === 'inventory' && <button onClick={openAdjustment} className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"><Plus size={18} /> Ajuste</button>}
+          {activeTab === 'inventory' && <button onClick={() => openAdjustment()} className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"><Plus size={18} /> Ajuste</button>}
           {activeTab === 'inventory' && <button onClick={openTransfer} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"><ArrowRightLeft size={18} /> Transferir</button>}
         </div>
       </div>
@@ -223,7 +223,7 @@ export function StockPage() {
       {activeTab === 'adjustments' && (
         <>
           <div className="flex justify-end mb-3">
-            <button onClick={openAdjustment} className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"><Plus size={18} /> Nuevo Ajuste</button>
+            <button onClick={() => openAdjustment()} className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"><Plus size={18} /> Nuevo Ajuste</button>
           </div>
           <DataTable columns={adjColumns} data={adjustments} isLoading={adjLoading} />
           <Pagination page={adjPage} totalPages={Math.ceil(adjTotal / 20)} onPageChange={setAdjPage} />
