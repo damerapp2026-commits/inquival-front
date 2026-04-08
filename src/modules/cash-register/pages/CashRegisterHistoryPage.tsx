@@ -83,7 +83,7 @@ export function CashRegisterHistoryPage() {
       <DataTable columns={columns} data={registers} isLoading={isLoading} />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
 
-      <Modal isOpen={showDetail} onClose={() => setShowDetail(false)} title={`Caja - ${detail?.date || ''}`}>
+      <Modal isOpen={showDetail} onClose={() => setShowDetail(false)} title={`Caja - ${detail?.date || ''}`} size="xl">
         <div className="space-y-4">
           <div className="flex gap-2 items-center text-sm">
             <span className={`px-2 py-1 rounded-full text-xs font-medium ${detail?.status === 'CLOSED' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{detail?.status === 'CLOSED' ? 'Cerrada' : 'Abierta'}</span>
@@ -130,10 +130,58 @@ export function CashRegisterHistoryPage() {
               </tbody>
             </table>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm bg-gray-50 p-3 rounded-lg">
-            <div>Apertura: <span className="font-medium">S/ {(detail?.openingBalance || 0).toFixed(2)}</span></div>
-            <div>Cierre: <span className="font-medium">S/ {(detail?.closingBalance || 0).toFixed(2)}</span></div>
-          </div>
+          {(() => {
+            const active = detailEntries.filter(e => !e.isDeleted);
+            const breakdown: Record<string, { income: number; expense: number }> = {};
+            active.forEach(e => {
+              const m = e.description.match(/\[(.+?)\]$/);
+              const method = m ? m[1] : 'Sin método';
+              if (!breakdown[method]) breakdown[method] = { income: 0, expense: 0 };
+              if (e.type === 'INCOME') breakdown[method].income += e.amount;
+              else breakdown[method].expense += e.amount;
+            });
+            const opening = detail?.openingBalance || 0;
+            const methods = Object.entries(breakdown).sort((a, b) => (b[1].income + b[1].expense) - (a[1].income + a[1].expense));
+            const cashEntry = methods.find(([m]) => m.toLowerCase() === 'efectivo');
+            const cashIncome = cashEntry?.[1].income || 0;
+            const cashExpense = cashEntry?.[1].expense || 0;
+            const cashInBox = opening + cashIncome - cashExpense;
+            const otherMethods = methods.filter(([m]) => m.toLowerCase() !== 'efectivo');
+
+            return (
+              <div className="space-y-3">
+                <div className="bg-green-50 border-2 border-green-500 rounded-lg p-4 text-center">
+                  <div className="text-sm font-semibold text-green-800 uppercase tracking-wide">Efectivo que debió quedar en caja</div>
+                  <div className="text-3xl font-bold text-green-700 mt-1">S/ {cashInBox.toFixed(2)}</div>
+                  <div className="text-xs text-gray-600 mt-2">
+                    Apertura S/ {opening.toFixed(2)} + Ingresos S/ {cashIncome.toFixed(2)} − Egresos S/ {cashExpense.toFixed(2)}
+                  </div>
+                </div>
+
+                {otherMethods.length > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <div className="text-xs font-semibold text-blue-800 uppercase mb-2">Otros métodos cobrados ese día</div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      {otherMethods.map(([method, totals]) => {
+                        const net = totals.income - totals.expense;
+                        return (
+                          <div key={method} className="flex justify-between bg-white px-3 py-2 rounded">
+                            <span className="text-gray-700 font-medium">{method}</span>
+                            <span className="font-bold text-blue-700">S/ {net.toFixed(2)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm bg-gray-50 p-3 rounded-lg">
+                  <div>Apertura: <span className="font-medium">S/ {opening.toFixed(2)}</span></div>
+                  <div>Cierre registrado: <span className="font-medium">S/ {(detail?.closingBalance || 0).toFixed(2)}</span></div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </Modal>
 
