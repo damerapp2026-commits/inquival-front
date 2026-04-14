@@ -53,7 +53,7 @@ export function PurchasesPage() {
   const openCreate = () => {
     const today = new Date().toISOString().slice(0, 10);
     setCurrency('PEN');
-    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [], purchaseDate: today, totalCostUsd: 0, totalCostPen: 0 });
+    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0 }], purchaseDate: today, totalCostUsd: 0, totalCostPen: 0 });
     setExchangeRate(null);
     setExchangeRateDate('');
     setSupplierLocked(false);
@@ -152,15 +152,12 @@ export function PurchasesPage() {
     e.preventDefault();
     if (currency === 'USD' && (!exchangeRate || !form.totalCostUsd)) { toast.error('Ingrese el monto en USD y verifique el tipo de cambio'); return; }
     if (currency === 'PEN' && !form.totalCostPen) { toast.error('Ingrese el monto en soles'); return; }
-    const validItems = form.items.filter(i => i.productId && i.quantity > 0);
     const payload: any = {
       companyId: form.companyId, supplier: form.supplier,
+      items: form.items.map(i => ({ productId: i.productId, quantity: i.quantity })),
       paymentType: form.paymentType,
       date: form.purchaseDate,
     };
-    if (validItems.length > 0) {
-      payload.items = validItems.map(i => ({ productId: i.productId, quantity: i.quantity }));
-    }
     if (currency === 'USD') {
       payload.totalCostUsd = form.totalCostUsd;
       payload.exchangeRate = exchangeRate;
@@ -181,11 +178,7 @@ export function PurchasesPage() {
 
   const companyList = Array.isArray(companies) ? companies : [];
   const products = productsData?.data || [];
-  const purchases = (data?.data || []).slice().sort((a: Purchase, b: Purchase) => {
-    const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
-    if (dateDiff !== 0) return dateDiff;
-    return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
-  });
+  const purchases = data?.data || [];
   const total = data?.total || 0;
 
   const getCompanyName = (id: string) => companyList.find((c: Company) => c.id === id)?.name || 'N/A';
@@ -198,16 +191,16 @@ export function PurchasesPage() {
     { key: 'totalCost', header: 'Total', render: (item: Purchase) => (
       <div>
         <span>S/ {item.totalCost.toFixed(2)}</span>
-        {item.totalCostUsd && <span className="block text-xs text-green-600">$ {item.totalCostUsd.toFixed(2)} USD</span>}
+        {item.totalCostUsd && <span className="block text-xs text-primary-600">$ {item.totalCostUsd.toFixed(2)} USD</span>}
       </div>
     )},
     { key: 'paymentType', header: 'Tipo', render: (item: Purchase) => (
-      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${item.paymentType === 'CREDITO' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${item.paymentType === 'CREDITO' ? 'bg-orange-100 text-orange-700' : 'bg-primary-100 text-primary-700'}`}>
         {item.paymentType === 'CREDITO' ? 'Crédito' : 'Contado'}
       </span>
     )},
     { key: 'actions', header: '', render: (item: Purchase) => (
-      <button onClick={(e) => { e.stopPropagation(); setViewingPurchase(item); }} className="text-green-600 hover:text-green-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
+      <button onClick={(e) => { e.stopPropagation(); setViewingPurchase(item); }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
     )},
   ];
 
@@ -215,7 +208,7 @@ export function PurchasesPage() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><ShoppingCart size={24} /> Compras / Ingresos</h1>
-        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"><Plus size={18} /> Nueva Compra</button>
+        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus size={18} /> Nueva Compra</button>
       </div>
       <div className="mb-4">
         <select value={companyFilter} onChange={(e) => { setCompanyFilter(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg">
@@ -223,7 +216,7 @@ export function PurchasesPage() {
           {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name} - {c.ruc}</option>)}
         </select>
       </div>
-      <DataTable columns={columns} data={purchases} isLoading={isLoading} hoverClass="hover:bg-green-50" />
+      <DataTable columns={columns} data={purchases} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Compra">
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -259,7 +252,7 @@ export function PurchasesPage() {
               <input
                 value={form.supplier}
                 onChange={(e) => setForm({ ...form, supplier: e.target.value })}
-                className={`flex-1 px-3 py-2 border rounded-lg text-sm ${supplierLocked ? 'bg-green-50 border-green-300' : ''}`}
+                className={`flex-1 px-3 py-2 border rounded-lg text-sm ${supplierLocked ? 'bg-primary-50 border-primary-300' : ''}`}
                 placeholder="Nombre del proveedor"
                 readOnly={supplierLocked}
                 required
@@ -281,7 +274,7 @@ export function PurchasesPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Moneda</label>
               <div className="flex gap-2">
-                <button type="button" onClick={() => handleCurrencyChange('PEN')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'PEN' ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>S/ Soles</button>
+                <button type="button" onClick={() => handleCurrencyChange('PEN')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'PEN' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>S/ Soles</button>
                 <button type="button" onClick={() => handleCurrencyChange('USD')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>$ Dólares</button>
               </div>
             </div>
@@ -307,7 +300,7 @@ export function PurchasesPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Pago</label>
             <div className="flex gap-3">
-              <button type="button" onClick={() => setForm({ ...form, paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [] })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CONTADO' ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Contado</button>
+              <button type="button" onClick={() => setForm({ ...form, paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [] })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CONTADO' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Contado</button>
               <button type="button" onClick={() => setForm({ ...form, paymentType: 'CREDITO' })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CREDITO' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Crédito</button>
             </div>
           </div>
@@ -338,13 +331,13 @@ export function PurchasesPage() {
                     <div key={idx} className="flex gap-2 mb-2 items-end">
                       <div className="flex-1">
                         <label className="block text-xs text-gray-500 mb-1">Monto</label>
-                        <input type="number" min="0.01" step="0.01" value={inst.amount || ''} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], amount: parseFloat(e.target.value) || 0 }; const total = Math.round(installments.reduce((s, i) => s + i.amount, 0) * 100) / 100; if (currency === 'PEN') { setForm({ ...form, installments, totalCostPen: total }); } else { setForm({ ...form, installments, totalCostUsd: total }); } }} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                        <input type="number" min="0.01" step="0.01" value={inst.amount || ''} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], amount: parseFloat(e.target.value) || 0 }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
                       </div>
                       <div className="flex-1">
                         <label className="block text-xs text-gray-500 mb-1">Fecha</label>
                         <input type="date" value={inst.dueDate} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], dueDate: e.target.value }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
                       </div>
-                      <button type="button" onClick={() => { const installments = form.installments.filter((_, i) => i !== idx); const total = Math.round(installments.reduce((s, i) => s + i.amount, 0) * 100) / 100; if (currency === 'PEN') { setForm({ ...form, installments, totalCostPen: total }); } else { setForm({ ...form, installments, totalCostUsd: total }); } }} className="text-red-400 hover:text-red-600 pb-1"><Trash2 size={14} /></button>
+                      <button type="button" onClick={() => setForm({ ...form, installments: form.installments.filter((_, i) => i !== idx) })} className="text-red-400 hover:text-red-600 pb-1"><Trash2 size={14} /></button>
                     </div>
                   ))}
                   {form.installments.length === 0 && <p className="text-xs text-gray-400">Agrega al menos una cuota</p>}
@@ -353,21 +346,18 @@ export function PurchasesPage() {
             </div>
           )}
 
-          {/* Productos (opcional) */}
+          {/* Productos */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">Productos <span className="text-xs text-gray-400 font-normal">(opcional)</span></label>
-              <button type="button" onClick={addItem} className="text-sm text-green-600 hover:text-green-800 font-medium">+ Agregar producto</button>
+              <label className="text-sm font-medium text-gray-700">Productos</label>
+              <button type="button" onClick={addItem} className="text-sm text-primary-600 hover:text-primary-800 font-medium">+ Agregar producto</button>
             </div>
-            {form.items.length === 0 && (
-              <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-3 text-center text-sm text-gray-400">
-                Sin productos — solo se registrará el monto
-              </div>
-            )}
             <div className="space-y-3">
               {form.items.map((item, idx) => (
                 <div key={idx} className="bg-gray-50 rounded-lg p-3 relative">
-                  <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+                  {form.items.length > 1 && (
+                    <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Producto</label>
@@ -379,6 +369,7 @@ export function PurchasesPage() {
                             onChange={(v) => updateItem(idx, 'productId', v)}
                             placeholder="Buscar producto..."
                             minChars={1}
+                            required
                           />
                         </div>
                         <button type="button" onClick={() => openQuickProduct(idx)} className="px-2 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 shrink-0" title="Crear nuevo producto">
@@ -388,7 +379,7 @@ export function PurchasesPage() {
                     </div>
                     <div className="w-28">
                       <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
-                      <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" />
+                      <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
                     </div>
                   </div>
                 </div>
@@ -432,9 +423,9 @@ export function PurchasesPage() {
 
           {/* Total */}
           {currency === 'PEN' && form.totalCostPen > 0 && (
-            <div className="bg-green-50 p-3 rounded-lg flex items-center justify-between">
-              <span className="text-sm font-medium text-green-800">Total de la compra</span>
-              <span className="text-xl font-bold text-green-700">S/ {form.totalCostPen.toFixed(2)}</span>
+            <div className="bg-primary-50 p-3 rounded-lg flex items-center justify-between">
+              <span className="text-sm font-medium text-primary-800">Total de la compra</span>
+              <span className="text-xl font-bold text-primary-700">S/ {form.totalCostPen.toFixed(2)}</span>
             </div>
           )}
           {currency === 'USD' && (
@@ -446,12 +437,12 @@ export function PurchasesPage() {
               {exchangeRate != null && form.totalCostUsd > 0 && (
                 <div className="flex items-center justify-between border-t border-blue-200 pt-1">
                   <span className="text-sm text-blue-600">Total en Soles (×{exchangeRate.toFixed(4)})</span>
-                  <span className="text-xl font-bold text-green-700">S/ {totalSoles.toFixed(2)}</span>
+                  <span className="text-xl font-bold text-primary-700">S/ {totalSoles.toFixed(2)}</span>
                 </div>
               )}
             </div>
           )}
-          <button type="submit" disabled={(currency === 'USD' ? (!exchangeRate || !form.totalCostUsd) : !form.totalCostPen) || createPurchase.isPending} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+          <button type="submit" disabled={(currency === 'USD' ? (!exchangeRate || !form.totalCostUsd) : !form.totalCostPen) || createPurchase.isPending} className="w-full py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
             {createPurchase.isPending ? 'Registrando...' : 'Registrar Compra'}
           </button>
         </form>
@@ -477,7 +468,7 @@ export function PurchasesPage() {
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Tipo de Pago</span>
-                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${viewingPurchase.paymentType === 'CREDITO' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${viewingPurchase.paymentType === 'CREDITO' ? 'bg-orange-100 text-orange-700' : 'bg-primary-100 text-primary-700'}`}>
                   {viewingPurchase.paymentType === 'CREDITO' ? 'Crédito' : 'Contado'}
                 </span>
               </div>
@@ -523,12 +514,12 @@ export function PurchasesPage() {
 
             {/* Total */}
             {viewingPurchase.totalCostUsd && viewingPurchase.exchangeRate && (
-              <div className="bg-green-50 p-3 rounded-lg space-y-1 border border-green-200">
+              <div className="bg-primary-50 p-3 rounded-lg space-y-1 border border-primary-200">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-green-700">Monto USD</span>
-                  <span className="text-lg font-bold text-green-800">$ {viewingPurchase.totalCostUsd.toFixed(2)}</span>
+                  <span className="text-sm text-primary-700">Monto USD</span>
+                  <span className="text-lg font-bold text-primary-800">$ {viewingPurchase.totalCostUsd.toFixed(2)}</span>
                 </div>
-                <div className="flex items-center justify-between text-xs text-green-600">
+                <div className="flex items-center justify-between text-xs text-primary-600">
                   <span>Tipo de cambio (venta)</span>
                   <span>S/ {viewingPurchase.exchangeRate.toFixed(4)}</span>
                 </div>

@@ -46,10 +46,10 @@ export function ClientCreditDetailPage() {
   const statusLabels: Record<string, { label: string; class: string }> = {
     PENDING: { label: 'Pendiente', class: 'bg-yellow-100 text-yellow-800' },
     PARTIAL: { label: 'Parcial', class: 'bg-blue-100 text-blue-800' },
-    PAID: { label: 'Pagado', class: 'bg-green-100 text-green-800' },
+    PAID: { label: 'Pagado', class: 'bg-primary-100 text-primary-800' },
   };
 
-  if (isLoading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" /></div>;
+  if (isLoading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" /></div>;
 
   return (
     <div>
@@ -60,7 +60,7 @@ export function ClientCreditDetailPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-gray-50 p-4 rounded-lg"><div className="text-sm text-gray-500">Total en Creditos</div><div className="text-lg font-bold">S/ {totalDebt.toFixed(2)}</div></div>
-        <div className="bg-green-50 p-4 rounded-lg"><div className="text-sm text-green-600">Total Pagado</div><div className="text-lg font-bold text-green-600">S/ {totalPaid.toFixed(2)}</div></div>
+        <div className="bg-primary-50 p-4 rounded-lg"><div className="text-sm text-primary-600">Total Pagado</div><div className="text-lg font-bold text-primary-600">S/ {totalPaid.toFixed(2)}</div></div>
         <div className="bg-red-50 p-4 rounded-lg"><div className="text-sm text-red-600">Total Pendiente</div><div className="text-lg font-bold text-red-600">S/ {totalPending.toFixed(2)}</div></div>
       </div>
 
@@ -79,7 +79,7 @@ export function ClientCreditDetailPage() {
                   <span className="text-sm">Total: <span className="font-bold">S/ {credit.totalAmount.toFixed(2)}</span></span>
                   <span className="text-sm text-red-600">Pendiente: <span className="font-bold">S/ {credit.pendingAmount.toFixed(2)}</span></span>
                   {credit.status !== 'PAID' && (
-                    <button onClick={() => openPayment(credit)} className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"><DollarSign size={14} /> Pagar</button>
+                    <button onClick={() => openPayment(credit)} className="flex items-center gap-1 px-3 py-1 bg-primary-600 text-white rounded text-sm hover:bg-primary-700"><DollarSign size={14} /> Pagar</button>
                   )}
                 </div>
               </div>
@@ -121,10 +121,10 @@ export function ClientCreditDetailPage() {
                   <div className="text-xs font-medium text-gray-500 mb-2">Historial de abonos:</div>
                   <div className="space-y-1.5">
                     {credit.payments.map((p: CreditPayment, idx: number) => (
-                      <div key={idx} className="flex items-center justify-between bg-green-50 rounded px-3 py-1.5 text-sm">
+                      <div key={idx} className="flex items-center justify-between bg-primary-50 rounded px-3 py-1.5 text-sm">
                         <div className="flex items-center gap-3">
                           <span className="text-gray-500">{new Date(p.paymentDate).toLocaleDateString('es-PE')}</span>
-                          <span className="font-medium text-green-700">S/ {p.amount.toFixed(2)}</span>
+                          <span className="font-medium text-primary-700">S/ {p.amount.toFixed(2)}</span>
                           {p.paymentMethodName && (
                             <span className="text-xs bg-white border rounded px-1.5 py-0.5 text-gray-600">{p.paymentMethodName}</span>
                           )}
@@ -150,7 +150,7 @@ export function ClientCreditDetailPage() {
         <form onSubmit={handlePayment} className="space-y-4">
           <div className="bg-gray-50 p-3 rounded-lg text-sm">
             <div>Total del crédito: <span className="font-bold">S/ {selectedCredit?.totalAmount.toFixed(2)}</span></div>
-            <div>Ya pagado: <span className="font-medium text-green-600">S/ {selectedCredit?.paidAmount.toFixed(2)}</span></div>
+            <div>Ya pagado: <span className="font-medium text-primary-600">S/ {selectedCredit?.paidAmount.toFixed(2)}</span></div>
             <div className="font-bold text-red-600 mt-1">Pendiente: S/ {selectedCredit?.pendingAmount.toFixed(2)}</div>
           </div>
           <div>
@@ -168,7 +168,7 @@ export function ClientCreditDetailPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
             <textarea value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} />
           </div>
-          <button type="submit" disabled={registerPayment.isPending} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+          <button type="submit" disabled={registerPayment.isPending} className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">
             {registerPayment.isPending ? 'Registrando...' : 'Registrar Pago'}
           </button>
         </form>

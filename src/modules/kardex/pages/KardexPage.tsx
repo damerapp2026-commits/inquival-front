@@ -8,7 +8,7 @@ import { ClipboardList, Search, ArrowUpCircle, ArrowDownCircle } from 'lucide-re
 import type { Company, Product } from '../../../shared/types';
 
 const MOVEMENT_LABELS: Record<string, { label: string; color: string; isEntry: boolean }> = {
-  PURCHASE: { label: 'Compra', color: 'bg-green-100 text-green-800', isEntry: true },
+  PURCHASE: { label: 'Compra', color: 'bg-primary-100 text-primary-800', isEntry: true },
   SALE: { label: 'Venta', color: 'bg-red-100 text-red-800', isEntry: false },
   ADJUSTMENT_IN: { label: 'Ajuste +', color: 'bg-blue-100 text-blue-800', isEntry: true },
   ADJUSTMENT_OUT: { label: 'Ajuste -', color: 'bg-orange-100 text-orange-800', isEntry: false },
@@ -94,7 +94,7 @@ export function KardexPage() {
       key: 'entrada', header: 'Entrada', render: (item: StockMovement) => {
         const info = MOVEMENT_LABELS[item.movementType];
         return info?.isEntry ? (
-          <span className="text-green-600 font-semibold flex items-center gap-1"><ArrowUpCircle size={14} /> +{item.quantity}</span>
+          <span className="text-primary-600 font-semibold flex items-center gap-1"><ArrowUpCircle size={14} /> +{item.quantity}</span>
         ) : <span className="text-gray-300">-</span>;
       },
     },
@@ -127,7 +127,7 @@ export function KardexPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Empresa</label>
-            <select value={companyId} onChange={(e) => { setCompanyId(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-green-500">
+            <select value={companyId} onChange={(e) => { setCompanyId(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500">
               <option value="">Todas</option>
               {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -142,7 +142,7 @@ export function KardexPage() {
                 value={selectedProductId ? getProductName(selectedProductId) : productSearch}
                 onChange={(e) => { setProductSearch(e.target.value); setSelectedProductId(''); }}
                 onFocus={() => { if (selectedProductId) { setProductSearch(''); setSelectedProductId(''); } }}
-                className="w-full pl-8 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-green-500"
+                className="w-full pl-8 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
               />
               {productSearch && !selectedProductId && filteredProducts.length > 0 && (
                 <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
@@ -158,7 +158,7 @@ export function KardexPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Tipo movimiento</label>
-            <select value={movementType} onChange={(e) => { setMovementType(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-green-500">
+            <select value={movementType} onChange={(e) => { setMovementType(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500">
               <option value="">Todos</option>
               <option value="PURCHASE">Compra</option>
               <option value="SALE">Venta</option>
@@ -172,11 +172,11 @@ export function KardexPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Desde</label>
-            <input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
+            <input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Hasta</label>
-            <input type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
+            <input type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
           </div>
         </div>
       </div>

@@ -92,7 +92,7 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
             key={o.value}
             type="button"
             onMouseDown={(e) => { e.preventDefault(); handleSelect(o.value, o.label); }}
-            className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 ${o.value === value ? 'bg-green-50 font-medium' : ''}`}
+            className={`w-full text-left px-3 py-2 text-sm hover:bg-primary-50 ${o.value === value ? 'bg-primary-50 font-medium' : ''}`}
           >
             {o.label}
           </button>

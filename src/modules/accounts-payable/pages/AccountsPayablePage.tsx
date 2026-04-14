@@ -49,11 +49,11 @@ export function AccountsPayablePage() {
   const statusLabels: Record<string, { label: string; class: string }> = {
     PENDING: { label: 'Pendiente', class: 'bg-yellow-100 text-yellow-800' },
     PARTIAL: { label: 'Parcial', class: 'bg-blue-100 text-blue-800' },
-    PAID: { label: 'Pagado', class: 'bg-green-100 text-green-800' },
+    PAID: { label: 'Pagado', class: 'bg-primary-100 text-primary-800' },
   };
 
   const getDueDateColor = (ap: AccountPayable) => {
-    if (ap.status === 'PAID') return 'text-green-600';
+    if (ap.status === 'PAID') return 'text-primary-600';
     const due = ap.paymentScheduleType === 'INSTALLMENTS'
       ? ap.installments?.find(i => i.status === 'PENDING')?.dueDate
       : ap.dueDate;
@@ -63,7 +63,7 @@ export function AccountsPayablePage() {
     const diffDays = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays < 0) return 'text-red-600 font-bold';
     if (diffDays <= 3) return 'text-yellow-600 font-medium';
-    return 'text-green-600';
+    return 'text-primary-600';
   };
 
   const getNextDueDate = (ap: AccountPayable) => {
@@ -78,7 +78,7 @@ export function AccountsPayablePage() {
     { key: 'supplier', header: 'Proveedor' },
     { key: 'createdAt', header: 'Fecha', render: (item: AccountPayable) => new Date(item.createdAt).toLocaleDateString('es-PE') },
     { key: 'totalAmount', header: 'Total', render: (item: AccountPayable) => `S/ ${item.totalAmount.toFixed(2)}` },
-    { key: 'paidAmount', header: 'Pagado', render: (item: AccountPayable) => <span className="text-green-600">S/ {item.paidAmount.toFixed(2)}</span> },
+    { key: 'paidAmount', header: 'Pagado', render: (item: AccountPayable) => <span className="text-primary-600">S/ {item.paidAmount.toFixed(2)}</span> },
     { key: 'pendingAmount', header: 'Pendiente', render: (item: AccountPayable) => <span className="text-red-600 font-medium">S/ {item.pendingAmount.toFixed(2)}</span> },
     { key: 'dueDate', header: 'Vencimiento', render: (item: AccountPayable) => (
       <span className={getDueDateColor(item)}>{getNextDueDate(item)}</span>
@@ -91,7 +91,7 @@ export function AccountsPayablePage() {
       <div className="flex gap-2">
         <button onClick={() => setViewingId(item.id)} className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs"><Eye size={14} /> Ver</button>
         {item.status !== 'PAID' && (
-          <button onClick={() => openPayment(item)} className="text-green-600 hover:text-green-800 flex items-center gap-1 text-xs"><DollarSign size={14} /> Pagar</button>
+          <button onClick={() => openPayment(item)} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs"><DollarSign size={14} /> Pagar</button>
         )}
       </div>
     )},
@@ -140,7 +140,7 @@ export function AccountsPayablePage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
             <textarea value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} />
           </div>
-          <button type="submit" disabled={exceedsPending} className={`w-full py-2 text-white rounded-lg ${exceedsPending ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}>Registrar Pago</button>
+          <button type="submit" disabled={exceedsPending} className={`w-full py-2 text-white rounded-lg ${exceedsPending ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-700'}`}>Registrar Pago</button>
         </form>
       </Modal>
 
@@ -175,14 +175,14 @@ export function AccountsPayablePage() {
                 <h3 className="text-sm font-medium text-gray-700 mb-2">Cuotas</h3>
                 <div className="space-y-2">
                   {detailAP.installments.map((inst: AccountPayableInstallment, idx: number) => (
-                    <div key={inst.id || idx} className={`flex items-center justify-between p-2 rounded-lg border ${inst.status === 'PAID' ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'}`}>
+                    <div key={inst.id || idx} className={`flex items-center justify-between p-2 rounded-lg border ${inst.status === 'PAID' ? 'bg-primary-50 border-primary-200' : 'bg-white border-gray-200'}`}>
                       <div className="flex items-center gap-2">
-                        {inst.status === 'PAID' ? <CheckCircle size={14} className="text-green-500" /> : <Clock size={14} className="text-gray-400" />}
+                        {inst.status === 'PAID' ? <CheckCircle size={14} className="text-primary-500" /> : <Clock size={14} className="text-gray-400" />}
                         <span className="text-sm">Cuota {idx + 1}</span>
                       </div>
                       <div className="text-right">
                         <div className="text-sm font-medium">S/ {inst.amount.toFixed(2)}</div>
-                        <div className={`text-xs ${inst.status === 'PAID' ? 'text-green-600' : 'text-gray-500'}`}>
+                        <div className={`text-xs ${inst.status === 'PAID' ? 'text-primary-600' : 'text-gray-500'}`}>
                           {inst.status === 'PAID' ? `Pagada ${inst.paidDate ? new Date(inst.paidDate).toLocaleDateString('es-PE') : ''}` : `Vence: ${new Date(inst.dueDate).toLocaleDateString('es-PE')}`}
                         </div>
                       </div>
@@ -210,9 +210,9 @@ export function AccountsPayablePage() {
               ) : (
                 <div className="space-y-2">
                   {detailAP.payments.map((p: AccountPayablePayment, idx: number) => (
-                    <div key={p.id || idx} className="flex items-center justify-between p-2 bg-green-50 rounded-lg border border-green-200">
+                    <div key={p.id || idx} className="flex items-center justify-between p-2 bg-primary-50 rounded-lg border border-primary-200">
                       <div>
-                        <div className="text-sm font-medium text-green-700">S/ {p.amount.toFixed(2)}</div>
+                        <div className="text-sm font-medium text-primary-700">S/ {p.amount.toFixed(2)}</div>
                         <div className="text-xs text-gray-500">{new Date(p.paymentDate).toLocaleDateString('es-PE')}{p.registeredByName ? ` - ${p.registeredByName}` : ''}</div>
                       </div>
                       {p.notes && <div className="text-xs text-gray-500 max-w-[200px] truncate">{p.notes}</div>}

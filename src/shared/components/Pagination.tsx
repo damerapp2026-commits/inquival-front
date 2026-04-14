@@ -28,7 +28,7 @@ export function Pagination({ page, totalPages, onPageChange }: PaginationProps) 
         onChange={(e) => setInputValue(e.target.value)}
         onBlur={handleSubmit}
         onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-        className="w-12 text-center text-sm border rounded-lg py-1 focus:ring-2 focus:ring-green-500 focus:outline-none"
+        className="w-12 text-center text-sm border rounded-lg py-1 focus:ring-2 focus:ring-primary-500 focus:outline-none"
       />
       <span className="text-sm text-gray-600">de {totalPages}</span>
       <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages} className="p-2 rounded-lg border disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"><ChevronRight size={16} /></button>

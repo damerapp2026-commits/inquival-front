@@ -73,7 +73,7 @@ export function StockPage() {
     { key: 'date', header: 'Fecha', render: (item: StockAdjustment) => new Date(item.date).toLocaleDateString('es-PE') },
     { key: 'productId', header: 'Producto', render: (item: StockAdjustment) => getProductName(item.productId) },
     { key: 'companyId', header: 'Empresa', render: (item: StockAdjustment) => getCompanyName(item.companyId) },
-    { key: 'type', header: 'Tipo', render: (item: StockAdjustment) => item.type === 'INCREASE' ? <span className="text-green-600 font-medium">Aumento</span> : <span className="text-red-600 font-medium">Disminucion</span> },
+    { key: 'type', header: 'Tipo', render: (item: StockAdjustment) => item.type === 'INCREASE' ? <span className="text-primary-600 font-medium">Aumento</span> : <span className="text-red-600 font-medium">Disminucion</span> },
     { key: 'quantity', header: 'Cantidad', render: (item: StockAdjustment) => item.quantity },
     { key: 'previousQuantity', header: 'Anterior', render: (item: StockAdjustment) => item.previousQuantity },
     { key: 'newQuantity', header: 'Nuevo', render: (item: StockAdjustment) => item.newQuantity },
@@ -99,7 +99,7 @@ export function StockPage() {
       <div className="flex gap-1 mb-4 border-b">
         {tabs.map(tab => { const Icon = tab.icon; return (
           <button key={tab.id} onClick={() => { setActiveTab(tab.id); setPage(1); setAdjPage(1); }}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id ? 'border-green-600 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             <Icon size={16} />{tab.label}
           </button>
         ); })}
@@ -206,7 +206,7 @@ export function StockPage() {
       {(activeTab === 'inventory' || activeTab === 'adjustments') && (
         <div className="mb-4 flex gap-2">
           {companyList.map((c: Company) => (
-            <button key={c.id} onClick={() => { setCompanyId(c.id); setPage(1); setAdjPage(1); }} className={`px-4 py-2 rounded-lg font-medium ${companyId === c.id ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+            <button key={c.id} onClick={() => { setCompanyId(c.id); setPage(1); setAdjPage(1); }} className={`px-4 py-2 rounded-lg font-medium ${companyId === c.id ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
               {c.name}
             </button>
           ))}
@@ -254,7 +254,7 @@ export function StockPage() {
             </div>
           </div>
           <div>
-            <div className="flex items-center justify-between mb-2"><label className="text-sm font-medium text-gray-700">Productos</label><button type="button" onClick={addTransferItem} className="text-sm text-green-600 hover:text-green-800">+ Agregar</button></div>
+            <div className="flex items-center justify-between mb-2"><label className="text-sm font-medium text-gray-700">Productos</label><button type="button" onClick={addTransferItem} className="text-sm text-primary-600 hover:text-primary-800">+ Agregar</button></div>
             <div className="space-y-2">
               {transferForm.items.map((item, idx) => (
                 <div key={idx} className="flex gap-2 items-center">

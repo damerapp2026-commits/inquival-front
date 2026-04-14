@@ -361,7 +361,7 @@ export function ProductsPage() {
         </div>
       );
     }},
-    { key: 'isActive', header: 'Estado', render: (item: Product) => <span className={`px-2 py-1 rounded-full text-xs ${item.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.isActive ? 'Activo' : 'Inactivo'}</span> },
+    { key: 'isActive', header: 'Estado', render: (item: Product) => <span className={`px-2 py-1 rounded-full text-xs ${item.isActive ? 'bg-primary-100 text-primary-800' : 'bg-red-100 text-red-800'}`}>{item.isActive ? 'Activo' : 'Inactivo'}</span> },
     { key: 'actions', header: 'Acciones', render: (item: Product) => (
       <div className="flex gap-2">
         <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800"><Edit2 size={16} /></button>
@@ -378,14 +378,14 @@ export function ProductsPage() {
           <button onClick={handleExport} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Download size={16} /> Exportar</button>
           <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Upload size={16} /> Importar</button>
           <button onClick={openBulk} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"><Layers size={16} /> Carga Masiva</button>
-          <button onClick={openCreate} className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"><Plus size={16} /> Nuevo Producto</button>
+          <button onClick={openCreate} className="flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm"><Plus size={16} /> Nuevo Producto</button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" />
         </div>
       </div>
       <div className="mb-4 flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" placeholder="Buscar productos..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500" />
+          <input type="text" placeholder="Buscar productos..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500" />
         </div>
         {comps.length > 0 && (
           <select value={priceCompanyFilter} onChange={(e) => setPriceCompanyFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
@@ -407,13 +407,13 @@ export function ProductsPage() {
               {showCustomUnit ? (
                 <div className="flex gap-2">
                   <input value={newUnit} onChange={(e) => setNewUnit(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomUnit())} className="flex-1 px-3 py-2 border rounded-lg" placeholder="Ej: bolsa, sobre..." autoFocus />
-                  <button type="button" onClick={addCustomUnit} className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm">Agregar</button>
+                  <button type="button" onClick={addCustomUnit} className="px-3 py-2 bg-primary-600 text-white rounded-lg text-sm">Agregar</button>
                   <button type="button" onClick={() => setShowCustomUnit(false)} className="px-3 py-2 border rounded-lg text-sm">Cancelar</button>
                 </div>
               ) : (
                 <div className="flex gap-2">
                   <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="flex-1 px-3 py-2 border rounded-lg">{allUnits.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select>
-                  <button type="button" onClick={() => setShowCustomUnit(true)} className="px-3 py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 hover:text-green-600 text-sm" title="Agregar unidad">+</button>
+                  <button type="button" onClick={() => setShowCustomUnit(true)} className="px-3 py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 hover:text-primary-600 text-sm" title="Agregar unidad">+</button>
                 </div>
               )}
             </div>
@@ -459,7 +459,7 @@ export function ProductsPage() {
               ))}
             </div>
           )}
-          <button type="submit" className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">{editing ? 'Actualizar' : 'Crear'}</button>
+          <button type="submit" className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">{editing ? 'Actualizar' : 'Crear'}</button>
         </form>
       </Modal>
       <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Desactivar Producto">
@@ -524,10 +524,10 @@ export function ProductsPage() {
             </div>
           ))}
           <div className="flex gap-2">
-            <button type="button" onClick={() => setBulkProducts(prev => [...prev, emptyBulkProduct()])} className="flex-1 py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-green-400 hover:text-green-600 text-sm">+ Agregar otro producto</button>
+            <button type="button" onClick={() => setBulkProducts(prev => [...prev, emptyBulkProduct()])} className="flex-1 py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-primary-400 hover:text-primary-600 text-sm">+ Agregar otro producto</button>
             <button type="button" onClick={handleDownloadTemplate} className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-gray-500 hover:text-blue-600 text-sm"><Download size={14} /> Plantilla Excel</button>
           </div>
-          <button type="button" onClick={handleBulkSubmit} disabled={bulkLoading} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium">
+          <button type="button" onClick={handleBulkSubmit} disabled={bulkLoading} className="w-full py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 font-medium">
             {bulkLoading ? 'Creando productos...' : `Crear ${bulkProducts.filter(p => p.name && p.categoryId).length} producto(s)`}
           </button>
         </div>

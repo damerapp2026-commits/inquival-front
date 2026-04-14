@@ -43,7 +43,7 @@ export function CashRegisterHistoryPage() {
     { key: 'income', header: 'Ingresos', render: (item: CashRegister) => {
       const active = item.entries.filter(e => !e.isDeleted);
       const income = active.filter(e => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
-      return <span className="text-green-600">S/ {income.toFixed(2)}</span>;
+      return <span className="text-primary-600">S/ {income.toFixed(2)}</span>;
     }},
     { key: 'expense', header: 'Egresos', render: (item: CashRegister) => {
       const active = item.entries.filter(e => !e.isDeleted);
@@ -51,7 +51,7 @@ export function CashRegisterHistoryPage() {
       return <span className="text-red-600">S/ {expense.toFixed(2)}</span>;
     }},
     { key: 'closingBalance', header: 'Balance Cierre', render: (item: CashRegister) => item.closingBalance != null ? `S/ ${item.closingBalance.toFixed(2)}` : '-' },
-    { key: 'status', header: 'Estado', render: (item: CashRegister) => <span className={`px-2 py-1 rounded-full text-xs font-medium ${item.status === 'CLOSED' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{item.status === 'CLOSED' ? 'Cerrada' : 'Abierta'}</span> },
+    { key: 'status', header: 'Estado', render: (item: CashRegister) => <span className={`px-2 py-1 rounded-full text-xs font-medium ${item.status === 'CLOSED' ? 'bg-red-100 text-red-800' : 'bg-primary-100 text-primary-800'}`}>{item.status === 'CLOSED' ? 'Cerrada' : 'Abierta'}</span> },
     { key: 'actions', header: '', render: (item: CashRegister) => (
       <div className="flex gap-2 items-center">
         <button onClick={() => openDetail(item)} className="text-blue-600 hover:text-blue-800 text-sm whitespace-nowrap">Ver detalle</button>
@@ -73,7 +73,7 @@ export function CashRegisterHistoryPage() {
 
       <div className="flex gap-2 mb-6">
         <Link to="/cash-register" className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200"><Wallet size={16} /> Hoy</Link>
-        <span className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium"><History size={16} /> Historial de Cajas</span>
+        <span className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium"><History size={16} /> Historial de Cajas</span>
       </div>
       <div className="mb-4 flex gap-3 items-center">
         <div><label className="block text-xs text-gray-500 mb-1">Desde</label><input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg text-sm" /></div>
@@ -83,10 +83,10 @@ export function CashRegisterHistoryPage() {
       <DataTable columns={columns} data={registers} isLoading={isLoading} />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
 
-      <Modal isOpen={showDetail} onClose={() => setShowDetail(false)} title={`Caja - ${detail?.date || ''}`} size="xl">
+      <Modal isOpen={showDetail} onClose={() => setShowDetail(false)} title={`Caja - ${detail?.date || ''}`}>
         <div className="space-y-4">
           <div className="flex gap-2 items-center text-sm">
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${detail?.status === 'CLOSED' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{detail?.status === 'CLOSED' ? 'Cerrada' : 'Abierta'}</span>
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${detail?.status === 'CLOSED' ? 'bg-red-100 text-red-800' : 'bg-primary-100 text-primary-800'}`}>{detail?.status === 'CLOSED' ? 'Cerrada' : 'Abierta'}</span>
             {detail?.notes && <span className="text-gray-500">Notas: {detail.notes}</span>}
           </div>
           <div className="max-h-80 overflow-y-auto">
@@ -96,165 +96,47 @@ export function CashRegisterHistoryPage() {
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Tipo</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Categoria</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Descripcion</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">Método</th>
                   <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">Comprobante</th>
                   <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Monto</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {detailEntries.map((e) => {
-                  const methodMatch = e.description.match(/\[(.+?)\]$/);
-                  const method = methodMatch ? methodMatch[1] : null;
-                  const cleanDesc = methodMatch ? e.description.replace(/\s*\[.+?\]$/, '') : e.description;
-                  const methodColor = method?.toLowerCase() === 'efectivo' ? 'bg-green-100 text-green-800'
-                    : method?.toLowerCase() === 'yape' ? 'bg-purple-100 text-purple-800'
-                    : method?.toLowerCase() === 'plin' ? 'bg-cyan-100 text-cyan-800'
-                    : 'bg-gray-100 text-gray-700';
-                  return (
+                {detailEntries.map((e) => (
                   <tr key={e.id} className={e.isDeleted ? 'opacity-40 line-through' : ''}>
-                    <td className="px-3 py-2"><span className={`text-xs ${e.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>{e.type === 'INCOME' ? 'Ingreso' : 'Egreso'}</span></td>
+                    <td className="px-3 py-2"><span className={`text-xs ${e.type === 'INCOME' ? 'text-primary-600' : 'text-red-600'}`}>{e.type === 'INCOME' ? 'Ingreso' : 'Egreso'}</span></td>
                     <td className="px-3 py-2 text-xs">{categoryLabels[e.category] || e.category}</td>
-                    <td className="px-3 py-2 text-xs">{cleanDesc}</td>
+                    <td className="px-3 py-2 text-xs">{e.description}</td>
                     <td className="px-3 py-2 text-center">
-                      {method ? <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${methodColor}`}>{method}</span> : <span className="text-gray-400 text-xs">-</span>}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      {e.voucherType === 'BOLETA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Boleta</span>
+                      {e.voucherType === 'BOLETA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">Boleta</span>
                         : e.voucherType === 'FACTURA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Factura</span>
                         : <span className="text-gray-400 text-xs">-</span>}
                     </td>
-                    <td className={`px-3 py-2 text-right ${e.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>S/ {e.amount.toFixed(2)}</td>
+                    <td className={`px-3 py-2 text-right ${e.type === 'INCOME' ? 'text-primary-600' : 'text-red-600'}`}>S/ {e.amount.toFixed(2)}</td>
                   </tr>
-                  );
-                })}
+                ))}
               </tbody>
             </table>
           </div>
-          {(() => {
-            const active = detailEntries.filter(e => !e.isDeleted);
-            const breakdown: Record<string, { income: number; expense: number }> = {};
-            active.forEach(e => {
-              const m = e.description.match(/\[(.+?)\]$/);
-              const method = m ? m[1] : 'Sin método';
-              if (!breakdown[method]) breakdown[method] = { income: 0, expense: 0 };
-              if (e.type === 'INCOME') breakdown[method].income += e.amount;
-              else breakdown[method].expense += e.amount;
-            });
-            const opening = detail?.openingBalance || 0;
-            const methods = Object.entries(breakdown).sort((a, b) => (b[1].income + b[1].expense) - (a[1].income + a[1].expense));
-            const cashEntry = methods.find(([m]) => m.toLowerCase() === 'efectivo');
-            const cashIncome = cashEntry?.[1].income || 0;
-            const cashExpense = cashEntry?.[1].expense || 0;
-            const cashInBox = opening + cashIncome - cashExpense;
-            const otherMethods = methods.filter(([m]) => m.toLowerCase() !== 'efectivo');
-
-            return (
-              <div className="space-y-3">
-                <div className="bg-green-50 border-2 border-green-500 rounded-lg p-4 text-center">
-                  <div className="text-sm font-semibold text-green-800 uppercase tracking-wide">Efectivo que debió quedar en caja</div>
-                  <div className="text-3xl font-bold text-green-700 mt-1">S/ {cashInBox.toFixed(2)}</div>
-                  <div className="text-xs text-gray-600 mt-2">
-                    Apertura S/ {opening.toFixed(2)} + Ingresos S/ {cashIncome.toFixed(2)} − Egresos S/ {cashExpense.toFixed(2)}
-                  </div>
-                </div>
-
-                {otherMethods.length > 0 && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <div className="text-xs font-semibold text-blue-800 uppercase mb-2">Otros métodos cobrados ese día</div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      {otherMethods.map(([method, totals]) => {
-                        const net = totals.income - totals.expense;
-                        return (
-                          <div key={method} className="flex justify-between bg-white px-3 py-2 rounded">
-                            <span className="text-gray-700 font-medium">{method}</span>
-                            <span className="font-bold text-blue-700">S/ {net.toFixed(2)}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm bg-gray-50 p-3 rounded-lg">
-                  <div>Apertura: <span className="font-medium">S/ {opening.toFixed(2)}</span></div>
-                  <div>Cierre registrado: <span className="font-medium">S/ {(detail?.closingBalance || 0).toFixed(2)}</span></div>
-                </div>
-              </div>
-            );
-          })()}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm bg-gray-50 p-3 rounded-lg">
+            <div>Apertura: <span className="font-medium">S/ {(detail?.openingBalance || 0).toFixed(2)}</span></div>
+            <div>Cierre: <span className="font-medium">S/ {(detail?.closingBalance || 0).toFixed(2)}</span></div>
+          </div>
         </div>
       </Modal>
 
       <Modal isOpen={showCloseModal} onClose={() => setShowCloseModal(false)} title={`Cerrar Caja - ${closeTarget?.date || ''}`}>
-        {(() => {
-          const activeEntries = closeTarget?.entries.filter(e => !e.isDeleted) || [];
-          const totalIncome = activeEntries.filter(e => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
-          const totalExpense = activeEntries.filter(e => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
-          const opening = closeTarget?.openingBalance || 0;
-          const netBalance = opening + totalIncome - totalExpense;
-
-          const methodBreakdown: Record<string, { income: number; expense: number }> = {};
-          activeEntries.forEach(entry => {
-            const match = entry.description.match(/\[(.+?)\]$/);
-            const method = match ? match[1] : 'Sin método';
-            if (!methodBreakdown[method]) methodBreakdown[method] = { income: 0, expense: 0 };
-            if (entry.type === 'INCOME') methodBreakdown[method].income += entry.amount;
-            else methodBreakdown[method].expense += entry.amount;
-          });
-          const methods = Object.entries(methodBreakdown).sort((a, b) => (b[1].income + b[1].expense) - (a[1].income + a[1].expense));
-          const cashEntry = methods.find(([m]) => m.toLowerCase() === 'efectivo');
-          const cashIncome = cashEntry?.[1].income || 0;
-          const cashExpense = cashEntry?.[1].expense || 0;
-          const cashInBox = opening + cashIncome - cashExpense;
-          const otherMethods = methods.filter(([m]) => m.toLowerCase() !== 'efectivo');
-
-          return (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">Esta caja quedó abierta. Al cerrarla no se podrán modificar sus entradas.</p>
-
-              <div className="bg-green-50 border-2 border-green-500 rounded-lg p-4 text-center">
-                <div className="text-sm font-semibold text-green-800 uppercase tracking-wide">Efectivo en caja</div>
-                <div className="text-xs text-green-700 mb-2">Esto es lo que debes tener físicamente</div>
-                <div className="text-4xl font-bold text-green-700">S/ {cashInBox.toFixed(2)}</div>
-                <div className="text-xs text-gray-600 mt-2">
-                  Apertura S/ {opening.toFixed(2)} + Ingresos S/ {cashIncome.toFixed(2)} − Egresos S/ {cashExpense.toFixed(2)}
-                </div>
-              </div>
-
-              {otherMethods.length > 0 && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <div className="text-xs font-semibold text-blue-800 uppercase mb-2">Otros métodos (no van en caja física)</div>
-                  <div className="space-y-1 text-sm">
-                    {otherMethods.map(([method, totals]) => {
-                      const net = totals.income - totals.expense;
-                      return (
-                        <div key={method} className="flex justify-between">
-                          <span className="text-gray-700">{method}</span>
-                          <span className="font-medium text-blue-700">S/ {net.toFixed(2)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <details className="text-sm">
-                <summary className="cursor-pointer text-gray-600 hover:text-gray-800">Ver totales del día</summary>
-                <div className="bg-gray-50 p-3 rounded-lg mt-2 space-y-1">
-                  <div>Balance Apertura: S/ {opening.toFixed(2)}</div>
-                  <div className="text-green-600">+ Ingresos totales: S/ {totalIncome.toFixed(2)}</div>
-                  <div className="text-red-600">− Egresos totales: S/ {totalExpense.toFixed(2)}</div>
-                  <div className="font-bold mt-1 pt-1 border-t">Balance neto del día: S/ {netBalance.toFixed(2)}</div>
-                </div>
-              </details>
-
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
-                <textarea value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" rows={2} />
-              </div>
-              <button onClick={handleClose} className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Confirmar Cierre</button>
-            </div>
-          );
-        })()}
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">Esta caja quedó abierta. Al cerrarla no se podrán modificar sus entradas.</p>
+          <div className="bg-gray-50 p-3 rounded-lg text-sm">
+            <div>Balance Apertura: S/ {(closeTarget?.openingBalance || 0).toFixed(2)}</div>
+            <div className="text-primary-600">+ Ingresos: S/ {(closeTarget?.entries.filter(e => !e.isDeleted && e.type === 'INCOME').reduce((s, e) => s + e.amount, 0) || 0).toFixed(2)}</div>
+            <div className="text-red-600">- Egresos: S/ {(closeTarget?.entries.filter(e => !e.isDeleted && e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0) || 0).toFixed(2)}</div>
+          </div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
+            <textarea value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" rows={2} />
+          </div>
+          <button onClick={handleClose} className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Confirmar Cierre</button>
+        </div>
       </Modal>
     </div>
   );

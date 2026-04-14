@@ -344,9 +344,9 @@ export function SalesPage() {
     if (sale.isCredit) return <span className="text-orange-600 font-medium">Crédito</span>;
     if (sale.payments && sale.payments.length > 0) {
       const label = sale.payments.map(p => p.paymentMethodName).join(' + ');
-      return <span className="text-green-600">{label}</span>;
+      return <span className="text-primary-600">{label}</span>;
     }
-    return <span className="text-green-600">Efectivo</span>;
+    return <span className="text-primary-600">Efectivo</span>;
   };
 
   const salesColumns = [
@@ -360,14 +360,14 @@ export function SalesPage() {
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'total', header: 'Total', render: (item: Sale) => item.isCancelled ? <span className="line-through text-gray-400">S/ {item.total.toFixed(2)}</span> : `S/ ${item.total.toFixed(2)}` },
     { key: 'voucherType', header: 'Comprobante', render: (item: Sale) => {
-      if (item.voucherType === 'BOLETA') return <span className="text-green-600 font-medium">Boleta</span>;
+      if (item.voucherType === 'BOLETA') return <span className="text-primary-600 font-medium">Boleta</span>;
       if (item.voucherType === 'FACTURA') return <span className="text-blue-600 font-medium">Factura</span>;
       return <span className="text-gray-400">-</span>;
     }},
     { key: 'payment', header: 'Pago', render: (item: Sale) => item.isCancelled ? <span className="text-red-600 font-medium">Anulada</span> : getPaymentLabel(item) },
     { key: 'actions', header: '', render: (item: Sale) => (
       <div className="flex items-center gap-2">
-        <button onClick={(e) => { e.stopPropagation(); setViewingSale(item); }} className="text-green-600 hover:text-green-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
+        <button onClick={(e) => { e.stopPropagation(); setViewingSale(item); }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
         {!item.isCancelled && (
           <button onClick={(e) => { e.stopPropagation(); setCancellingSale(item); setCancelReason(''); }} className="text-red-500 hover:text-red-700 flex items-center gap-1 text-xs font-medium"><XCircle size={15} /> Anular</button>
         )}
@@ -396,7 +396,7 @@ export function SalesPage() {
     { key: 'payment', header: 'Pago', render: (item: Sale) => item.isCancelled ? <span className="text-red-600 font-medium">Anulada</span> : getPaymentLabel(item) },
     { key: 'actions', header: '', render: (item: Sale) => (
       <div className="flex items-center gap-2">
-        <button onClick={(e) => { e.stopPropagation(); setViewingSale(item); }} className="text-green-600 hover:text-green-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
+        <button onClick={(e) => { e.stopPropagation(); setViewingSale(item); }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
         {!item.isCancelled && (
           <button onClick={(e) => { e.stopPropagation(); setCancellingSale(item); setCancelReason(''); }} className="text-red-500 hover:text-red-700 flex items-center gap-1 text-xs font-medium"><XCircle size={15} /> Anular</button>
         )}
@@ -408,7 +408,7 @@ export function SalesPage() {
     const styles: Record<string, string> = {
       ACTIVE: 'bg-blue-100 text-blue-700',
       PARTIAL: 'bg-yellow-100 text-yellow-700',
-      RETURNED: 'bg-green-100 text-green-700',
+      RETURNED: 'bg-primary-100 text-primary-700',
     };
     const labels: Record<string, string> = { ACTIVE: 'Activo', PARTIAL: 'Parcial', RETURNED: 'Devuelto' };
     return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[status] || ''}`}>{labels[status] || status}</span>;
@@ -442,7 +442,7 @@ export function SalesPage() {
           <button onClick={openLoanCreate} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
             <HandshakeIcon size={18} /> Préstamo
           </button>
-          <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+          <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
             <Plus size={18} /> Nueva Venta
           </button>
         </div>
@@ -468,7 +468,7 @@ export function SalesPage() {
         <span className="text-gray-500 text-sm">hasta</span>
         <input type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); setLoanPage(1); }} className="px-3 py-2 border rounded-lg" />
         {(startDate !== getMonthStart() || endDate !== getToday()) && (
-          <button onClick={() => { setStartDate(getMonthStart()); setEndDate(getToday()); setPage(1); setBoletaPage(1); setFacturaPage(1); setLoanPage(1); }} className="flex items-center gap-1 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100">
+          <button onClick={() => { setStartDate(getMonthStart()); setEndDate(getToday()); setPage(1); setBoletaPage(1); setFacturaPage(1); setLoanPage(1); }} className="flex items-center gap-1 px-3 py-2 text-sm text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100">
             <CalendarDays size={14} /> Este mes
           </button>
         )}
@@ -476,23 +476,23 @@ export function SalesPage() {
 
       {/* Total del período */}
       {activeTab === 'sales' && (
-        <div className="mb-4 bg-green-50 border border-green-200 rounded-lg px-4 py-2 flex items-center justify-between">
-          <span className="text-sm text-green-700">{total} venta(s) en el período</span>
-          <span className="text-lg font-bold text-green-700">Total: S/ {totalAmount.toFixed(2)}</span>
+        <div className="mb-4 bg-primary-50 border border-primary-200 rounded-lg px-4 py-2 flex items-center justify-between">
+          <span className="text-sm text-primary-700">{total} venta(s) en el período</span>
+          <span className="text-lg font-bold text-primary-700">Total: S/ {totalAmount.toFixed(2)}</span>
         </div>
       )}
       {activeTab === 'boletas' && (
-        <div className="mb-4 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+        <div className="mb-4 bg-primary-50 border border-primary-200 rounded-lg px-4 py-3">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-green-700">{boletasTotal} boleta(s) en el período</span>
+            <span className="text-sm text-primary-700">{boletasTotal} boleta(s) en el período</span>
             <div className="flex items-center gap-3">
-              <span className="text-lg font-bold text-green-700">Valor Venta: S/ {boletasBaseAmount.toFixed(2)}</span>
-              <button onClick={() => handleExportVouchers('BOLETA')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded hover:bg-green-200 transition-colors">
+              <span className="text-lg font-bold text-primary-700">Valor Venta: S/ {boletasBaseAmount.toFixed(2)}</span>
+              <button onClick={() => handleExportVouchers('BOLETA')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary-700 bg-primary-100 border border-primary-300 rounded hover:bg-primary-200 transition-colors">
                 <Download size={14} /> Excel
               </button>
             </div>
           </div>
-          <div className="flex items-center justify-end gap-4 text-xs text-green-600">
+          <div className="flex items-center justify-end gap-4 text-xs text-primary-600">
             <span>Total: S/ {boletasTotalAmount.toFixed(2)}</span>
             <span>IGV: S/ {boletasIgv.toFixed(2)}</span>
           </div>
@@ -520,13 +520,13 @@ export function SalesPage() {
       <div className="flex border-b mb-4">
         <button
           onClick={() => setActiveTab('sales')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'sales' ? 'border-green-600 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'sales' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
           Ventas
         </button>
         <button
           onClick={() => setActiveTab('boletas')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'boletas' ? 'border-green-600 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'boletas' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
           Boletas
         </button>
@@ -547,7 +547,7 @@ export function SalesPage() {
       {/* Sales Tab */}
       {activeTab === 'sales' && (
         <>
-          <DataTable columns={salesColumns} data={sales} isLoading={isLoading} rowClassName={(sale: Sale) => sale?.isCancelled ? 'bg-red-50 opacity-60' : sale?.isCredit ? 'hover:bg-yellow-50' : 'hover:bg-green-50'} />
+          <DataTable columns={salesColumns} data={sales} isLoading={isLoading} rowClassName={(sale: Sale) => sale?.isCancelled ? 'bg-red-50 opacity-60' : sale?.isCredit ? 'hover:bg-yellow-50' : 'hover:bg-primary-50'} />
           <Pagination page={page} totalPages={Math.ceil(total / 10)} onPageChange={setPage} />
         </>
       )}
@@ -555,7 +555,7 @@ export function SalesPage() {
       {/* Boletas Tab */}
       {activeTab === 'boletas' && (
         <>
-          <DataTable columns={voucherColumns} data={boletas} isLoading={boletasLoading} rowClassName={(sale: Sale) => sale?.isCancelled ? 'bg-red-50 opacity-60' : sale?.isCredit ? 'hover:bg-yellow-50' : 'hover:bg-green-50'} />
+          <DataTable columns={voucherColumns} data={boletas} isLoading={boletasLoading} rowClassName={(sale: Sale) => sale?.isCancelled ? 'bg-red-50 opacity-60' : sale?.isCredit ? 'hover:bg-yellow-50' : 'hover:bg-primary-50'} />
           <Pagination page={boletaPage} totalPages={Math.ceil(boletasTotal / 10)} onPageChange={setBoletaPage} />
         </>
       )}
@@ -571,7 +571,7 @@ export function SalesPage() {
       {/* Loans Tab */}
       {activeTab === 'loans' && (
         <>
-          <DataTable columns={loanColumns} data={loans} isLoading={loansLoading} rowClassName={(loan: Loan) => loan.status === 'RETURNED' ? 'hover:bg-green-50' : 'hover:bg-purple-50'} />
+          <DataTable columns={loanColumns} data={loans} isLoading={loansLoading} rowClassName={(loan: Loan) => loan.status === 'RETURNED' ? 'hover:bg-primary-50' : 'hover:bg-purple-50'} />
           <Pagination page={loanPage} totalPages={Math.ceil(loansTotal / 10)} onPageChange={setLoanPage} />
         </>
       )}
@@ -588,7 +588,7 @@ export function SalesPage() {
               <div className="flex flex-wrap gap-2">
                 {paymentMethods.map((m: PaymentMethod) => (
                   <button key={m.id} type="button" onClick={() => setForm({ ...form, paymentMode: m.id })}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${form.paymentMode === m.id ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${form.paymentMode === m.id ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
                     {m.name}
                   </button>
                 ))}
@@ -669,7 +669,7 @@ export function SalesPage() {
                 {[{ value: 'NONE', label: 'No' }, { value: 'BOLETA', label: 'Boleta' }, { value: 'FACTURA', label: 'Factura' }].map(opt => (
                   <button key={opt.value} type="button" onClick={() => setForm({ ...form, voucherType: opt.value })}
                     className={`flex-1 py-1.5 rounded text-xs font-medium border transition-colors ${form.voucherType === opt.value
-                      ? opt.value === 'BOLETA' ? 'bg-green-600 text-white border-green-600' : opt.value === 'FACTURA' ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-600 text-white border-gray-600'
+                      ? opt.value === 'BOLETA' ? 'bg-primary-600 text-white border-primary-600' : opt.value === 'FACTURA' ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-600 text-white border-gray-600'
                       : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
                     {opt.label}
                   </button>
@@ -682,7 +682,7 @@ export function SalesPage() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm font-medium text-gray-700">Productos</label>
-              <button type="button" onClick={addItem} className="text-sm text-green-600 hover:text-green-800 font-medium">+ Agregar producto</button>
+              <button type="button" onClick={addItem} className="text-sm text-primary-600 hover:text-primary-800 font-medium">+ Agregar producto</button>
             </div>
             <div className="space-y-3 max-h-72 overflow-y-auto">
               {form.items.map((item, idx) => (
@@ -736,11 +736,11 @@ export function SalesPage() {
           </div>
 
           {/* Total y Submit */}
-          <div className="bg-green-50 p-3 rounded-lg flex items-center justify-between">
-            <span className="text-sm font-medium text-green-800">Total de la venta</span>
-            <span className="text-xl font-bold text-green-700">S/ {saleTotal.toFixed(2)}</span>
+          <div className="bg-primary-50 p-3 rounded-lg flex items-center justify-between">
+            <span className="text-sm font-medium text-primary-800">Total de la venta</span>
+            <span className="text-xl font-bold text-primary-700">S/ {saleTotal.toFixed(2)}</span>
           </div>
-          <button type="submit" disabled={createSale.isPending || !paymentValid} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50">
+          <button type="submit" disabled={createSale.isPending || !paymentValid} className="w-full py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium disabled:opacity-50">
             {createSale.isPending ? 'Registrando...' : 'Registrar Venta'}
           </button>
         </form>
@@ -770,21 +770,21 @@ export function SalesPage() {
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Tipo de pago</span>
-                <span className={`text-sm font-medium ${viewingSale.isCredit ? 'text-orange-600' : 'text-green-600'}`}>
+                <span className={`text-sm font-medium ${viewingSale.isCredit ? 'text-orange-600' : 'text-primary-600'}`}>
                   {viewingSale.isCredit ? 'Crédito' : 'Pago inmediato'}
                 </span>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500 mb-1">Comprobante</span>
                 {viewingSale.isCancelled ? (
-                  <span className={`text-sm font-medium ${viewingSale.voucherType === 'BOLETA' ? 'text-green-600' : viewingSale.voucherType === 'FACTURA' ? 'text-blue-600' : 'text-gray-500'}`}>
+                  <span className={`text-sm font-medium ${viewingSale.voucherType === 'BOLETA' ? 'text-primary-600' : viewingSale.voucherType === 'FACTURA' ? 'text-blue-600' : 'text-gray-500'}`}>
                     {viewingSale.voucherType === 'BOLETA' ? 'Boleta' : viewingSale.voucherType === 'FACTURA' ? 'Factura' : 'Sin comprobante'}
                   </span>
                 ) : (
                   <div className="flex gap-1">
                     {([['NONE', 'No'], ['BOLETA', 'Boleta'], ['FACTURA', 'Factura']] as const).map(([val, label]) => (
                       <button key={val} type="button"
-                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${viewingSale.voucherType === val ? (val === 'BOLETA' ? 'bg-green-600 text-white' : val === 'FACTURA' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-white') : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${viewingSale.voucherType === val ? (val === 'BOLETA' ? 'bg-primary-600 text-white' : val === 'FACTURA' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-white') : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
                         disabled={updateVoucher.isPending}
                         onClick={() => {
                           if (viewingSale.voucherType !== val) {
@@ -816,7 +816,7 @@ export function SalesPage() {
                       {viewingSale.payments.map((payment, idx) => (
                         <tr key={idx}>
                           <td className="px-3 py-2 font-medium">{payment.paymentMethodName}</td>
-                          <td className="px-3 py-2 text-right text-green-600 font-medium">S/ {payment.amount.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right text-primary-600 font-medium">S/ {payment.amount.toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -887,9 +887,9 @@ export function SalesPage() {
             </div>
 
             {/* Total */}
-            <div className="bg-green-50 p-3 rounded-lg flex items-center justify-between">
-              <span className="text-sm font-medium text-green-800">Total</span>
-              <span className="text-xl font-bold text-green-700">S/ {viewingSale.total.toFixed(2)}</span>
+            <div className="bg-primary-50 p-3 rounded-lg flex items-center justify-between">
+              <span className="text-sm font-medium text-primary-800">Total</span>
+              <span className="text-xl font-bold text-primary-700">S/ {viewingSale.total.toFixed(2)}</span>
             </div>
           </div>
         )}
@@ -1002,7 +1002,7 @@ export function SalesPage() {
                         <td className="px-3 py-2 font-medium">{getProductName(item.productId)}</td>
                         <td className="px-3 py-2 text-gray-600">{getCompanyName(item.companyId)}</td>
                         <td className="px-3 py-2 text-right">{item.quantity}</td>
-                        <td className="px-3 py-2 text-right text-green-600">{item.returnedQuantity}</td>
+                        <td className="px-3 py-2 text-right text-primary-600">{item.returnedQuantity}</td>
                         <td className="px-3 py-2 text-right font-medium text-orange-600">{item.quantity - item.returnedQuantity}</td>
                       </tr>
                     ))}
@@ -1017,9 +1017,9 @@ export function SalesPage() {
                 <h3 className="text-sm font-medium text-gray-700 mb-2">Historial de devoluciones</h3>
                 <div className="space-y-2">
                   {viewingLoan.returns.map((ret, idx) => (
-                    <div key={idx} className="bg-green-50 rounded-lg p-3">
+                    <div key={idx} className="bg-primary-50 rounded-lg p-3">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-medium text-green-700">Devolución #{idx + 1}</span>
+                        <span className="text-xs font-medium text-primary-700">Devolución #{idx + 1}</span>
                         <span className="text-xs text-gray-500">{new Date(ret.date).toLocaleDateString('es-PE')}</span>
                       </div>
                       <div className="text-sm text-gray-700">

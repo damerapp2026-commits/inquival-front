@@ -1,57 +1,103 @@
-import React, { useState } from 'react';
-import { useDashboardSummary, useProfitability, useCreditsSummary, useSalesChart } from '../hooks/useDashboard';
-import { useClients } from '../../clients/hooks/useClients';
-import { useProducts } from '../../products/hooks/useProducts';
+import React, { useState, useMemo } from 'react';
+import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart } from '../hooks/useDashboard';
 import { useAPAlerts } from '../../accounts-payable/hooks/useAccountsPayable';
-import { BarChart3, TrendingUp, TrendingDown, DollarSign, CreditCard, Users, FileText, AlertTriangle, Clock } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, DollarSign, CreditCard, FileText, AlertTriangle, Clock, Tag, Truck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, PieChart, Pie, Cell,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, Cell,
 } from 'recharts';
-import type { Client, Product, AccountPayable } from '../../../shared/types';
+import type { AccountPayable } from '../../../shared/types';
 
-const COLORS = ['#10b981', '#f59e0b'];
+const CHART_COLORS = ['#4681b1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
+const SUPPLIER_COLORS = ['#346795', '#0ea5e9', '#f43f5e', '#84cc16', '#fb923c'];
+
+function toInputDate(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+function last30Days() {
+  const now = new Date();
+  const start = new Date(now);
+  start.setDate(start.getDate() - 29);
+  return { start: toInputDate(start), end: toInputDate(now) };
+}
+
+function thisMonth() {
+  const now = new Date();
+  return { start: toInputDate(new Date(now.getFullYear(), now.getMonth(), 1)), end: toInputDate(now) };
+}
+
+function DateRangeFilter({ range, onChange, onReset, resetLabel }: {
+  range: { start: string; end: string };
+  onChange: (r: { start: string; end: string }) => void;
+  onReset: () => void;
+  resetLabel: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <label className="text-xs text-gray-500">Desde</label>
+      <input
+        type="date"
+        value={range.start}
+        max={range.end}
+        onChange={(e) => onChange({ ...range, start: e.target.value })}
+        className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+      />
+      <label className="text-xs text-gray-500">Hasta</label>
+      <input
+        type="date"
+        value={range.end}
+        min={range.start}
+        max={toInputDate(new Date())}
+        onChange={(e) => onChange({ ...range, end: e.target.value })}
+        className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+      />
+      <button onClick={onReset} className="text-xs text-primary-600 hover:underline">{resetLabel}</button>
+    </div>
+  );
+}
 
 export function DashboardPage() {
   const navigate = useNavigate();
   const [period, setPeriod] = useState('daily');
-  const { data: summary } = useDashboardSummary(period);
-  const { data: profitability } = useProfitability();
-  const { data: creditsSummary } = useCreditsSummary();
-  const { data: salesChart } = useSalesChart();
-  const { data: clientsData } = useClients({ limit: 200 });
-  const { data: productsData } = useProducts({ limit: 200 });
-  const { data: apAlerts } = useAPAlerts(3);
+  const [salesRange, setSalesRange] = useState(last30Days);
+  const [catChartRange, setCatChartRange] = useState(thisMonth);
+  const [chartRange, setChartRange] = useState(thisMonth);
+  const [disabledCats, setDisabledCats] = useState<Set<string>>(new Set());
 
-  const clients = clientsData?.data || [];
-  const products = productsData?.data || [];
-  const topProducts = Array.isArray(profitability) ? profitability.slice(0, 5) : [];
-  const topDebtors = creditsSummary?.topDebtors || [];
+  const { data: summary } = useDashboardSummary(period);
+  const { data: creditsSummary } = useCreditsSummary();
+  const { data: salesChart } = useSalesChart(salesRange.start, salesRange.end);
+  const { data: apAlerts } = useAPAlerts(3);
+  const { data: categorySales } = useCategorySales(chartRange.start, chartRange.end);
+  const { data: topSuppliers } = useTopSuppliers(chartRange.start, chartRange.end);
+  const { data: catSalesChart } = useCategorySalesChart(catChartRange.start, catChartRange.end);
 
   const dailySales = salesChart?.dailySales || [];
-  const salesByHour = salesChart?.salesByHour || [];
-  const paymentBreakdown = salesChart?.paymentBreakdown;
+  const categorySalesData: { name: string; total: number }[] = Array.isArray(categorySales) ? categorySales : [];
+  const topSuppliersData: { name: string; total: number; count: number }[] = Array.isArray(topSuppliers) ? topSuppliers : [];
+  const catChartData: Record<string, any>[] = catSalesChart?.dailyData || [];
+  const allCategories: string[] = catSalesChart?.categories || [];
 
-  const getClientName = (id: string) => clients.find((c: Client) => c.id === id)?.name || 'N/A';
-  const getProductName = (id: string) => products.find((p: Product) => p.id === id)?.name || 'N/A';
+  const activeCategories = useMemo(
+    () => allCategories.filter((c) => !disabledCats.has(c)),
+    [allCategories, disabledCats],
+  );
+
+  const toggleCategory = (cat: string) => {
+    setDisabledCats((prev) => {
+      const next = new Set(prev);
+      next.has(cat) ? next.delete(cat) : next.add(cat);
+      return next;
+    });
+  };
 
   const periodLabels: Record<string, string> = { daily: 'Hoy', weekly: 'Esta Semana', monthly: 'Este Mes' };
 
-  const pieData = paymentBreakdown
-    ? [
-        { name: 'Efectivo', value: paymentBreakdown.cash },
-        { name: 'Credito', value: paymentBreakdown.credit },
-      ]
-    : [];
-
-  const topProductsChart = topProducts.map((p: any) => ({
-    name: p.productName || getProductName(p.productId),
-    revenue: p.totalRevenue,
-    units: p.totalSold,
-  }));
-
-  const pieTotal = pieData.reduce((s, d) => s + d.value, 0);
+  // Determine XAxis tick interval based on data points
+  const salesTickInterval = dailySales.length > 60 ? 6 : dailySales.length > 30 ? 4 : 1;
+  const catTickInterval = catChartData.length > 60 ? 6 : catChartData.length > 30 ? 4 : 1;
 
   return (
     <div>
@@ -59,7 +105,7 @@ export function DashboardPage() {
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><BarChart3 size={24} /> Dashboard</h1>
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           {['daily', 'weekly', 'monthly'].map(p => (
-            <button key={p} onClick={() => setPeriod(p)} className={`px-3 py-1 rounded text-sm font-medium ${period === p ? 'bg-white shadow text-green-600' : 'text-gray-500'}`}>
+            <button key={p} onClick={() => setPeriod(p)} className={`px-3 py-1 rounded text-sm font-medium ${period === p ? 'bg-white shadow text-primary-600' : 'text-gray-500'}`}>
               {periodLabels[p]}
             </button>
           ))}
@@ -69,8 +115,8 @@ export function DashboardPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <div className="bg-white border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><TrendingUp size={16} className="text-green-600" /> Ingresos</div>
-          <div className="text-xl sm:text-2xl font-bold text-green-600">S/ {(summary?.totalIncome || 0).toFixed(2)}</div>
+          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><TrendingUp size={16} className="text-primary-600" /> Ingresos</div>
+          <div className="text-xl sm:text-2xl font-bold text-primary-600">S/ {(summary?.totalIncome || 0).toFixed(2)}</div>
         </div>
         <div className="bg-white border rounded-lg p-4">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><TrendingDown size={16} className="text-red-600" /> Egresos</div>
@@ -92,141 +138,178 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Daily Sales Area Chart */}
+      {/* Ventas chart */}
       <div className="bg-white border rounded-lg p-4 mb-6">
-        <h2 className="text-lg font-semibold text-gray-700 mb-3">Ventas Ultimos 30 Dias</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold text-gray-700">Ventas</h2>
+          <DateRangeFilter range={salesRange} onChange={setSalesRange} onReset={() => setSalesRange(last30Days())} resetLabel="Últimos 30 días" />
+        </div>
         <ResponsiveContainer width="100%" height={280}>
           <AreaChart data={dailySales}>
             <defs>
               <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                <stop offset="5%" stopColor="#4681b1" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#4681b1" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} interval={4} />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} interval={salesTickInterval} />
             <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `S/${v}`} />
             <Tooltip formatter={(value: any) => [`S/ ${Number(value || 0).toFixed(2)}`, 'Ventas']} />
-            <Area type="monotone" dataKey="total" stroke="#10b981" strokeWidth={2} fill="url(#colorSales)" />
+            <Area type="monotone" dataKey="total" stroke="#4681b1" strokeWidth={2} fill="url(#colorSales)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Top Products + Sales by Hour */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      {/* Ventas Por Categorías chart */}
+      <div className="bg-white border rounded-lg p-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold text-gray-700">Ventas Por Categorías</h2>
+          <DateRangeFilter range={catChartRange} onChange={setCatChartRange} onReset={() => setCatChartRange(thisMonth())} resetLabel="Este mes" />
+        </div>
+
+        {allCategories.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {allCategories.map((cat, i) => {
+              const color = CHART_COLORS[i % CHART_COLORS.length];
+              const enabled = !disabledCats.has(cat);
+              return (
+                <button
+                  key={cat}
+                  onClick={() => toggleCategory(cat)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border-2 transition-all"
+                  style={{
+                    backgroundColor: enabled ? color : 'white',
+                    borderColor: color,
+                    color: enabled ? 'white' : color,
+                  }}
+                >
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: enabled ? 'white' : color }} />
+                  {cat}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {activeCategories.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={catChartData}>
+              <defs>
+                {activeCategories.map((cat) => {
+                  const colorIdx = allCategories.indexOf(cat) % CHART_COLORS.length;
+                  return (
+                    <linearGradient key={cat} id={`grad-cat-${colorIdx}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={CHART_COLORS[colorIdx]} stopOpacity={0.25} />
+                      <stop offset="95%" stopColor={CHART_COLORS[colorIdx]} stopOpacity={0} />
+                    </linearGradient>
+                  );
+                })}
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} interval={catTickInterval} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `S/${v}`} />
+              <Tooltip formatter={(value: any, name: any) => [`S/ ${Number(value || 0).toFixed(2)}`, name]} />
+              <Legend />
+              {activeCategories.map((cat) => {
+                const colorIdx = allCategories.indexOf(cat) % CHART_COLORS.length;
+                return (
+                  <Area
+                    key={cat}
+                    type="monotone"
+                    dataKey={cat}
+                    stroke={CHART_COLORS[colorIdx]}
+                    strokeWidth={2}
+                    fill={`url(#grad-cat-${colorIdx})`}
+                  />
+                );
+              })}
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-[300px] text-gray-400 text-sm">
+            {allCategories.length === 0 ? 'Cargando categorías...' : 'Selecciona al menos una categoría'}
+          </div>
+        )}
+      </div>
+
+      {/* Date range filter for bottom charts */}
+      <div className="bg-white border rounded-lg p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
+        <span className="text-sm font-medium text-gray-600">Filtrar gráficos inferiores:</span>
+        <DateRangeFilter range={chartRange} onChange={setChartRange} onReset={() => setChartRange(thisMonth())} resetLabel="Este mes" />
+      </div>
+
+      {/* Category Sales bar + Top Suppliers */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white border rounded-lg p-4">
-          <h2 className="text-lg font-semibold text-gray-700 mb-3">Top 5 Productos (Ultimo Mes)</h2>
-          {topProductsChart.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={topProductsChart} layout="vertical" margin={{ left: 10 }}>
+          <h2 className="text-lg font-semibold text-gray-700 mb-3 flex items-center gap-2"><Tag size={18} className="text-primary-600" /> Ventas por Categoria</h2>
+          {categorySalesData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={categorySalesData} layout="vertical" margin={{ left: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `S/${v}`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
-                <Tooltip formatter={(value: any) => [`S/ ${Number(value || 0).toFixed(2)}`, 'Ingresos']} />
-                <Bar dataKey="revenue" fill="#10b981" radius={[0, 4, 4, 0]} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={130} />
+                <Tooltip formatter={(value: any) => [`S/ ${Number(value || 0).toFixed(2)}`, 'Ventas']} />
+                <Bar dataKey="total" radius={[0, 4, 4, 0]}>
+                  {categorySalesData.map((_, i) => (
+                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-[250px] text-gray-400 text-sm">Sin datos</div>
+            <div className="flex items-center justify-center h-[280px] text-gray-400 text-sm">Sin datos para el periodo</div>
           )}
         </div>
 
         <div className="bg-white border rounded-lg p-4">
-          <h2 className="text-lg font-semibold text-gray-700 mb-3">Ventas por Hora del Dia</h2>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={salesByHour}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={2} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `S/${v}`} />
-              <Tooltip
-                formatter={(value: any, name: any) => [
-                  name === 'total' ? `S/ ${Number(value || 0).toFixed(2)}` : value,
-                  name === 'total' ? 'Monto' : 'Ventas',
-                ]}
-              />
-              <Bar dataKey="total" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Payment Breakdown + Top Debtors */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white border rounded-lg p-4">
-          <h2 className="text-lg font-semibold text-gray-700 mb-3">Efectivo vs Credito (30 dias)</h2>
-          {pieTotal > 0 ? (
-            <div className="flex items-center">
-              <ResponsiveContainer width="60%" height={220}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={85}
-                    dataKey="value"
-                    paddingAngle={3}
-                  >
-                    {pieData.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: any) => `S/ ${Number(value || 0).toFixed(2)}`} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex-1 space-y-3">
-                {pieData.map((d, i) => (
-                  <div key={d.name}>
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[i] }} />
-                      <span className="text-gray-600">{d.name}</span>
-                    </div>
-                    <div className="text-lg font-bold" style={{ color: COLORS[i] }}>
-                      S/ {d.value.toFixed(2)}
-                    </div>
-                    <div className="text-xs text-gray-400">
-                      {pieTotal > 0 ? ((d.value / pieTotal) * 100).toFixed(1) : 0}%
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <h2 className="text-lg font-semibold text-gray-700 mb-3 flex items-center gap-2"><Truck size={18} className="text-primary-700" /> Top Proveedores (por Compras)</h2>
+          {topSuppliersData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={topSuppliersData} layout="vertical" margin={{ left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `S/${v}`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={130} />
+                <Tooltip
+                  formatter={(value: any, name: any) => [
+                    name === 'total' ? `S/ ${Number(value || 0).toFixed(2)}` : value,
+                    name === 'total' ? 'Total comprado' : 'Ordenes',
+                  ]}
+                />
+                <Bar dataKey="total" radius={[0, 4, 4, 0]}>
+                  {topSuppliersData.map((_, i) => (
+                    <Cell key={i} fill={SUPPLIER_COLORS[i % SUPPLIER_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-[220px] text-gray-400 text-sm">Sin datos</div>
+            <div className="flex items-center justify-center h-[280px] text-gray-400 text-sm">Sin datos para el periodo</div>
+          )}
+          {topSuppliersData.length > 0 && (
+            <div className="mt-3 space-y-1">
+              {topSuppliersData.map((s, i) => (
+                <div key={s.name} className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: SUPPLIER_COLORS[i % SUPPLIER_COLORS.length] }} />
+                    <span>{s.name}</span>
+                  </div>
+                  <span className="text-gray-400">{s.count} compra{s.count !== 1 ? 's' : ''}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
-
-        <div className="bg-white border rounded-lg p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2"><Users size={18} /> Top Deudores</h2>
-            <button onClick={() => navigate('/credits')} className="text-sm text-blue-600 hover:underline">Ver todos</button>
-          </div>
-          <div className="space-y-2">
-            {topDebtors.map((d: any, i: number) => (
-              <div key={d.clientId} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-bold">{i + 1}</span>
-                  <button onClick={() => navigate(`/credits/client/${d.clientId}`)} className="text-blue-600 hover:underline">{getClientName(d.clientId)}</button>
-                </div>
-                <div>
-                  <span className="font-medium text-red-600">S/ {d.totalPending.toFixed(2)}</span>
-                  <span className="text-gray-400 ml-2 text-xs">({d.count} creditos)</span>
-                </div>
-              </div>
-            ))}
-            {topDebtors.length === 0 && <div className="text-center py-4 text-gray-400 text-sm">Sin deudores</div>}
-          </div>
-        </div>
       </div>
+
       {/* Accounts Payable Alerts */}
       {((apAlerts?.overdue?.length || 0) > 0 || (apAlerts?.upcoming?.length || 0) > 0) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-          {/* Overdue */}
           {(apAlerts?.overdue?.length || 0) > 0 && (
             <div className="bg-white border-2 border-red-300 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-red-700 flex items-center gap-2"><AlertTriangle size={18} /> Pagos Vencidos a Proveedores</h2>
-                <button onClick={() => navigate('/accounts-payable')} className="text-sm text-blue-600 hover:underline">Ver todos</button>
+                <button onClick={() => navigate('/accounts-payable')} className="text-sm text-primary-600 hover:underline">Ver todos</button>
               </div>
               <div className="space-y-2">
                 {apAlerts!.overdue.slice(0, 5).map((ap: AccountPayable) => (
@@ -243,13 +326,11 @@ export function DashboardPage() {
               </div>
             </div>
           )}
-
-          {/* Upcoming */}
           {(apAlerts?.upcoming?.length || 0) > 0 && (
             <div className="bg-white border-2 border-yellow-300 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-yellow-700 flex items-center gap-2"><Clock size={18} /> Pagos Proximos a Vencer (3 dias)</h2>
-                <button onClick={() => navigate('/accounts-payable')} className="text-sm text-blue-600 hover:underline">Ver todos</button>
+                <button onClick={() => navigate('/accounts-payable')} className="text-sm text-primary-600 hover:underline">Ver todos</button>
               </div>
               <div className="space-y-2">
                 {apAlerts!.upcoming.slice(0, 5).map((ap: AccountPayable) => (
