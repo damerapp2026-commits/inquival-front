@@ -9,7 +9,7 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { Plus, ShoppingCart, Trash2, Eye, Search, Loader2, DollarSign, PackagePlus } from 'lucide-react';
+import { Plus, ShoppingCart, Trash2, Eye, Search, Loader2, DollarSign, PackagePlus, FileText, CopyIcon, Dices } from 'lucide-react';
 import type { Purchase, Company, Product, Category } from '../../../shared/types';
 import toast from 'react-hot-toast';
 
@@ -37,10 +37,14 @@ export function PurchasesPage() {
     paymentType: 'CONTADO' as 'CONTADO' | 'CREDITO',
     paymentScheduleType: 'SINGLE_DATE' as 'SINGLE_DATE' | 'INSTALLMENTS', dueDate: '',
     installments: [] as { amount: number; dueDate: string }[],
-    items: [{ productId: '', quantity: 0 }] as { productId: string; quantity: number }[],
+    items: [{ productId: '', quantity: 0, lotNumber: '', expirationDate: '' }] as { productId: string; quantity: number; lotNumber?: string; expirationDate?: string }[],
     purchaseDate: new Date().toISOString().slice(0, 10),
     totalCostUsd: 0,
     totalCostPen: 0,
+    documentType: 'FACTURA' as 'FACTURA' | 'BOLETA' | 'GUIA' | 'NOTA_CREDITO' | 'OTRO',
+    documentSeries: '',
+    documentNumber: '',
+    issueDate: new Date().toISOString().slice(0, 10),
   });
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
   const [exchangeRateDate, setExchangeRateDate] = useState('');
@@ -53,14 +57,31 @@ export function PurchasesPage() {
   const openCreate = () => {
     const today = new Date().toISOString().slice(0, 10);
     setCurrency('PEN');
-    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0 }], purchaseDate: today, totalCostUsd: 0, totalCostPen: 0 });
+    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0, lotNumber: '', expirationDate: '' }], purchaseDate: today, totalCostUsd: 0, totalCostPen: 0, documentType: 'FACTURA', documentSeries: '', documentNumber: '', issueDate: today });
     setExchangeRate(null);
     setExchangeRateDate('');
     setSupplierLocked(false);
     setShowModal(true);
   };
 
-  const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0 }] }));
+  const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0, lotNumber: '', expirationDate: '' }] }));
+  const repeatFromPrev = (idx: number, field: 'lotNumber' | 'expirationDate') => {
+    if (idx === 0) return;
+    setForm(prev => {
+      const items = [...prev.items];
+      items[idx] = { ...items[idx], [field]: (items[idx - 1] as any)[field] || '' };
+      return { ...prev, items };
+    });
+  };
+  const autoGenLot = (idx: number) => {
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    setForm(prev => {
+      const items = [...prev.items];
+      items[idx] = { ...items[idx], lotNumber: `L-${stamp}-${String(idx + 1).padStart(2, '0')}` };
+      return { ...prev, items };
+    });
+  };
   const removeItem = (idx: number) => setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
   const updateItem = (idx: number, field: string, value: any) => setForm(prev => { const items = [...prev.items]; items[idx] = { ...items[idx], [field]: value }; return { ...prev, items }; });
 
@@ -154,10 +175,24 @@ export function PurchasesPage() {
     if (currency === 'PEN' && !form.totalCostPen) { toast.error('Ingrese el monto en soles'); return; }
     const payload: any = {
       companyId: form.companyId, supplier: form.supplier,
-      items: form.items.map(i => ({ productId: i.productId, quantity: i.quantity })),
+      items: form.items.map(i => ({
+        productId: i.productId,
+        quantity: i.quantity,
+        ...(i.lotNumber ? { lotNumber: i.lotNumber } : {}),
+        ...(i.expirationDate ? { expirationDate: i.expirationDate } : {}),
+      })),
       paymentType: form.paymentType,
       date: form.purchaseDate,
     };
+    if (form.documentType) payload.documentType = form.documentType;
+    if (form.documentSeries) payload.documentSeries = form.documentSeries;
+    if (form.documentNumber) payload.documentNumber = form.documentNumber;
+    if (form.issueDate) payload.issueDate = form.issueDate;
+    const missingLot = form.items.find(i => {
+      const p = products.find((pr: Product) => pr.id === i.productId);
+      return p?.tracksLot && !i.lotNumber;
+    });
+    if (missingLot) { toast.error('Hay productos que requieren número de lote'); return; }
     if (currency === 'USD') {
       payload.totalCostUsd = form.totalCostUsd;
       payload.exchangeRate = exchangeRate;
@@ -218,7 +253,7 @@ export function PurchasesPage() {
       </div>
       <DataTable columns={columns} data={purchases} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Compra">
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Compra" size="xl">
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Empresa */}
           <div>
@@ -265,18 +300,45 @@ export function PurchasesPage() {
             )}
           </div>
 
-          {/* Fecha de compra + Moneda */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de compra</label>
-              <input type="date" value={form.purchaseDate} onChange={(e) => handleDateChange(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Moneda</label>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => handleCurrencyChange('PEN')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'PEN' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>S/ Soles</button>
-                <button type="button" onClick={() => handleCurrencyChange('USD')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>$ Dólares</button>
+          {/* Comprobante */}
+          <div className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50/50">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1"><FileText size={15} /> Comprobante de pago</div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Tipo</label>
+                <select value={form.documentType} onChange={(e) => setForm({ ...form, documentType: e.target.value as any })} className="w-full px-2 py-1.5 border rounded text-sm bg-white">
+                  <option value="FACTURA">Factura</option>
+                  <option value="BOLETA">Boleta</option>
+                  <option value="GUIA">Guía</option>
+                  <option value="NOTA_CREDITO">Nota Crédito</option>
+                  <option value="OTRO">Otro</option>
+                </select>
               </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Serie</label>
+                <input value={form.documentSeries} onChange={(e) => setForm({ ...form, documentSeries: e.target.value.toUpperCase() })} placeholder="F001" className="w-full px-2 py-1.5 border rounded text-sm bg-white uppercase" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Número</label>
+                <input value={form.documentNumber} onChange={(e) => setForm({ ...form, documentNumber: e.target.value })} placeholder="00012345" className="w-full px-2 py-1.5 border rounded text-sm bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">F. Emisión</label>
+                <input type="date" value={form.issueDate} onChange={(e) => setForm({ ...form, issueDate: e.target.value })} className="w-full px-2 py-1.5 border rounded text-sm bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">F. Recepción</label>
+                <input type="date" value={form.purchaseDate} onChange={(e) => handleDateChange(e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm bg-white" required />
+              </div>
+            </div>
+          </div>
+
+          {/* Moneda */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Moneda</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => handleCurrencyChange('PEN')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'PEN' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>S/ Soles</button>
+              <button type="button" onClick={() => handleCurrencyChange('USD')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>$ Dólares</button>
             </div>
           </div>
 
@@ -352,38 +414,59 @@ export function PurchasesPage() {
               <label className="text-sm font-medium text-gray-700">Productos</label>
               <button type="button" onClick={addItem} className="text-sm text-primary-600 hover:text-primary-800 font-medium">+ Agregar producto</button>
             </div>
-            <div className="space-y-3">
-              {form.items.map((item, idx) => (
-                <div key={idx} className="bg-gray-50 rounded-lg p-3 relative">
-                  {form.items.length > 1 && (
-                    <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-                  )}
-                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Producto</label>
-                      <div className="flex gap-1">
-                        <div className="flex-1">
-                          <SearchableSelect
-                            options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
-                            value={item.productId}
-                            onChange={(v) => updateItem(idx, 'productId', v)}
-                            placeholder="Buscar producto..."
-                            minChars={1}
-                            required
-                          />
+            <div className="space-y-2">
+              {form.items.map((item, idx) => {
+                const product = products.find((p: Product) => p.id === item.productId);
+                const needsLot = product?.tracksLot;
+                return (
+                  <div key={idx} className="bg-gray-50 rounded-lg p-3 relative">
+                    {form.items.length > 1 && (
+                      <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+                    )}
+                    <div className="grid grid-cols-12 gap-2 items-end pr-6">
+                      <div className="col-span-12 sm:col-span-5">
+                        <label className="block text-xs text-gray-500 mb-1">Producto</label>
+                        <div className="flex gap-1">
+                          <div className="flex-1">
+                            <SearchableSelect
+                              options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
+                              value={item.productId}
+                              onChange={(v) => updateItem(idx, 'productId', v)}
+                              placeholder="Buscar producto..."
+                              minChars={1}
+                              required
+                            />
+                          </div>
+                          <button type="button" onClick={() => openQuickProduct(idx)} className="px-2 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 shrink-0" title="Crear nuevo producto">
+                            <PackagePlus size={16} />
+                          </button>
                         </div>
-                        <button type="button" onClick={() => openQuickProduct(idx)} className="px-2 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 shrink-0" title="Crear nuevo producto">
-                          <PackagePlus size={16} />
-                        </button>
+                      </div>
+                      <div className="col-span-4 sm:col-span-2">
+                        <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
+                        <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                      </div>
+                      <div className="col-span-8 sm:col-span-3">
+                        <label className="block text-xs text-gray-500 mb-1 flex items-center justify-between">
+                          <span>Lote {needsLot && <span className="text-red-500">*</span>}</span>
+                          <span className="flex gap-1">
+                            {idx > 0 && <button type="button" onClick={() => repeatFromPrev(idx, 'lotNumber')} className="text-gray-400 hover:text-primary-600" title="Copiar del anterior"><CopyIcon size={11} /></button>}
+                            <button type="button" onClick={() => autoGenLot(idx)} className="text-gray-400 hover:text-primary-600" title="Generar lote"><Dices size={11} /></button>
+                          </span>
+                        </label>
+                        <input value={item.lotNumber || ''} onChange={(e) => updateItem(idx, 'lotNumber', e.target.value)} placeholder={needsLot ? 'L-20260415-01' : 'Opcional'} className={`w-full px-2 py-1.5 border rounded text-sm ${needsLot && !item.lotNumber ? 'border-red-300 bg-red-50' : product && !needsLot ? 'bg-gray-100 text-gray-500' : ''}`} />
+                      </div>
+                      <div className="col-span-12 sm:col-span-2">
+                        <label className="block text-xs text-gray-500 mb-1 flex items-center justify-between">
+                          <span>Vence</span>
+                          {idx > 0 && <button type="button" onClick={() => repeatFromPrev(idx, 'expirationDate')} className="text-gray-400 hover:text-primary-600" title="Copiar del anterior"><CopyIcon size={11} /></button>}
+                        </label>
+                        <input type="date" value={item.expirationDate || ''} onChange={(e) => updateItem(idx, 'expirationDate', e.target.value)} className={`w-full px-2 py-1.5 border rounded text-sm ${product && !needsLot ? 'bg-gray-100 text-gray-500' : ''}`} />
                       </div>
                     </div>
-                    <div className="w-28">
-                      <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
-                      <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
-                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -466,6 +549,13 @@ export function PurchasesPage() {
                 <span className="block text-xs text-gray-500">Proveedor</span>
                 <span className="text-sm font-medium">{viewingPurchase.supplier}{viewingPurchase.supplierRuc ? ` (${viewingPurchase.supplierRuc})` : ''}</span>
               </div>
+              {viewingPurchase.documentType && (
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <span className="block text-xs text-gray-500">Comprobante</span>
+                  <span className="text-sm font-medium">{viewingPurchase.documentType} {viewingPurchase.documentSeries || ''}{viewingPurchase.documentNumber ? `-${viewingPurchase.documentNumber}` : ''}</span>
+                  {viewingPurchase.issueDate && <span className="block text-xs text-gray-500">Emisión: {new Date(viewingPurchase.issueDate).toLocaleDateString('es-PE')}</span>}
+                </div>
+              )}
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Tipo de Pago</span>
                 <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${viewingPurchase.paymentType === 'CREDITO' ? 'bg-orange-100 text-orange-700' : 'bg-primary-100 text-primary-700'}`}>
@@ -483,6 +573,8 @@ export function PurchasesPage() {
                     <tr>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Producto</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Cant.</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Lote</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Vence</th>
                       {!viewingPurchase.totalCostUsd && (
                         <>
                           <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Costo unit.</th>
@@ -498,6 +590,8 @@ export function PurchasesPage() {
                         <tr key={idx}>
                           <td className="px-3 py-2 font-medium">{product?.name || item.productId}</td>
                           <td className="px-3 py-2 text-right">{item.quantity}</td>
+                          <td className="px-3 py-2 text-gray-600">{item.lotNumber || '—'}</td>
+                          <td className="px-3 py-2 text-gray-600">{item.expirationDate ? new Date(item.expirationDate).toLocaleDateString('es-PE') : '—'}</td>
                           {!viewingPurchase.totalCostUsd && (
                             <>
                               <td className="px-3 py-2 text-right">S/ {(item.unitCost || 0).toFixed(2)}</td>

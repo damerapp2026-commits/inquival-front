@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useStock, useStockAlerts, useTransferStock } from '../hooks/useStock';
 import { useStockAdjustments, useCreateStockAdjustment } from '../hooks/useStockAdjustments';
+import { useProductLots, useExpiringLots } from '../hooks/useProductLots';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { DataTable } from '../../../shared/components/DataTable';
@@ -8,11 +9,11 @@ import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import { Package, ArrowRightLeft, AlertTriangle, Trash2, Plus, ClipboardList, ChevronDown, ChevronUp, Search } from 'lucide-react';
-import type { Stock, Company, Product, StockAdjustment } from '../../../shared/types';
+import { Package, ArrowRightLeft, AlertTriangle, Trash2, Plus, ClipboardList, ChevronDown, ChevronUp, Search, CalendarClock, Boxes } from 'lucide-react';
+import type { Stock, Company, Product, StockAdjustment, ProductLot } from '../../../shared/types';
 
 export function StockPage() {
-  const [activeTab, setActiveTab] = useState<'inventory' | 'adjustments' | 'transfers'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'lots' | 'adjustments' | 'transfers'>('inventory');
   const [page, setPage] = useState(1);
   const [companyId, setCompanyId] = useState('');
   const [showTransfer, setShowTransfer] = useState(false);
@@ -22,6 +23,9 @@ export function StockPage() {
   const [showAllLowStock, setShowAllLowStock] = useState(false);
   const [ingredientFilter, setIngredientFilter] = useState('');
   const debouncedIngredient = useDebounce(ingredientFilter);
+  const [showExpiringDetail, setShowExpiringDetail] = useState(false);
+  const [lotFilter, setLotFilter] = useState<'all' | 'active' | 'expiring' | 'expired'>('all');
+  const [expandedStock, setExpandedStock] = useState<Record<string, boolean>>({});
 
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 200, activeIngredient: debouncedIngredient || undefined });
@@ -30,8 +34,17 @@ export function StockPage() {
   const transferStock = useTransferStock();
   const { data: adjustmentsData, isLoading: adjLoading } = useStockAdjustments({ page: adjPage, limit: 20, companyId: companyId || undefined });
   const createAdjustment = useCreateStockAdjustment();
+  const { data: lotsData, isLoading: lotsLoading } = useProductLots(companyId);
+  const { data: expiringData } = useExpiringLots(companyId, 30);
 
-  const [transferForm, setTransferForm] = useState({ fromCompanyId: '', toCompanyId: '', items: [{ productId: '', quantity: 0 }] as { productId: string; quantity: number }[] });
+  const [transferForm, setTransferForm] = useState({ fromCompanyId: '', toCompanyId: '', items: [{ productId: '', quantity: 0, lotAllocations: [] as { lotId: string; quantity: number }[] }] });
+  const { data: transferSourceLotsData } = useProductLots(transferForm.fromCompanyId);
+  const transferSourceAllLots: ProductLot[] = Array.isArray(transferSourceLotsData) ? transferSourceLotsData : [];
+  const transferSourceLotsByProduct = transferSourceAllLots.reduce<Record<string, ProductLot[]>>((acc, l) => {
+    if (!acc[l.productId]) acc[l.productId] = [];
+    acc[l.productId].push(l);
+    return acc;
+  }, {});
   const [adjForm, setAdjForm] = useState({ productId: '', companyId: '', type: 'INCREASE' as 'INCREASE' | 'DECREASE', quantity: 0, reason: '' });
 
   const companyList = Array.isArray(companies) ? companies : [];
@@ -42,11 +55,42 @@ export function StockPage() {
   const alertList = Array.isArray(alerts) ? alerts : [];
   const adjustments = adjustmentsData?.data || [];
   const adjTotal = adjustmentsData?.total || 0;
+  const allLots: ProductLot[] = Array.isArray(lotsData) ? lotsData : [];
+  const expiringLots: ProductLot[] = Array.isArray(expiringData) ? expiringData : [];
+
+  const daysUntil = (date?: string) => {
+    if (!date) return Infinity;
+    const diff = Math.ceil((new Date(date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return diff;
+  };
+  const lotStatus = (lot: ProductLot): { label: string; color: string; days: number } => {
+    const d = daysUntil(lot.expirationDate);
+    if (d === Infinity) return { label: 'Sin fecha', color: 'bg-gray-100 text-gray-600 border-gray-300', days: d };
+    if (d < 0) return { label: `Vencido hace ${-d}d`, color: 'bg-red-100 text-red-700 border-red-300', days: d };
+    if (d <= 7) return { label: `${d}d`, color: 'bg-orange-100 text-orange-700 border-orange-300', days: d };
+    if (d <= 30) return { label: `${d}d`, color: 'bg-yellow-100 text-yellow-800 border-yellow-300', days: d };
+    return { label: `${d}d`, color: 'bg-green-100 text-green-700 border-green-300', days: d };
+  };
+
+  const filteredLots = allLots.filter(l => {
+    if (lotFilter === 'all') return true;
+    const d = daysUntil(l.expirationDate);
+    if (lotFilter === 'active') return l.currentQuantity > 0 && d > 30;
+    if (lotFilter === 'expiring') return l.currentQuantity > 0 && d >= 0 && d <= 30;
+    if (lotFilter === 'expired') return d < 0;
+    return true;
+  }).sort((a, b) => daysUntil(a.expirationDate) - daysUntil(b.expirationDate));
+
+  const lotsByProduct = allLots.reduce<Record<string, ProductLot[]>>((acc, l) => {
+    if (!acc[l.productId]) acc[l.productId] = [];
+    acc[l.productId].push(l);
+    return acc;
+  }, {});
 
   const getProductName = (id: string) => products.find((p: Product) => p.id === id)?.name || 'N/A';
   const getCompanyName = (id: string) => companyList.find((c: Company) => c.id === id)?.name || 'N/A';
 
-  const openTransfer = () => { setTransferForm({ fromCompanyId: companyId || '', toCompanyId: '', items: [{ productId: '', quantity: 0 }] }); setShowTransfer(true); };
+  const openTransfer = () => { setTransferForm({ fromCompanyId: companyId || '', toCompanyId: '', items: [{ productId: '', quantity: 0, lotAllocations: [] }] }); setShowTransfer(true); };
   const openAdjustment = (preset?: { productId?: string; companyId?: string }) => {
     setAdjForm({
       productId: preset?.productId || '',
@@ -58,11 +102,74 @@ export function StockPage() {
     setShowAdjustment(true);
   };
 
-  const addTransferItem = () => setTransferForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0 }] }));
+  const addTransferItem = () => setTransferForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0, lotAllocations: [] }] }));
+  const transferSourceLots = (productId: string): ProductLot[] => {
+    return (transferSourceLotsByProduct[productId] || []).filter(l => l.currentQuantity > 0);
+  };
+  const autoFifoAllocate = (idx: number) => {
+    setTransferForm(prev => {
+      const items = [...prev.items];
+      const it = items[idx];
+      const src = transferSourceLots(it.productId).sort((a, b) => {
+        const da = a.expirationDate ? new Date(a.expirationDate).getTime() : Infinity;
+        const db = b.expirationDate ? new Date(b.expirationDate).getTime() : Infinity;
+        return da - db;
+      });
+      let remaining = it.quantity;
+      const allocations: { lotId: string; quantity: number }[] = [];
+      for (const lot of src) {
+        if (remaining <= 0) break;
+        const take = Math.min(lot.currentQuantity, remaining);
+        allocations.push({ lotId: lot.id, quantity: take });
+        remaining -= take;
+      }
+      items[idx] = { ...it, lotAllocations: allocations };
+      return { ...prev, items };
+    });
+  };
+  const updateAllocation = (itemIdx: number, lotId: string, quantity: number) => {
+    setTransferForm(prev => {
+      const items = [...prev.items];
+      const allocs = [...(items[itemIdx].lotAllocations || [])];
+      const i = allocs.findIndex(a => a.lotId === lotId);
+      if (quantity <= 0) {
+        if (i >= 0) allocs.splice(i, 1);
+      } else {
+        if (i >= 0) allocs[i] = { lotId, quantity };
+        else allocs.push({ lotId, quantity });
+      }
+      items[itemIdx] = { ...items[itemIdx], lotAllocations: allocs };
+      return { ...prev, items };
+    });
+  };
   const removeTransferItem = (idx: number) => setTransferForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
   const updateTransferItem = (idx: number, field: string, value: any) => setTransferForm(prev => { const items = [...prev.items]; items[idx] = { ...items[idx], [field]: value }; return { ...prev, items }; });
 
-  const handleTransfer = async (e: React.FormEvent) => { e.preventDefault(); await transferStock.mutateAsync(transferForm); setShowTransfer(false); };
+  const handleTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    for (const it of transferForm.items) {
+      const product = products.find((p: Product) => p.id === it.productId);
+      if (product?.tracksLot) {
+        const sum = (it.lotAllocations || []).reduce((s, a) => s + a.quantity, 0);
+        if (Math.abs(sum - it.quantity) > 0.0001) {
+          const { default: toast } = await import('react-hot-toast');
+          toast.error(`Para ${product.name} la suma de lotes (${sum}) debe coincidir con la cantidad (${it.quantity})`);
+          return;
+        }
+      }
+    }
+    const payload = {
+      ...transferForm,
+      items: transferForm.items.map(it => {
+        const product = products.find((p: Product) => p.id === it.productId);
+        return product?.tracksLot && it.lotAllocations?.length
+          ? { productId: it.productId, quantity: it.quantity, lotAllocations: it.lotAllocations }
+          : { productId: it.productId, quantity: it.quantity };
+      }),
+    };
+    await transferStock.mutateAsync(payload);
+    setShowTransfer(false);
+  };
   const handleAdjustment = async (e: React.FormEvent) => { e.preventDefault(); await createAdjustment.mutateAsync(adjForm); setShowAdjustment(false); };
 
   React.useEffect(() => { if (!companyId && companyList.length > 0) setCompanyId(companyList[0].id); }, [companyList, companyId]);
@@ -86,6 +193,7 @@ export function StockPage() {
 
   const tabs = [
     { id: 'inventory' as const, label: 'Inventario', icon: Package },
+    { id: 'lots' as const, label: 'Lotes', icon: Boxes },
     { id: 'adjustments' as const, label: 'Ajustes', icon: ClipboardList },
     { id: 'transfers' as const, label: 'Transferencias', icon: ArrowRightLeft },
   ];
@@ -207,7 +315,54 @@ export function StockPage() {
         );
       })()}
 
-      {(activeTab === 'inventory' || activeTab === 'adjustments') && (
+      {expiringLots.length > 0 && (activeTab === 'inventory' || activeTab === 'lots') && (() => {
+        const expired = expiringLots.filter(l => daysUntil(l.expirationDate) < 0);
+        const sevenDays = expiringLots.filter(l => { const d = daysUntil(l.expirationDate); return d >= 0 && d <= 7; });
+        const thirtyDays = expiringLots.filter(l => { const d = daysUntil(l.expirationDate); return d > 7 && d <= 30; });
+        return (
+          <div className="mb-4 bg-orange-50 border border-orange-200 rounded-lg overflow-hidden">
+            <button onClick={() => setShowExpiringDetail(v => !v)} className="w-full flex items-center justify-between gap-2 p-3 text-left hover:bg-orange-100 transition-colors">
+              <div className="flex items-center gap-2 text-orange-900">
+                <CalendarClock size={18} className="flex-shrink-0" />
+                <div>
+                  <div className="font-semibold">Lotes por vencer ({expiringLots.length})</div>
+                  <div className="text-xs text-orange-800 mt-0.5">
+                    {expired.length > 0 && <span className="text-red-700 font-medium">{expired.length} vencidos</span>}
+                    {expired.length > 0 && (sevenDays.length + thirtyDays.length) > 0 && <span className="mx-1">·</span>}
+                    {sevenDays.length > 0 && <span>{sevenDays.length} en 7 días</span>}
+                    {sevenDays.length > 0 && thirtyDays.length > 0 && <span className="mx-1">·</span>}
+                    {thirtyDays.length > 0 && <span>{thirtyDays.length} en 30 días</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 text-orange-800 text-sm font-medium flex-shrink-0">
+                {showExpiringDetail ? <>Ocultar <ChevronUp size={16} /></> : <>Ver detalle <ChevronDown size={16} /></>}
+              </div>
+            </button>
+            {showExpiringDetail && (
+              <div className="px-3 pb-3 pt-1 space-y-3 border-t border-orange-200">
+                {[{ label: 'Vencidos', list: expired, tone: 'bg-red-100 text-red-800 border-red-300' }, { label: 'Próximos 7 días', list: sevenDays, tone: 'bg-orange-100 text-orange-800 border-orange-300' }, { label: 'Próximos 30 días', list: thirtyDays, tone: 'bg-yellow-100 text-yellow-800 border-yellow-300' }].filter(g => g.list.length > 0).map(g => (
+                  <div key={g.label}>
+                    <div className="text-xs font-bold uppercase tracking-wide mb-2 text-gray-700">{g.label} ({g.list.length})</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {g.list.map((l) => {
+                        const st = lotStatus(l);
+                        return (
+                          <button key={l.id} onClick={() => { setActiveTab('lots'); setLotFilter(g.label === 'Vencidos' ? 'expired' : 'expiring'); }} className={`px-2 py-1 rounded text-xs font-medium border ${g.tone}`} title="Ir a la pestaña de lotes">
+                            {getProductName(l.productId)} · {l.lotNumber} · <span>{st.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {(activeTab === 'inventory' || activeTab === 'adjustments' || activeTab === 'lots') && (
         <div className="mb-4 flex gap-2">
           {companyList.map((c: Company) => (
             <button key={c.id} onClick={() => { setCompanyId(c.id); setPage(1); setAdjPage(1); }} className={`px-4 py-2 rounded-lg font-medium ${companyId === c.id ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
@@ -223,8 +378,118 @@ export function StockPage() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input type="text" placeholder="Filtrar por ingrediente activo..." value={ingredientFilter} onChange={(e) => { setIngredientFilter(e.target.value); setPage(1); }} className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
           </div>
-          <DataTable columns={stockColumns} data={stockItems} isLoading={isLoading} />
+          <div className="bg-white rounded-xl shadow-card overflow-hidden border border-gray-100">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="w-8"></th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Últ. actualización</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {isLoading ? (
+                  <tr><td colSpan={4} className="text-center py-6 text-gray-400">Cargando...</td></tr>
+                ) : stockItems.length === 0 ? (
+                  <tr><td colSpan={4} className="text-center py-6 text-gray-400">Sin registros</td></tr>
+                ) : stockItems.map((item: Stock) => {
+                  const product = products.find((p: Product) => p.id === item.productId);
+                  const productLots = lotsByProduct[item.productId] || [];
+                  const hasLots = product?.tracksLot && productLots.length > 0;
+                  const isExpanded = expandedStock[item.id];
+                  return (
+                    <React.Fragment key={item.id}>
+                      <tr className="hover:bg-primary-50 transition-colors">
+                        <td className="px-2">
+                          {hasLots && (
+                            <button onClick={() => setExpandedStock(s => ({ ...s, [item.id]: !s[item.id] }))} className="p-1 text-gray-400 hover:text-primary-600">
+                              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className="font-medium">{getProductName(item.productId)}</span>
+                          {product?.tracksLot && <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] rounded bg-blue-100 text-blue-700 border border-blue-200">LOTES</span>}
+                        </td>
+                        <td className={`px-3 py-2 ${item.quantity <= 10 ? 'text-red-600 font-bold' : ''}`}>{item.quantity}</td>
+                        <td className="px-3 py-2 text-gray-500">{new Date(item.lastUpdated).toLocaleDateString('es-PE')}</td>
+                      </tr>
+                      {hasLots && isExpanded && (
+                        <tr className="bg-gray-50/70">
+                          <td></td>
+                          <td colSpan={3} className="px-3 py-2">
+                            <div className="text-xs text-gray-500 mb-1">Lotes activos</div>
+                            <div className="space-y-1">
+                              {productLots.filter(l => l.currentQuantity > 0).map(l => {
+                                const st = lotStatus(l);
+                                return (
+                                  <div key={l.id} className="flex items-center gap-2 text-xs bg-white border border-gray-200 rounded px-2 py-1">
+                                    <span className="font-mono text-gray-700">{l.lotNumber}</span>
+                                    <span className="text-gray-400">·</span>
+                                    <span className="text-gray-600">{l.currentQuantity} / {l.initialQuantity}</span>
+                                    <span className="text-gray-400">·</span>
+                                    <span className="text-gray-600">{l.expirationDate ? `Vence ${new Date(l.expirationDate).toLocaleDateString('es-PE')}` : 'Sin vencimiento'}</span>
+                                    <span className={`ml-auto px-1.5 py-0.5 rounded border text-[10px] font-medium ${st.color}`}>{st.label}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+        </>
+      )}
+
+      {activeTab === 'lots' && (
+        <>
+          <div className="flex gap-2 mb-3 flex-wrap">
+            {([{ id: 'all', label: 'Todos' }, { id: 'active', label: 'Activos' }, { id: 'expiring', label: 'Por vencer (30d)' }, { id: 'expired', label: 'Vencidos' }] as const).map(f => (
+              <button key={f.id} onClick={() => setLotFilter(f.id)} className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${lotFilter === f.id ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'}`}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="bg-white rounded-xl shadow-card overflow-hidden border border-gray-100">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lote</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actual / Inicial</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vence</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recepción</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {lotsLoading ? (
+                  <tr><td colSpan={6} className="text-center py-6 text-gray-400">Cargando...</td></tr>
+                ) : filteredLots.length === 0 ? (
+                  <tr><td colSpan={6} className="text-center py-6 text-gray-400">Sin lotes para este filtro</td></tr>
+                ) : filteredLots.map(l => {
+                  const st = lotStatus(l);
+                  return (
+                    <tr key={l.id} className="hover:bg-primary-50 transition-colors">
+                      <td className="px-3 py-2 font-medium">{getProductName(l.productId)}</td>
+                      <td className="px-3 py-2 font-mono text-gray-700">{l.lotNumber}</td>
+                      <td className="px-3 py-2 text-right">{l.currentQuantity} / {l.initialQuantity}</td>
+                      <td className="px-3 py-2">{l.expirationDate ? new Date(l.expirationDate).toLocaleDateString('es-PE') : '—'}</td>
+                      <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded border text-xs font-medium ${st.color}`}>{st.label}</span></td>
+                      <td className="px-3 py-2 text-gray-500">{l.receivedAt ? new Date(l.receivedAt).toLocaleDateString('es-PE') : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -245,7 +510,7 @@ export function StockPage() {
         </div>
       )}
 
-      <Modal isOpen={showTransfer} onClose={() => setShowTransfer(false)} title="Transferir Stock entre Empresas">
+      <Modal isOpen={showTransfer} onClose={() => setShowTransfer(false)} title="Transferir Stock entre Empresas" size="lg">
         <form onSubmit={handleTransfer} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Desde</label>
@@ -264,21 +529,62 @@ export function StockPage() {
           <div>
             <div className="flex items-center justify-between mb-2"><label className="text-sm font-medium text-gray-700">Productos</label><button type="button" onClick={addTransferItem} className="text-sm text-primary-600 hover:text-primary-800">+ Agregar</button></div>
             <div className="space-y-2">
-              {transferForm.items.map((item, idx) => (
-                <div key={idx} className="flex gap-2 items-center">
-                  <div className="flex-1">
-                    <SearchableSelect
-                      options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
-                      value={item.productId}
-                      onChange={(v) => updateTransferItem(idx, 'productId', v)}
-                      placeholder="Buscar producto..."
-                      required
-                    />
+              {transferForm.items.map((item, idx) => {
+                const product = products.find((p: Product) => p.id === item.productId);
+                const hasLots = product?.tracksLot;
+                const sourceLots = hasLots ? transferSourceLots(item.productId) : [];
+                const allocSum = (item.lotAllocations || []).reduce((s, a) => s + a.quantity, 0);
+                const mismatch = hasLots && item.quantity > 0 && Math.abs(allocSum - item.quantity) > 0.0001;
+                return (
+                  <div key={idx} className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex gap-2 items-center">
+                      <div className="flex-1">
+                        <SearchableSelect
+                          options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
+                          value={item.productId}
+                          onChange={(v) => { updateTransferItem(idx, 'productId', v); updateTransferItem(idx, 'lotAllocations', []); }}
+                          placeholder="Buscar producto..."
+                          required
+                        />
+                      </div>
+                      <input type="number" placeholder="Cantidad" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateTransferItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-28 px-2 py-1.5 border rounded text-sm" required />
+                      {transferForm.items.length > 1 && <button type="button" onClick={() => removeTransferItem(idx)} className="text-red-500"><Trash2 size={14} /></button>}
+                    </div>
+                    {hasLots && item.productId && (
+                      <div className="mt-2 border-t border-gray-200 pt-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-gray-600">Lotes a transferir <span className="text-red-500">*</span></span>
+                          <button type="button" onClick={() => autoFifoAllocate(idx)} disabled={!item.quantity || sourceLots.length === 0} className="text-xs text-primary-600 hover:text-primary-800 disabled:opacity-40 disabled:cursor-not-allowed">
+                            Auto FIFO (vence primero)
+                          </button>
+                        </div>
+                        {sourceLots.length === 0 ? (
+                          <div className="text-xs text-gray-400 italic py-1">No hay lotes disponibles en la sucursal origen para este producto.</div>
+                        ) : (
+                          <div className="space-y-1">
+                            {sourceLots.map((lot) => {
+                              const alloc = item.lotAllocations?.find(a => a.lotId === lot.id)?.quantity || 0;
+                              const st = lotStatus(lot);
+                              return (
+                                <div key={lot.id} className="flex items-center gap-2 text-xs bg-white border border-gray-200 rounded px-2 py-1">
+                                  <span className="font-mono text-gray-700 w-32 truncate" title={lot.lotNumber}>{lot.lotNumber}</span>
+                                  <span className={`px-1.5 py-0.5 rounded border text-[10px] font-medium ${st.color}`}>{st.label}</span>
+                                  <span className="text-gray-500 flex-1">Disponible: {lot.currentQuantity}</span>
+                                  <input type="number" min="0" max={lot.currentQuantity} step="0.01" value={alloc || ''} onChange={(e) => updateAllocation(idx, lot.id, parseFloat(e.target.value) || 0)} placeholder="0" className="w-20 px-1.5 py-0.5 border rounded text-xs" />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <div className={`mt-1 text-xs flex justify-between ${mismatch ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                          <span>Suma asignada</span>
+                          <span>{allocSum} / {item.quantity || 0}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <input type="number" placeholder="Cantidad" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateTransferItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-28 px-2 py-1 border rounded text-sm" required />
-                  {transferForm.items.length > 1 && <button type="button" onClick={() => removeTransferItem(idx)} className="text-red-500"><Trash2 size={14} /></button>}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
           <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Realizar Transferencia</button>

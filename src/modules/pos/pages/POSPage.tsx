@@ -6,9 +6,11 @@ import { useClients } from '../../clients/hooks/useClients';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useCreateSale } from '../../sales/hooks/useSales';
+import { useCreateQuote, useQuote, useConvertQuote } from '../../quotes/hooks/useQuotes';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { stockService } from '../../stock/services/stockService';
-import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { Product, ProductPrice, Category, Company, Client, PriceTier, PaymentMethod } from '../../../shared/types';
 
@@ -76,13 +78,30 @@ export function POSPage() {
 
   const [categoryId, setCategoryId] = useState<string>(''); // '' = Todos
   const [search, setSearch] = useState('');
+  const [ingredientFilter, setIngredientFilter] = useState('');
   const [companyId, setCompanyId] = useState<string>('');
   const [tierId, setTierId] = useState<string>('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+  const [quoteClientId, setQuoteClientId] = useState('');
+  const [quoteClientName, setQuoteClientName] = useState('');
+  const [quoteValidUntil, setQuoteValidUntil] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 15);
+    return d.toISOString().slice(0, 10);
+  });
+  const [quoteNotes, setQuoteNotes] = useState('');
+  const createQuote = useCreateQuote();
+  const convertQuote = useConvertQuote();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const fromQuoteId = searchParams.get('fromQuote') || '';
+  const { data: preloadedQuote } = useQuote(fromQuoteId);
+  const [sourceQuoteId, setSourceQuoteId] = useState<string>('');
   const [clientId, setClientId] = useState<string>('');
   const [voucherType, setVoucherType] = useState<'NONE' | 'BOLETA' | 'FACTURA'>('NONE');
   const [paymentMethodId, setPaymentMethodId] = useState<string>('');
+  const [splitPayments, setSplitPayments] = useState<{ paymentMethodId: string; amount: number }[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const { data: stockList } = useQuery({
@@ -101,6 +120,33 @@ export function POSPage() {
     });
     return map;
   }, [stockList]);
+
+  // Preload cart from quote (if ?fromQuote=... param)
+  useEffect(() => {
+    if (!preloadedQuote || !products.length || sourceQuoteId === preloadedQuote.id) return;
+    if (preloadedQuote.status === 'CONVERTED' || preloadedQuote.status === 'REJECTED') {
+      toast.error('Esta proforma ya no puede convertirse');
+      navigate('/quotes');
+      return;
+    }
+    if (preloadedQuote.companyId) setCompanyId(preloadedQuote.companyId);
+    if (preloadedQuote.clientId) setClientId(preloadedQuote.clientId);
+    const items: CartItem[] = preloadedQuote.items.map((i: any) => {
+      const p = products.find(pr => pr.id === i.productId);
+      return {
+        productId: i.productId,
+        name: p?.name || '—',
+        unit: p?.unit || '',
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+        tierOverride: i.priceTier,
+        isCustomPrice: true,
+      };
+    });
+    setCart(items);
+    setSourceQuoteId(preloadedQuote.id);
+    toast.success(`Proforma ${preloadedQuote.quoteNumber} cargada`);
+  }, [preloadedQuote, products, sourceQuoteId, navigate]);
 
   // Defaults once data loads
   useEffect(() => {
@@ -144,12 +190,14 @@ export function POSPage() {
 
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
+    const ing = ingredientFilter.trim().toLowerCase();
     return products.filter((p) => {
       if (categoryId && p.categoryId !== categoryId) return false;
       if (term && !p.name.toLowerCase().includes(term)) return false;
+      if (ing && !(p.activeIngredient || '').toLowerCase().includes(ing)) return false;
       return true;
     });
-  }, [products, categoryId, search]);
+  }, [products, categoryId, search, ingredientFilter]);
 
   const cartQty = (productId: string) => cart.find((i) => i.productId === productId)?.quantity || 0;
 
@@ -258,29 +306,60 @@ export function POSPage() {
       toast.error('No hay métodos de pago configurados');
       return;
     }
+    setSplitPayments([{ paymentMethodId, amount: 0 }]);
     setShowCheckout(true);
   };
 
+  const splitTotal = splitPayments.reduce((s, p) => s + (p.amount || 0), 0);
+  const splitRemaining = Math.round((total - splitTotal) * 100) / 100;
+
   const confirmSale = async () => {
+    const validPayments = splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
+    if (validPayments.length === 0) {
+      toast.error('Ingresa al menos un método de pago con monto');
+      return;
+    }
+    if (Math.abs(splitTotal - total) > 0.01) {
+      toast.error(`La suma de pagos (${splitTotal.toFixed(2)}) no coincide con el total (${total.toFixed(2)})`);
+      return;
+    }
     try {
-      await createSale.mutateAsync({
-        clientId: clientId || undefined,
-        voucherType,
-        isCredit: false,
-        items: cart.map((i) => ({
-          productId: i.productId,
-          companyId,
-          quantity: i.quantity,
-          priceTier: i.tierOverride || tierId,
-          unitPrice: i.unitPrice,
-        })),
-        payments: [{ paymentMethodId, amount: total }],
-      } as any);
-      toast.success('Venta registrada');
+      if (sourceQuoteId) {
+        await convertQuote.mutateAsync({
+          id: sourceQuoteId,
+          payload: {
+            companyId,
+            clientId: clientId || undefined,
+            voucherType,
+            isCredit: false,
+            payments: validPayments,
+          },
+        });
+      } else {
+        await createSale.mutateAsync({
+          clientId: clientId || undefined,
+          voucherType,
+          isCredit: false,
+          items: cart.map((i) => ({
+            productId: i.productId,
+            companyId,
+            quantity: i.quantity,
+            priceTier: i.tierOverride || tierId,
+            unitPrice: i.unitPrice,
+          })),
+          payments: validPayments,
+        } as any);
+        toast.success('Venta registrada');
+      }
       setCart([]);
       setClientId('');
       setVoucherType('NONE');
+      setSplitPayments([]);
       setShowCheckout(false);
+      if (sourceQuoteId) {
+        setSourceQuoteId('');
+        setSearchParams({});
+      }
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Error al registrar la venta';
       toast.error(Array.isArray(msg) ? msg[0] : msg);
@@ -293,13 +372,22 @@ export function POSPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
         <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3">
-          <div className="relative flex-1 max-w-xl">
+          <div className="relative flex-1 max-w-md">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               ref={searchRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar productos por nombre… (Ctrl+K)"
+              placeholder="Buscar por nombre… (Ctrl+K)"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white transition-colors"
+            />
+          </div>
+          <div className="relative flex-1 max-w-xs">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={ingredientFilter}
+              onChange={(e) => setIngredientFilter(e.target.value)}
+              placeholder="Ingrediente activo…"
               className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white transition-colors"
             />
           </div>
@@ -584,18 +672,107 @@ export function POSPage() {
               <span className="text-sm font-semibold text-gray-700">Total</span>
               <span className="text-2xl font-bold text-primary-600">S/ {total.toFixed(2)}</span>
             </div>
-            <button
-              onClick={openCheckout}
-              className="w-full mt-2 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-semibold transition-colors shadow-sm flex items-center justify-center gap-2"
-            >
-              <CreditCard size={18} />
-              Cobrar
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (cart.length === 0) { toast.error('El carrito está vacío'); return; }
+                  setShowQuoteModal(true);
+                }}
+                className="flex-1 mt-2 py-3 bg-white border border-primary-600 text-primary-700 rounded-xl hover:bg-primary-50 font-semibold transition-colors flex items-center justify-center gap-2"
+                title="Guardar como proforma"
+              >
+                <ScrollText size={18} />
+                Proforma
+              </button>
+              <button
+                onClick={openCheckout}
+                className="flex-1 mt-2 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-semibold transition-colors shadow-sm flex items-center justify-center gap-2"
+              >
+                <CreditCard size={18} />
+                Cobrar
+              </button>
+            </div>
           </div>
         )}
       </aside>
 
       {/* Checkout modal */}
+      {showQuoteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowQuoteModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-card-hover w-full max-w-md mx-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2"><ScrollText size={18} /> Nueva Proforma</h2>
+              <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100"><X size={18} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Cliente</label>
+                <select
+                  value={quoteClientId}
+                  onChange={(e) => {
+                    setQuoteClientId(e.target.value);
+                    const c = clients.find(cl => cl.id === e.target.value);
+                    setQuoteClientName(c?.name || '');
+                  }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">— Cliente ocasional —</option>
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              {!quoteClientId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombre del cliente <span className="text-gray-400 font-normal">(opcional)</span></label>
+                  <input value={quoteClientName} onChange={(e) => setQuoteClientName(e.target.value)} placeholder="Cliente ocasional" className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Válida hasta</label>
+                <input type="date" value={quoteValidUntil} onChange={(e) => setQuoteValidUntil(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Observaciones <span className="text-gray-400 font-normal">(opcional)</span></label>
+                <textarea value={quoteNotes} onChange={(e) => setQuoteNotes(e.target.value)} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              </div>
+              <div className="bg-primary-50 rounded-xl p-4 flex items-center justify-between">
+                <span className="text-sm text-gray-600">Total proforma</span>
+                <span className="text-2xl font-bold text-primary-700">S/ {total.toFixed(2)}</span>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await createQuote.mutateAsync({
+                      companyId,
+                      clientId: quoteClientId || undefined,
+                      clientName: quoteClientName || undefined,
+                      validUntil: quoteValidUntil,
+                      notes: quoteNotes || undefined,
+                      items: cart.map(i => ({
+                        productId: i.productId,
+                        companyId,
+                        quantity: i.quantity,
+                        priceTier: i.tierOverride || tierId,
+                        unitPrice: i.unitPrice,
+                      })),
+                    });
+                    setShowQuoteModal(false);
+                    setCart([]);
+                    setQuoteClientId('');
+                    setQuoteClientName('');
+                    setQuoteNotes('');
+                  } catch { /* toast handled by hook */ }
+                }}
+                disabled={createQuote.isPending}
+                className="w-full py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 font-semibold transition-colors shadow-sm"
+              >
+                {createQuote.isPending ? 'Guardando…' : 'Guardar proforma'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showCheckout && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowCheckout(false)} />
@@ -647,21 +824,105 @@ export function POSPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Método de pago</label>
-                <select
-                  value={paymentMethodId}
-                  onChange={(e) => setPaymentMethodId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  {paymentMethods.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm font-medium text-gray-700">Métodos de pago</label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (splitPayments.length === 0 || splitRemaining <= 0) return;
+                        const idx = splitPayments.findIndex(p => p.amount === 0);
+                        if (idx >= 0) {
+                          const next = [...splitPayments];
+                          next[idx] = { ...next[idx], amount: splitRemaining };
+                          setSplitPayments(next);
+                        } else {
+                          const last = splitPayments.length - 1;
+                          const next = [...splitPayments];
+                          next[last] = { ...next[last], amount: (next[last].amount || 0) + splitRemaining };
+                          setSplitPayments(next);
+                        }
+                      }}
+                      className="text-xs text-primary-600 hover:text-primary-800 font-medium"
+                    >
+                      Completar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const used = new Set(splitPayments.map(p => p.paymentMethodId));
+                        const next = paymentMethods.find(m => !used.has(m.id)) || paymentMethods[0];
+                        if (!next) return;
+                        setSplitPayments([...splitPayments, { paymentMethodId: next.id, amount: Math.max(0, splitRemaining) }]);
+                      }}
+                      className="text-xs text-primary-600 hover:text-primary-800 font-medium"
+                    >
+                      + Agregar
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {splitPayments.map((p, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <select
+                        value={p.paymentMethodId}
+                        onChange={(e) => {
+                          const next = [...splitPayments];
+                          next[idx] = { ...next[idx], paymentMethodId: e.target.value };
+                          setSplitPayments(next);
+                        }}
+                        className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      >
+                        {paymentMethods.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                      <div className="relative w-32">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">S/</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={p.amount || ''}
+                          onChange={(e) => {
+                            const next = [...splitPayments];
+                            next[idx] = { ...next[idx], amount: parseFloat(e.target.value) || 0 };
+                            setSplitPayments(next);
+                          }}
+                          placeholder="0.00"
+                          className="w-full pl-8 pr-2 py-2 border border-gray-200 rounded-xl text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        />
+                      </div>
+                      {splitPayments.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))}
+                          className="text-red-400 hover:text-red-600 p-1"
+                          title="Quitar"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
                   ))}
-                </select>
+                </div>
               </div>
 
-              <div className="bg-primary-50 rounded-xl p-4 flex items-center justify-between">
-                <span className="text-sm text-gray-600">Total a cobrar</span>
-                <span className="text-2xl font-bold text-primary-700">S/ {total.toFixed(2)}</span>
+              <div className="bg-primary-50 rounded-xl p-4 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Total a cobrar</span>
+                  <span className="text-2xl font-bold text-primary-700">S/ {total.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-500">Pagado</span>
+                  <span className={splitTotal > total + 0.01 ? 'text-red-600 font-semibold' : 'text-gray-700 font-medium'}>S/ {splitTotal.toFixed(2)}</span>
+                </div>
+                {Math.abs(splitRemaining) > 0.01 && (
+                  <div className="flex items-center justify-between text-xs border-t border-primary-200 pt-1.5">
+                    <span className="text-gray-500">{splitRemaining > 0 ? 'Falta' : 'Sobra'}</span>
+                    <span className={splitRemaining > 0 ? 'text-orange-600 font-semibold' : 'text-blue-600 font-semibold'}>S/ {Math.abs(splitRemaining).toFixed(2)}</span>
+                  </div>
+                )}
               </div>
 
               <button

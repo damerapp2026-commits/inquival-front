@@ -53,7 +53,7 @@ export function ProductsPage() {
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
 
-  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', prices: [] as { priceTierId: string; companyId?: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
+  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, prices: [] as { priceTierId: string; companyId?: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
@@ -66,8 +66,8 @@ export function ProductsPage() {
   const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', unit: '', taxType: 'GRAVADO', prices: [], initialStocks: [], expanded: true });
 
 
-  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', prices: [], initialStocks: [] }); setShowModal(true); };
-  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', prices: product.prices || [], initialStocks: [] }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, prices: [], initialStocks: [] }); setShowModal(true); };
+  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, prices: product.prices || [], initialStocks: [] }); setShowModal(true); };
   const openBulk = () => { setBulkProducts([emptyBulkProduct()]); setShowBulkModal(true); };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,7 +76,7 @@ export function ProductsPage() {
       const { initialStocks, ...editData } = form;
       await updateProduct.mutateAsync({ id: editing.id, data: editData });
     } else {
-      const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, activeIngredient: form.activeIngredient || undefined, taxType: form.taxType, prices: form.prices };
+      const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, activeIngredient: form.activeIngredient || undefined, taxType: form.taxType, tracksLot: form.tracksLot, prices: form.prices };
       const validStocks = form.initialStocks.filter(s => s.quantity > 0 && s.companyId);
       if (validStocks.length > 0) payload.initialStocks = validStocks;
       await createProduct.mutateAsync(payload);
@@ -413,6 +413,14 @@ export function ProductsPage() {
               </div>
             </div>
           )}
+          <div className="flex items-start gap-2 p-3 border border-gray-200 rounded-lg bg-gray-50/50">
+            <input type="checkbox" id="tracksLot" checked={form.tracksLot} onChange={(e) => setForm({ ...form, tracksLot: e.target.checked })} className="mt-0.5 h-4 w-4 text-primary-600 border-gray-300 rounded" />
+            <label htmlFor="tracksLot" className="text-sm cursor-pointer select-none">
+              <span className="font-medium text-gray-800">Rastrea lote y vencimiento</span>
+              <span className="block text-xs text-gray-500">Activa esta opción para productos perecibles o controlados. Al registrar compras se pedirá el lote y fecha de vencimiento.</span>
+            </label>
+          </div>
+
           {tiers.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Precios Globales (por defecto)</label>
