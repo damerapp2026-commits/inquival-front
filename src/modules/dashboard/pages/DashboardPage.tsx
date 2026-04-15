@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart } from '../hooks/useDashboard';
 import { useAPAlerts } from '../../accounts-payable/hooks/useAccountsPayable';
-import { BarChart3, TrendingUp, TrendingDown, DollarSign, CreditCard, FileText, AlertTriangle, Clock, Tag, Truck } from 'lucide-react';
+import { useAuth } from '../../../app/providers/AuthProvider';
+import { TrendingUp, TrendingDown, DollarSign, CreditCard, FileText, AlertTriangle, Clock, Tag, Truck, ShoppingCart, Package, BarChart3, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -9,8 +10,8 @@ import {
 } from 'recharts';
 import type { AccountPayable } from '../../../shared/types';
 
-const CHART_COLORS = ['#4681b1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
-const SUPPLIER_COLORS = ['#346795', '#0ea5e9', '#f43f5e', '#84cc16', '#fb923c'];
+const CHART_COLORS = ['#16a34a', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
+const SUPPLIER_COLORS = ['#15803d', '#0ea5e9', '#f43f5e', '#84cc16', '#fb923c'];
 
 function toInputDate(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -28,6 +29,18 @@ function thisMonth() {
   return { start: toInputDate(new Date(now.getFullYear(), now.getMonth(), 1)), end: toInputDate(now) };
 }
 
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Buenos días';
+  if (h < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
+function formatDateLong(d: Date) {
+  return d.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' })
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function DateRangeFilter({ range, onChange, onReset, resetLabel }: {
   range: { start: string; end: string };
   onChange: (r: { start: string; end: string }) => void;
@@ -42,7 +55,7 @@ function DateRangeFilter({ range, onChange, onReset, resetLabel }: {
         value={range.start}
         max={range.end}
         onChange={(e) => onChange({ ...range, start: e.target.value })}
-        className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+        className="border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
       />
       <label className="text-xs text-gray-500">Hasta</label>
       <input
@@ -51,15 +64,56 @@ function DateRangeFilter({ range, onChange, onReset, resetLabel }: {
         min={range.start}
         max={toInputDate(new Date())}
         onChange={(e) => onChange({ ...range, end: e.target.value })}
-        className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+        className="border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
       />
-      <button onClick={onReset} className="text-xs text-primary-600 hover:underline">{resetLabel}</button>
+      <button onClick={onReset} className="text-xs text-primary-600 hover:underline font-medium">{resetLabel}</button>
     </div>
+  );
+}
+
+function KpiCard({ icon: Icon, label, value, sublabel, accent }: {
+  icon: any;
+  label: string;
+  value: string;
+  sublabel?: string;
+  accent: string;
+}) {
+  return (
+    <div className="bg-white rounded-xl shadow-card p-5 hover:shadow-card-hover transition-shadow">
+      <div className="flex items-center gap-2 text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
+        <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${accent}`}>
+          <Icon size={14} />
+        </div>
+        {label}
+      </div>
+      <div className="text-2xl font-bold text-gray-800">{value}</div>
+      {sublabel && <div className="text-xs text-gray-400 mt-1">{sublabel}</div>}
+    </div>
+  );
+}
+
+function QuickAction({ icon: Icon, label, onClick, accent }: {
+  icon: any;
+  label: string;
+  onClick: () => void;
+  accent: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="bg-white rounded-xl shadow-card p-5 hover:shadow-card-hover transition-all text-left group"
+    >
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-3 ${accent}`}>
+        <Icon size={20} />
+      </div>
+      <div className="text-sm font-medium text-gray-700 group-hover:text-primary-700">{label}</div>
+    </button>
   );
 }
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [period, setPeriod] = useState('daily');
   const [salesRange, setSalesRange] = useState(last30Days);
   const [catChartRange, setCatChartRange] = useState(thisMonth);
@@ -95,76 +149,153 @@ export function DashboardPage() {
 
   const periodLabels: Record<string, string> = { daily: 'Hoy', weekly: 'Esta Semana', monthly: 'Este Mes' };
 
-  // Determine XAxis tick interval based on data points
   const salesTickInterval = dailySales.length > 60 ? 6 : dailySales.length > 30 ? 4 : 1;
   const catTickInterval = catChartData.length > 60 ? 6 : catChartData.length > 30 ? 4 : 1;
 
+  const firstName = (user?.fullName || user?.username || '').split(' ')[0];
+
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><BarChart3 size={24} /> Dashboard</h1>
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {['daily', 'weekly', 'monthly'].map(p => (
-            <button key={p} onClick={() => setPeriod(p)} className={`px-3 py-1 rounded text-sm font-medium ${period === p ? 'bg-white shadow text-primary-600' : 'text-gray-500'}`}>
-              {periodLabels[p]}
-            </button>
-          ))}
+    <div className="space-y-6">
+      {/* Greeting */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">
+          {greeting()}, {firstName || 'Bienvenido'}
+        </h1>
+        <p className="text-sm text-gray-500 mt-1">{formatDateLong(new Date())}</p>
+      </div>
+
+      {/* Hero + period toggle */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 to-primary-700 text-white p-7 shadow-card">
+        <div className="absolute -top-8 -right-8 w-48 h-48 bg-white/10 rounded-full" />
+        <div className="absolute -bottom-16 -right-16 w-56 h-56 bg-white/5 rounded-full" />
+        <div className="relative">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="text-xs font-semibold tracking-wider text-primary-100 mb-2 uppercase">
+                Ingresos · {periodLabels[period]}
+              </div>
+              <div className="text-5xl font-bold">S/ {(summary?.totalIncome || 0).toFixed(2)}</div>
+              <div className="text-sm text-primary-100 mt-2">
+                Ganancia neta: S/ {(summary?.netProfit || 0).toFixed(2)}
+              </div>
+            </div>
+            <div className="flex gap-1 bg-white/15 backdrop-blur rounded-lg p-1">
+              {['daily', 'weekly', 'monthly'].map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    period === p ? 'bg-white text-primary-700' : 'text-white/90 hover:bg-white/10'
+                  }`}
+                >
+                  {periodLabels[p]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-6 pt-5 border-t border-white/20 max-w-md">
+            <div>
+              <div className="text-xs text-primary-100">Egresos</div>
+              <div className="text-xl font-semibold">S/ {(summary?.totalExpense || 0).toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-primary-100">Créditos pendientes</div>
+              <div className="text-xl font-semibold">S/ {(creditsSummary?.totalPending || 0).toFixed(2)}</div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-        <div className="bg-white border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><TrendingUp size={16} className="text-primary-600" /> Ingresos</div>
-          <div className="text-xl sm:text-2xl font-bold text-primary-600">S/ {(summary?.totalIncome || 0).toFixed(2)}</div>
+      {/* KPI row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          icon={TrendingUp}
+          label="Ingresos"
+          value={`S/ ${(summary?.totalIncome || 0).toFixed(2)}`}
+          accent="bg-primary-100 text-primary-700"
+        />
+        <KpiCard
+          icon={TrendingDown}
+          label="Egresos"
+          value={`S/ ${(summary?.totalExpense || 0).toFixed(2)}`}
+          accent="bg-red-100 text-red-600"
+        />
+        <KpiCard
+          icon={CreditCard}
+          label="Créditos pendientes"
+          value={`S/ ${(creditsSummary?.totalPending || 0).toFixed(2)}`}
+          sublabel={`${creditsSummary?.activeCredits || 0} créditos activos`}
+          accent="bg-orange-100 text-orange-600"
+        />
+        <KpiCard
+          icon={FileText}
+          label="Deuda proveedores"
+          value={`S/ ${(apAlerts?.summary?.totalPending || 0).toFixed(2)}`}
+          sublabel={`${apAlerts?.summary?.count || 0} cuentas activas`}
+          accent="bg-purple-100 text-purple-600"
+        />
+      </div>
+
+      {/* Quick actions */}
+      <div>
+        <div className="text-xs font-semibold tracking-wider text-gray-400 uppercase mb-3">
+          Acciones rápidas
         </div>
-        <div className="bg-white border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><TrendingDown size={16} className="text-red-600" /> Egresos</div>
-          <div className="text-xl sm:text-2xl font-bold text-red-600">S/ {(summary?.totalExpense || 0).toFixed(2)}</div>
-        </div>
-        <div className="bg-white border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><DollarSign size={16} className="text-blue-600" /> Ganancia Neta</div>
-          <div className="text-xl sm:text-2xl font-bold text-blue-600">S/ {(summary?.netProfit || 0).toFixed(2)}</div>
-        </div>
-        <div className="bg-white border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><CreditCard size={16} className="text-orange-600" /> Creditos Pendientes</div>
-          <div className="text-xl sm:text-2xl font-bold text-orange-600">S/ {(creditsSummary?.totalPending || 0).toFixed(2)}</div>
-          <div className="text-xs text-gray-400 mt-1">{creditsSummary?.activeCredits || 0} creditos activos</div>
-        </div>
-        <div className="bg-white border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><FileText size={16} className="text-purple-600" /> Deuda Proveedores</div>
-          <div className="text-xl sm:text-2xl font-bold text-purple-600">S/ {(apAlerts?.summary?.totalPending || 0).toFixed(2)}</div>
-          <div className="text-xs text-gray-400 mt-1">{apAlerts?.summary?.count || 0} cuentas activas</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <QuickAction
+            icon={ShoppingCart}
+            label="Nueva Venta"
+            onClick={() => navigate('/pos')}
+            accent="bg-primary-100 text-primary-700"
+          />
+          <QuickAction
+            icon={Package}
+            label="Productos"
+            onClick={() => navigate('/products')}
+            accent="bg-blue-100 text-blue-600"
+          />
+          <QuickAction
+            icon={Wallet}
+            label="Caja"
+            onClick={() => navigate('/cash-register')}
+            accent="bg-orange-100 text-orange-600"
+          />
+          <QuickAction
+            icon={BarChart3}
+            label="Kardex"
+            onClick={() => navigate('/kardex')}
+            accent="bg-purple-100 text-purple-600"
+          />
         </div>
       </div>
 
       {/* Ventas chart */}
-      <div className="bg-white border rounded-lg p-4 mb-6">
+      <div className="bg-white rounded-xl shadow-card p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <h2 className="text-lg font-semibold text-gray-700">Ventas</h2>
+          <h2 className="text-lg font-semibold text-gray-800">Ventas</h2>
           <DateRangeFilter range={salesRange} onChange={setSalesRange} onReset={() => setSalesRange(last30Days())} resetLabel="Últimos 30 días" />
         </div>
         <ResponsiveContainer width="100%" height={280}>
           <AreaChart data={dailySales}>
             <defs>
               <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#4681b1" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#4681b1" stopOpacity={0} />
+                <stop offset="5%" stopColor="#16a34a" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} interval={salesTickInterval} />
             <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `S/${v}`} />
             <Tooltip formatter={(value: any) => [`S/ ${Number(value || 0).toFixed(2)}`, 'Ventas']} />
-            <Area type="monotone" dataKey="total" stroke="#4681b1" strokeWidth={2} fill="url(#colorSales)" />
+            <Area type="monotone" dataKey="total" stroke="#16a34a" strokeWidth={2} fill="url(#colorSales)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Ventas Por Categorías chart */}
-      <div className="bg-white border rounded-lg p-4 mb-6">
+      {/* Ventas por categorías */}
+      <div className="bg-white rounded-xl shadow-card p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <h2 className="text-lg font-semibold text-gray-700">Ventas Por Categorías</h2>
+          <h2 className="text-lg font-semibold text-gray-800">Ventas por Categorías</h2>
           <DateRangeFilter range={catChartRange} onChange={setCatChartRange} onReset={() => setCatChartRange(thisMonth())} resetLabel="Este mes" />
         </div>
 
@@ -234,15 +365,17 @@ export function DashboardPage() {
       </div>
 
       {/* Date range filter for bottom charts */}
-      <div className="bg-white border rounded-lg p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
-        <span className="text-sm font-medium text-gray-600">Filtrar gráficos inferiores:</span>
+      <div className="bg-white rounded-xl shadow-card p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+        <span className="text-sm font-medium text-gray-700">Filtrar gráficos inferiores:</span>
         <DateRangeFilter range={chartRange} onChange={setChartRange} onReset={() => setChartRange(thisMonth())} resetLabel="Este mes" />
       </div>
 
       {/* Category Sales bar + Top Suppliers */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white border rounded-lg p-4">
-          <h2 className="text-lg font-semibold text-gray-700 mb-3 flex items-center gap-2"><Tag size={18} className="text-primary-600" /> Ventas por Categoria</h2>
+        <div className="bg-white rounded-xl shadow-card p-5">
+          <h2 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <Tag size={18} className="text-primary-600" /> Ventas por Categoría
+          </h2>
           {categorySalesData.length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={categorySalesData} layout="vertical" margin={{ left: 10 }}>
@@ -258,12 +391,14 @@ export function DashboardPage() {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-[280px] text-gray-400 text-sm">Sin datos para el periodo</div>
+            <div className="flex items-center justify-center h-[280px] text-gray-400 text-sm">Sin datos para el período</div>
           )}
         </div>
 
-        <div className="bg-white border rounded-lg p-4">
-          <h2 className="text-lg font-semibold text-gray-700 mb-3 flex items-center gap-2"><Truck size={18} className="text-primary-700" /> Top Proveedores (por Compras)</h2>
+        <div className="bg-white rounded-xl shadow-card p-5">
+          <h2 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <Truck size={18} className="text-primary-700" /> Top Proveedores (por Compras)
+          </h2>
           {topSuppliersData.length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={topSuppliersData} layout="vertical" margin={{ left: 10 }}>
@@ -284,7 +419,7 @@ export function DashboardPage() {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-[280px] text-gray-400 text-sm">Sin datos para el periodo</div>
+            <div className="flex items-center justify-center h-[280px] text-gray-400 text-sm">Sin datos para el período</div>
           )}
           {topSuppliersData.length > 0 && (
             <div className="mt-3 space-y-1">
@@ -304,16 +439,16 @@ export function DashboardPage() {
 
       {/* Accounts Payable Alerts */}
       {((apAlerts?.overdue?.length || 0) > 0 || (apAlerts?.upcoming?.length || 0) > 0) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {(apAlerts?.overdue?.length || 0) > 0 && (
-            <div className="bg-white border-2 border-red-300 rounded-lg p-4">
+            <div className="bg-white rounded-xl shadow-card border-l-4 border-red-400 p-5">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold text-red-700 flex items-center gap-2"><AlertTriangle size={18} /> Pagos Vencidos a Proveedores</h2>
-                <button onClick={() => navigate('/accounts-payable')} className="text-sm text-primary-600 hover:underline">Ver todos</button>
+                <h2 className="text-lg font-semibold text-red-700 flex items-center gap-2"><AlertTriangle size={18} /> Pagos Vencidos</h2>
+                <button onClick={() => navigate('/accounts-payable')} className="text-sm text-primary-600 hover:underline font-medium">Ver todos</button>
               </div>
               <div className="space-y-2">
                 {apAlerts!.overdue.slice(0, 5).map((ap: AccountPayable) => (
-                  <div key={ap.id} className="flex items-center justify-between text-sm bg-red-50 p-2 rounded">
+                  <div key={ap.id} className="flex items-center justify-between text-sm bg-red-50 p-3 rounded-lg">
                     <div>
                       <div className="font-medium text-gray-700">{ap.supplier}</div>
                       <div className="text-xs text-red-500">
@@ -327,14 +462,14 @@ export function DashboardPage() {
             </div>
           )}
           {(apAlerts?.upcoming?.length || 0) > 0 && (
-            <div className="bg-white border-2 border-yellow-300 rounded-lg p-4">
+            <div className="bg-white rounded-xl shadow-card border-l-4 border-yellow-400 p-5">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold text-yellow-700 flex items-center gap-2"><Clock size={18} /> Pagos Proximos a Vencer (3 dias)</h2>
-                <button onClick={() => navigate('/accounts-payable')} className="text-sm text-primary-600 hover:underline">Ver todos</button>
+                <h2 className="text-lg font-semibold text-yellow-700 flex items-center gap-2"><Clock size={18} /> Próximos a Vencer (3 días)</h2>
+                <button onClick={() => navigate('/accounts-payable')} className="text-sm text-primary-600 hover:underline font-medium">Ver todos</button>
               </div>
               <div className="space-y-2">
                 {apAlerts!.upcoming.slice(0, 5).map((ap: AccountPayable) => (
-                  <div key={ap.id} className="flex items-center justify-between text-sm bg-yellow-50 p-2 rounded">
+                  <div key={ap.id} className="flex items-center justify-between text-sm bg-yellow-50 p-3 rounded-lg">
                     <div>
                       <div className="font-medium text-gray-700">{ap.supplier}</div>
                       <div className="text-xs text-yellow-600">
