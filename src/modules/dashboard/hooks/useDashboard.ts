@@ -34,3 +34,10 @@ export function useTopSuppliers(startDate?: string, endDate?: string) {
     queryFn: () => dashboardService.getTopSuppliers(startDate, endDate),
   });
 }
+export function useExchangeRate(days: number) {
+  return useQuery({
+    queryKey: ['dashboard-exchange-rate', days],
+    queryFn: () => dashboardService.getExchangeRate(days),
+    staleTime: 30 * 60 * 1000, // 30 min — el tipo de cambio no cambia frecuentemente
+  });
+}

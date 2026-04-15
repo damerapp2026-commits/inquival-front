@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
-interface Option { value: string; label: string; }
+interface Option { value: string; label: string; sublabel?: string; }
 interface SearchableSelectProps {
   options: Option[];
   value: string;
@@ -22,7 +22,10 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
   const selectedLabel = options.find(o => o.value === value)?.label || '';
 
   const filtered = search.length >= minChars
-    ? options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()))
+    ? options.filter(o => {
+        const q = search.toLowerCase();
+        return o.label.toLowerCase().includes(q) || (o.sublabel && o.sublabel.toLowerCase().includes(q));
+      })
     : [];
 
   const updatePosition = useCallback(() => {
@@ -94,7 +97,8 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
             onMouseDown={(e) => { e.preventDefault(); handleSelect(o.value, o.label); }}
             className={`w-full text-left px-3 py-2 text-sm hover:bg-primary-50 ${o.value === value ? 'bg-primary-50 font-medium' : ''}`}
           >
-            {o.label}
+            <div>{o.label}</div>
+            {o.sublabel && <div className="text-xs text-gray-400 mt-0.5">{o.sublabel}</div>}
           </button>
         ))
       )}

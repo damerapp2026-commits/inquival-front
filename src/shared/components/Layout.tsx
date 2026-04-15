@@ -5,7 +5,7 @@ import { useAPAlerts } from '../../modules/accounts-payable/hooks/useAccountsPay
 import {
   Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight,
   LogOut, Menu, X, Wallet, CreditCard, BarChart3, FolderTree, Shield,
-  ClipboardList, FileText, Bell, AlertTriangle, Clock, ScanLine,
+  ClipboardList, FileText, Bell, AlertTriangle, Clock, ScanLine, Ruler,
 } from 'lucide-react';
 import type { AccountPayable } from '../types';
 
@@ -41,6 +41,7 @@ const navSections: NavSection[] = [
     items: [
       { path: '/clients', label: 'Clientes', icon: Users },
       { path: '/categories', label: 'Categorías', icon: FolderTree },
+      { path: '/units', label: 'Unidades de Medida', icon: Ruler },
       { path: '/companies', label: 'Empresas', icon: Building2 },
       { path: '/price-tiers', label: 'Rangos de Precio', icon: Layers },
     ],
