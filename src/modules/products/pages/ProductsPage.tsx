@@ -5,6 +5,7 @@ import { productService } from '../services/productService';
 import { categoryService } from '../../categories/services/categoryService';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useCategories } from '../../categories/hooks/useCategories';
+import { useUnits } from '../../units/hooks/useUnits';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
@@ -35,49 +36,38 @@ interface BulkProduct {
 export function ProductsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [activeIngredientFilter, setActiveIngredientFilter] = useState('');
   const debouncedSearch = useDebounce(search);
+  const debouncedIngredient = useDebounce(activeIngredientFilter);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [priceCompanyFilter, setPriceCompanyFilter] = useState('');
 
   const queryClient = useQueryClient();
-  const { data, isLoading } = useProducts({ page, limit: 20, search: debouncedSearch });
+  const { data, isLoading } = useProducts({ page, limit: 20, search: debouncedSearch, activeIngredient: debouncedIngredient || undefined });
   const { data: priceTiers } = usePriceTiers();
   const { data: categories } = useCategories();
   const { data: companies } = useCompanies();
+  const { data: unitsData } = useUnits();
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
 
-  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: 'kg', taxType: 'GRAVADO', prices: [] as { priceTierId: string; companyId?: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
+  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', prices: [] as { priceTierId: string; companyId?: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
-  const defaultUnits = [{ value: 'kg', label: 'Kilogramo' }, { value: 'litro', label: 'Litro' }, { value: 'saco', label: 'Saco' }, { value: 'unidad', label: 'Unidad' }, { value: 'galon', label: 'Galón' }, { value: 'caja', label: 'Caja' }];
-  const [customUnits, setCustomUnits] = useState<string[]>([]);
-  const allUnits = [...defaultUnits, ...customUnits.map(u => ({ value: u, label: u }))];
-  const [showCustomUnit, setShowCustomUnit] = useState(false);
-  const [newUnit, setNewUnit] = useState('');
+  const allUnits: { value: string; label: string }[] = Array.isArray(unitsData)
+    ? unitsData.filter((u: any) => u.isActive).map((u: any) => ({ value: u.name, label: u.abbreviation ? `${u.name} (${u.abbreviation})` : u.name }))
+    : [];
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', unit: 'kg', taxType: 'GRAVADO', prices: [], initialStocks: [], expanded: true });
+  const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', unit: '', taxType: 'GRAVADO', prices: [], initialStocks: [], expanded: true });
 
-  const addCustomUnit = () => {
-    const trimmed = newUnit.trim().toLowerCase();
-    if (!trimmed) return;
-    if (defaultUnits.some(u => u.value === trimmed) || customUnits.includes(trimmed)) {
-      toast.error('Esa unidad ya existe');
-      return;
-    }
-    setCustomUnits(prev => [...prev, trimmed]);
-    setNewUnit('');
-    setShowCustomUnit(false);
-    toast.success(`Unidad "${trimmed}" agregada`);
-  };
 
-  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: 'kg', taxType: 'GRAVADO', prices: [], initialStocks: [] }); setShowModal(true); };
-  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, taxType: product.taxType || 'GRAVADO', prices: product.prices || [], initialStocks: [] }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', prices: [], initialStocks: [] }); setShowModal(true); };
+  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', prices: product.prices || [], initialStocks: [] }); setShowModal(true); };
   const openBulk = () => { setBulkProducts([emptyBulkProduct()]); setShowBulkModal(true); };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -86,7 +76,7 @@ export function ProductsPage() {
       const { initialStocks, ...editData } = form;
       await updateProduct.mutateAsync({ id: editing.id, data: editData });
     } else {
-      const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, taxType: form.taxType, prices: form.prices };
+      const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, activeIngredient: form.activeIngredient || undefined, taxType: form.taxType, prices: form.prices };
       const validStocks = form.initialStocks.filter(s => s.quantity > 0 && s.companyId);
       if (validStocks.length > 0) payload.initialStocks = validStocks;
       await createProduct.mutateAsync(payload);
@@ -230,14 +220,6 @@ export function ProductsPage() {
         const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
         let catsList: any[] = Array.isArray(categories) ? [...categories] : [];
 
-        // Auto-agregar unidades que no existen
-        const uniqueUnits = [...new Set(rows.map(r => String(r.Unidad || '').trim().toLowerCase()).filter(Boolean))];
-        const newUnits = uniqueUnits.filter(u => !defaultUnits.some(d => d.value === u) && !customUnits.includes(u));
-        if (newUnits.length > 0) {
-          setCustomUnits(prev => [...prev, ...newUnits]);
-          toast.success(`${newUnits.length} unidad(es) nueva(s) agregada(s): ${newUnits.join(', ')}`);
-        }
-
         // Auto-crear categorías que no existen
         const uniqueCatNames = [...new Set(rows.map(r => String(r.Categoria || '').trim()).filter(Boolean))];
         let createdCats = 0;
@@ -338,6 +320,7 @@ export function ProductsPage() {
   const columns = [
     { key: 'name', header: 'Nombre' },
     { key: 'categoryId', header: 'Categoría', render: (item: Product) => { const cat = cats.find((c: any) => c.id === item.categoryId); return cat?.name || item.categoryId; } },
+    { key: 'activeIngredient', header: 'Ingrediente Activo', render: (item: Product) => item.activeIngredient ? <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">{item.activeIngredient}</span> : <span className="text-gray-300">—</span> },
     { key: 'unit', header: 'Unidad' },
     { key: 'taxType', header: 'IGV', render: (item: Product) => {
       const t = TAX_TYPES.find(tx => tx.value === (item.taxType || 'GRAVADO'));
@@ -387,6 +370,10 @@ export function ProductsPage() {
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input type="text" placeholder="Buscar productos..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500" />
         </div>
+        <div className="relative flex-1">
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder="Filtrar por ingrediente activo..." value={activeIngredientFilter} onChange={(e) => { setActiveIngredientFilter(e.target.value); setPage(1); }} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500" />
+        </div>
         {comps.length > 0 && (
           <select value={priceCompanyFilter} onChange={(e) => setPriceCompanyFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
             <option value="">Precios globales</option>
@@ -400,22 +387,15 @@ export function ProductsPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Ingrediente Activo <span className="text-gray-400 font-normal">(opcional)</span></label><input value={form.activeIngredient} onChange={(e) => setForm({ ...form, activeIngredient: e.target.value })} placeholder="Ej: Glifosato, Clorpirifos..." className="w-full px-3 py-2 border rounded-lg" /></div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label><select value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required><option value="">Seleccionar...</option>{cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label>
-              {showCustomUnit ? (
-                <div className="flex gap-2">
-                  <input value={newUnit} onChange={(e) => setNewUnit(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomUnit())} className="flex-1 px-3 py-2 border rounded-lg" placeholder="Ej: bolsa, sobre..." autoFocus />
-                  <button type="button" onClick={addCustomUnit} className="px-3 py-2 bg-primary-600 text-white rounded-lg text-sm">Agregar</button>
-                  <button type="button" onClick={() => setShowCustomUnit(false)} className="px-3 py-2 border rounded-lg text-sm">Cancelar</button>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="flex-1 px-3 py-2 border rounded-lg">{allUnits.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select>
-                  <button type="button" onClick={() => setShowCustomUnit(true)} className="px-3 py-2 border border-dashed border-gray-300 rounded-lg text-gray-500 hover:text-primary-600 text-sm" title="Agregar unidad">+</button>
-                </div>
-              )}
+              <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required>
+                <option value="">Seleccionar...</option>
+                {allUnits.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+              </select>
             </div>
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo IGV</label><select value={form.taxType} onChange={(e) => setForm({ ...form, taxType: e.target.value })} className="w-full px-3 py-2 border rounded-lg">{TAX_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
           </div>

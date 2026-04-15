@@ -7,7 +7,8 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { Package, ArrowRightLeft, AlertTriangle, Trash2, Plus, ClipboardList, ChevronDown, ChevronUp } from 'lucide-react';
+import { useDebounce } from '../../../shared/hooks/useDebounce';
+import { Package, ArrowRightLeft, AlertTriangle, Trash2, Plus, ClipboardList, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import type { Stock, Company, Product, StockAdjustment } from '../../../shared/types';
 
 export function StockPage() {
@@ -19,9 +20,11 @@ export function StockPage() {
   const [adjPage, setAdjPage] = useState(1);
   const [showLowStockDetail, setShowLowStockDetail] = useState(false);
   const [showAllLowStock, setShowAllLowStock] = useState(false);
+  const [ingredientFilter, setIngredientFilter] = useState('');
+  const debouncedIngredient = useDebounce(ingredientFilter);
 
   const { data: companies } = useCompanies();
-  const { data: productsData } = useProducts({ limit: 200 });
+  const { data: productsData } = useProducts({ limit: 200, activeIngredient: debouncedIngredient || undefined });
   const { data, isLoading } = useStock(companyId, { page, limit: 20 });
   const { data: alerts } = useStockAlerts(companyId, 10);
   const transferStock = useTransferStock();
@@ -33,8 +36,9 @@ export function StockPage() {
 
   const companyList = Array.isArray(companies) ? companies : [];
   const products = productsData?.data || [];
-  const stockItems = data?.data || [];
-  const total = data?.total || 0;
+  const productIdSet = new Set(products.map((p: Product) => p.id));
+  const stockItems = (data?.data || []).filter((s: Stock) => !debouncedIngredient || productIdSet.has(s.productId));
+  const total = stockItems.length;
   const alertList = Array.isArray(alerts) ? alerts : [];
   const adjustments = adjustmentsData?.data || [];
   const adjTotal = adjustmentsData?.total || 0;
@@ -215,6 +219,10 @@ export function StockPage() {
 
       {activeTab === 'inventory' && (
         <>
+          <div className="mb-3 relative max-w-sm">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input type="text" placeholder="Filtrar por ingrediente activo..." value={ingredientFilter} onChange={(e) => { setIngredientFilter(e.target.value); setPage(1); }} className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+          </div>
           <DataTable columns={stockColumns} data={stockItems} isLoading={isLoading} />
           <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
         </>

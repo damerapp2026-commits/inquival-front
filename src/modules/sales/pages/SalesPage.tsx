@@ -92,6 +92,7 @@ export function SalesPage() {
     return products.filter((p: Product) => productIds.has(p.id));
   };
 
+
   const [cancellingsale, setCancellingSale] = useState<Sale | null>(null);
   const [cancelReason, setCancelReason] = useState('');
 
@@ -701,10 +702,10 @@ export function SalesPage() {
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Producto</label>
                       <SearchableSelect
-                        options={getProductsForCompany(item.companyId).map((p: Product) => ({ value: p.id, label: p.name }))}
+                        options={getProductsForCompany(item.companyId).map((p: Product) => ({ value: p.id, label: p.name, sublabel: p.activeIngredient }))}
                         value={item.productId}
                         onChange={(v) => updateItem(idx, 'productId', v)}
-                        placeholder={item.companyId ? "Buscar producto..." : "Selecciona empresa primero"}
+                        placeholder={item.companyId ? "Buscar producto o ingrediente..." : "Selecciona empresa primero"}
                         required
                       />
                     </div>

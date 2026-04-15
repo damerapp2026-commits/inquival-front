@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react';
-import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart } from '../hooks/useDashboard';
+import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart, useExchangeRate } from '../hooks/useDashboard';
 import { useAPAlerts } from '../../accounts-payable/hooks/useAccountsPayable';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { TrendingUp, TrendingDown, DollarSign, CreditCard, FileText, AlertTriangle, Clock, Tag, Truck, ShoppingCart, Package, BarChart3, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, Cell,
 } from 'recharts';
 import type { AccountPayable } from '../../../shared/types';
@@ -119,11 +119,13 @@ export function DashboardPage() {
   const [catChartRange, setCatChartRange] = useState(thisMonth);
   const [chartRange, setChartRange] = useState(thisMonth);
   const [disabledCats, setDisabledCats] = useState<Set<string>>(new Set());
+  const [exchangeDays, setExchangeDays] = useState(7);
 
   const { data: summary } = useDashboardSummary(period);
   const { data: creditsSummary } = useCreditsSummary();
   const { data: salesChart } = useSalesChart(salesRange.start, salesRange.end);
   const { data: apAlerts } = useAPAlerts(3);
+  const { data: exchangeRateData, isLoading: exchangeLoading } = useExchangeRate(exchangeDays);
   const { data: categorySales } = useCategorySales(chartRange.start, chartRange.end);
   const { data: topSuppliers } = useTopSuppliers(chartRange.start, chartRange.end);
   const { data: catSalesChart } = useCategorySalesChart(catChartRange.start, catChartRange.end);
@@ -267,6 +269,75 @@ export function DashboardPage() {
             accent="bg-purple-100 text-purple-600"
           />
         </div>
+      </div>
+
+      {/* Tipo de Cambio USD/PEN */}
+      <div className="bg-white rounded-xl shadow-card p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+              <DollarSign size={20} className="text-green-600" />
+              Tipo de Cambio USD / PEN
+            </h2>
+            {Array.isArray(exchangeRateData) && exchangeRateData.length > 0 && (() => {
+              const last = exchangeRateData[exchangeRateData.length - 1];
+              return (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Último: <span className="font-semibold text-green-700">S/ {last.venta?.toFixed(3)}</span> venta · <span className="font-semibold text-blue-700">S/ {last.compra?.toFixed(3)}</span> compra
+                  <span className="ml-2 text-gray-300">({last.date})</span>
+                </p>
+              );
+            })()}
+          </div>
+          <div className="flex gap-1">
+            {[{ label: '7 días', value: 7 }, { label: '15 días', value: 15 }, { label: '30 días', value: 30 }].map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setExchangeDays(opt.value)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${exchangeDays === opt.value ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {exchangeLoading ? (
+          <div className="h-[220px] flex items-center justify-center text-gray-400 text-sm">Cargando tipo de cambio...</div>
+        ) : !Array.isArray(exchangeRateData) || exchangeRateData.length === 0 ? (
+          <div className="h-[220px] flex items-center justify-center text-gray-400 text-sm">Sin datos disponibles</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={exchangeRateData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 11 }}
+                tickFormatter={(v) => {
+                  const [, m, d] = v.split('-');
+                  return `${d}/${m}`;
+                }}
+                interval={exchangeRateData.length > 20 ? 3 : exchangeRateData.length > 10 ? 1 : 0}
+              />
+              <YAxis
+                tick={{ fontSize: 11 }}
+                domain={['auto', 'auto']}
+                tickFormatter={(v) => `S/${v.toFixed(2)}`}
+                width={62}
+              />
+              <Tooltip
+                formatter={(value: any, name: string) => [`S/ ${Number(value).toFixed(3)}`, name === 'venta' ? 'Venta' : 'Compra']}
+                labelFormatter={(label) => {
+                  const [y, m, d] = label.split('-');
+                  return `${d}/${m}/${y}`;
+                }}
+              />
+              <Legend formatter={(v) => v === 'venta' ? 'Venta' : 'Compra'} />
+              <Line type="monotone" dataKey="venta" stroke="#16a34a" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+              <Line type="monotone" dataKey="compra" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {/* Ventas chart */}

@@ -11,4 +11,6 @@ export const dashboardService = {
     api.get('/dashboard/category-sales', { params: { startDate, endDate } }).then((r) => r.data.data),
   getTopSuppliers: (startDate?: string, endDate?: string) =>
     api.get('/dashboard/top-suppliers', { params: { startDate, endDate } }).then((r) => r.data.data),
+  getExchangeRate: (days: number) =>
+    api.get('/dashboard/exchange-rate', { params: { days } }).then((r) => r.data.data),
 };
