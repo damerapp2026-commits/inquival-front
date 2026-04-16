@@ -140,7 +140,7 @@ export function AccountsPayablePage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
             <textarea value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} />
           </div>
-          <button type="submit" disabled={exceedsPending} className={`w-full py-2 text-white rounded-lg ${exceedsPending ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-700'}`}>Registrar Pago</button>
+          <button type="submit" disabled={exceedsPending || registerPayment.isPending} className={`w-full py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${exceedsPending ? 'bg-gray-400' : 'bg-primary-600 hover:bg-primary-700'}`}>{registerPayment.isPending ? 'Registrando...' : 'Registrar Pago'}</button>
         </form>
       </Modal>
 

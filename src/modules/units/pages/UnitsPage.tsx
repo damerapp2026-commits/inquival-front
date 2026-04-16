@@ -98,8 +98,8 @@ export function UnitsPage() {
               <label htmlFor="isActive" className="text-sm font-medium text-gray-700">Activo</label>
             </div>
           )}
-          <button type="submit" className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-            {editing ? 'Actualizar' : 'Crear'}
+          <button type="submit" disabled={editing ? updateUnit.isPending : createUnit.isPending} className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">
+            {editing ? (updateUnit.isPending ? 'Actualizando...' : 'Actualizar') : (createUnit.isPending ? 'Creando...' : 'Crear')}
           </button>
         </form>
       </Modal>

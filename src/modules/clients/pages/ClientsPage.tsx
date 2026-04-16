@@ -158,7 +158,7 @@ export function ClientsPage() {
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
           </div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Dirección</label><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
-          <button type="submit" className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">{editing ? 'Actualizar' : 'Crear'}</button>
+          <button type="submit" disabled={editing ? updateClient.isPending : createClient.isPending} className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">{editing ? (updateClient.isPending ? 'Actualizando...' : 'Actualizar') : (createClient.isPending ? 'Creando...' : 'Crear')}</button>
         </form>
       </Modal>
     </div>

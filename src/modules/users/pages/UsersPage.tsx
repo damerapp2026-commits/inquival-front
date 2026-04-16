@@ -98,7 +98,7 @@ export function UsersPage() {
         <div className="flex gap-2">
           <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={16} /></button>
           <button onClick={() => openPassword(item)} className="text-yellow-600 hover:text-yellow-800" title="Cambiar contrasena"><Key size={16} /></button>
-          <button onClick={() => toggleStatus.mutate(item.id)} className={`${item.isActive ? 'text-red-600 hover:text-red-800' : 'text-primary-600 hover:text-primary-800'}`} title={item.isActive ? 'Desactivar' : 'Activar'}><Power size={16} /></button>
+          <button onClick={() => toggleStatus.mutate(item.id)} disabled={toggleStatus.isPending} className={`${item.isActive ? 'text-red-600 hover:text-red-800' : 'text-primary-600 hover:text-primary-800'} disabled:opacity-40 disabled:cursor-not-allowed`} title={item.isActive ? 'Desactivar' : 'Activar'}><Power size={16} /></button>
         </div>
       ),
     },

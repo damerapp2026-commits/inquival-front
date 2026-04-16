@@ -587,7 +587,7 @@ export function StockPage() {
               })}
             </div>
           </div>
-          <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Realizar Transferencia</button>
+          <button type="submit" disabled={transferStock.isPending} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">{transferStock.isPending ? 'Transfiriendo...' : 'Realizar Transferencia'}</button>
         </form>
       </Modal>
 
@@ -622,7 +622,7 @@ export function StockPage() {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Razon</label>
             <textarea value={adjForm.reason} onChange={(e) => setAdjForm({ ...adjForm, reason: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} required placeholder="Motivo del ajuste..." />
           </div>
-          <button type="submit" className="w-full py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700">Registrar Ajuste</button>
+          <button type="submit" disabled={createAdjustment.isPending} className="w-full py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed">{createAdjustment.isPending ? 'Registrando...' : 'Registrar Ajuste'}</button>
         </form>
       </Modal>
     </div>

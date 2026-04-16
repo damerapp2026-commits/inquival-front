@@ -50,7 +50,7 @@ export function PriceTiersPage() {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Prioridad</label><input type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: parseInt(e.target.value) || 0 })} className="w-full px-3 py-2 border rounded-lg" /></div>
           <div className="flex items-center gap-2"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} className="rounded" /><label className="text-sm font-medium text-gray-700">Activo</label></div>
-          <button type="submit" className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">{editing ? 'Actualizar' : 'Crear'}</button>
+          <button type="submit" disabled={editing ? updateTier.isPending : createTier.isPending} className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">{editing ? (updateTier.isPending ? 'Actualizando...' : 'Actualizar') : (createTier.isPending ? 'Creando...' : 'Crear')}</button>
         </form>
       </Modal>
     </div>

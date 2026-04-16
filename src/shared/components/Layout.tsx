@@ -178,27 +178,27 @@ export function Layout() {
       )}
 
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-6">
+        <header className="h-16 bg-primary-600 flex items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-600">
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-white/80 hover:text-white">
               <Menu size={20} />
             </button>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-2 text-sm">
-              <span className="w-2 h-2 rounded-full bg-primary-500"></span>
-              <span className="text-gray-600">Sucursal Principal</span>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-2 bg-white/15 hover:bg-white/25 transition-colors border border-white/20 rounded-full px-4 py-1.5 cursor-default">
+              <span className="w-2 h-2 rounded-full bg-green-300 shadow-[0_0_6px_2px_rgba(134,239,172,0.6)]"></span>
+              <span className="text-white text-sm font-semibold tracking-wide">Sucursal Principal</span>
             </div>
 
             <div className="relative" ref={bellRef}>
               <button
                 onClick={() => setBellOpen(!bellOpen)}
-                className="relative p-2 text-gray-500 hover:text-gray-700 transition-colors"
+                className="relative w-10 h-10 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-white transition-colors"
               >
-                <Bell size={20} />
+                <Bell size={18} />
                 {alertCount > 0 && (
-                  <span className="absolute top-0.5 right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center shadow">
                     {alertCount > 9 ? '9+' : alertCount}
                   </span>
                 )}

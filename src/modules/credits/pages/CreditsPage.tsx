@@ -146,7 +146,7 @@ export function CreditsPage() {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
             <textarea value={payForm.notes} onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} />
           </div>
-          <button type="submit" disabled={exceedsPending} className={`w-full py-2 text-white rounded-lg ${exceedsPending ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-700'}`}>Registrar Pago</button>
+          <button type="submit" disabled={exceedsPending || registerPayment.isPending} className={`w-full py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${exceedsPending ? 'bg-gray-400' : 'bg-primary-600 hover:bg-primary-700'}`}>{registerPayment.isPending ? 'Registrando...' : 'Registrar Pago'}</button>
         </form>
       </Modal>
 
@@ -174,10 +174,10 @@ export function CreditsPage() {
           </div>
           <button
             type="submit"
-            disabled={!!(selectedCredit && editAmount < selectedCredit.paidAmount)}
-            className={`w-full py-2 text-white rounded-lg ${selectedCredit && editAmount < selectedCredit.paidAmount ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+            disabled={!!(selectedCredit && editAmount < selectedCredit.paidAmount) || editCreditMutation.isPending}
+            className={`w-full py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${selectedCredit && editAmount < selectedCredit.paidAmount ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
           >
-            Guardar Cambio
+            {editCreditMutation.isPending ? 'Guardando...' : 'Guardar Cambio'}
           </button>
         </form>
       </Modal>
@@ -196,7 +196,7 @@ export function CreditsPage() {
           </div>
           <div className="flex gap-3">
             <button onClick={() => setShowDeleteModal(false)} className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">Cancelar</button>
-            <button onClick={handleDelete} className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Eliminar</button>
+            <button onClick={handleDelete} disabled={deleteCreditMutation.isPending} className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">{deleteCreditMutation.isPending ? 'Eliminando...' : 'Eliminar'}</button>
           </div>
         </div>
       </Modal>

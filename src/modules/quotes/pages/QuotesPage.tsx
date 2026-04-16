@@ -68,10 +68,10 @@ export function QuotesPage() {
             <button onClick={(e) => { e.stopPropagation(); navigate(`/pos?fromQuote=${q.id}`); }} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="Convertir a venta">
               <ShoppingCart size={15} />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); updateStatus.mutate({ id: q.id, status: 'ACCEPTED' }); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Marcar aceptada">
+            <button onClick={(e) => { e.stopPropagation(); updateStatus.mutate({ id: q.id, status: 'ACCEPTED' }); }} disabled={updateStatus.isPending} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-40 disabled:cursor-not-allowed" title="Marcar aceptada">
               <CheckCircle2 size={15} />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); updateStatus.mutate({ id: q.id, status: 'REJECTED' }); }} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Marcar rechazada">
+            <button onClick={(e) => { e.stopPropagation(); updateStatus.mutate({ id: q.id, status: 'REJECTED' }); }} disabled={updateStatus.isPending} className="p-1.5 text-red-500 hover:bg-red-50 rounded disabled:opacity-40 disabled:cursor-not-allowed" title="Marcar rechazada">
               <XCircle size={15} />
             </button>
           </>

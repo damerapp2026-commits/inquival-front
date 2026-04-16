@@ -16,6 +16,25 @@ import type { Product, ProductPrice, Category, Company, Client, PriceTier, Payme
 
 const IGV_RATE = 0.18;
 
+function getPaymentMethodColors(name: string, selected: boolean): string {
+  const n = name.toLowerCase();
+  if (n.includes('yape'))
+    return selected
+      ? 'bg-purple-800 text-white border-purple-800'
+      : 'bg-white text-gray-600 border-gray-200 hover:border-purple-600';
+  if (n.includes('plin'))
+    return selected
+      ? 'bg-cyan-700 text-white border-cyan-700'
+      : 'bg-white text-gray-600 border-gray-200 hover:border-cyan-500';
+  if (n.includes('transferencia'))
+    return selected
+      ? 'bg-indigo-600 text-white border-indigo-600'
+      : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-400';
+  return selected
+    ? 'bg-primary-600 text-white border-primary-600'
+    : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300';
+}
+
 interface CartItem {
   productId: string;
   name: string;
@@ -83,6 +102,7 @@ export function POSPage() {
   const [tierId, setTierId] = useState<string>('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [quoteClientId, setQuoteClientId] = useState('');
   const [quoteClientName, setQuoteClientName] = useState('');
@@ -253,6 +273,13 @@ export function POSPage() {
     );
   };
 
+  const setQty = (productId: string, value: number) => {
+    if (isNaN(value) || value <= 0) { removeFromCart(productId); return; }
+    const stock = stockByProduct[productId] ?? 0;
+    if (value > stock) { toast.error(`Solo hay ${stock} en stock`); value = stock; }
+    setCart((prev) => prev.map((i) => i.productId === productId ? { ...i, quantity: value } : i));
+  };
+
   const removeFromCart = (productId: string) => {
     setCart((prev) => prev.filter((i) => i.productId !== productId));
   };
@@ -349,7 +376,6 @@ export function POSPage() {
           })),
           payments: validPayments,
         } as any);
-        toast.success('Venta registrada');
       }
       setCart([]);
       setClientId('');
@@ -492,8 +518,8 @@ export function POSPage() {
         </div>
       </div>
 
-      {/* Cart panel */}
-      <aside className="w-80 xl:w-96 bg-white border-l border-gray-200 flex flex-col">
+      {/* Cart panel — fixed drawer on mobile, static panel on desktop */}
+      <aside className={`fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm bg-white border-l border-gray-200 flex flex-col transform transition-transform duration-300 ease-in-out lg:static lg:w-96 xl:lg:w-[420px] lg:z-auto lg:translate-x-0 ${cartOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="px-5 py-4 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -505,14 +531,22 @@ export function POSPage() {
                 </div>
               </div>
             </div>
-            {cart.length > 0 && (
+            <div className="flex items-center gap-2">
+              {cart.length > 0 && (
+                <button
+                  onClick={clearCart}
+                  className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  Limpiar
+                </button>
+              )}
               <button
-                onClick={clearCart}
-                className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                onClick={() => setCartOpen(false)}
+                className="lg:hidden text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"
               >
-                Limpiar
+                <X size={18} />
               </button>
-            )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Tag size={14} className="text-gray-400" />
@@ -575,7 +609,14 @@ export function POSPage() {
                       >
                         <Minus size={12} />
                       </button>
-                      <span className="text-sm font-semibold w-6 text-center">{item.quantity}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) => setQty(item.productId, parseFloat(e.target.value))}
+                        onFocus={(e) => e.target.select()}
+                        className="text-sm font-semibold w-10 text-center border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
                       <button
                         onClick={() => updateQty(item.productId, 1)}
                         className="w-6 h-6 rounded-md bg-primary-600 text-white hover:bg-primary-700 flex items-center justify-center"
@@ -774,47 +815,79 @@ export function POSPage() {
       )}
 
       {showCheckout && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowCheckout(false)} />
-          <div className="relative bg-white rounded-2xl shadow-card-hover w-full max-w-md mx-4">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-800">Finalizar venta</h2>
-              <button
-                onClick={() => setShowCheckout(false)}
-                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100"
-              >
-                <X size={18} />
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowCheckout(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
+
+            {/* Header verde con resumen */}
+            <div className="bg-primary-600 rounded-t-2xl px-6 py-5 text-white shrink-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <CreditCard size={20} />
+                  <h2 className="text-lg font-bold">Finalizar Venta</h2>
+                </div>
+                <button onClick={() => setShowCheckout(false)} className="p-1.5 rounded-lg hover:bg-white/20 transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-white/70 text-xs mb-0.5">{cart.length} {cart.length === 1 ? 'producto' : 'productos'}</p>
+                  <p className="text-3xl font-bold">S/ {total.toFixed(2)}</p>
+                </div>
+                <div className="text-right text-xs text-white/70 space-y-0.5">
+                  <p>Base: S/ {(subtotal / (1 + IGV_RATE)).toFixed(2)}</p>
+                  <p>IGV (18%): S/ {(subtotal - subtotal / (1 + IGV_RATE)).toFixed(2)}</p>
+                </div>
+              </div>
             </div>
-            <div className="p-6 space-y-4">
+
+            {/* Resumen de items */}
+            <div className="px-6 pt-4 pb-2 shrink-0">
+              <div className="bg-gray-50 rounded-xl px-4 py-2 max-h-28 overflow-y-auto space-y-1.5">
+                {cart.map((item) => (
+                  <div key={item.productId} className="flex items-center justify-between text-sm">
+                    <span className="text-gray-700 truncate flex-1 mr-2">
+                      <span className="font-medium text-gray-500 mr-1.5">{item.quantity}×</span>
+                      {item.name}
+                    </span>
+                    <span className="text-gray-800 font-medium shrink-0">S/ {(item.quantity * item.unitPrice).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Cuerpo scrollable */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+
+              {/* Cliente */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  <User size={14} className="inline mr-1" />
-                  Cliente (opcional)
+                <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
+                  <User size={14} /> Cliente
+                  <span className="text-gray-400 font-normal text-xs">(opcional)</span>
                 </label>
                 <select
                   value={clientId}
                   onChange={(e) => setClientId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
                 >
                   <option value="">— Consumidor final —</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
 
+              {/* Comprobante */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Comprobante</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Comprobante</label>
                 <div className="grid grid-cols-3 gap-2">
                   {(['NONE', 'BOLETA', 'FACTURA'] as const).map((v) => (
                     <button
                       key={v}
                       onClick={() => setVoucherType(v)}
-                      className={`py-2 rounded-xl text-sm font-medium transition-colors ${
+                      className={`py-2.5 rounded-xl text-sm font-medium transition-colors border-2 ${
                         voucherType === v
-                          ? 'bg-primary-600 text-white'
-                          : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                          ? 'bg-primary-600 text-white border-primary-600'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'
                       }`}
                     >
                       {v === 'NONE' ? 'Ninguno' : v === 'BOLETA' ? 'Boleta' : 'Factura'}
@@ -823,119 +896,133 @@ export function POSPage() {
                 </div>
               </div>
 
+              {/* Métodos de pago */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-sm font-medium text-gray-700">Métodos de pago</label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (splitPayments.length === 0 || splitRemaining <= 0) return;
-                        const idx = splitPayments.findIndex(p => p.amount === 0);
-                        if (idx >= 0) {
-                          const next = [...splitPayments];
-                          next[idx] = { ...next[idx], amount: splitRemaining };
-                          setSplitPayments(next);
-                        } else {
-                          const last = splitPayments.length - 1;
-                          const next = [...splitPayments];
-                          next[last] = { ...next[last], amount: (next[last].amount || 0) + splitRemaining };
-                          setSplitPayments(next);
-                        }
-                      }}
-                      className="text-xs text-primary-600 hover:text-primary-800 font-medium"
-                    >
-                      Completar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const used = new Set(splitPayments.map(p => p.paymentMethodId));
-                        const next = paymentMethods.find(m => !used.has(m.id)) || paymentMethods[0];
-                        if (!next) return;
-                        setSplitPayments([...splitPayments, { paymentMethodId: next.id, amount: Math.max(0, splitRemaining) }]);
-                      }}
-                      className="text-xs text-primary-600 hover:text-primary-800 font-medium"
-                    >
-                      + Agregar
-                    </button>
-                  </div>
-                </div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Pago</label>
                 <div className="space-y-2">
                   {splitPayments.map((p, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <select
-                        value={p.paymentMethodId}
-                        onChange={(e) => {
-                          const next = [...splitPayments];
-                          next[idx] = { ...next[idx], paymentMethodId: e.target.value };
-                          setSplitPayments(next);
-                        }}
-                        className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      >
+                    <div key={idx} className="bg-gray-50 rounded-xl p-3 space-y-2">
+                      <div className="flex flex-wrap gap-1.5">
                         {paymentMethods.map((m) => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => { const next = [...splitPayments]; next[idx] = { ...next[idx], paymentMethodId: m.id }; setSplitPayments(next); }}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border-2 ${getPaymentMethodColors(m.name, p.paymentMethodId === m.id)}`}
+                          >
+                            {m.name}
+                          </button>
                         ))}
-                      </select>
-                      <div className="relative w-32">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">S/</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={p.amount || ''}
-                          onChange={(e) => {
-                            const next = [...splitPayments];
-                            next[idx] = { ...next[idx], amount: parseFloat(e.target.value) || 0 };
-                            setSplitPayments(next);
-                          }}
-                          placeholder="0.00"
-                          className="w-full pl-8 pr-2 py-2 border border-gray-200 rounded-xl text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500"
-                        />
                       </div>
-                      {splitPayments.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))}
-                          className="text-red-400 hover:text-red-600 p-1"
-                          title="Quitar"
-                        >
-                          <X size={16} />
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">S/</span>
+                          <input
+                            type="number" min="0" step="0.01"
+                            value={p.amount || ''}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: parseFloat(e.target.value) || 0 }; setSplitPayments(next); }}
+                            placeholder="0.00"
+                            className="w-full pl-8 pr-2 py-2 border border-gray-200 rounded-xl text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                          />
+                        </div>
+                        {splitPayments.length > 1 && (
+                          <button type="button" onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50">
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
-              </div>
 
-              <div className="bg-primary-50 rounded-xl p-4 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Total a cobrar</span>
-                  <span className="text-2xl font-bold text-primary-700">S/ {total.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-500">Pagado</span>
-                  <span className={splitTotal > total + 0.01 ? 'text-red-600 font-semibold' : 'text-gray-700 font-medium'}>S/ {splitTotal.toFixed(2)}</span>
-                </div>
-                {Math.abs(splitRemaining) > 0.01 && (
-                  <div className="flex items-center justify-between text-xs border-t border-primary-200 pt-1.5">
-                    <span className="text-gray-500">{splitRemaining > 0 ? 'Falta' : 'Sobra'}</span>
-                    <span className={splitRemaining > 0 ? 'text-orange-600 font-semibold' : 'text-blue-600 font-semibold'}>S/ {Math.abs(splitRemaining).toFixed(2)}</span>
+                {/* Estado del pago */}
+                {splitPayments.length > 0 && (
+                  <div className={`mt-2 rounded-xl px-4 py-3 flex items-center justify-between text-sm ${
+                    Math.abs(splitRemaining) <= 0.01 ? 'bg-green-50 border border-green-200' :
+                    splitRemaining > 0 ? 'bg-orange-50 border border-orange-200' : 'bg-blue-50 border border-blue-200'
+                  }`}>
+                    <span className={`font-medium ${Math.abs(splitRemaining) <= 0.01 ? 'text-green-700' : splitRemaining > 0 ? 'text-orange-700' : 'text-blue-700'}`}>
+                      {Math.abs(splitRemaining) <= 0.01 ? '✓ Pago completo' : splitRemaining > 0 ? `Falta S/ ${splitRemaining.toFixed(2)}` : `Vuelto S/ ${Math.abs(splitRemaining).toFixed(2)}`}
+                    </span>
+                    {splitRemaining > 0.01 && (
+                      <button type="button" onClick={() => {
+                        const idx = splitPayments.findIndex(p => p.amount === 0);
+                        if (idx >= 0) { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: splitRemaining }; setSplitPayments(next); }
+                        else { const last = splitPayments.length - 1; const next = [...splitPayments]; next[last] = { ...next[last], amount: (next[last].amount || 0) + splitRemaining }; setSplitPayments(next); }
+                      }} className="text-xs font-semibold text-orange-700 hover:text-orange-900 underline underline-offset-2">
+                        Completar →
+                      </button>
+                    )}
+                    {Math.abs(splitRemaining) <= 0.01 && (
+                      <span className="text-xs text-green-600">Pagado: S/ {splitTotal.toFixed(2)}</span>
+                    )}
+                    {splitRemaining < -0.01 && (
+                      <span className="text-xs text-blue-600">Pagado: S/ {splitTotal.toFixed(2)}</span>
+                    )}
                   </div>
                 )}
-              </div>
 
+                {/* Agregar método */}
+                {paymentMethods.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const used = new Set(splitPayments.map(p => p.paymentMethodId));
+                      const next = paymentMethods.find(m => !used.has(m.id)) || paymentMethods[0];
+                      if (!next) return;
+                      setSplitPayments([...splitPayments, { paymentMethodId: next.id, amount: Math.max(0, splitRemaining) }]);
+                    }}
+                    className="mt-2 w-full py-2 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-400 hover:border-primary-400 hover:text-primary-600 transition-colors"
+                  >
+                    + Agregar método de pago
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Footer con botón */}
+            <div className="px-6 py-4 border-t border-gray-100 shrink-0">
               <button
                 onClick={confirmSale}
                 disabled={createSale.isPending}
-                className="w-full py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 font-semibold transition-colors shadow-sm"
+                className="w-full py-3.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 font-bold text-base transition-colors shadow-sm flex items-center justify-center gap-2"
               >
-                {createSale.isPending ? 'Procesando…' : 'Confirmar venta'}
+                <CreditCard size={18} />
+                {createSale.isPending ? 'Procesando…' : `Confirmar Venta · S/ ${total.toFixed(2)}`}
               </button>
             </div>
           </div>
         </div>
       )}
+      {/* Mobile overlay */}
+      {cartOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-30"
+          onClick={() => setCartOpen(false)}
+        />
+      )}
+
+      {/* Mobile FAB — open cart */}
+      <button
+        onClick={() => setCartOpen(true)}
+        className="lg:hidden fixed bottom-6 right-4 left-4 z-20 py-3.5 bg-gray-900 text-white rounded-2xl shadow-xl flex items-center justify-between px-5 active:scale-95 transition-transform"
+      >
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <ShoppingCart size={22} />
+            {cart.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                {cart.length > 9 ? '9+' : cart.length}
+              </span>
+            )}
+          </div>
+          <span className="font-semibold text-sm">
+            {cart.length === 0 ? 'Carrito vacío' : `${cart.length} ${cart.length === 1 ? 'producto' : 'productos'}`}
+          </span>
+        </div>
+        <span className="text-lg font-bold">S/ {total.toFixed(2)}</span>
+      </button>
     </div>
   );
 }

@@ -53,7 +53,7 @@ export function CategoriesPage() {
               <label htmlFor="isActive" className="text-sm font-medium text-gray-700">Activo</label>
             </div>
           )}
-          <button type="submit" className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">{editing ? 'Actualizar' : 'Crear'}</button>
+          <button type="submit" disabled={editing ? updateCategory.isPending : createCategory.isPending} className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">{editing ? (updateCategory.isPending ? 'Actualizando...': 'Actualizar') : (createCategory.isPending ? 'Creando...': 'Crear')}</button>
         </form>
       </Modal>
     </div>

@@ -261,8 +261,8 @@ export function CashRegisterPage() {
               </div>
             </div>
           </div>
-          <button type="submit" className={`w-full py-2 text-white rounded-lg ${addForm.type === 'INCOME' ? 'bg-primary-600 hover:bg-primary-700' : 'bg-red-600 hover:bg-red-700'}`}>
-            {addForm.type === 'INCOME' ? 'Registrar Ingreso' : 'Registrar Egreso'}
+          <button type="submit" disabled={addEntry.isPending} className={`w-full py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${addForm.type === 'INCOME' ? 'bg-primary-600 hover:bg-primary-700' : 'bg-red-600 hover:bg-red-700'}`}>
+            {addEntry.isPending ? 'Registrando...' : addForm.type === 'INCOME' ? 'Registrar Ingreso' : 'Registrar Egreso'}
           </button>
         </form>
       </Modal>
@@ -297,7 +297,7 @@ export function CashRegisterPage() {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Razon del cambio</label>
             <textarea value={editForm.reason} onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} required />
           </div>
-          <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Guardar Cambio</button>
+          <button type="submit" disabled={editEntry.isPending} className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">{editEntry.isPending ? 'Guardando...' : 'Guardar Cambio'}</button>
         </form>
       </Modal>
 
@@ -307,7 +307,7 @@ export function CashRegisterPage() {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Razon de eliminacion</label>
             <textarea value={deleteReason} onChange={(e) => setDeleteReason(e.target.value)} className="w-full px-3 py-2 border rounded-lg" rows={2} required />
           </div>
-          <button type="submit" className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Eliminar</button>
+          <button type="submit" disabled={deleteEntryMutation.isPending} className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">{deleteEntryMutation.isPending ? 'Eliminando...' : 'Eliminar'}</button>
         </form>
       </Modal>
 
@@ -367,7 +367,7 @@ export function CashRegisterPage() {
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
                 <textarea value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} className="w-full px-3 py-2 border rounded-lg" rows={2} />
               </div>
-              <button onClick={handleClose} className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Confirmar Cierre</button>
+              <button onClick={handleClose} disabled={closeRegister.isPending} className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">{closeRegister.isPending ? 'Cerrando...' : 'Confirmar Cierre'}</button>
             </div>
           );
         })()}
