@@ -10,9 +10,10 @@ import { useCreateQuote, useQuote, useConvertQuote } from '../../quotes/hooks/us
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { stockService } from '../../stock/services/stockService';
-import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark } from 'lucide-react';
 import toast from 'react-hot-toast';
-import type { Product, ProductPrice, Category, Company, Client, PriceTier, PaymentMethod } from '../../../shared/types';
+import type { Product, ProductPrice, Category, Company, Client, PriceTier, PaymentMethod, CreditAccount } from '../../../shared/types';
+import { useOpenClientCredits } from '../../credits/hooks/useCredits';
 
 const IGV_RATE = 0.18;
 
@@ -122,7 +123,12 @@ export function POSPage() {
   const [voucherType, setVoucherType] = useState<'NONE' | 'BOLETA' | 'FACTURA'>('NONE');
   const [paymentMethodId, setPaymentMethodId] = useState<string>('');
   const [splitPayments, setSplitPayments] = useState<{ paymentMethodId: string; amount: number }[]>([]);
+  const [isCredit, setIsCredit] = useState(false);
+  const [creditAccountId, setCreditAccountId] = useState<string>('new');
+  const [creditName, setCreditName] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const { data: openCredits } = useOpenClientCredits(isCredit ? clientId : '');
 
   const { data: stockList } = useQuery({
     queryKey: ['stock', companyId],
@@ -333,6 +339,9 @@ export function POSPage() {
       toast.error('No hay métodos de pago configurados');
       return;
     }
+    setIsCredit(false);
+    setCreditAccountId('new');
+    setCreditName('');
     setSplitPayments([{ paymentMethodId, amount: 0 }]);
     setShowCheckout(true);
   };
@@ -341,15 +350,18 @@ export function POSPage() {
   const splitRemaining = Math.round((total - splitTotal) * 100) / 100;
 
   const confirmSale = async () => {
-    const validPayments = splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
-    if (validPayments.length === 0) {
-      toast.error('Ingresa al menos un método de pago con monto');
-      return;
+    if (isCredit) {
+      if (!clientId) { toast.error('Selecciona un cliente para la venta a crédito'); return; }
+      if (creditAccountId === 'new' && !creditName.trim()) { toast.error('Ingresa un nombre para la cuenta de crédito'); return; }
+    } else {
+      const validPayments = splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
+      if (validPayments.length === 0) { toast.error('Ingresa al menos un método de pago con monto'); return; }
+      if (Math.abs(splitTotal - total) > 0.01) {
+        toast.error(`La suma de pagos (${splitTotal.toFixed(2)}) no coincide con el total (${total.toFixed(2)})`);
+        return;
+      }
     }
-    if (Math.abs(splitTotal - total) > 0.01) {
-      toast.error(`La suma de pagos (${splitTotal.toFixed(2)}) no coincide con el total (${total.toFixed(2)})`);
-      return;
-    }
+    const validPayments = isCredit ? [] : splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
     try {
       if (sourceQuoteId) {
         await convertQuote.mutateAsync({
@@ -358,7 +370,7 @@ export function POSPage() {
             companyId,
             clientId: clientId || undefined,
             voucherType,
-            isCredit: false,
+            isCredit,
             payments: validPayments,
           },
         });
@@ -366,7 +378,9 @@ export function POSPage() {
         await createSale.mutateAsync({
           clientId: clientId || undefined,
           voucherType,
-          isCredit: false,
+          isCredit,
+          creditAccountId: isCredit && creditAccountId !== 'new' ? creditAccountId : undefined,
+          creditName: isCredit && creditAccountId === 'new' ? creditName.trim() : undefined,
           items: cart.map((i) => ({
             productId: i.productId,
             companyId,
@@ -381,14 +395,16 @@ export function POSPage() {
       setClientId('');
       setVoucherType('NONE');
       setSplitPayments([]);
+      setIsCredit(false);
+      setCreditAccountId('new');
+      setCreditName('');
       setShowCheckout(false);
       if (sourceQuoteId) {
         setSourceQuoteId('');
         setSearchParams({});
       }
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Error al registrar la venta';
-      toast.error(Array.isArray(msg) ? msg[0] : msg);
+    } catch {
+      // errors handled by mutation onError
     }
   };
 
@@ -817,77 +833,73 @@ export function POSPage() {
       {showCheckout && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowCheckout(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl flex flex-col max-h-[92vh]">
 
-            {/* Header verde con resumen */}
-            <div className="bg-primary-600 rounded-t-2xl px-6 py-5 text-white shrink-0">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <CreditCard size={20} />
-                  <h2 className="text-lg font-bold">Finalizar Venta</h2>
+            {/* Header */}
+            <div className="bg-primary-600 rounded-t-2xl px-6 py-6 text-white shrink-0">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <p className="text-white/70 text-sm mb-1">{cart.length} {cart.length === 1 ? 'producto' : 'productos'}</p>
+                  <p className="text-4xl font-bold tracking-tight">S/ {total.toFixed(2)}</p>
                 </div>
-                <button onClick={() => setShowCheckout(false)} className="p-1.5 rounded-lg hover:bg-white/20 transition-colors">
-                  <X size={18} />
+                <button onClick={() => setShowCheckout(false)} className="p-2 rounded-xl hover:bg-white/20 transition-colors mt-1">
+                  <X size={20} />
                 </button>
               </div>
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-white/70 text-xs mb-0.5">{cart.length} {cart.length === 1 ? 'producto' : 'productos'}</p>
-                  <p className="text-3xl font-bold">S/ {total.toFixed(2)}</p>
-                </div>
-                <div className="text-right text-xs text-white/70 space-y-0.5">
-                  <p>Base: S/ {(subtotal / (1 + IGV_RATE)).toFixed(2)}</p>
-                  <p>IGV (18%): S/ {(subtotal - subtotal / (1 + IGV_RATE)).toFixed(2)}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Resumen de items */}
-            <div className="px-6 pt-4 pb-2 shrink-0">
-              <div className="bg-gray-50 rounded-xl px-4 py-2 max-h-28 overflow-y-auto space-y-1.5">
+              {/* Cart items summary */}
+              <div className="bg-white/10 rounded-xl px-4 py-3 max-h-32 overflow-y-auto space-y-2">
                 {cart.map((item) => (
                   <div key={item.productId} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-700 truncate flex-1 mr-2">
-                      <span className="font-medium text-gray-500 mr-1.5">{item.quantity}×</span>
-                      {item.name}
+                    <span className="text-white/80 truncate flex-1 mr-3">
+                      <span className="font-bold text-white mr-2">{item.quantity}×</span>{item.name}
                     </span>
-                    <span className="text-gray-800 font-medium shrink-0">S/ {(item.quantity * item.unitPrice).toFixed(2)}</span>
+                    <span className="text-white font-semibold shrink-0">S/ {(item.quantity * item.unitPrice).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
+              <div className="flex justify-between mt-3 text-xs text-white/60">
+                <span>Base imponible: S/ {(subtotal / (1 + IGV_RATE)).toFixed(2)}</span>
+                <span>IGV 18%: S/ {(subtotal - subtotal / (1 + IGV_RATE)).toFixed(2)}</span>
+              </div>
             </div>
 
-            {/* Cuerpo scrollable */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
 
-              {/* Cliente */}
+              {/* 1. Cliente */}
               <div>
-                <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-1.5">
-                  <User size={14} /> Cliente
-                  <span className="text-gray-400 font-normal text-xs">(opcional)</span>
-                </label>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-xs font-bold flex items-center justify-center shrink-0">1</span>
+                  <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Cliente</span>
+                  <span className="text-xs text-gray-400 font-normal normal-case">opcional</span>
+                </div>
                 <select
                   value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                  onChange={(e) => { setClientId(e.target.value); if (!e.target.value) setIsCredit(false); }}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
                 >
                   <option value="">— Consumidor final —</option>
                   {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
 
-              {/* Comprobante */}
+              <div className="border-t border-gray-100" />
+
+              {/* 2. Comprobante */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Comprobante</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-xs font-bold flex items-center justify-center shrink-0">2</span>
+                  <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Comprobante</span>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
                   {(['NONE', 'BOLETA', 'FACTURA'] as const).map((v) => (
                     <button
                       key={v}
                       onClick={() => setVoucherType(v)}
-                      className={`py-2.5 rounded-xl text-sm font-medium transition-colors border-2 ${
+                      className={`py-3 rounded-xl text-sm font-semibold transition-colors border-2 ${
                         voucherType === v
-                          ? 'bg-primary-600 text-white border-primary-600'
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'
+                          ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300 hover:bg-primary-50'
                       }`}
                     >
                       {v === 'NONE' ? 'Ninguno' : v === 'BOLETA' ? 'Boleta' : 'Factura'}
@@ -896,100 +908,185 @@ export function POSPage() {
                 </div>
               </div>
 
-              {/* Métodos de pago */}
+              <div className="border-t border-gray-100" />
+
+              {/* 3. Tipo de pago */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Pago</label>
-                <div className="space-y-2">
-                  {splitPayments.map((p, idx) => (
-                    <div key={idx} className="bg-gray-50 rounded-xl p-3 space-y-2">
-                      <div className="flex flex-wrap gap-1.5">
-                        {paymentMethods.map((m) => (
-                          <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => { const next = [...splitPayments]; next[idx] = { ...next[idx], paymentMethodId: m.id }; setSplitPayments(next); }}
-                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border-2 ${getPaymentMethodColors(m.name, p.paymentMethodId === m.id)}`}
-                          >
-                            {m.name}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">S/</span>
-                          <input
-                            type="number" min="0" step="0.01"
-                            value={p.amount || ''}
-                            onFocus={(e) => e.target.select()}
-                            onChange={(e) => { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: parseFloat(e.target.value) || 0 }; setSplitPayments(next); }}
-                            placeholder="0.00"
-                            className="w-full pl-8 pr-2 py-2 border border-gray-200 rounded-xl text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
-                          />
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-xs font-bold flex items-center justify-center shrink-0">3</span>
+                  <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Tipo de pago</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsCredit(false)}
+                    className={`py-3 rounded-xl text-sm font-semibold transition-colors border-2 flex items-center justify-center gap-2 ${
+                      !isCredit ? 'bg-primary-600 text-white border-primary-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300 hover:bg-primary-50'
+                    }`}
+                  >
+                    <CreditCard size={16} /> Pago inmediato
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!clientId}
+                    onClick={() => setIsCredit(true)}
+                    className={`py-3 rounded-xl text-sm font-semibold transition-colors border-2 flex items-center justify-center gap-2 ${
+                      isCredit ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+                    } disabled:opacity-40 disabled:cursor-not-allowed`}
+                  >
+                    <Landmark size={16} /> A crédito
+                  </button>
+                </div>
+                {!clientId && (
+                  <p className="mt-2 text-xs text-gray-400 flex items-center gap-1">
+                    <User size={11} /> Selecciona un cliente para habilitar el pago a crédito
+                  </p>
+                )}
+              </div>
+
+              {/* Crédito — cuenta */}
+              {isCredit && (
+                <>
+                  <div className="border-t border-gray-100" />
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-700 text-xs font-bold flex items-center justify-center shrink-0">4</span>
+                      <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Cuenta de crédito</span>
+                    </div>
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => { setCreditAccountId('new'); setCreditName(''); }}
+                        className={`w-full px-4 py-3 rounded-xl text-sm font-semibold border-2 text-left transition-colors ${
+                          creditAccountId === 'new' ? 'bg-orange-50 border-orange-400 text-orange-800' : 'bg-white border-gray-200 text-gray-500 hover:border-orange-300'
+                        }`}
+                      >
+                        + Nueva cuenta
+                      </button>
+                      {(openCredits as CreditAccount[] | undefined)?.map((acc) => (
+                        <button
+                          key={acc.id}
+                          type="button"
+                          onClick={() => setCreditAccountId(acc.id)}
+                          className={`w-full px-4 py-3 rounded-xl border-2 text-left transition-colors ${
+                            creditAccountId === acc.id ? 'bg-orange-50 border-orange-400' : 'bg-white border-gray-200 hover:border-orange-300'
+                          }`}
+                        >
+                          <div className="font-semibold text-gray-800">{acc.name || 'Sin nombre'}</div>
+                          <div className="text-sm text-red-500 mt-0.5">Deuda actual: S/ {acc.pendingAmount.toFixed(2)}</div>
+                        </button>
+                      ))}
+                    </div>
+                    {creditAccountId === 'new' && (
+                      <input
+                        value={creditName}
+                        onChange={(e) => setCreditName(e.target.value)}
+                        placeholder="Nombre de la cuenta  (ej: Tomates, Maíz)"
+                        className="mt-3 w-full px-4 py-3 border-2 border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                        autoFocus
+                      />
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Pago inmediato — métodos */}
+              {!isCredit && (
+                <>
+                  <div className="border-t border-gray-100" />
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-xs font-bold flex items-center justify-center shrink-0">4</span>
+                      <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Método de pago</span>
+                    </div>
+                    <div className="space-y-3">
+                      {splitPayments.map((p, idx) => (
+                        <div key={idx} className="bg-gray-50 rounded-xl p-4 space-y-3">
+                          <div className="flex flex-wrap gap-2">
+                            {paymentMethods.map((m) => (
+                              <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => { const next = [...splitPayments]; next[idx] = { ...next[idx], paymentMethodId: m.id }; setSplitPayments(next); }}
+                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border-2 ${getPaymentMethodColors(m.name, p.paymentMethodId === m.id)}`}
+                              >
+                                {m.name}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">S/</span>
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={p.amount || ''}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: parseFloat(e.target.value) || 0 }; setSplitPayments(next); }}
+                                placeholder="0.00"
+                                className="w-full pl-9 pr-3 py-3 border-2 border-gray-200 rounded-xl text-base text-right font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
+                              />
+                            </div>
+                            {splitPayments.length > 1 && (
+                              <button type="button" onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-2 rounded-xl hover:bg-red-50">
+                                <X size={18} />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        {splitPayments.length > 1 && (
-                          <button type="button" onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50">
-                            <X size={16} />
+                      ))}
+                    </div>
+
+                    {/* Estado del pago */}
+                    {splitPayments.length > 0 && (
+                      <div className={`mt-3 rounded-xl px-4 py-3 flex items-center justify-between ${
+                        Math.abs(splitRemaining) <= 0.01 ? 'bg-green-50 border-2 border-green-200' :
+                        splitRemaining > 0 ? 'bg-orange-50 border-2 border-orange-200' : 'bg-blue-50 border-2 border-blue-200'
+                      }`}>
+                        <span className={`font-bold text-base ${Math.abs(splitRemaining) <= 0.01 ? 'text-green-700' : splitRemaining > 0 ? 'text-orange-700' : 'text-blue-700'}`}>
+                          {Math.abs(splitRemaining) <= 0.01 ? '✓ Pago completo' : splitRemaining > 0 ? `Falta S/ ${splitRemaining.toFixed(2)}` : `Vuelto S/ ${Math.abs(splitRemaining).toFixed(2)}`}
+                        </span>
+                        {splitRemaining > 0.01 && (
+                          <button type="button" onClick={() => {
+                            const idx = splitPayments.findIndex(p => p.amount === 0);
+                            if (idx >= 0) { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: splitRemaining }; setSplitPayments(next); }
+                            else { const last = splitPayments.length - 1; const next = [...splitPayments]; next[last] = { ...next[last], amount: (next[last].amount || 0) + splitRemaining }; setSplitPayments(next); }
+                          }} className="text-sm font-bold text-orange-700 hover:text-orange-900 underline underline-offset-2">
+                            Completar →
                           </button>
                         )}
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    )}
 
-                {/* Estado del pago */}
-                {splitPayments.length > 0 && (
-                  <div className={`mt-2 rounded-xl px-4 py-3 flex items-center justify-between text-sm ${
-                    Math.abs(splitRemaining) <= 0.01 ? 'bg-green-50 border border-green-200' :
-                    splitRemaining > 0 ? 'bg-orange-50 border border-orange-200' : 'bg-blue-50 border border-blue-200'
-                  }`}>
-                    <span className={`font-medium ${Math.abs(splitRemaining) <= 0.01 ? 'text-green-700' : splitRemaining > 0 ? 'text-orange-700' : 'text-blue-700'}`}>
-                      {Math.abs(splitRemaining) <= 0.01 ? '✓ Pago completo' : splitRemaining > 0 ? `Falta S/ ${splitRemaining.toFixed(2)}` : `Vuelto S/ ${Math.abs(splitRemaining).toFixed(2)}`}
-                    </span>
-                    {splitRemaining > 0.01 && (
-                      <button type="button" onClick={() => {
-                        const idx = splitPayments.findIndex(p => p.amount === 0);
-                        if (idx >= 0) { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: splitRemaining }; setSplitPayments(next); }
-                        else { const last = splitPayments.length - 1; const next = [...splitPayments]; next[last] = { ...next[last], amount: (next[last].amount || 0) + splitRemaining }; setSplitPayments(next); }
-                      }} className="text-xs font-semibold text-orange-700 hover:text-orange-900 underline underline-offset-2">
-                        Completar →
+                    {paymentMethods.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const used = new Set(splitPayments.map(p => p.paymentMethodId));
+                          const next = paymentMethods.find(m => !used.has(m.id)) || paymentMethods[0];
+                          if (!next) return;
+                          setSplitPayments([...splitPayments, { paymentMethodId: next.id, amount: Math.max(0, splitRemaining) }]);
+                        }}
+                        className="mt-3 w-full py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-400 hover:border-primary-400 hover:text-primary-600 transition-colors"
+                      >
+                        + Agregar método de pago
                       </button>
                     )}
-                    {Math.abs(splitRemaining) <= 0.01 && (
-                      <span className="text-xs text-green-600">Pagado: S/ {splitTotal.toFixed(2)}</span>
-                    )}
-                    {splitRemaining < -0.01 && (
-                      <span className="text-xs text-blue-600">Pagado: S/ {splitTotal.toFixed(2)}</span>
-                    )}
                   </div>
-                )}
-
-                {/* Agregar método */}
-                {paymentMethods.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const used = new Set(splitPayments.map(p => p.paymentMethodId));
-                      const next = paymentMethods.find(m => !used.has(m.id)) || paymentMethods[0];
-                      if (!next) return;
-                      setSplitPayments([...splitPayments, { paymentMethodId: next.id, amount: Math.max(0, splitRemaining) }]);
-                    }}
-                    className="mt-2 w-full py-2 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-400 hover:border-primary-400 hover:text-primary-600 transition-colors"
-                  >
-                    + Agregar método de pago
-                  </button>
-                )}
-              </div>
+                </>
+              )}
             </div>
 
-            {/* Footer con botón */}
-            <div className="px-6 py-4 border-t border-gray-100 shrink-0">
+            {/* Footer */}
+            <div className="px-6 py-5 border-t-2 border-gray-100 shrink-0">
               <button
                 onClick={confirmSale}
                 disabled={createSale.isPending}
-                className="w-full py-3.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 font-bold text-base transition-colors shadow-sm flex items-center justify-center gap-2"
+                className={`w-full py-4 text-white rounded-xl disabled:opacity-50 font-bold text-lg transition-colors shadow-sm flex items-center justify-center gap-2 ${
+                  isCredit ? 'bg-orange-500 hover:bg-orange-600' : 'bg-primary-600 hover:bg-primary-700'
+                }`}
               >
-                <CreditCard size={18} />
-                {createSale.isPending ? 'Procesando…' : `Confirmar Venta · S/ ${total.toFixed(2)}`}
+                {isCredit ? <Landmark size={20} /> : <CreditCard size={20} />}
+                {createSale.isPending ? 'Procesando…' : isCredit ? `Registrar a Crédito · S/ ${total.toFixed(2)}` : `Confirmar Venta · S/ ${total.toFixed(2)}`}
               </button>
             </div>
           </div>

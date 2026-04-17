@@ -83,7 +83,10 @@ export function CreditsPage() {
     { key: 'clientId', header: 'Cliente', render: (item: CreditAccount) => (
       <button onClick={() => navigate(`/credits/client/${item.clientId}`)} className="text-blue-600 hover:underline">{getClientName(item.clientId)}</button>
     )},
-    { key: 'createdAt', header: 'Fecha Venta', render: (item: CreditAccount) => new Date(item.createdAt).toLocaleDateString('es-PE') },
+    { key: 'name', header: 'Cuenta', render: (item: CreditAccount) => (
+      <span className={`text-sm ${item.name ? 'font-medium text-gray-800' : 'text-gray-400 italic'}`}>{item.name || '—'}</span>
+    )},
+    { key: 'createdAt', header: 'Fecha', render: (item: CreditAccount) => new Date(item.createdAt).toLocaleDateString('es-PE') },
     { key: 'totalAmount', header: 'Total', render: (item: CreditAccount) => `S/ ${item.totalAmount.toFixed(2)}` },
     { key: 'paidAmount', header: 'Pagado', render: (item: CreditAccount) => <span className="text-primary-600">S/ {item.paidAmount.toFixed(2)}</span> },
     { key: 'pendingAmount', header: 'Pendiente', render: (item: CreditAccount) => <span className="text-red-600 font-medium">S/ {item.pendingAmount.toFixed(2)}</span> },
