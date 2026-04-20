@@ -16,7 +16,7 @@ export interface SaleItem { productId: string; companyId: string; quantity: numb
 export interface Supplier { id: string; ruc: string; businessName: string; address?: string; phone?: string; isActive: boolean; }
 export type PurchaseDocumentType = 'FACTURA' | 'BOLETA' | 'GUIA' | 'NOTA_CREDITO' | 'OTRO';
 export interface Purchase { id: string; companyId: string; supplier: string; supplierId?: string; supplierRuc?: string; items: PurchaseItem[]; totalCost: number; totalCostUsd?: number; exchangeRate?: number; paymentType: 'CONTADO' | 'CREDITO'; paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS'; dueDate?: string; date: string; createdAt: string; documentType?: PurchaseDocumentType; documentSeries?: string; documentNumber?: string; issueDate?: string; }
-export interface PurchaseItem { productId: string; quantity: number; unitCost?: number; lotNumber?: string; expirationDate?: string; }
+export interface PurchaseItem { productId: string; quantity: number; unitCost?: number; unitPriceSinIgv?: number; unitPriceConIgv?: number; flete?: number; otrosCostos?: number; precioVenta?: number; markupPercent?: number; lotNumber?: string; expirationDate?: string; }
 export interface ProductLot { id: string; productId: string; companyId: string; lotNumber: string; expirationDate?: string; initialQuantity: number; currentQuantity: number; purchaseId?: string; receivedAt: string; isActive: boolean; }
 
 export type QuoteStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'CONVERTED';

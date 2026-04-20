@@ -6,12 +6,12 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
-  size?: 'default' | 'lg' | 'xl';
+  size?: 'default' | 'lg' | 'xl' | '2xl';
 }
 
 export function Modal({ isOpen, onClose, title, children, size = 'default' }: ModalProps) {
   if (!isOpen) return null;
-  const sizeClass = size === 'xl' ? 'max-w-4xl' : size === 'lg' ? 'max-w-2xl' : 'max-w-lg';
+  const sizeClass = size === '2xl' ? 'max-w-6xl' : size === 'xl' ? 'max-w-4xl' : size === 'lg' ? 'max-w-2xl' : 'max-w-lg';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />

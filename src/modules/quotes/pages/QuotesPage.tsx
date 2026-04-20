@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useQuotes, useUpdateQuoteStatus } from '../hooks/useQuotes';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useCompanies } from '../../companies/hooks/useCompanies';
+import { useClients } from '../../clients/hooks/useClients';
+import { useAuth } from '../../../app/providers/AuthProvider';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { ScrollText, Download, Printer, CheckCircle2, XCircle, ShoppingCart } from 'lucide-react';
-import type { Quote, QuoteStatus, Product, Company } from '../../../shared/types';
+import type { Quote, QuoteStatus, Product, Company, Client } from '../../../shared/types';
 import { downloadQuotePdf, printQuotePdf } from '../utils/quotePdf';
 
 const STATUS_LABELS: Record<QuoteStatus, { label: string; color: string }> = {
@@ -24,6 +26,8 @@ export function QuotesPage() {
   const { data, isLoading } = useQuotes({ page, limit: 20, status: statusFilter || undefined });
   const { data: productsData } = useProducts({ limit: 500 });
   const { data: companiesData } = useCompanies();
+  const { data: clientsData } = useClients();
+  const { user } = useAuth();
   const updateStatus = useUpdateQuoteStatus();
 
   const quotes: Quote[] = data?.data || [];
@@ -34,7 +38,15 @@ export function QuotesPage() {
     return Array.isArray(raw) ? raw : (raw?.data ?? []);
   }, [companiesData]);
 
+  const clients: Client[] = useMemo(() => {
+    const raw: any = clientsData;
+    return Array.isArray(raw) ? raw : (raw?.data ?? []);
+  }, [clientsData]);
+
   const getCompany = (id?: string) => companies.find(c => c.id === id);
+  const getClient = (id?: string) => clients.find(c => c.id === id);
+  const vendor = { name: user?.fullName, email: user?.email };
+  const pdfParams = (q: Quote) => ({ quote: q, products, company: getCompany(q.companyId), client: getClient(q.clientId), vendor });
 
   const columns = [
     { key: 'quoteNumber', header: 'Nº Proforma', render: (q: Quote) => <span className="font-mono font-medium text-gray-800">{q.quoteNumber}</span> },
@@ -57,10 +69,10 @@ export function QuotesPage() {
     }},
     { key: 'actions', header: '', render: (q: Quote) => (
       <div className="flex items-center gap-1">
-        <button onClick={(e) => { e.stopPropagation(); downloadQuotePdf({ quote: q, products, company: getCompany(q.companyId) }); }} className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded" title="Descargar PDF">
+        <button onClick={(e) => { e.stopPropagation(); downloadQuotePdf(pdfParams(q)); }} className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded" title="Descargar PDF">
           <Download size={15} />
         </button>
-        <button onClick={(e) => { e.stopPropagation(); printQuotePdf({ quote: q, products, company: getCompany(q.companyId) }); }} className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded" title="Ver / imprimir PDF">
+        <button onClick={(e) => { e.stopPropagation(); printQuotePdf(pdfParams(q)); }} className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded" title="Ver / imprimir PDF">
           <Printer size={15} />
         </button>
         {q.status === 'PENDING' && (

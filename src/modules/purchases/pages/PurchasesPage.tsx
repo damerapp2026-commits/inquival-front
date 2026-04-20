@@ -13,6 +13,49 @@ import { Plus, ShoppingCart, Trash2, Eye, Search, Loader2, DollarSign, PackagePl
 import type { Purchase, Company, Product, Category } from '../../../shared/types';
 import toast from 'react-hot-toast';
 
+const IGV_RATE = 0.18;
+
+interface PurchaseFormItem {
+  productId: string;
+  quantity: number;
+  lotNumber?: string;
+  expirationDate?: string;
+  unitPriceSinIgv: number;
+  unitPriceConIgv: number;
+  flete: number;
+  otrosCostos: number;
+  costoAdquisicion: number;
+  markupPercent: number;
+  precioVenta: number;
+  precioVentaMode: 'markup' | 'direct';
+}
+
+const emptyItem = (): PurchaseFormItem => ({
+  productId: '', quantity: 0, lotNumber: '', expirationDate: '',
+  unitPriceSinIgv: 0, unitPriceConIgv: 0, flete: 0, otrosCostos: 0,
+  costoAdquisicion: 0, markupPercent: 0, precioVenta: 0, precioVentaMode: 'markup',
+});
+
+function recalcItem(item: PurchaseFormItem): PurchaseFormItem {
+  const unitPriceConIgv = Math.round(item.unitPriceSinIgv * (1 + IGV_RATE) * 100) / 100;
+  const costoAdquisicion = Math.round((unitPriceConIgv + item.flete + item.otrosCostos) * 100) / 100;
+
+  let precioVenta = item.precioVenta;
+  let markupPercent = item.markupPercent;
+
+  if (item.precioVentaMode === 'markup') {
+    precioVenta = costoAdquisicion > 0
+      ? Math.round(costoAdquisicion * (1 + markupPercent / 100) * 100) / 100
+      : 0;
+  } else {
+    markupPercent = costoAdquisicion > 0
+      ? Math.round(((precioVenta / costoAdquisicion) - 1) * 10000) / 100
+      : 0;
+  }
+
+  return { ...item, unitPriceConIgv, costoAdquisicion, precioVenta, markupPercent };
+}
+
 export function PurchasesPage() {
   const [page, setPage] = useState(1);
   const [companyFilter, setCompanyFilter] = useState('');
@@ -37,7 +80,7 @@ export function PurchasesPage() {
     paymentType: 'CONTADO' as 'CONTADO' | 'CREDITO',
     paymentScheduleType: 'SINGLE_DATE' as 'SINGLE_DATE' | 'INSTALLMENTS', dueDate: '',
     installments: [] as { amount: number; dueDate: string }[],
-    items: [{ productId: '', quantity: 0, lotNumber: '', expirationDate: '' }] as { productId: string; quantity: number; lotNumber?: string; expirationDate?: string }[],
+    items: [emptyItem()] as PurchaseFormItem[],
     purchaseDate: new Date().toISOString().slice(0, 10),
     totalCostUsd: 0,
     totalCostPen: 0,
@@ -57,14 +100,14 @@ export function PurchasesPage() {
   const openCreate = () => {
     const today = new Date().toISOString().slice(0, 10);
     setCurrency('PEN');
-    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [{ productId: '', quantity: 0, lotNumber: '', expirationDate: '' }], purchaseDate: today, totalCostUsd: 0, totalCostPen: 0, documentType: 'FACTURA', documentSeries: '', documentNumber: '', issueDate: today });
+    setForm({ companyId: '', supplier: '', supplierRuc: '', supplierId: '', paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], items: [emptyItem()], purchaseDate: today, totalCostUsd: 0, totalCostPen: 0, documentType: 'FACTURA', documentSeries: '', documentNumber: '', issueDate: today });
     setExchangeRate(null);
     setExchangeRateDate('');
     setSupplierLocked(false);
     setShowModal(true);
   };
 
-  const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0, lotNumber: '', expirationDate: '' }] }));
+  const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, emptyItem()] }));
   const repeatFromPrev = (idx: number, field: 'lotNumber' | 'expirationDate') => {
     if (idx === 0) return;
     setForm(prev => {
@@ -83,7 +126,16 @@ export function PurchasesPage() {
     });
   };
   const removeItem = (idx: number) => setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
-  const updateItem = (idx: number, field: string, value: any) => setForm(prev => { const items = [...prev.items]; items[idx] = { ...items[idx], [field]: value }; return { ...prev, items }; });
+  const updateItem = (idx: number, field: string, value: any) => setForm(prev => {
+    const items = [...prev.items];
+    let item = { ...items[idx], [field]: value };
+    if (field === 'markupPercent') item.precioVentaMode = 'markup';
+    if (field === 'precioVenta') item.precioVentaMode = 'direct';
+    const costoFields = ['unitPriceSinIgv', 'flete', 'otrosCostos', 'markupPercent', 'precioVenta', 'productId'];
+    if (costoFields.includes(field)) item = recalcItem(item);
+    items[idx] = item;
+    return { ...prev, items };
+  });
 
   const handleDateChange = (date: string) => {
     setForm(prev => ({ ...prev, purchaseDate: date }));
@@ -173,11 +225,23 @@ export function PurchasesPage() {
     e.preventDefault();
     if (currency === 'USD' && (!exchangeRate || !form.totalCostUsd)) { toast.error('Ingrese el monto en USD y verifique el tipo de cambio'); return; }
     if (currency === 'PEN' && !form.totalCostPen) { toast.error('Ingrese el monto en soles'); return; }
+    const missingLot = form.items.find(i => {
+      const p = products.find((pr: Product) => pr.id === i.productId);
+      return p?.tracksLot && !i.lotNumber;
+    });
+    if (missingLot) { toast.error('Hay productos que requieren número de lote'); return; }
     const payload: any = {
       companyId: form.companyId, supplier: form.supplier,
       items: form.items.map(i => ({
         productId: i.productId,
         quantity: i.quantity,
+        unitCost: i.costoAdquisicion,
+        unitPriceSinIgv: i.unitPriceSinIgv,
+        unitPriceConIgv: i.unitPriceConIgv,
+        flete: i.flete || undefined,
+        otrosCostos: i.otrosCostos || undefined,
+        precioVenta: i.precioVenta || undefined,
+        markupPercent: i.markupPercent || undefined,
         ...(i.lotNumber ? { lotNumber: i.lotNumber } : {}),
         ...(i.expirationDate ? { expirationDate: i.expirationDate } : {}),
       })),
@@ -188,11 +252,6 @@ export function PurchasesPage() {
     if (form.documentSeries) payload.documentSeries = form.documentSeries;
     if (form.documentNumber) payload.documentNumber = form.documentNumber;
     if (form.issueDate) payload.issueDate = form.issueDate;
-    const missingLot = form.items.find(i => {
-      const p = products.find((pr: Product) => pr.id === i.productId);
-      return p?.tracksLot && !i.lotNumber;
-    });
-    if (missingLot) { toast.error('Hay productos que requieren número de lote'); return; }
     if (currency === 'USD') {
       payload.totalCostUsd = form.totalCostUsd;
       payload.exchangeRate = exchangeRate;
@@ -253,7 +312,7 @@ export function PurchasesPage() {
       </div>
       <DataTable columns={columns} data={purchases} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Compra" size="xl">
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Compra" size="2xl">
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Empresa */}
           <div>
@@ -423,6 +482,7 @@ export function PurchasesPage() {
                     {form.items.length > 1 && (
                       <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
                     )}
+                    {/* Fila 1: Producto, Cantidad, Lote, Vence */}
                     <div className="grid grid-cols-12 gap-2 items-end pr-6">
                       <div className="col-span-12 sm:col-span-5">
                         <label className="block text-xs text-gray-500 mb-1">Producto</label>
@@ -464,6 +524,44 @@ export function PurchasesPage() {
                         <input type="date" value={item.expirationDate || ''} onChange={(e) => updateItem(idx, 'expirationDate', e.target.value)} className={`w-full px-2 py-1.5 border rounded text-sm ${product && !needsLot ? 'bg-gray-100 text-gray-500' : ''}`} />
                       </div>
                     </div>
+                    {/* Fila 2: Desglose de costos */}
+                    <div className="grid grid-cols-12 gap-1.5 items-end mt-2 pt-2 border-t border-gray-200 pr-6">
+                      <div className="col-span-4 sm:col-span-2">
+                        <label className="block text-[10px] text-gray-500 mb-0.5">P.U. sin IGV</label>
+                        <input type="number" min="0" step="0.01" value={item.unitPriceSinIgv || ''} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', parseFloat(e.target.value) || 0)} className="w-full px-1.5 py-1 border rounded text-xs" placeholder="0.00" />
+                      </div>
+                      <div className="col-span-4 sm:col-span-2">
+                        <label className="block text-[10px] text-gray-500 mb-0.5">PC + IGV</label>
+                        <input type="text" readOnly value={item.unitPriceConIgv ? item.unitPriceConIgv.toFixed(2) : '0.00'} className="w-full px-1.5 py-1 border border-green-200 rounded text-xs bg-green-50 text-green-800 font-medium" />
+                      </div>
+                      <div className="col-span-4 sm:col-span-1">
+                        <label className="block text-[10px] text-gray-500 mb-0.5">Flete</label>
+                        <input type="number" min="0" step="0.01" value={item.flete || ''} onChange={(e) => updateItem(idx, 'flete', parseFloat(e.target.value) || 0)} className="w-full px-1.5 py-1 border rounded text-xs" placeholder="0" />
+                      </div>
+                      <div className="col-span-4 sm:col-span-1">
+                        <label className="block text-[10px] text-gray-500 mb-0.5">Otros</label>
+                        <input type="number" min="0" step="0.01" value={item.otrosCostos || ''} onChange={(e) => updateItem(idx, 'otrosCostos', parseFloat(e.target.value) || 0)} className="w-full px-1.5 py-1 border rounded text-xs" placeholder="0" />
+                      </div>
+                      <div className="col-span-4 sm:col-span-2">
+                        <label className="block text-[10px] text-gray-500 mb-0.5">C. Adquisición</label>
+                        <input type="text" readOnly value={item.costoAdquisicion ? item.costoAdquisicion.toFixed(2) : '0.00'} className="w-full px-1.5 py-1 border border-green-200 rounded text-xs bg-green-50 text-green-800 font-semibold" />
+                      </div>
+                      <div className="col-span-4 sm:col-span-2">
+                        <label className="block text-[10px] text-gray-500 mb-0.5">% Margen</label>
+                        <input type="number" min="0" step="0.1" value={item.markupPercent || ''} onChange={(e) => updateItem(idx, 'markupPercent', parseFloat(e.target.value) || 0)} className={`w-full px-1.5 py-1 border rounded text-xs ${item.precioVentaMode === 'direct' ? 'bg-blue-50 border-blue-200 text-blue-700' : ''}`} placeholder="30" />
+                      </div>
+                      <div className="col-span-4 sm:col-span-2">
+                        <label className="block text-[10px] text-gray-500 mb-0.5">P. Venta</label>
+                        <input type="number" min="0" step="0.01" value={item.precioVenta || ''} onChange={(e) => updateItem(idx, 'precioVenta', parseFloat(e.target.value) || 0)} className={`w-full px-1.5 py-1 border rounded text-xs ${item.precioVentaMode === 'markup' ? 'bg-blue-50 border-blue-200 text-blue-700' : ''}`} placeholder="0.00" />
+                      </div>
+                    </div>
+                    {/* Subtotal por item */}
+                    {item.quantity > 0 && item.costoAdquisicion > 0 && (
+                      <div className="mt-1.5 text-right pr-6">
+                        <span className="text-[10px] text-gray-500">Subtotal: </span>
+                        <span className="text-xs font-semibold text-gray-700">{currency === 'USD' ? '$' : 'S/'} {(item.quantity * item.costoAdquisicion).toFixed(2)}</span>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -532,7 +630,7 @@ export function PurchasesPage() {
       </Modal>
 
       {/* Modal detalle de compra */}
-      <Modal isOpen={!!viewingPurchase} onClose={() => setViewingPurchase(null)} title="Detalle de Compra">
+      <Modal isOpen={!!viewingPurchase} onClose={() => setViewingPurchase(null)} title="Detalle de Compra" size="2xl">
         {viewingPurchase && (
           <div className="space-y-4">
             {/* Info general */}
@@ -567,7 +665,7 @@ export function PurchasesPage() {
             {/* Productos */}
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-2">Productos ({viewingPurchase.items.length})</h3>
-              <div className="border rounded-lg overflow-hidden">
+              <div className="border rounded-lg overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 text-sm">
                   <thead className="bg-gray-50">
                     <tr>
@@ -575,29 +673,32 @@ export function PurchasesPage() {
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Cant.</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Lote</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Vence</th>
-                      {!viewingPurchase.totalCostUsd && (
-                        <>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Costo unit.</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Subtotal</th>
-                        </>
-                      )}
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">P.U. s/IGV</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">PC+IGV</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Flete</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Otros</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">C. Adq.</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">P. Venta</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Subtotal</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {viewingPurchase.items.map((item, idx) => {
                       const product = products.find((p: Product) => p.id === item.productId);
+                      const sym = viewingPurchase.totalCostUsd ? '$' : 'S/';
                       return (
                         <tr key={idx}>
                           <td className="px-3 py-2 font-medium">{product?.name || item.productId}</td>
                           <td className="px-3 py-2 text-right">{item.quantity}</td>
                           <td className="px-3 py-2 text-gray-600">{item.lotNumber || '—'}</td>
                           <td className="px-3 py-2 text-gray-600">{item.expirationDate ? new Date(item.expirationDate).toLocaleDateString('es-PE') : '—'}</td>
-                          {!viewingPurchase.totalCostUsd && (
-                            <>
-                              <td className="px-3 py-2 text-right">S/ {(item.unitCost || 0).toFixed(2)}</td>
-                              <td className="px-3 py-2 text-right font-medium">S/ {(item.quantity * (item.unitCost || 0)).toFixed(2)}</td>
-                            </>
-                          )}
+                          <td className="px-3 py-2 text-right">{item.unitPriceSinIgv ? `${sym} ${item.unitPriceSinIgv.toFixed(2)}` : '—'}</td>
+                          <td className="px-3 py-2 text-right">{item.unitPriceConIgv ? `${sym} ${item.unitPriceConIgv.toFixed(2)}` : '—'}</td>
+                          <td className="px-3 py-2 text-right">{item.flete ? `${sym} ${item.flete.toFixed(2)}` : '—'}</td>
+                          <td className="px-3 py-2 text-right">{item.otrosCostos ? `${sym} ${item.otrosCostos.toFixed(2)}` : '—'}</td>
+                          <td className="px-3 py-2 text-right font-medium text-green-700">{sym} {(item.unitCost || 0).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right">{item.precioVenta ? `${sym} ${item.precioVenta.toFixed(2)}` : '—'}</td>
+                          <td className="px-3 py-2 text-right font-medium">{sym} {(item.quantity * (item.unitCost || 0)).toFixed(2)}</td>
                         </tr>
                       );
                     })}
