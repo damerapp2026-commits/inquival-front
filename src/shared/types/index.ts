@@ -35,8 +35,8 @@ export interface CashRegisterEntry { id: string; type: 'INCOME' | 'EXPENSE'; cat
 export interface CashRegister { id: string; date: string; openingBalance: number; status: 'OPEN' | 'CLOSED'; entries: CashRegisterEntry[]; closingBalance?: number; closedBy?: string; closedAt?: string; notes?: string; createdBy?: string; }
 
 export interface CreditPayment { id: string; amount: number; paymentDate: string; paymentMethodId?: string; paymentMethodName?: string; cashRegisterEntryId?: string; notes?: string; receivedBy?: string; receivedByName?: string; }
-export interface CreditSaleDetail { date: string; total: number; items: { productName: string; companyName: string; quantity: number; unitPrice: number; subtotal: number; }[]; }
-export interface CreditAccount { id: string; clientId: string; saleId: string; saleDetail?: CreditSaleDetail; totalAmount: number; paidAmount: number; pendingAmount: number; status: 'PENDING' | 'PARTIAL' | 'PAID'; payments: CreditPayment[]; createdBy?: string; createdAt: string; }
+export interface CreditSaleDetail { saleId: string; date: string; total: number; items: { productName: string; companyName: string; quantity: number; unitPrice: number; subtotal: number; }[]; }
+export interface CreditAccount { id: string; clientId: string; name?: string; saleIds: string[]; saleDetails?: CreditSaleDetail[]; totalAmount: number; paidAmount: number; pendingAmount: number; status: 'PENDING' | 'PARTIAL' | 'PAID'; payments: CreditPayment[]; createdBy?: string; createdAt: string; }
 
 export interface LoanItem { productId: string; companyId: string; quantity: number; returnedQuantity: number; }
 export interface LoanReturnItem { productId: string; companyId: string; quantity: number; }

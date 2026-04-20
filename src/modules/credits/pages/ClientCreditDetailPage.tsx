@@ -84,34 +84,40 @@ export function ClientCreditDetailPage() {
                 </div>
               </div>
 
-              {/* Detalle de la venta */}
-              {credit.saleDetail && credit.saleDetail.items.length > 0 && (
-                <div className="mb-3 bg-gray-50 rounded-lg p-3">
-                  <div className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1"><ShoppingBag size={12} /> Productos de la venta:</div>
-                  <div className="border rounded overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                      <thead className="bg-gray-100">
-                        <tr>
-                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500">Producto</th>
-                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500">Empresa</th>
-                          <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-500">Cant.</th>
-                          <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-500">P. Unit.</th>
-                          <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-500">Subtotal</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {credit.saleDetail.items.map((item, idx) => (
-                          <tr key={idx}>
-                            <td className="px-3 py-1.5 font-medium">{item.productName}</td>
-                            <td className="px-3 py-1.5 text-gray-600">{item.companyName}</td>
-                            <td className="px-3 py-1.5 text-right">{item.quantity}</td>
-                            <td className="px-3 py-1.5 text-right">S/ {item.unitPrice.toFixed(2)}</td>
-                            <td className="px-3 py-1.5 text-right font-medium">S/ {item.subtotal.toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+              {/* Detalle de ventas */}
+              {credit.saleDetails && credit.saleDetails.length > 0 && (
+                <div className="mb-3 space-y-2">
+                  {credit.saleDetails.map((sale, sIdx) => (
+                    <div key={sIdx} className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
+                        <ShoppingBag size={12} /> Venta {sIdx + 1} — {new Date(sale.date).toLocaleDateString('es-PE')} · S/ {sale.total.toFixed(2)}
+                      </div>
+                      <div className="border rounded overflow-hidden">
+                        <table className="min-w-full divide-y divide-gray-200 text-sm">
+                          <thead className="bg-gray-100">
+                            <tr>
+                              <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500">Producto</th>
+                              <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500">Empresa</th>
+                              <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-500">Cant.</th>
+                              <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-500">P. Unit.</th>
+                              <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-500">Subtotal</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {sale.items.map((item: any, idx: number) => (
+                              <tr key={idx}>
+                                <td className="px-3 py-1.5 font-medium">{item.productName}</td>
+                                <td className="px-3 py-1.5 text-gray-600">{item.companyName}</td>
+                                <td className="px-3 py-1.5 text-right">{item.quantity}</td>
+                                <td className="px-3 py-1.5 text-right">S/ {item.unitPrice.toFixed(2)}</td>
+                                <td className="px-3 py-1.5 text-right font-medium">S/ {item.subtotal.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
 

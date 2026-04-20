@@ -11,6 +11,9 @@ export function useCreditById(id: string) {
 export function useClientCredits(clientId: string, params?: any) {
   return useQuery({ queryKey: ['credits', 'client', clientId, params], queryFn: () => creditService.getByClient(clientId, params), enabled: !!clientId });
 }
+export function useOpenClientCredits(clientId: string) {
+  return useQuery({ queryKey: ['credits', 'open', clientId], queryFn: () => creditService.getOpenByClient(clientId), enabled: !!clientId, staleTime: 10_000 });
+}
 export function useRegisterPayment() {
   const qc = useQueryClient();
   return useMutation({
