@@ -8,6 +8,7 @@ import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
 import { Plus, Search, Edit2, Users, Loader2 } from 'lucide-react';
 import type { Client } from '../../../shared/types';
 import { clientService } from '../services/clientService';
+import { ExportClientStatementButton } from '../../credits/components/ExportClientStatementButton';
 import toast from 'react-hot-toast';
 
 export function ClientsPage() {
@@ -95,7 +96,10 @@ export function ClientsPage() {
     { key: 'email', header: 'Email' },
     { key: 'isActive', header: 'Estado', render: (item: Client) => <span className={`px-2 py-1 rounded-full text-xs ${item.isActive ? 'bg-primary-100 text-primary-800' : 'bg-red-100 text-red-800'}`}>{item.isActive ? 'Activo' : 'Inactivo'}</span> },
     { key: 'actions', header: 'Acciones', render: (item: Client) => (
-      <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800"><Edit2 size={16} /></button>
+      <div className="flex items-center gap-2">
+        <ExportClientStatementButton client={item} variant="icon" />
+        <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={16} /></button>
+      </div>
     )},
   ];
 

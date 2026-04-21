@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useKardex } from '../hooks/useKardex';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
@@ -34,6 +35,7 @@ interface StockMovement {
 }
 
 export function KardexPage() {
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [companyId, setCompanyId] = useState('');
   const [productSearch, setProductSearch] = useState('');
@@ -82,7 +84,18 @@ export function KardexPage() {
       key: 'date', header: 'Fecha', render: (item: StockMovement) =>
         new Date(item.date).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
     },
-    { key: 'productId', header: 'Producto', render: (item: StockMovement) => <span className="font-medium">{getProductName(item.productId)}</span> },
+    {
+      key: 'productId', header: 'Producto', render: (item: StockMovement) => (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); navigate(`/kardex/product/${item.productId}`); }}
+          className="font-medium text-primary-700 hover:text-primary-900 hover:underline text-left"
+          title="Ver detalle del producto"
+        >
+          {getProductName(item.productId)}
+        </button>
+      ),
+    },
     { key: 'companyId', header: 'Empresa', render: (item: StockMovement) => getCompanyName(item.companyId) },
     {
       key: 'movementType', header: 'Tipo', render: (item: StockMovement) => {

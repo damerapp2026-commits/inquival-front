@@ -6,6 +6,8 @@ import { Layout } from '../../shared/components/Layout';
 
 const ProductsPage = lazy(() => import('../../modules/products/pages/ProductsPage').then(m => ({ default: m.ProductsPage })));
 const PurchasesPage = lazy(() => import('../../modules/purchases/pages/PurchasesPage').then(m => ({ default: m.PurchasesPage })));
+const NewPurchasePage = lazy(() => import('../../modules/purchases/pages/NewPurchasePage').then(m => ({ default: m.NewPurchasePage })));
+const PurchaseDetailPage = lazy(() => import('../../modules/purchases/pages/PurchaseDetailPage').then(m => ({ default: m.PurchaseDetailPage })));
 const SalesPage = lazy(() => import('../../modules/sales/pages/SalesPage').then(m => ({ default: m.SalesPage })));
 const StockPage = lazy(() => import('../../modules/stock/pages/StockPage').then(m => ({ default: m.StockPage })));
 const ClientsPage = lazy(() => import('../../modules/clients/pages/ClientsPage').then(m => ({ default: m.ClientsPage })));
@@ -20,6 +22,7 @@ const UnitsPage = lazy(() => import('../../modules/units/pages/UnitsPage').then(
 const DashboardPage = lazy(() => import('../../modules/dashboard/pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const UsersPage = lazy(() => import('../../modules/users/pages/UsersPage').then(m => ({ default: m.UsersPage })));
 const KardexPage = lazy(() => import('../../modules/kardex/pages/KardexPage').then(m => ({ default: m.KardexPage })));
+const KardexProductDetailPage = lazy(() => import('../../modules/kardex/pages/KardexProductDetailPage').then(m => ({ default: m.KardexProductDetailPage })));
 const AccountsPayablePage = lazy(() => import('../../modules/accounts-payable/pages/AccountsPayablePage').then(m => ({ default: m.AccountsPayablePage })));
 const POSPage = lazy(() => import('../../modules/pos/pages/POSPage').then(m => ({ default: m.POSPage })));
 const QuotesPage = lazy(() => import('../../modules/quotes/pages/QuotesPage').then(m => ({ default: m.QuotesPage })));
@@ -35,6 +38,8 @@ export function AppRoutes() {
         <Route path="dashboard" element={<Suspense fallback={<Loading />}><DashboardPage /></Suspense>} />
         <Route path="products" element={<Suspense fallback={<Loading />}><ProductsPage /></Suspense>} />
         <Route path="purchases" element={<Suspense fallback={<Loading />}><PurchasesPage /></Suspense>} />
+        <Route path="purchases/new" element={<Suspense fallback={<Loading />}><NewPurchasePage /></Suspense>} />
+        <Route path="purchases/:id" element={<Suspense fallback={<Loading />}><PurchaseDetailPage /></Suspense>} />
         <Route path="pos" element={<Suspense fallback={<Loading />}><POSPage /></Suspense>} />
         <Route path="quotes" element={<Suspense fallback={<Loading />}><QuotesPage /></Suspense>} />
         <Route path="sales" element={<Suspense fallback={<Loading />}><SalesPage /></Suspense>} />
@@ -50,6 +55,7 @@ export function AppRoutes() {
         <Route path="price-tiers" element={<Suspense fallback={<Loading />}><PriceTiersPage /></Suspense>} />
         <Route path="users" element={<Suspense fallback={<Loading />}><UsersPage /></Suspense>} />
         <Route path="kardex" element={<Suspense fallback={<Loading />}><KardexPage /></Suspense>} />
+        <Route path="kardex/product/:productId" element={<Suspense fallback={<Loading />}><KardexProductDetailPage /></Suspense>} />
         <Route path="accounts-payable" element={<Suspense fallback={<Loading />}><AccountsPayablePage /></Suspense>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

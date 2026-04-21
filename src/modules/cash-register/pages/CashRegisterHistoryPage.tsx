@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCashRegisters, useCashRegisterById, useCloseCashRegister } from '../hooks/useCashRegister';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
-import { History, Wallet, Lock } from 'lucide-react';
+import { History, Wallet, Lock, ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import type { CashRegister, CashRegisterEntry } from '../../../shared/types';
 import { getTodayDateString, getMonthRange } from '../../../shared/utils/date.util';
+import { groupEntries } from '../utils/groupEntries';
 
 export function CashRegisterHistoryPage() {
   const monthRange = getMonthRange();
@@ -64,6 +65,27 @@ export function CashRegisterHistoryPage() {
   ];
 
   const detailEntries: CashRegisterEntry[] = detail?.entries || [];
+  const detailGroups = useMemo(() => groupEntries(detailEntries), [detailEntries]);
+  const [expandedDetailGroups, setExpandedDetailGroups] = useState<Set<string>>(new Set());
+  const toggleDetailGroup = (id: string) => setExpandedDetailGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const renderDetailEntry = (e: CashRegisterEntry, nested: boolean, key: React.Key) => (
+    <tr key={key} className={`${e.isDeleted ? 'opacity-40 line-through' : ''} ${nested ? 'bg-gray-50/60' : ''}`}>
+      <td className={`px-3 py-2 ${nested ? 'pl-8' : ''}`}><span className={`text-xs ${e.type === 'INCOME' ? 'text-primary-600' : 'text-red-600'}`}>{e.type === 'INCOME' ? 'Ingreso' : 'Egreso'}</span></td>
+      <td className="px-3 py-2 text-xs">{categoryLabels[e.category] || e.category}</td>
+      <td className="px-3 py-2 text-xs">{e.description}</td>
+      <td className="px-3 py-2 text-center">
+        {e.voucherType === 'BOLETA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">Boleta</span>
+          : e.voucherType === 'FACTURA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Factura</span>
+          : <span className="text-gray-400 text-xs">-</span>}
+      </td>
+      <td className={`px-3 py-2 text-right ${e.type === 'INCOME' ? 'text-primary-600' : 'text-red-600'}`}>S/ {e.amount.toFixed(2)}</td>
+    </tr>
+  );
 
   return (
     <div>
@@ -101,19 +123,37 @@ export function CashRegisterHistoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {detailEntries.map((e) => (
-                  <tr key={e.id} className={e.isDeleted ? 'opacity-40 line-through' : ''}>
-                    <td className="px-3 py-2"><span className={`text-xs ${e.type === 'INCOME' ? 'text-primary-600' : 'text-red-600'}`}>{e.type === 'INCOME' ? 'Ingreso' : 'Egreso'}</span></td>
-                    <td className="px-3 py-2 text-xs">{categoryLabels[e.category] || e.category}</td>
-                    <td className="px-3 py-2 text-xs">{e.description}</td>
-                    <td className="px-3 py-2 text-center">
-                      {e.voucherType === 'BOLETA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">Boleta</span>
-                        : e.voucherType === 'FACTURA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Factura</span>
-                        : <span className="text-gray-400 text-xs">-</span>}
-                    </td>
-                    <td className={`px-3 py-2 text-right ${e.type === 'INCOME' ? 'text-primary-600' : 'text-red-600'}`}>S/ {e.amount.toFixed(2)}</td>
-                  </tr>
-                ))}
+                {detailGroups.map((g, gi) => {
+                  if (!g.groupId || g.entries.length === 1) {
+                    return renderDetailEntry(g.entries[0], false, gi);
+                  }
+                  const isOpen = expandedDetailGroups.has(g.groupId);
+                  const first = g.entries[0];
+                  const total = g.total ?? g.entries.reduce((s, e) => s + e.amount, 0);
+                  const baseDesc = first.description.replace(/\s*\(\d+ de \d+\)\s*$/, '').replace(/\s*\[.*?\]\s*$/, '');
+                  return (
+                    <React.Fragment key={g.groupId}>
+                      <tr onClick={() => toggleDetailGroup(g.groupId!)} className={`cursor-pointer ${first.type === 'INCOME' ? 'bg-primary-50/40 hover:bg-primary-50' : 'bg-red-50/40 hover:bg-red-50'}`}>
+                        <td className="px-3 py-2">
+                          <span className="inline-flex items-center gap-1 text-xs">
+                            {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                            <span className={first.type === 'INCOME' ? 'text-primary-600' : 'text-red-600'}>{first.type === 'INCOME' ? 'Ingreso' : 'Egreso'}</span>
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-xs">{categoryLabels[first.category] || first.category}</td>
+                        <td className="px-3 py-2 text-xs">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-medium mr-1">
+                            <Layers size={10} /> Grupo {g.entries.length}
+                          </span>
+                          {baseDesc}
+                        </td>
+                        <td className="px-3 py-2 text-center"><span className="text-gray-400 text-xs">-</span></td>
+                        <td className={`px-3 py-2 text-right font-bold ${first.type === 'INCOME' ? 'text-primary-700' : 'text-red-700'}`}>S/ {total.toFixed(2)}</td>
+                      </tr>
+                      {isOpen && g.entries.map((e) => renderDetailEntry(e, true, `${g.groupId}-${e.id}`))}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

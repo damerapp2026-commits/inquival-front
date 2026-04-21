@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCashRegisterToday, useOpenCashRegister, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { Modal } from '../../../shared/components/Modal';
-import { Wallet, TrendingUp, TrendingDown, Edit2, Trash2, Lock, History } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, Edit2, Trash2, Lock, History, ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import type { CashRegisterEntry } from '../../../shared/types';
+import { groupEntries } from '../utils/groupEntries';
 
 export function CashRegisterPage() {
   const { data: register, isLoading } = useCashRegisterToday();
@@ -20,6 +21,7 @@ export function CashRegisterPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<CashRegisterEntry | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const { data: paymentMethods = [] } = usePaymentMethods();
   const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, voucherType: 'NONE' as string, paymentMethodName: '' });
@@ -68,6 +70,51 @@ export function CashRegisterPage() {
   };
 
   const categoryLabels: Record<string, string> = { SALE: 'Venta', CREDIT_PAYMENT: 'Pago Credito', PURCHASE: 'Compra', ADJUSTMENT: 'Ajuste', OTHER: 'Otro' };
+
+  const groupedRows = useMemo(() => groupEntries([...entries].reverse()), [entries]);
+
+  const renderEntryRow = (entry: CashRegisterEntry, nested: boolean, key: React.Key) => (
+    <tr
+      key={key}
+      className={`${entry.isDeleted ? 'bg-red-50 opacity-50' : entry.type === 'INCOME' ? 'hover:bg-primary-50' : 'hover:bg-red-50'} ${nested ? 'bg-gray-50/40' : ''}`}
+    >
+      <td className={`px-4 py-3 ${nested ? 'pl-10' : ''}`}>
+        <span className={`px-2 py-1 rounded text-xs font-medium ${entry.type === 'INCOME' ? 'bg-primary-100 text-primary-800' : 'bg-red-100 text-red-800'}`}>
+          {entry.type === 'INCOME' ? 'Ingreso' : 'Egreso'}
+        </span>
+      </td>
+      <td className="px-4 py-3 text-sm">{categoryLabels[entry.category] || entry.category}</td>
+      <td className="px-4 py-3 text-sm">
+        {entry.description.replace(/\s*\[.*?\]\s*$/, '')}
+        {entry.isDeleted && <span className="ml-2 text-red-500 text-xs">(Eliminado: {entry.deleteReason})</span>}
+        {entry.editHistory?.length > 0 && <span className="ml-2 text-blue-500 text-xs">(Editado {entry.editHistory.length}x)</span>}
+      </td>
+      <td className="px-4 py-3 text-sm">
+        {(() => {
+          const match = entry.description.match(/\[(.+?)\]$/);
+          return match ? <span className="text-blue-600 font-medium">{match[1]}</span> : <span className="text-gray-400">-</span>;
+        })()}
+      </td>
+      <td className={`px-4 py-3 text-sm text-right font-medium ${entry.type === 'INCOME' ? 'text-primary-600' : 'text-red-600'}`}>
+        {entry.type === 'INCOME' ? '+' : '-'} S/ {entry.amount.toFixed(2)}
+      </td>
+      <td className="px-4 py-3 text-center text-sm">
+        {entry.voucherType === 'BOLETA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">Boleta</span>
+          : entry.voucherType === 'FACTURA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Factura</span>
+          : <span className="text-gray-400">-</span>}
+      </td>
+      {!isClosed && (
+        <td className="px-4 py-3 text-center">
+          {!entry.isDeleted && !nested && (
+            <div className="flex gap-2 justify-center">
+              <button onClick={() => openEdit(entry)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={14} /></button>
+              <button onClick={() => openDelete(entry)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 size={14} /></button>
+            </div>
+          )}
+        </td>
+      )}
+    </tr>
+  );
 
   if (isLoading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" /></div>;
 
@@ -156,45 +203,54 @@ export function CashRegisterPage() {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {[...entries].reverse().map((entry) => (
-              <tr key={entry.id} className={entry.isDeleted ? 'bg-red-50 opacity-50' : entry.type === 'INCOME' ? 'hover:bg-primary-50' : 'hover:bg-red-50'}>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${entry.type === 'INCOME' ? 'bg-primary-100 text-primary-800' : 'bg-red-100 text-red-800'}`}>
-                    {entry.type === 'INCOME' ? 'Ingreso' : 'Egreso'}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm">{categoryLabels[entry.category] || entry.category}</td>
-                <td className="px-4 py-3 text-sm">
-                  {entry.description.replace(/\s*\[.*?\]\s*$/, '')}
-                  {entry.isDeleted && <span className="ml-2 text-red-500 text-xs">(Eliminado: {entry.deleteReason})</span>}
-                  {entry.editHistory?.length > 0 && <span className="ml-2 text-blue-500 text-xs">(Editado {entry.editHistory.length}x)</span>}
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  {(() => {
-                    const match = entry.description.match(/\[(.+?)\]$/);
-                    return match ? <span className="text-blue-600 font-medium">{match[1]}</span> : <span className="text-gray-400">-</span>;
-                  })()}
-                </td>
-                <td className={`px-4 py-3 text-sm text-right font-medium ${entry.type === 'INCOME' ? 'text-primary-600' : 'text-red-600'}`}>
-                  {entry.type === 'INCOME' ? '+' : '-'} S/ {entry.amount.toFixed(2)}
-                </td>
-                <td className="px-4 py-3 text-center text-sm">
-                  {entry.voucherType === 'BOLETA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">Boleta</span>
-                    : entry.voucherType === 'FACTURA' ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Factura</span>
-                    : <span className="text-gray-400">-</span>}
-                </td>
-                {!isClosed && (
-                  <td className="px-4 py-3 text-center">
-                    {!entry.isDeleted && (
-                      <div className="flex gap-2 justify-center">
-                        <button onClick={() => openEdit(entry)} className="text-blue-600 hover:text-blue-800"><Edit2 size={14} /></button>
-                        <button onClick={() => openDelete(entry)} className="text-red-600 hover:text-red-800"><Trash2 size={14} /></button>
-                      </div>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
+            {groupedRows.map((group, gi) => {
+              const isGroup = !!group.groupId && group.entries.length > 1;
+              if (!isGroup) {
+                return renderEntryRow(group.entries[0], false, gi);
+              }
+              const isOpen = expandedGroups.has(group.groupId!);
+              const first = group.entries[0];
+              const typeLabel = first.type === 'INCOME' ? 'Ingreso' : 'Egreso';
+              const total = group.total ?? group.entries.reduce((s, e) => s + e.amount, 0);
+              const baseDesc = first.description.replace(/\s*\(\d+ de \d+\)\s*$/, '').replace(/\s*\[.*?\]\s*$/, '');
+              const methodMatch = first.description.match(/\[(.+?)\]/);
+              return (
+                <React.Fragment key={group.groupId}>
+                  <tr
+                    onClick={() => setExpandedGroups((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(group.groupId!)) next.delete(group.groupId!);
+                      else next.add(group.groupId!);
+                      return next;
+                    })}
+                    className={`cursor-pointer ${first.type === 'INCOME' ? 'bg-primary-50/40 hover:bg-primary-50' : 'bg-red-50/40 hover:bg-red-50'}`}
+                  >
+                    <td className="px-4 py-3">
+                      <span className="flex items-center gap-2">
+                        {isOpen ? <ChevronDown size={14} className="text-gray-500" /> : <ChevronRight size={14} className="text-gray-500" />}
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${first.type === 'INCOME' ? 'bg-primary-100 text-primary-800' : 'bg-red-100 text-red-800'}`}>{typeLabel}</span>
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm">{categoryLabels[first.category] || first.category}</td>
+                    <td className="px-4 py-3 text-sm">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-xs font-medium mr-2">
+                        <Layers size={11} /> Grupo · {group.entries.length} cuentas
+                      </span>
+                      <span className="font-medium">{baseDesc}</span>
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {methodMatch ? <span className="text-blue-600 font-medium">{methodMatch[1]}</span> : <span className="text-gray-400">-</span>}
+                    </td>
+                    <td className={`px-4 py-3 text-sm text-right font-bold ${first.type === 'INCOME' ? 'text-primary-700' : 'text-red-700'}`}>
+                      {first.type === 'INCOME' ? '+' : '-'} S/ {total.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-center text-sm"><span className="text-gray-400">-</span></td>
+                    {!isClosed && <td className="px-4 py-3" />}
+                  </tr>
+                  {isOpen && group.entries.map((e) => renderEntryRow(e, true, `${group.groupId}-${e.id}`))}
+                </React.Fragment>
+              );
+            })}
             {entries.length === 0 && (
               <tr><td colSpan={isClosed ? 6 : 7} className="px-4 py-8 text-center text-gray-400">No hay entradas registradas</td></tr>
             )}

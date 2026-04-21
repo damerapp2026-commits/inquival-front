@@ -22,12 +22,43 @@ export function useRegisterPayment() {
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error al registrar pago'),
   });
 }
+export function useBatchPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => creditService.registerBatchPayment(data),
+    onSuccess: (_data, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['credits'] });
+      qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      if (vars?.clientId) qc.invalidateQueries({ queryKey: ['credits', 'open', vars.clientId] });
+      toast.success('Pago registrado');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al registrar pago'),
+  });
+}
 export function useEditCredit() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ creditId, data }: { creditId: string; data: any }) => creditService.edit(creditId, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['credits'] }); toast.success('Crédito actualizado'); },
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error al editar crédito'),
+  });
+}
+export function useEditCreditItems() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ creditId, data }: { creditId: string; data: any }) => creditService.editItems(creditId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['credits'] });
+      qc.invalidateQueries({ queryKey: ['credit'] });
+      qc.invalidateQueries({ queryKey: ['stock'] });
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      toast.success('Crédito actualizado');
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg[0] : msg || 'Error al editar crédito');
+    },
   });
 }
 export function useDeleteCredit() {

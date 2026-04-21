@@ -11,7 +11,8 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, Download, Upload } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, Download, Upload, Truck } from 'lucide-react';
+import { ProductSuppliersModal } from '../components/ProductSuppliersModal';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import type { Product } from '../../../shared/types';
@@ -55,6 +56,7 @@ export function ProductsPage() {
 
   const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, prices: [] as { priceTierId: string; companyId?: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [suppliersTarget, setSuppliersTarget] = useState<Product | null>(null);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -347,8 +349,9 @@ export function ProductsPage() {
     { key: 'isActive', header: 'Estado', render: (item: Product) => <span className={`px-2 py-1 rounded-full text-xs ${item.isActive ? 'bg-primary-100 text-primary-800' : 'bg-red-100 text-red-800'}`}>{item.isActive ? 'Activo' : 'Inactivo'}</span> },
     { key: 'actions', header: 'Acciones', render: (item: Product) => (
       <div className="flex gap-2">
-        <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800"><Edit2 size={16} /></button>
-        <button onClick={() => setDeleteTarget(item)} className="text-red-600 hover:text-red-800"><Trash2 size={16} /></button>
+        <button onClick={() => setSuppliersTarget(item)} className="text-gray-500 hover:text-primary-600" title="Ver proveedores"><Truck size={16} /></button>
+        <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={16} /></button>
+        <button onClick={() => setDeleteTarget(item)} className="text-red-600 hover:text-red-800" title="Desactivar"><Trash2 size={16} /></button>
       </div>
     )},
   ];
@@ -459,6 +462,7 @@ export function ProductsPage() {
           </div>
         </div>
       </Modal>
+      <ProductSuppliersModal product={suppliersTarget} onClose={() => setSuppliersTarget(null)} />
       <Modal isOpen={showBulkModal} onClose={() => setShowBulkModal(false)} title={`Carga Masiva de Productos (${bulkProducts.length})`} size="xl">
         <div className="space-y-3">
           {bulkProducts.map((bp, idx) => (

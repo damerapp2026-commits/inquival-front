@@ -479,7 +479,7 @@ export function POSPage() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-5 gap-4">
               {filteredProducts.map((p) => {
                 const price = tierId && companyId ? resolvePrice(p, tierId, companyId) : undefined;
                 const qty = cartQty(p.id);
@@ -509,7 +509,7 @@ export function POSPage() {
                         {qty}
                       </span>
                     )}
-                    <span className={`absolute top-2 right-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${stockColor}`}>
+                    <span className={`absolute top-2 right-2 text-xs font-semibold px-2 py-1 rounded-md shadow-sm ${stockColor}`}>
                       Stock: {stock}
                     </span>
                     <div className="w-full aspect-square rounded-lg bg-primary-50 text-primary-700 flex items-center justify-center mb-3 group-hover:bg-primary-100 transition-colors">
@@ -535,14 +535,14 @@ export function POSPage() {
       </div>
 
       {/* Cart panel — fixed drawer on mobile, static panel on desktop */}
-      <aside className={`fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm bg-white border-l border-gray-200 flex flex-col transform transition-transform duration-300 ease-in-out lg:static lg:w-96 xl:lg:w-[420px] lg:z-auto lg:translate-x-0 ${cartOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm bg-white border-l border-gray-200 flex flex-col transform transition-transform duration-300 ease-in-out lg:static lg:w-96 xl:w-[440px] 2xl:w-[500px] lg:max-w-none lg:z-auto lg:translate-x-0 ${cartOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="px-5 py-4 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <ShoppingCart size={18} className="text-primary-600" />
+              <ShoppingCart size={20} className="text-primary-600" />
               <div>
-                <div className="text-sm font-semibold text-gray-800">Carrito</div>
-                <div className="text-xs text-gray-500">
+                <div className="text-base font-semibold text-gray-800">Carrito</div>
+                <div className="text-sm text-gray-500">
                   {cart.length} {cart.length === 1 ? 'producto' : 'productos'}
                 </div>
               </div>
@@ -551,7 +551,7 @@ export function POSPage() {
               {cart.length > 0 && (
                 <button
                   onClick={clearCart}
-                  className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                  className="text-sm text-gray-400 hover:text-red-500 transition-colors"
                 >
                   Limpiar
                 </button>
@@ -565,8 +565,8 @@ export function POSPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Tag size={14} className="text-gray-400" />
-            <span className="text-xs text-gray-500 shrink-0">Rango:</span>
+            <Tag size={16} className="text-gray-400" />
+            <span className="text-sm text-gray-500 shrink-0">Rango:</span>
             <select
               value={tierId}
               onChange={(e) => setTierId(e.target.value)}
@@ -600,14 +600,14 @@ export function POSPage() {
                       <Package size={18} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-800 truncate">{item.name}</div>
+                      <div className="text-base font-medium text-gray-800 truncate">{item.name}</div>
                       <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-xs text-gray-500">
+                        <span className="text-sm text-gray-500">
                           S/ {item.unitPrice.toFixed(2)} · {item.unit}
                         </span>
                         <button
                           onClick={() => setEditingPriceFor(isEditing ? null : item.productId)}
-                          className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium transition-colors flex items-center gap-0.5 ${
+                          className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium transition-colors flex items-center gap-0.5 ${
                             isOverridden
                               ? 'bg-primary-100 text-primary-700 hover:bg-primary-200'
                               : 'text-gray-400 hover:text-primary-600 hover:bg-gray-100'
@@ -717,16 +717,16 @@ export function POSPage() {
 
         {cart.length > 0 && (
           <div className="border-t border-gray-100 px-5 py-4 space-y-2">
-            <div className="flex justify-between text-sm text-gray-600">
+            <div className="flex justify-between text-base text-gray-600">
               <span>Subtotal</span>
               <span className="font-medium">S/ {(subtotal / (1 + IGV_RATE)).toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-sm text-gray-600">
+            <div className="flex justify-between text-base text-gray-600">
               <span>IGV (18%)</span>
               <span className="font-medium">S/ {(subtotal - subtotal / (1 + IGV_RATE)).toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-baseline pt-2 border-t border-gray-100">
-              <span className="text-sm font-semibold text-gray-700">Total</span>
+              <span className="text-base font-semibold text-gray-700">Total</span>
               <span className="text-2xl font-bold text-primary-600">S/ {total.toFixed(2)}</span>
             </div>
             <div className="flex gap-2">

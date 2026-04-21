@@ -100,7 +100,7 @@ export function Layout() {
   return (
     <div className="min-h-screen flex bg-surface">
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:inset-auto ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -111,7 +111,7 @@ export function Layout() {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+        <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4 space-y-5">
           {navSections.map((section) => {
             const visibleItems = section.items.filter(
               (item) => !item.roles || item.roles.includes(user?.role || ''),

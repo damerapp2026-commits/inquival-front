@@ -22,3 +22,12 @@ export function useRegisterAPPayment() {
     onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'Error'),
   });
 }
+
+export function useUpdateNumeroUnico() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ apId, data }: { apId: string; data: { numeroUnico: string; installmentId?: string } }) => accountPayableService.updateNumeroUnico(apId, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['accounts-payable'] }); toast.success('Número único actualizado'); },
+    onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'Error'),
+  });
+}

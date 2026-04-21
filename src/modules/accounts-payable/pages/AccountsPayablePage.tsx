@@ -1,10 +1,41 @@
-import React, { useState } from 'react';
-import { useAccountsPayable, useAccountPayableById, useRegisterAPPayment } from '../hooks/useAccountsPayable';
+import React, { useState, useEffect } from 'react';
+import { useAccountsPayable, useAccountPayableById, useRegisterAPPayment, useUpdateNumeroUnico } from '../hooks/useAccountsPayable';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
-import { FileText, DollarSign, AlertCircle, Eye, Clock, CheckCircle } from 'lucide-react';
+import { FileText, DollarSign, AlertCircle, Eye, Clock, CheckCircle, Hash, Save } from 'lucide-react';
 import type { AccountPayable, AccountPayableInstallment, AccountPayablePayment } from '../../../shared/types';
+
+function NumeroUnicoEditor({ apId, installmentId, value, onSave, isPending, placeholder = 'N° único del banco' }: { apId: string; installmentId?: string; value?: string; onSave: (v: string) => void; isPending: boolean; placeholder?: string }) {
+  const [draft, setDraft] = useState(value || '');
+  useEffect(() => { setDraft(value || ''); }, [value, apId, installmentId]);
+
+  const dirty = draft.trim() !== (value || '').trim();
+  return (
+    <div className="flex items-center gap-1">
+      <div className="relative flex-1">
+        <Hash size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={placeholder}
+          className={`w-full pl-7 pr-2 py-1 border rounded text-xs ${!value ? 'border-orange-300 bg-orange-50' : 'border-gray-200'}`}
+        />
+      </div>
+      {dirty && (
+        <button
+          type="button"
+          onClick={() => onSave(draft.trim())}
+          disabled={isPending}
+          className="px-2 py-1 bg-primary-600 text-white rounded text-xs hover:bg-primary-700 disabled:opacity-50 flex items-center gap-0.5"
+          title="Guardar"
+        >
+          <Save size={11} />
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function AccountsPayablePage() {
   const [page, setPage] = useState(1);
@@ -18,6 +49,7 @@ export function AccountsPayablePage() {
   const { data, isLoading } = useAccountsPayable({ page, limit: 20, supplier: supplierFilter || undefined, status: statusFilter || undefined });
   const { data: detailAP } = useAccountPayableById(viewingId);
   const registerPayment = useRegisterAPPayment();
+  const updateNumero = useUpdateNumeroUnico();
 
   const items = data?.data || [];
   const total = data?.total || 0;
@@ -172,20 +204,34 @@ export function AccountsPayablePage() {
             {/* Installments */}
             {detailAP.paymentScheduleType === 'INSTALLMENTS' && detailAP.installments.length > 0 && (
               <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Cuotas</h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Cuotas (letras)</h3>
                 <div className="space-y-2">
                   {detailAP.installments.map((inst: AccountPayableInstallment, idx: number) => (
-                    <div key={inst.id || idx} className={`flex items-center justify-between p-2 rounded-lg border ${inst.status === 'PAID' ? 'bg-primary-50 border-primary-200' : 'bg-white border-gray-200'}`}>
-                      <div className="flex items-center gap-2">
-                        {inst.status === 'PAID' ? <CheckCircle size={14} className="text-primary-500" /> : <Clock size={14} className="text-gray-400" />}
-                        <span className="text-sm">Cuota {idx + 1}</span>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-medium">S/ {inst.amount.toFixed(2)}</div>
-                        <div className={`text-xs ${inst.status === 'PAID' ? 'text-primary-600' : 'text-gray-500'}`}>
-                          {inst.status === 'PAID' ? `Pagada ${inst.paidDate ? new Date(inst.paidDate).toLocaleDateString('es-PE') : ''}` : `Vence: ${new Date(inst.dueDate).toLocaleDateString('es-PE')}`}
+                    <div key={inst.id || idx} className={`p-3 rounded-lg border ${inst.status === 'PAID' ? 'bg-primary-50 border-primary-200' : 'bg-white border-gray-200'}`}>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          {inst.status === 'PAID' ? <CheckCircle size={14} className="text-primary-500" /> : <Clock size={14} className="text-gray-400" />}
+                          <span className="text-sm font-medium">Cuota {idx + 1}</span>
+                          {!inst.numeroUnico && inst.status === 'PENDING' && (
+                            <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-medium">Sin N° único</span>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-medium">S/ {inst.amount.toFixed(2)}</div>
+                          <div className={`text-xs ${inst.status === 'PAID' ? 'text-primary-600' : 'text-gray-500'}`}>
+                            {inst.status === 'PAID' ? `Pagada ${inst.paidDate ? new Date(inst.paidDate).toLocaleDateString('es-PE') : ''}` : `Vence: ${new Date(inst.dueDate).toLocaleDateString('es-PE')}`}
+                          </div>
                         </div>
                       </div>
+                      {inst.id && (
+                        <NumeroUnicoEditor
+                          apId={detailAP.id}
+                          installmentId={inst.id}
+                          value={inst.numeroUnico}
+                          isPending={updateNumero.isPending}
+                          onSave={(v) => updateNumero.mutate({ apId: detailAP.id, data: { numeroUnico: v, installmentId: inst.id } })}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -194,11 +240,27 @@ export function AccountsPayablePage() {
 
             {/* Single date */}
             {detailAP.paymentScheduleType === 'SINGLE_DATE' && detailAP.dueDate && (
-              <div className="bg-gray-50 rounded-lg p-3">
-                <span className="block text-xs text-gray-500">Fecha de vencimiento</span>
-                <span className={`text-sm font-medium ${getDueDateColor(detailAP)}`}>
-                  {new Date(detailAP.dueDate).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}
-                </span>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                <div>
+                  <span className="block text-xs text-gray-500">Fecha de vencimiento</span>
+                  <span className={`text-sm font-medium ${getDueDateColor(detailAP)}`}>
+                    {new Date(detailAP.dueDate).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}
+                  </span>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-gray-500">N° único de la letra</span>
+                    {!detailAP.numeroUnico && (
+                      <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-medium">Pendiente</span>
+                    )}
+                  </div>
+                  <NumeroUnicoEditor
+                    apId={detailAP.id}
+                    value={detailAP.numeroUnico}
+                    isPending={updateNumero.isPending}
+                    onSave={(v) => updateNumero.mutate({ apId: detailAP.id, data: { numeroUnico: v } })}
+                  />
+                </div>
               </div>
             )}
 

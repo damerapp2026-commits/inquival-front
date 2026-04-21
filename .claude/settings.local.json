@@ -4,7 +4,17 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(git checkout *)",
+      "Bash(git stash *)",
+      "Bash(git restore *)",
+      "Bash(git merge *)",
+      "Bash(npm install *)",
+      "Bash(xargs ls *)",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(npx --prefix /home/ricardo/dev/System-of-Marco/agrosystem-backend tsc -p /home/ricardo/dev/System-of-Marco/agrosystem-backend/tsconfig.json --noEmit)",
+      "Bash(git sparse-checkout *)",
+      "Bash(git config *)"
     ]
   }
 }

@@ -283,20 +283,46 @@ export function SalesPage() {
   const loans = loansData?.data || [];
   const loansTotal = loansData?.total || 0;
 
-  const getCompanyName = (id?: string) => id ? companyList.find((c: Company) => c.id === id)?.name || 'N/A' : 'Mixta';
-  const getClientName = (id?: string) => id ? clients.find((c: Client) => c.id === id)?.name || 'N/A' : 'Sin cliente';
-  const getProductName = (id: string) => products.find((p: Product) => p.id === id)?.name || id;
+  const companyMap = useMemo(() => new Map<string, Company>(companyList.map((c: Company) => [c.id, c])), [companyList]);
+  const clientMap = useMemo(() => new Map<string, Client>(clients.map((c: Client) => [c.id, c])), [clients]);
+  const productMap = useMemo(() => new Map<string, Product>(products.map((p: Product) => [p.id, p])), [products]);
+
+  const getCompanyName = (id?: string) => id ? companyMap.get(id)?.name || 'N/A' : 'Mixta';
+  const getClientName = (id?: string) => id ? clientMap.get(id)?.name || 'N/A' : 'Sin cliente';
+  const getProductName = (id: string) => productMap.get(id)?.name || id;
+
+  const saleBaseById = useMemo(() => {
+    const allSales: Sale[] = [...sales, ...boletas, ...facturas];
+    const map = new Map<string, { base: number; igv: number }>();
+    for (const sale of allSales) {
+      const base = sale.items.reduce((sum: number, item: any) => {
+        const product = productMap.get(item.productId);
+        const taxType = product?.taxType || 'GRAVADO';
+        const b = taxType === 'GRAVADO' ? (item.subtotal / 1.18) : item.subtotal;
+        return sum + b;
+      }, 0);
+      const roundedBase = Math.round(base * 100) / 100;
+      const igv = Math.round((sale.total - roundedBase) * 100) / 100;
+      map.set(sale.id, { base: roundedBase, igv });
+    }
+    return map;
+  }, [sales, boletas, facturas, productMap]);
 
   const getSaleBaseAmount = (sale: Sale) => {
-    return sale.items.reduce((sum, item) => {
-      const product = products.find((p: Product) => p.id === item.productId);
+    const cached = saleBaseById.get(sale.id);
+    if (cached) return cached.base;
+    const base = sale.items.reduce((sum: number, item: any) => {
+      const product = productMap.get(item.productId);
       const taxType = product?.taxType || 'GRAVADO';
-      const base = taxType === 'GRAVADO' ? Math.round((item.subtotal / 1.18) * 100) / 100 : item.subtotal;
-      return sum + base;
+      const b = taxType === 'GRAVADO' ? (item.subtotal / 1.18) : item.subtotal;
+      return sum + b;
     }, 0);
+    return Math.round(base * 100) / 100;
   };
 
   const getSaleIgv = (sale: Sale) => {
+    const cached = saleBaseById.get(sale.id);
+    if (cached) return cached.igv;
     return Math.round((sale.total - getSaleBaseAmount(sale)) * 100) / 100;
   };
 
@@ -843,8 +869,8 @@ export function SalesPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {viewingSale.items.map((item, idx) => {
-                      const product = products.find((p: Product) => p.id === item.productId);
-                      const company = companyList.find((c: Company) => c.id === item.companyId);
+                      const product = productMap.get(item.productId);
+                      const company = companyMap.get(item.companyId);
                       const tier = tiers.find((t: PriceTier) => t.id === item.priceTier);
                       const taxType = product?.taxType || 'GRAVADO';
                       const sunatTier = tiers.find((t: PriceTier) => t.name === 'PRECIO SUNAT');
