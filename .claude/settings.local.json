@@ -34,7 +34,15 @@
       "Bash(timeout 25 npm run start)",
       "Bash(tee /tmp/backend-test.log)",
       "Bash(mv /home/ricardo/dev/Damer/agrosystem-backend /home/ricardo/dev/Damer/inquival-back)",
-      "Bash(mv /home/ricardo/dev/Damer/agrosystem-frontend /home/ricardo/dev/Damer/inquival-front)"
+      "Bash(mv /home/ricardo/dev/Damer/agrosystem-frontend /home/ricardo/dev/Damer/inquival-front)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(curl -s -o /dev/null -w \"Root: %{http_code}\\\\n\" https://inquival-back.onrender.com --max-time 60)",
+      "Bash(curl -s -o /dev/null -w \"/api: %{http_code}\\\\n\" https://inquival-back.onrender.com/api --max-time 60)",
+      "Bash(curl -s -o /dev/null -w \"/api/auth/login: %{http_code}\\\\n\" https://inquival-back.onrender.com/api/auth/login --max-time 60)",
+      "Bash(curl -s -i -X OPTIONS https://inquival-back.onrender.com/api/auth/login -H 'Origin: https://golden-gelato-dbdf96.netlify.app' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type,authorization' --max-time 30)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(npm run *)"
     ]
   }
 }

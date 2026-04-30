@@ -326,7 +326,7 @@ export function DashboardPage() {
                 width={62}
               />
               <Tooltip
-                formatter={(value: any, name: string) => [`S/ ${Number(value).toFixed(3)}`, name === 'venta' ? 'Venta' : 'Compra']}
+                formatter={(value: any, name) => [`S/ ${Number(value).toFixed(3)}`, name === 'venta' ? 'Venta' : 'Compra']}
                 labelFormatter={(label) => {
                   const [y, m, d] = label.split('-');
                   return `${d}/${m}/${y}`;
