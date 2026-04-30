@@ -16,7 +16,6 @@ import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, Download, Upload, Truck, ImagePlus, Loader2, Tag, Boxes, Receipt, Wallet, PackageSearch, FlaskConical } from 'lucide-react';
 import { ProductSuppliersModal } from '../components/ProductSuppliersModal';
 import toast from 'react-hot-toast';
-import * as XLSX from 'xlsx';
 import type { Product } from '../../../shared/types';
 
 const TAX_TYPES = [
@@ -202,6 +201,7 @@ export function ProductsPage() {
 
   const handleExport = async () => {
     try {
+      const XLSX = await import('xlsx');
       const allData = await productService.getAll({ page: 1, limit: 9999 });
       const allProducts: Product[] = allData?.data || allData || [];
       const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
@@ -247,6 +247,7 @@ export function ProductsPage() {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
+        const XLSX = await import('xlsx');
         const wb = XLSX.read(evt.target?.result, { type: 'binary' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows: any[] = XLSX.utils.sheet_to_json(ws);
@@ -338,7 +339,8 @@ export function ProductsPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = async () => {
+    const XLSX = await import('xlsx');
     const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
     const catsList = Array.isArray(categories) ? categories : [];
     const labsList = Array.isArray(laboratories) ? laboratories : [];

@@ -15,7 +15,6 @@ import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
-import * as XLSX from 'xlsx';
 import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod, Stock } from '../../../shared/types';
 
 function getMonthStart() {
@@ -329,6 +328,7 @@ export function SalesPage() {
 
   const handleExportVouchers = async (voucherType: 'BOLETA' | 'FACTURA') => {
     try {
+      const XLSX = await import('xlsx');
       const result = await saleService.getAll({ limit: 9999, companyId: companyFilter || undefined, startDate, endDate, voucherType });
       const allSales: Sale[] = result?.data || [];
       if (allSales.length === 0) { toast.error('No hay datos para exportar'); return; }

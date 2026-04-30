@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../../shared/services/api';
 import type { User } from '../../shared/types';
 
@@ -30,21 +30,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
 
-  const login = async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string) => {
     const { data } = await api.post('/auth/login', { username, password });
     const res = data.data;
     localStorage.setItem('token', res.accessToken);
     setToken(res.accessToken);
     setUser(res.user);
-  };
+  }, []);
 
-  const logout = () => { localStorage.removeItem('token'); setToken(null); setUser(null); };
+  const logout = useCallback(() => {
+    localStorage.removeItem('token');
+    setToken(null);
+    setUser(null);
+  }, []);
 
-  return (
-    <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, token, login, logout, isLoading }),
+    [user, token, login, logout, isLoading],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

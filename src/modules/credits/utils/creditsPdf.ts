@@ -1,8 +1,20 @@
-import pdfMake from 'pdfmake/build/pdfmake';
-import pdfFonts from 'pdfmake/build/vfs_fonts';
 import type { CreditAccount, Client } from '../../../shared/types';
 
-(pdfMake as any).vfs = (pdfFonts as any).vfs || (pdfFonts as any).pdfMake?.vfs;
+let pdfMakePromise: Promise<any> | null = null;
+function loadPdfMake() {
+  if (!pdfMakePromise) {
+    pdfMakePromise = Promise.all([
+      import('pdfmake/build/pdfmake'),
+      import('pdfmake/build/vfs_fonts'),
+    ]).then(([pdfMakeMod, pdfFontsMod]) => {
+      const pdfMake: any = (pdfMakeMod as any).default || pdfMakeMod;
+      const pdfFonts: any = (pdfFontsMod as any).default || pdfFontsMod;
+      pdfMake.vfs = pdfFonts.vfs || pdfFonts.pdfMake?.vfs;
+      return pdfMake;
+    });
+  }
+  return pdfMakePromise;
+}
 
 const BRAND = '#16a34a';
 const BRAND_LIGHT = '#dcfce7';
@@ -434,12 +446,14 @@ function buildDetailed({ credits, clients, filters, title, subtitle }: ExportPar
   };
 }
 
-export function downloadCreditsSummaryPdf(params: ExportParams) {
+export async function downloadCreditsSummaryPdf(params: ExportParams) {
+  const pdfMake = await loadPdfMake();
   const stamp = new Date().toISOString().slice(0, 10);
   pdfMake.createPdf(buildSummaryByDate(params)).download(`creditos_resumen_${stamp}.pdf`);
 }
 
-export function downloadCreditsDetailedPdf(params: ExportParams) {
+export async function downloadCreditsDetailedPdf(params: ExportParams) {
+  const pdfMake = await loadPdfMake();
   const stamp = new Date().toISOString().slice(0, 10);
   pdfMake.createPdf(buildDetailed(params)).download(`creditos_detallado_${stamp}.pdf`);
 }
@@ -459,7 +473,8 @@ const slugify = (s: string) =>
     .replace(/^_+|_+$/g, '')
     .slice(0, 40);
 
-export function downloadClientStatementPdf({ client, credits, mode }: ClientStatementParams) {
+export async function downloadClientStatementPdf({ client, credits, mode }: ClientStatementParams) {
+  const pdfMake = await loadPdfMake();
   const stamp = new Date().toISOString().slice(0, 10);
   const fileStem = `estado_cuenta_${slugify(client.name || 'cliente')}_${stamp}`;
 

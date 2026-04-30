@@ -46,7 +46,7 @@ export function ExportClientStatementButton({ client, credits, variant = 'button
         setOpen(false);
         return;
       }
-      downloadClientStatementPdf({ client, credits: list, mode });
+      await downloadClientStatementPdf({ client, credits: list, mode });
       toast.success('PDF generado');
       setOpen(false);
     } catch {

@@ -1,9 +1,21 @@
-import pdfMake from 'pdfmake/build/pdfmake';
-import pdfFonts from 'pdfmake/build/vfs_fonts';
 import type { Quote, Product, Company, Client } from '../../../shared/types';
 import { numberToWords } from './numberToWords';
 
-(pdfMake as any).vfs = (pdfFonts as any).vfs || (pdfFonts as any).pdfMake?.vfs;
+let pdfMakePromise: Promise<any> | null = null;
+function loadPdfMake() {
+  if (!pdfMakePromise) {
+    pdfMakePromise = Promise.all([
+      import('pdfmake/build/pdfmake'),
+      import('pdfmake/build/vfs_fonts'),
+    ]).then(([pdfMakeMod, pdfFontsMod]) => {
+      const pdfMake: any = (pdfMakeMod as any).default || pdfMakeMod;
+      const pdfFonts: any = (pdfFontsMod as any).default || pdfFontsMod;
+      pdfMake.vfs = pdfFonts.vfs || pdfFonts.pdfMake?.vfs;
+      return pdfMake;
+    });
+  }
+  return pdfMakePromise;
+}
 
 interface GenerateParams {
   quote: Quote;
@@ -244,10 +256,12 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
   };
 }
 
-export function downloadQuotePdf(params: GenerateParams) {
+export async function downloadQuotePdf(params: GenerateParams) {
+  const pdfMake = await loadPdfMake();
   pdfMake.createPdf(buildDocDefinition(params)).download(`${params.quote.quoteNumber}.pdf`);
 }
 
-export function printQuotePdf(params: GenerateParams) {
+export async function printQuotePdf(params: GenerateParams) {
+  const pdfMake = await loadPdfMake();
   pdfMake.createPdf(buildDocDefinition(params)).open();
 }
