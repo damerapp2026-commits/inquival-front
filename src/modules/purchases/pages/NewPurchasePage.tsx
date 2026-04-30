@@ -4,6 +4,7 @@ import { useCreatePurchase } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts, useCreateProduct } from '../../products/hooks/useProducts';
 import { useCategories } from '../../categories/hooks/useCategories';
+import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { useRucLookup, useTipoCambio } from '../../../shared/hooks/useLookup';
 import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
 import { useCashRegisterToday } from '../../cash-register/hooks/useCashRegister';
@@ -11,7 +12,7 @@ import { Modal } from '../../../shared/components/Modal';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import {
   ArrowLeft, ShoppingCart, Trash2, Search, Loader2, DollarSign, PackagePlus,
-  FileText, CopyIcon, Dices, Wand2, Building2, Users, CreditCard, Package,
+  FileText, CopyIcon, Dices, Wand2, Building2, Users, CreditCard, Package, FlaskConical, X,
 } from 'lucide-react';
 import type { Company, Product, Category } from '../../../shared/types';
 import toast from 'react-hot-toast';
@@ -83,6 +84,8 @@ export function NewPurchasePage() {
   const tipoCambioMutation = useTipoCambio();
   const { data: cashRegisterToday } = useCashRegisterToday();
   const { data: categoriesData } = useCategories();
+  const { data: laboratoriesData } = useLaboratories();
+  const labsById = new Map<string, any>((Array.isArray(laboratoriesData) ? laboratoriesData : []).map((l: any) => [l.id, l]));
   const createProduct = useCreateProduct();
   const categories: Category[] = Array.isArray(categoriesData) ? categoriesData : (categoriesData as any)?.data || [];
 
@@ -109,7 +112,8 @@ export function NewPurchasePage() {
   const [installmentGen, setInstallmentGen] = useState({ count: 6, intervalDays: 30, firstDaysFromPurchase: 30 });
   const [showNewProduct, setShowNewProduct] = useState(false);
   const [newProductForIdx, setNewProductForIdx] = useState<number>(-1);
-  const [newProduct, setNewProduct] = useState({ name: '', categoryId: '', unit: 'unidad' });
+  const [labFilter, setLabFilter] = useState<string>('');
+  const [newProduct, setNewProduct] = useState({ name: '', categoryId: '', laboratoryId: '', unit: 'unidad' });
 
   const companyList = Array.isArray(companies) ? companies : [];
   const products = productsData?.data || [];
@@ -198,14 +202,16 @@ export function NewPurchasePage() {
 
   const openQuickProduct = (idx: number) => {
     setNewProductForIdx(idx);
-    setNewProduct({ name: '', categoryId: '', unit: 'unidad' });
+    setNewProduct({ name: '', categoryId: '', laboratoryId: '', unit: 'unidad' });
     setShowNewProduct(true);
   };
 
   const handleCreateQuickProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const created = await createProduct.mutateAsync({ name: newProduct.name, categoryId: newProduct.categoryId, unit: newProduct.unit, prices: [] });
+      const payload: any = { name: newProduct.name, categoryId: newProduct.categoryId, unit: newProduct.unit, prices: [] };
+      if (newProduct.laboratoryId) payload.laboratoryId = newProduct.laboratoryId;
+      const created = await createProduct.mutateAsync(payload);
       if (created && newProductForIdx >= 0) {
         updateItem(newProductForIdx, 'productId', created.id);
       }
@@ -321,11 +327,11 @@ export function NewPurchasePage() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Empresa y proveedor */}
-          <SectionCard title="Empresa y proveedor" icon={Building2}>
+          {/* Almacén y proveedor */}
+          <SectionCard title="Almacén y proveedor" icon={Building2}>
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Empresa</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Almacén</label>
                 <select value={form.companyId} onChange={(e) => setForm({ ...form, companyId: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-100 focus:border-primary-400" required>
                   <option value="">Seleccionar...</option>
                   {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -528,7 +534,27 @@ export function NewPurchasePage() {
 
         {/* Productos */}
         <SectionCard title={`Productos (${form.items.length})`} icon={Package}>
-          <div className="flex items-center justify-end mb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <FlaskConical size={14} className="text-gray-400 shrink-0" />
+              <span className="text-xs font-medium text-gray-600 hidden sm:inline">Filtrar por laboratorio:</span>
+              <select
+                value={labFilter}
+                onChange={(e) => setLabFilter(e.target.value)}
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                title="Solo muestra productos del laboratorio elegido al buscar"
+              >
+                <option value="">Todos los laboratorios</option>
+                {(Array.isArray(laboratoriesData) ? laboratoriesData : []).filter((l: any) => l.isActive).map((l: any) => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </select>
+              {labFilter && (
+                <button type="button" onClick={() => setLabFilter('')} className="text-gray-400 hover:text-gray-600" title="Quitar filtro">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
             <button type="button" onClick={addItem} className="text-sm text-primary-600 hover:text-primary-800 font-medium">+ Agregar producto</button>
           </div>
           <div className="space-y-3">
@@ -546,10 +572,15 @@ export function NewPurchasePage() {
                       <div className="flex gap-1">
                         <div className="flex-1">
                           <SearchableSelect
-                            options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
+                            options={products
+                              .filter((p: Product) => !labFilter || p.laboratoryId === labFilter || p.id === item.productId)
+                              .map((p: Product) => {
+                                const labName = p.laboratoryId ? labsById.get(p.laboratoryId)?.name : null;
+                                return { value: p.id, label: labName ? `${p.name} — ${labName}` : p.name };
+                              })}
                             value={item.productId}
                             onChange={(v) => updateItem(idx, 'productId', v)}
-                            placeholder="Buscar producto..."
+                            placeholder={labFilter ? `Buscar en ${labsById.get(labFilter)?.name || 'laboratorio'}...` : 'Buscar producto...'}
                             minChars={1}
                             required
                           />
@@ -558,6 +589,13 @@ export function NewPurchasePage() {
                           <PackagePlus size={16} />
                         </button>
                       </div>
+                      {product?.laboratoryId && labsById.get(product.laboratoryId) && (
+                        <div className="mt-1.5">
+                          <span className="text-[11px] bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-medium">
+                            Lab: {labsById.get(product.laboratoryId).name}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div className="col-span-4 sm:col-span-2">
                       <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
@@ -695,6 +733,13 @@ export function NewPurchasePage() {
             <select value={newProduct.categoryId} onChange={(e) => setNewProduct({ ...newProduct, categoryId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required>
               <option value="">Seleccionar...</option>
               {categories.map((c: Category) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Laboratorio <span className="text-gray-400 font-normal">(opcional)</span></label>
+            <select value={newProduct.laboratoryId} onChange={(e) => setNewProduct({ ...newProduct, laboratoryId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm">
+              <option value="">Sin laboratorio</option>
+              {(Array.isArray(laboratoriesData) ? laboratoriesData : []).filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </div>
           <div>

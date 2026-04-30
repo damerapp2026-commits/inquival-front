@@ -182,7 +182,7 @@ export function ClientCreditDetailPage() {
                           <thead className="bg-gray-100">
                             <tr>
                               <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500">Producto</th>
-                              <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500">Empresa</th>
+                              <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500">Almacén</th>
                               <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-500">Cant.</th>
                               <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-500">P. Unit.</th>
                               <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-500">Subtotal</th>

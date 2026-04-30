@@ -14,8 +14,8 @@ export function useCreateQuote() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: quoteService.create,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['quotes'] }); toast.success('Proforma creada'); },
-    onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'Error al crear proforma'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['quotes'] }); toast.success('Cotización creada'); },
+    onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'Error al crear cotización'),
   });
 }
 
@@ -36,7 +36,7 @@ export function useConvertQuote() {
       qc.invalidateQueries({ queryKey: ['quotes'] });
       qc.invalidateQueries({ queryKey: ['sales'] });
       qc.invalidateQueries({ queryKey: ['stock'] });
-      toast.success('Proforma convertida en venta');
+      toast.success('Cotización convertida en venta');
     },
     onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'Error al convertir'),
   });

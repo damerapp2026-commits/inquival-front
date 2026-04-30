@@ -343,7 +343,7 @@ function buildDetailed({ credits, clients, filters, title, subtitle }: ExportPar
             body: [
               [
                 { text: 'Producto', style: 'itemHead' },
-                { text: 'Empresa', style: 'itemHead' },
+                { text: 'Almacén', style: 'itemHead' },
                 { text: 'Cant.', style: 'itemHead', alignment: 'right' },
                 { text: 'P.U.', style: 'itemHead', alignment: 'right' },
                 { text: 'Subtotal', style: 'itemHead', alignment: 'right' },

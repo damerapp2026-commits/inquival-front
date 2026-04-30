@@ -181,7 +181,7 @@ function MovementsTab({ productId, companyList, getCompanyName }: TabProps) {
     },
     {
       key: 'companyId',
-      header: 'Empresa',
+      header: 'Almacén',
       render: (item: StockMovement) => getCompanyName(item.companyId),
     },
     {
@@ -254,7 +254,7 @@ function MovementsTab({ productId, companyList, getCompanyName }: TabProps) {
     <div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Empresa</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Almacén</label>
           <select
             value={companyId}
             onChange={(e) => {
@@ -417,7 +417,7 @@ function ByClientTab({ productId, companyList, getCompanyName }: TabProps) {
     },
     {
       key: 'companyId',
-      header: 'Empresa',
+      header: 'Almacén',
       render: (r: ClientSaleRow) => getCompanyName(r.companyId),
     },
     {
@@ -476,7 +476,7 @@ function ByClientTab({ productId, companyList, getCompanyName }: TabProps) {
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Empresa</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Almacén</label>
           <select
             value={companyId}
             onChange={(e) => {

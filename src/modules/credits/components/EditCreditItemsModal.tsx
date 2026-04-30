@@ -190,7 +190,7 @@ export function EditCreditItemsModal({ credit, onClose }: Props) {
                       <thead className="bg-white border-b border-gray-200">
                         <tr className="text-left text-xs text-gray-500">
                           <th className="px-3 py-2 font-medium">Producto</th>
-                          <th className="px-3 py-2 font-medium">Empresa</th>
+                          <th className="px-3 py-2 font-medium">Almacén</th>
                           <th className="px-3 py-2 font-medium w-28">Cantidad</th>
                           <th className="px-3 py-2 font-medium w-32">P. Unit.</th>
                           <th className="px-3 py-2 font-medium text-right">Subtotal</th>

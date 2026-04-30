@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  font-size: 17px;
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }

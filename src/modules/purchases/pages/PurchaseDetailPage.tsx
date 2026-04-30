@@ -85,7 +85,7 @@ export function PurchaseDetailPage() {
             <InfoCell label="Fecha">
               {new Date(purchase.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}
             </InfoCell>
-            <InfoCell label="Empresa">{getCompanyName(purchase.companyId)}</InfoCell>
+            <InfoCell label="Almacén">{getCompanyName(purchase.companyId)}</InfoCell>
             <InfoCell label="Proveedor">
               {purchase.supplier}
               {purchase.supplierRuc ? ` (${purchase.supplierRuc})` : ''}

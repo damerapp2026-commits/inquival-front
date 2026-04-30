@@ -183,7 +183,7 @@ export function StockPage() {
   const adjColumns = [
     { key: 'date', header: 'Fecha', render: (item: StockAdjustment) => new Date(item.date).toLocaleDateString('es-PE') },
     { key: 'productId', header: 'Producto', render: (item: StockAdjustment) => getProductName(item.productId) },
-    { key: 'companyId', header: 'Empresa', render: (item: StockAdjustment) => getCompanyName(item.companyId) },
+    { key: 'companyId', header: 'Almacén', render: (item: StockAdjustment) => getCompanyName(item.companyId) },
     { key: 'type', header: 'Tipo', render: (item: StockAdjustment) => item.type === 'INCREASE' ? <span className="text-primary-600 font-medium">Aumento</span> : <span className="text-red-600 font-medium">Disminucion</span> },
     { key: 'quantity', header: 'Cantidad', render: (item: StockAdjustment) => item.quantity },
     { key: 'previousQuantity', header: 'Anterior', render: (item: StockAdjustment) => item.previousQuantity },
@@ -506,11 +506,11 @@ export function StockPage() {
       {activeTab === 'transfers' && (
         <div className="text-center py-12 text-gray-500">
           <ArrowRightLeft size={48} className="mx-auto mb-4 text-gray-300" />
-          <p>Usa el boton "Transferir Stock" desde la pestana de Inventario para mover productos entre empresas.</p>
+          <p>Usa el boton "Transferir Stock" desde la pestana de Inventario para mover productos entre almacenes.</p>
         </div>
       )}
 
-      <Modal isOpen={showTransfer} onClose={() => setShowTransfer(false)} title="Transferir Stock entre Empresas" size="lg">
+      <Modal isOpen={showTransfer} onClose={() => setShowTransfer(false)} title="Transferir Stock entre Almacenes" size="lg">
         <form onSubmit={handleTransfer} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Desde</label>
@@ -593,7 +593,7 @@ export function StockPage() {
 
       <Modal isOpen={showAdjustment} onClose={() => setShowAdjustment(false)} title="Ajuste de Stock">
         <form onSubmit={handleAdjustment} className="space-y-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Almacén</label>
             <select value={adjForm.companyId} onChange={(e) => setAdjForm({ ...adjForm, companyId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required>
               <option value="">Seleccionar...</option>
               {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}

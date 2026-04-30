@@ -49,7 +49,7 @@ export function QuotesPage() {
   const pdfParams = (q: Quote) => ({ quote: q, products, company: getCompany(q.companyId), client: getClient(q.clientId), vendor });
 
   const columns = [
-    { key: 'quoteNumber', header: 'Nº Proforma', render: (q: Quote) => <span className="font-mono font-medium text-gray-800">{q.quoteNumber}</span> },
+    { key: 'quoteNumber', header: 'Nº Cotización', render: (q: Quote) => <span className="font-mono font-medium text-gray-800">{q.quoteNumber}</span> },
     { key: 'issueDate', header: 'Emisión', render: (q: Quote) => new Date(q.issueDate).toLocaleDateString('es-PE') },
     { key: 'validUntil', header: 'Válida hasta', render: (q: Quote) => {
       const d = new Date(q.validUntil);
@@ -100,7 +100,7 @@ export function QuotesPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><ScrollText size={24} /> Proformas</h1>
+        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><ScrollText size={24} /> Cotizaciones</h1>
       </div>
 
       <div className="mb-4 flex gap-2 flex-wrap">

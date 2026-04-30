@@ -5,4 +5,11 @@ export const productService = {
   create: (data: any) => api.post('/products', data).then((r) => r.data.data),
   update: (id: string, data: any) => api.put(`/products/${id}`, data).then((r) => r.data.data),
   delete: (id: string) => api.delete(`/products/${id}`).then((r) => r.data.data),
+  uploadImage: (file: File): Promise<{ url: string }> => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.post('/products/upload-image', fd, {
+      headers: { 'Content-Type': undefined as any },
+    }).then((r) => r.data.data);
+  },
 };

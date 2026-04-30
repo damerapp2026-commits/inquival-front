@@ -335,7 +335,7 @@ export function SalesPage() {
 
       const rows = allSales.filter(s => !s.isCancelled).map(sale => {
         const companyIds = [...new Set(sale.items.map((i: any) => i.companyId))];
-        const empresa = companyIds.length === 1 ? getCompanyName(companyIds[0]) : 'Mixta';
+        const almacen = companyIds.length === 1 ? getCompanyName(companyIds[0]) : 'Mixto';
         const productosStr = sale.items.map((i: any) => `${getProductName(i.productId)} x${i.quantity}`).join(', ');
         const baseAmount = getSaleBaseAmount(sale);
         const igv = getSaleIgv(sale);
@@ -344,7 +344,7 @@ export function SalesPage() {
         return {
           'Fecha': new Date(sale.date).toLocaleDateString('es-PE'),
           'Cliente': getClientName(sale.clientId),
-          'Empresa': empresa,
+          'Almacén': almacen,
           'Productos': productosStr,
           'Valor Venta': Math.round(baseAmount * 100) / 100,
           'IGV': Math.round(igv * 100) / 100,
@@ -378,7 +378,7 @@ export function SalesPage() {
 
   const salesColumns = [
     { key: 'date', header: 'Fecha', render: (item: Sale) => new Date(item.date).toLocaleDateString('es-PE') },
-    { key: 'companyId', header: 'Empresa', render: (item: Sale) => {
+    { key: 'companyId', header: 'Almacén', render: (item: Sale) => {
       const companyIds = [...new Set(item.items.map(i => i.companyId))];
       if (companyIds.length === 1) return getCompanyName(companyIds[0]);
       return <span className="text-purple-600 font-medium">Mixta</span>;
@@ -404,7 +404,7 @@ export function SalesPage() {
 
   const voucherColumns = [
     { key: 'date', header: 'Fecha', render: (item: Sale) => new Date(item.date).toLocaleDateString('es-PE') },
-    { key: 'companyId', header: 'Empresa', render: (item: Sale) => {
+    { key: 'companyId', header: 'Almacén', render: (item: Sale) => {
       const companyIds = [...new Set(item.items.map(i => i.companyId))];
       if (companyIds.length === 1) return getCompanyName(companyIds[0]);
       return <span className="text-purple-600 font-medium">Mixta</span>;
@@ -479,7 +479,7 @@ export function SalesPage() {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         {(activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && (
           <select value={companyFilter} onChange={(e) => { setCompanyFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }} className="px-3 py-2 border rounded-lg">
-            <option value="">Todas las empresas</option>
+            <option value="">Todos los almacenes</option>
             {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name} - {c.ruc}</option>)}
           </select>
         )}
@@ -719,7 +719,7 @@ export function SalesPage() {
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">Empresa</label>
+                      <label className="block text-xs text-gray-500 mb-1">Almacén</label>
                       <select value={item.companyId} onChange={(e) => updateItem(idx, 'companyId', e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm bg-white" required>
                         <option value="">Seleccionar...</option>
                         {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -731,7 +731,7 @@ export function SalesPage() {
                         options={getProductsForCompany(item.companyId).map((p: Product) => ({ value: p.id, label: p.name, sublabel: p.activeIngredient }))}
                         value={item.productId}
                         onChange={(v) => updateItem(idx, 'productId', v)}
-                        placeholder={item.companyId ? "Buscar producto o ingrediente..." : "Selecciona empresa primero"}
+                        placeholder={item.companyId ? "Buscar producto o ingrediente..." : "Selecciona almacén primero"}
                         required
                       />
                     </div>
@@ -860,7 +860,7 @@ export function SalesPage() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Producto</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Empresa</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Almacén</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Cant.</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">P. Unit.</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">IGV Unit.</th>
@@ -945,7 +945,7 @@ export function SalesPage() {
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">Empresa</label>
+                      <label className="block text-xs text-gray-500 mb-1">Almacén</label>
                       <select value={item.companyId} onChange={(e) => updateLoanItem(idx, 'companyId', e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm bg-white" required>
                         <option value="">Seleccionar...</option>
                         {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -1017,7 +1017,7 @@ export function SalesPage() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Producto</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Empresa</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Almacén</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Prestado</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Devuelto</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Pendiente</th>

@@ -96,7 +96,7 @@ export function KardexPage() {
         </button>
       ),
     },
-    { key: 'companyId', header: 'Empresa', render: (item: StockMovement) => getCompanyName(item.companyId) },
+    { key: 'companyId', header: 'Almacén', render: (item: StockMovement) => getCompanyName(item.companyId) },
     {
       key: 'movementType', header: 'Tipo', render: (item: StockMovement) => {
         const info = MOVEMENT_LABELS[item.movementType] || { label: item.movementType, color: 'bg-gray-100 text-gray-800' };
@@ -139,7 +139,7 @@ export function KardexPage() {
       <div className="bg-white rounded-lg shadow p-4 mb-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Empresa</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Almacén</label>
             <select value={companyId} onChange={(e) => { setCompanyId(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500">
               <option value="">Todas</option>
               {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}

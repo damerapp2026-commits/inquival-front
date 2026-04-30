@@ -50,8 +50,8 @@ export function PurchasesPage() {
       </div>
       <div className="mb-4">
         <select value={companyFilter} onChange={(e) => { setCompanyFilter(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg">
-          <option value="">Todas las empresas</option>
-          {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name} - {c.ruc}</option>)}
+          <option value="">Todos los almacenes</option>
+          {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}{c.ruc ? ` — ${c.ruc}` : ''}</option>)}
         </select>
       </div>
       <DataTable columns={columns} data={purchases} isLoading={isLoading} hoverClass="hover:bg-primary-50" />

@@ -6,6 +6,7 @@ import {
   Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight,
   LogOut, Menu, X, Wallet, CreditCard, BarChart3, FolderTree, Shield,
   ClipboardList, FileText, Bell, AlertTriangle, Clock, ScanLine, Ruler, ScrollText,
+  ChevronLeft, ChevronRight, FlaskConical, Warehouse,
 } from 'lucide-react';
 import type { AccountPayable } from '../types';
 
@@ -21,7 +22,7 @@ const navSections: NavSection[] = [
     label: 'OPERACIONES',
     items: [
       { path: '/pos', label: 'POS', icon: ScanLine },
-      { path: '/quotes', label: 'Proformas', icon: ScrollText },
+      { path: '/quotes', label: 'Cotizaciones', icon: ScrollText },
       { path: '/products', label: 'Productos', icon: Package },
       { path: '/purchases', label: 'Compras', icon: TrendingUp },
       { path: '/sales', label: 'Ventas', icon: ShoppingCart },
@@ -42,8 +43,9 @@ const navSections: NavSection[] = [
     items: [
       { path: '/clients', label: 'Clientes', icon: Users },
       { path: '/categories', label: 'Categorías', icon: FolderTree },
+      { path: '/laboratories', label: 'Laboratorios', icon: FlaskConical },
       { path: '/units', label: 'Unidades de Medida', icon: Ruler },
-      { path: '/companies', label: 'Empresas', icon: Building2 },
+      { path: '/companies', label: 'Almacenes', icon: Warehouse },
       { path: '/price-tiers', label: 'Rangos de Precio', icon: Layers },
     ],
   },
@@ -57,9 +59,17 @@ export function Layout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('sidebarCollapsed') === 'true';
+  });
   const [bellOpen, setBellOpen] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', String(collapsed));
+  }, [collapsed]);
 
   const { data: apAlerts } = useAPAlerts(3);
   const overdueCount = apAlerts?.overdue?.length || 0;
@@ -100,18 +110,27 @@ export function Layout() {
   return (
     <div className="min-h-screen flex bg-surface">
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:inset-auto ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transform transition-all duration-200 ease-in-out lg:sticky lg:top-0 lg:h-screen lg:inset-auto lg:translate-x-0 ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        } ${collapsed ? 'lg:w-16' : 'lg:w-64'}`}
       >
-        <div className="flex items-center justify-between h-16 px-5 border-b border-gray-100">
-          <h1 className="text-base font-bold text-gray-800">Agrosystem</h1>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-500">
+        <button
+          onClick={() => setCollapsed((v) => !v)}
+          title={collapsed ? 'Expandir menú' : 'Colapsar menú'}
+          className="hidden lg:flex absolute -right-3 top-5 z-10 w-6 h-6 items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm text-gray-500 hover:text-primary-600 hover:border-primary-400 transition-colors"
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
+
+        <div className={`flex items-center h-16 border-b border-gray-100 ${collapsed ? 'lg:justify-center lg:px-0 px-5 justify-between' : 'px-5 justify-between'}`}>
+          <h1 className={`text-base font-bold text-gray-800 ${collapsed ? 'lg:hidden' : ''}`}>Agrosystem</h1>
+          <div className={`hidden ${collapsed ? 'lg:flex' : ''} w-9 h-9 rounded-lg bg-primary-600 text-white items-center justify-center font-bold`}>A</div>
+          <button onClick={() => setMobileOpen(false)} className="lg:hidden text-gray-500 hover:text-gray-700">
             <X size={20} />
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4 space-y-5">
+        <nav className={`flex-1 overflow-y-auto scrollbar-thin py-4 space-y-5 ${collapsed ? 'lg:px-2 px-3' : 'px-3'}`}>
           {navSections.map((section) => {
             const visibleItems = section.items.filter(
               (item) => !item.roles || item.roles.includes(user?.role || ''),
@@ -119,7 +138,7 @@ export function Layout() {
             if (visibleItems.length === 0) return null;
             return (
               <div key={section.label}>
-                <div className="px-3 mb-2 text-[11px] font-semibold tracking-wider text-gray-400">
+                <div className={`px-3 mb-2 text-[11px] font-semibold tracking-wider text-gray-400 ${collapsed ? 'lg:hidden' : ''}`}>
                   {section.label}
                 </div>
                 <div className="space-y-0.5">
@@ -130,15 +149,18 @@ export function Layout() {
                       <Link
                         key={item.path}
                         to={item.path}
-                        onClick={() => setSidebarOpen(false)}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        title={collapsed ? item.label : undefined}
+                        onClick={() => { if (window.innerWidth < 1024) setMobileOpen(false); }}
+                        className={`flex items-center gap-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          collapsed ? 'lg:justify-center lg:px-0 px-3' : 'px-3'
+                        } ${
                           isActive
                             ? 'bg-primary-600 text-white shadow-sm'
                             : 'text-gray-600 hover:bg-gray-100'
                         }`}
                       >
-                        <Icon size={18} />
-                        {item.label}
+                        <Icon size={18} className="shrink-0" />
+                        <span className={collapsed ? 'lg:hidden' : ''}>{item.label}</span>
                       </Link>
                     );
                   })}
@@ -149,11 +171,14 @@ export function Layout() {
         </nav>
 
         <div className="border-t border-gray-100 p-3">
-          <div className="flex items-center gap-3 px-2 py-2">
-            <div className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-sm">
+          <div className={`flex items-center gap-3 py-2 ${collapsed ? 'lg:justify-center lg:px-0 px-2' : 'px-2'}`}>
+            <div
+              className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-sm shrink-0"
+              title={collapsed ? `${user?.fullName || user?.username} — ${user?.role}` : undefined}
+            >
               {userInitials}
             </div>
-            <div className="flex-1 min-w-0">
+            <div className={`flex-1 min-w-0 ${collapsed ? 'lg:hidden' : ''}`}>
               <div className="text-sm font-medium text-gray-800 truncate">
                 {user?.fullName || user?.username}
               </div>
@@ -162,7 +187,7 @@ export function Layout() {
             <button
               onClick={logout}
               title="Cerrar sesión"
-              className="text-gray-400 hover:text-red-500 transition-colors"
+              className={`text-gray-400 hover:text-red-500 transition-colors ${collapsed ? 'lg:hidden' : ''}`}
             >
               <LogOut size={18} />
             </button>
@@ -170,17 +195,17 @@ export function Layout() {
         </div>
       </aside>
 
-      {sidebarOpen && (
+      {mobileOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={() => setMobileOpen(false)}
         />
       )}
 
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
         <header className="h-16 bg-primary-600 flex items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-white/80 hover:text-white">
+            <button onClick={() => setMobileOpen(true)} className="lg:hidden text-white/80 hover:text-white">
               <Menu size={20} />
             </button>
           </div>

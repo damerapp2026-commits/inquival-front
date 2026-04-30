@@ -18,6 +18,7 @@ const CashRegisterHistoryPage = lazy(() => import('../../modules/cash-register/p
 const CreditsPage = lazy(() => import('../../modules/credits/pages/CreditsPage').then(m => ({ default: m.CreditsPage })));
 const ClientCreditDetailPage = lazy(() => import('../../modules/credits/pages/ClientCreditDetailPage').then(m => ({ default: m.ClientCreditDetailPage })));
 const CategoriesPage = lazy(() => import('../../modules/categories/pages/CategoriesPage').then(m => ({ default: m.CategoriesPage })));
+const LaboratoriesPage = lazy(() => import('../../modules/laboratories/pages/LaboratoriesPage').then(m => ({ default: m.LaboratoriesPage })));
 const UnitsPage = lazy(() => import('../../modules/units/pages/UnitsPage').then(m => ({ default: m.UnitsPage })));
 const DashboardPage = lazy(() => import('../../modules/dashboard/pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const UsersPage = lazy(() => import('../../modules/users/pages/UsersPage').then(m => ({ default: m.UsersPage })));
@@ -50,6 +51,7 @@ export function AppRoutes() {
         <Route path="credits/client/:clientId" element={<Suspense fallback={<Loading />}><ClientCreditDetailPage /></Suspense>} />
         <Route path="clients" element={<Suspense fallback={<Loading />}><ClientsPage /></Suspense>} />
         <Route path="categories" element={<Suspense fallback={<Loading />}><CategoriesPage /></Suspense>} />
+        <Route path="laboratories" element={<Suspense fallback={<Loading />}><LaboratoriesPage /></Suspense>} />
         <Route path="units" element={<Suspense fallback={<Loading />}><UnitsPage /></Suspense>} />
         <Route path="companies" element={<Suspense fallback={<Loading />}><CompaniesPage /></Suspense>} />
         <Route path="price-tiers" element={<Suspense fallback={<Loading />}><PriceTiersPage /></Suspense>} />

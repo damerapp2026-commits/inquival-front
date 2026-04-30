@@ -151,7 +151,7 @@ export function POSPage() {
   useEffect(() => {
     if (!preloadedQuote || !products.length || sourceQuoteId === preloadedQuote.id) return;
     if (preloadedQuote.status === 'CONVERTED' || preloadedQuote.status === 'REJECTED') {
-      toast.error('Esta proforma ya no puede convertirse');
+      toast.error('Esta cotización ya no puede convertirse');
       navigate('/quotes');
       return;
     }
@@ -171,7 +171,7 @@ export function POSPage() {
     });
     setCart(items);
     setSourceQuoteId(preloadedQuote.id);
-    toast.success(`Proforma ${preloadedQuote.quoteNumber} cargada`);
+    toast.success(`Cotización ${preloadedQuote.quoteNumber} cargada`);
   }, [preloadedQuote, products, sourceQuoteId, navigate]);
 
   // Defaults once data loads
@@ -229,7 +229,7 @@ export function POSPage() {
 
   const addToCart = (product: Product) => {
     if (!companyId) {
-      toast.error('Selecciona una empresa');
+      toast.error('Selecciona un almacén');
       return;
     }
     if (!tierId) {
@@ -736,10 +736,10 @@ export function POSPage() {
                   setShowQuoteModal(true);
                 }}
                 className="flex-1 mt-2 py-3 bg-white border border-primary-600 text-primary-700 rounded-xl hover:bg-primary-50 font-semibold transition-colors flex items-center justify-center gap-2"
-                title="Guardar como proforma"
+                title="Guardar como cotización"
               >
                 <ScrollText size={18} />
-                Proforma
+                Cotización
               </button>
               <button
                 onClick={openCheckout}
@@ -759,7 +759,7 @@ export function POSPage() {
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowQuoteModal(false)} />
           <div className="relative bg-white rounded-2xl shadow-card-hover w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2"><ScrollText size={18} /> Nueva Proforma</h2>
+              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2"><ScrollText size={18} /> Nueva Cotización</h2>
               <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
@@ -793,7 +793,7 @@ export function POSPage() {
                 <textarea value={quoteNotes} onChange={(e) => setQuoteNotes(e.target.value)} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
               </div>
               <div className="bg-primary-50 rounded-xl p-4 flex items-center justify-between">
-                <span className="text-sm text-gray-600">Total proforma</span>
+                <span className="text-sm text-gray-600">Total cotización</span>
                 <span className="text-2xl font-bold text-primary-700">S/ {total.toFixed(2)}</span>
               </div>
               <button
@@ -823,7 +823,7 @@ export function POSPage() {
                 disabled={createQuote.isPending}
                 className="w-full py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 font-semibold transition-colors shadow-sm"
               >
-                {createQuote.isPending ? 'Guardando…' : 'Guardar proforma'}
+                {createQuote.isPending ? 'Guardando…' : 'Guardar cotización'}
               </button>
             </div>
           </div>

@@ -3,15 +3,17 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct } from '../hooks/useProducts';
 import { productService } from '../services/productService';
 import { categoryService } from '../../categories/services/categoryService';
+import { laboratoryService } from '../../laboratories/services/laboratoryService';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useCategories } from '../../categories/hooks/useCategories';
+import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { useUnits } from '../../units/hooks/useUnits';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, Download, Upload, Truck } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, Download, Upload, Truck, ImagePlus, Loader2, Tag, Boxes, Receipt, Wallet, PackageSearch, FlaskConical } from 'lucide-react';
 import { ProductSuppliersModal } from '../components/ProductSuppliersModal';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -27,6 +29,7 @@ interface BulkProduct {
   name: string;
   description: string;
   categoryId: string;
+  laboratoryId: string;
   unit: string;
   taxType: string;
   prices: { priceTierId: string; companyId?: string; price: number }[];
@@ -38,6 +41,8 @@ export function ProductsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [activeIngredientFilter, setActiveIngredientFilter] = useState('');
+  const [laboratoryFilter, setLaboratoryFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const debouncedSearch = useDebounce(search);
   const debouncedIngredient = useDebounce(activeIngredientFilter);
   const [showModal, setShowModal] = useState(false);
@@ -45,40 +50,65 @@ export function ProductsPage() {
   const [priceCompanyFilter, setPriceCompanyFilter] = useState('');
 
   const queryClient = useQueryClient();
-  const { data, isLoading } = useProducts({ page, limit: 20, search: debouncedSearch, activeIngredient: debouncedIngredient || undefined });
+  const { data, isLoading } = useProducts({ page, limit: 20, search: debouncedSearch, activeIngredient: debouncedIngredient || undefined, laboratoryId: laboratoryFilter || undefined, category: categoryFilter || undefined });
   const { data: priceTiers } = usePriceTiers();
   const { data: categories } = useCategories();
+  const { data: laboratories } = useLaboratories();
   const { data: companies } = useCompanies();
   const { data: unitsData } = useUnits();
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
 
-  const [form, setForm] = useState({ name: '', description: '', categoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, prices: [] as { priceTierId: string; companyId?: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
+  const [form, setForm] = useState({ name: '', description: '', categoryId: '', laboratoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [] as { priceTierId: string; companyId?: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [suppliersTarget, setSuppliersTarget] = useState<Product | null>(null);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [pricesTab, setPricesTab] = useState<string>('global');
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const allUnits: { value: string; label: string }[] = Array.isArray(unitsData)
     ? unitsData.filter((u: any) => u.isActive).map((u: any) => ({ value: u.name, label: u.abbreviation ? `${u.name} (${u.abbreviation})` : u.name }))
     : [];
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', unit: '', taxType: 'GRAVADO', prices: [], initialStocks: [], expanded: true });
+  const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', laboratoryId: '', unit: '', taxType: 'GRAVADO', prices: [], initialStocks: [], expanded: true });
 
 
-  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, prices: [], initialStocks: [] }); setShowModal(true); };
-  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, prices: product.prices || [], initialStocks: [] }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setPricesTab('global'); setForm({ name: '', description: '', categoryId: '', laboratoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [], initialStocks: [] }); setShowModal(true); };
+  const openEdit = (product: Product) => { setEditing(product); setPricesTab('global'); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, laboratoryId: product.laboratoryId || '', unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, imageUrl: product.imageUrl || '', prices: product.prices || [], initialStocks: [] }); setShowModal(true); };
   const openBulk = () => { setBulkProducts([emptyBulkProduct()]); setShowBulkModal(true); };
+
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Solo se permiten imágenes'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error('La imagen no puede superar 5 MB'); return; }
+    setUploadingImage(true);
+    try {
+      const { url } = await productService.uploadImage(file);
+      setForm((prev) => ({ ...prev, imageUrl: url }));
+      toast.success('Imagen subida');
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al subir imagen');
+    } finally {
+      setUploadingImage(false);
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editing) {
       const { initialStocks, ...editData } = form;
-      await updateProduct.mutateAsync({ id: editing.id, data: editData });
+      const editPayload: any = { ...editData, imageUrl: form.imageUrl || null, laboratoryId: form.laboratoryId || null };
+      await updateProduct.mutateAsync({ id: editing.id, data: editPayload });
     } else {
       const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, activeIngredient: form.activeIngredient || undefined, taxType: form.taxType, tracksLot: form.tracksLot, prices: form.prices };
+      if (form.laboratoryId) payload.laboratoryId = form.laboratoryId;
+      if (form.imageUrl) payload.imageUrl = form.imageUrl;
       const validStocks = form.initialStocks.filter(s => s.quantity > 0 && s.companyId);
       if (validStocks.length > 0) payload.initialStocks = validStocks;
       await createProduct.mutateAsync(payload);
@@ -158,6 +188,7 @@ export function ProductsPage() {
     for (const p of valid) {
       try {
         const payload: any = { name: p.name, description: p.description, categoryId: p.categoryId, unit: p.unit, taxType: p.taxType, prices: p.prices };
+        if (p.laboratoryId) payload.laboratoryId = p.laboratoryId;
         const validStocks = p.initialStocks.filter(s => s.quantity > 0 && s.companyId);
         if (validStocks.length > 0) payload.initialStocks = validStocks;
         await createProduct.mutateAsync(payload);
@@ -175,6 +206,7 @@ export function ProductsPage() {
       const allProducts: Product[] = allData?.data || allData || [];
       const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
       const catsList = Array.isArray(categories) ? categories : [];
+      const labsList = Array.isArray(laboratories) ? laboratories : [];
       const compsList = Array.isArray(companies) ? companies : [];
 
       const rows = allProducts.map((p: Product) => {
@@ -182,6 +214,7 @@ export function ProductsPage() {
           Nombre: p.name,
           Descripcion: p.description || '',
           Categoria: catsList.find((c: any) => c.id === p.categoryId)?.name || '',
+          Laboratorio: p.laboratoryId ? (labsList.find((l: any) => l.id === p.laboratoryId)?.name || '') : '',
           Unidad: p.unit,
           Tipo_IGV: p.taxType || 'GRAVADO',
           Estado: p.isActive ? 'Activo' : 'Inactivo',
@@ -221,6 +254,7 @@ export function ProductsPage() {
 
         const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
         let catsList: any[] = Array.isArray(categories) ? [...categories] : [];
+        let labsList: any[] = Array.isArray(laboratories) ? [...laboratories] : [];
 
         // Auto-crear categorías que no existen
         const uniqueCatNames = [...new Set(rows.map(r => String(r.Categoria || '').trim()).filter(Boolean))];
@@ -240,9 +274,29 @@ export function ProductsPage() {
           toast.success(`${createdCats} categoría(s) creada(s) automáticamente`);
         }
 
+        // Auto-crear laboratorios que no existen
+        const uniqueLabNames = [...new Set(rows.map(r => String(r.Laboratorio || '').trim()).filter(Boolean))];
+        let createdLabs = 0;
+        for (const labName of uniqueLabNames) {
+          const exists = labsList.find((l: any) => l.name?.toLowerCase() === labName.toLowerCase());
+          if (!exists) {
+            try {
+              const newLab = await laboratoryService.create({ name: labName });
+              labsList.push(newLab);
+              createdLabs++;
+            } catch { /* laboratorio ya existe o error */ }
+          }
+        }
+        if (createdLabs > 0) {
+          await queryClient.invalidateQueries({ queryKey: ['laboratories'] });
+          toast.success(`${createdLabs} laboratorio(s) creado(s) automáticamente`);
+        }
+
         const imported: BulkProduct[] = rows.map(row => {
           const catName = String(row.Categoria || '').trim();
           const cat = catsList.find((c: any) => c.name?.toLowerCase() === catName.toLowerCase());
+          const labName = String(row.Laboratorio || '').trim();
+          const lab = labName ? labsList.find((l: any) => l.name?.toLowerCase() === labName.toLowerCase()) : null;
           const prices: { priceTierId: string; companyId?: string; price: number }[] = [];
           tiersList.forEach((t: any) => {
             const val = row[`Precio_${t.name}`];
@@ -266,6 +320,7 @@ export function ProductsPage() {
             name: String(row.Nombre || ''),
             description: String(row.Descripcion || ''),
             categoryId: cat?.id || '',
+            laboratoryId: lab?.id || '',
             unit: String(row.Unidad || 'kg'),
             taxType,
             prices,
@@ -286,16 +341,34 @@ export function ProductsPage() {
   const handleDownloadTemplate = () => {
     const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
     const catsList = Array.isArray(categories) ? categories : [];
+    const labsList = Array.isArray(laboratories) ? laboratories : [];
     const compsList = Array.isArray(companies) ? companies : [];
-    const header: any = { Nombre: 'Ejemplo Producto', Descripcion: '', Categoria: catsList[0]?.name || 'Fertilizantes', Unidad: 'kg', Tipo_IGV: 'GRAVADO' };
+    const header: any = {
+      Nombre: 'Ejemplo Producto',
+      Descripcion: '',
+      Categoria: catsList[0]?.name || 'Fertilizantes',
+      Laboratorio: labsList[0]?.name || 'FARMEX',
+      Unidad: 'kg',
+      Tipo_IGV: 'GRAVADO',
+    };
     tiersList.forEach((t: any) => { header[`Precio_${t.name}`] = 0; });
     compsList.forEach((c: any) => { tiersList.forEach((t: any) => { header[`Precio_${c.name}_${t.name}`] = 0; }); });
     compsList.forEach((c: any) => { header[`Stock_${c.name}`] = 0; });
 
     const ws = XLSX.utils.json_to_sheet([header]);
     const catNames = catsList.filter((c: any) => c.isActive).map((c: any) => c.name).join(', ');
+    const labNames = labsList.filter((l: any) => l.isActive).map((l: any) => l.name).join(', ');
     const unitNames = allUnits.map(u => u.value).join(', ');
-    XLSX.utils.sheet_add_aoa(ws, [[`Categorías válidas: ${catNames}`], [`Unidades disponibles: ${unitNames} (o cualquier otra, se agrega automáticamente)`], [`Tipo_IGV válidos: GRAVADO, EXONERADO, INAFECTO`]], { origin: `A${3}` });
+    XLSX.utils.sheet_add_aoa(
+      ws,
+      [
+        [`Categorías válidas: ${catNames || '(crear en /categories)'} — si pones una nueva se crea automáticamente`],
+        [`Laboratorios válidos: ${labNames || '(crear en /laboratories)'} — si pones uno nuevo se crea automáticamente. Dejar vacío = sin laboratorio.`],
+        [`Unidades disponibles: ${unitNames}`],
+        [`Tipo_IGV válidos: GRAVADO, EXONERADO, INAFECTO`],
+      ],
+      { origin: `A${3}` },
+    );
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Plantilla');
     XLSX.writeFile(wb, 'plantilla_productos.xlsx');
@@ -305,6 +378,8 @@ export function ProductsPage() {
   const total = data?.total || 0;
   const tiers = Array.isArray(priceTiers) ? priceTiers : [];
   const cats = Array.isArray(categories) ? categories : [];
+  const labs = Array.isArray(laboratories) ? laboratories : [];
+  const labsById = new Map<string, any>(labs.map((l: any) => [l.id, l]));
   const comps = Array.isArray(companies) ? companies : [];
 
   const getPricesForDisplay = (product: Product) => {
@@ -322,6 +397,10 @@ export function ProductsPage() {
   const columns = [
     { key: 'name', header: 'Nombre' },
     { key: 'categoryId', header: 'Categoría', render: (item: Product) => { const cat = cats.find((c: any) => c.id === item.categoryId); return cat?.name || item.categoryId; } },
+    { key: 'laboratoryId', header: 'Laboratorio', render: (item: Product) => {
+      const lab = item.laboratoryId ? labsById.get(item.laboratoryId) : null;
+      return lab ? <span className="text-xs bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-medium">{lab.name}</span> : <span className="text-gray-300">—</span>;
+    }},
     { key: 'activeIngredient', header: 'Ingrediente Activo', render: (item: Product) => item.activeIngredient ? <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">{item.activeIngredient}</span> : <span className="text-gray-300">—</span> },
     { key: 'unit', header: 'Unidad' },
     { key: 'taxType', header: 'IGV', render: (item: Product) => {
@@ -368,89 +447,219 @@ export function ProductsPage() {
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" />
         </div>
       </div>
-      <div className="mb-4 flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+      <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="relative">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input type="text" placeholder="Buscar productos..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500" />
         </div>
-        <div className="relative flex-1">
+        <div className="relative">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" placeholder="Filtrar por ingrediente activo..." value={activeIngredientFilter} onChange={(e) => { setActiveIngredientFilter(e.target.value); setPage(1); }} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500" />
+          <input type="text" placeholder="Ingrediente activo..." value={activeIngredientFilter} onChange={(e) => { setActiveIngredientFilter(e.target.value); setPage(1); }} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500" />
         </div>
-        {comps.length > 0 && (
-          <select value={priceCompanyFilter} onChange={(e) => setPriceCompanyFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
+        <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg text-sm bg-white">
+          <option value="">Todas las categorías</option>
+          {cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={laboratoryFilter} onChange={(e) => { setLaboratoryFilter(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg text-sm bg-white">
+          <option value="">Todos los laboratorios</option>
+          {labs.filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+      </div>
+      {comps.length > 0 && (
+        <div className="mb-4">
+          <select value={priceCompanyFilter} onChange={(e) => setPriceCompanyFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm bg-white">
             <option value="">Precios globales</option>
             {comps.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>Precios: {c.name}</option>)}
           </select>
-        )}
-      </div>
+        </div>
+      )}
       <DataTable columns={columns} data={products} isLoading={isLoading} />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar Producto' : 'Nuevo Producto'} size="lg">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Ingrediente Activo <span className="text-gray-400 font-normal">(opcional)</span></label><input value={form.activeIngredient} onChange={(e) => setForm({ ...form, activeIngredient: e.target.value })} placeholder="Ej: Glifosato, Clorpirifos..." className="w-full px-3 py-2 border rounded-lg" /></div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label><select value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required><option value="">Seleccionar...</option>{cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar producto' : 'Nuevo producto'} size="xl">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Imagen + datos básicos */}
+          <section className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label>
-              <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required>
-                <option value="">Seleccionar...</option>
-                {allUnits.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
-              </select>
-            </div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo IGV</label><select value={form.taxType} onChange={(e) => setForm({ ...form, taxType: e.target.value })} className="w-full px-3 py-2 border rounded-lg">{TAX_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
-          </div>
-          {!editing && comps.length > 0 && (
-            <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
-              <label className="block text-sm font-medium text-blue-800">Stock Inicial por Empresa (opcional)</label>
-              <p className="text-xs text-blue-600">Si ya tienes existencias de este producto, ingresa la cantidad por cada empresa.</p>
-              <div className="space-y-2">
-                {comps.filter((c: any) => c.isActive).map((c: any) => (
-                  <div key={c.id} className="flex items-center gap-3">
-                    <span className="text-sm w-40 truncate font-medium">{c.name}</span>
-                    <input type="number" step="0.01" min="0" placeholder="0" value={form.initialStocks.find(s => s.companyId === c.id)?.quantity || ''} onChange={(e) => handleStockChange(c.id, parseFloat(e.target.value) || 0)} className="flex-1 px-3 py-2 border rounded-lg" />
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Imagen</label>
+              <input ref={imageInputRef} type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
+              <div
+                onClick={() => !uploadingImage && imageInputRef.current?.click()}
+                className={`relative aspect-square w-full rounded-2xl border-2 border-dashed transition-colors overflow-hidden ${
+                  uploadingImage ? 'border-gray-300 bg-gray-50 cursor-wait' : 'border-gray-300 bg-gray-50/60 hover:border-primary-400 hover:bg-primary-50/40 cursor-pointer'
+                } ${form.imageUrl ? 'border-solid border-gray-200' : ''}`}
+              >
+                {form.imageUrl ? (
+                  <>
+                    <img src={form.imageUrl} alt="Producto" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/0 hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
+                      <span className="text-white text-xs font-medium bg-black/50 px-3 py-1.5 rounded-lg">Cambiar imagen</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setForm({ ...form, imageUrl: '' }); }}
+                      className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/95 text-gray-600 hover:text-red-600 hover:bg-white shadow-sm flex items-center justify-center"
+                      title="Quitar imagen"
+                    >
+                      <X size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 gap-2">
+                    {uploadingImage ? (
+                      <><Loader2 size={28} className="animate-spin text-primary-500" /><span className="text-xs font-medium">Subiendo...</span></>
+                    ) : (
+                      <><ImagePlus size={28} /><span className="text-xs font-medium text-center px-3">Click para subir<br /><span className="text-[10px] text-gray-400">JPG, PNG · máx 5 MB</span></span></>
+                    )}
                   </div>
-                ))}
+                )}
               </div>
             </div>
-          )}
-          <div className="flex items-start gap-2 p-3 border border-gray-200 rounded-lg bg-gray-50/50">
-            <input type="checkbox" id="tracksLot" checked={form.tracksLot} onChange={(e) => setForm({ ...form, tracksLot: e.target.checked })} className="mt-0.5 h-4 w-4 text-primary-600 border-gray-300 rounded" />
-            <label htmlFor="tracksLot" className="text-sm cursor-pointer select-none">
-              <span className="font-medium text-gray-800">Rastrea lote y vencimiento</span>
-              <span className="block text-xs text-gray-500">Activa esta opción para productos perecibles o controlados. Al registrar compras se pedirá el lote y fecha de vencimiento.</span>
-            </label>
-          </div>
 
-          {tiers.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Precios Globales (por defecto)</label>
-              <div className="space-y-2">
-                {tiers.map((tier: any) => (
-                  <div key={tier.id} className="flex items-center gap-3">
-                    <span className="text-sm w-32">{tier.name}</span>
-                    <input type="number" step="0.01" min="0" placeholder="0.00" value={form.prices.find((p) => p.priceTierId === tier.id && !p.companyId)?.price || ''} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0)} className="flex-1 px-3 py-2 border rounded-lg" />
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Nombre <span className="text-red-500 normal-case">*</span></label>
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors" placeholder="Ej: Fertilizante Foliar 1L" required />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Descripción</label>
+                <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors resize-none" placeholder="Detalles adicionales..." />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Ingrediente activo <span className="text-gray-400 normal-case font-normal">— opcional</span></label>
+                <input value={form.activeIngredient} onChange={(e) => setForm({ ...form, activeIngredient: e.target.value })} placeholder="Ej: Glifosato, Clorpirifos..." className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors" />
+              </div>
+            </div>
+          </section>
+
+          {/* Clasificación */}
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Tag size={14} className="text-gray-400" />
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Clasificación</h3>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Categoría <span className="text-red-500">*</span></label>
+                <select value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white" required>
+                  <option value="">Seleccionar...</option>
+                  {cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1"><FlaskConical size={12} /> Laboratorio</label>
+                <select value={form.laboratoryId} onChange={(e) => setForm({ ...form, laboratoryId: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
+                  <option value="">Sin laboratorio</option>
+                  {labs.filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Unidad <span className="text-red-500">*</span></label>
+                <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white" required>
+                  <option value="">Seleccionar...</option>
+                  {allUnits.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1"><Receipt size={12} /> Tipo IGV</label>
+                <select value={form.taxType} onChange={(e) => setForm({ ...form, taxType: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
+                  {TAX_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+            </div>
+          </section>
+
+          {/* Lote */}
+          <label htmlFor="tracksLot" className="flex items-start gap-3 p-3.5 border border-gray-200 rounded-xl bg-gray-50/60 hover:bg-gray-50 cursor-pointer transition-colors">
+            <input type="checkbox" id="tracksLot" checked={form.tracksLot} onChange={(e) => setForm({ ...form, tracksLot: e.target.checked })} className="mt-0.5 h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500" />
+            <span className="select-none">
+              <span className="block text-sm font-medium text-gray-800">Rastrear lote y vencimiento</span>
+              <span className="block text-xs text-gray-500 mt-0.5">Para productos perecibles o controlados. Al registrar compras se pedirá lote y fecha de vencimiento.</span>
+            </span>
+          </label>
+
+          {/* Stock inicial */}
+          {!editing && comps.length > 0 && (
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <Boxes size={14} className="text-gray-400" />
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Stock inicial <span className="normal-case font-normal text-gray-400">— opcional, por almacén</span></h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {comps.filter((c: any) => c.isActive).map((c: any) => (
+                  <div key={c.id} className="flex items-center gap-3 px-3 py-2 border border-gray-200 rounded-xl bg-white">
+                    <PackageSearch size={14} className="text-gray-400 shrink-0" />
+                    <span className="text-sm flex-1 truncate text-gray-700">{c.name}</span>
+                    <input type="number" step="0.01" min="0" placeholder="0" value={form.initialStocks.find(s => s.companyId === c.id)?.quantity || ''} onChange={(e) => handleStockChange(c.id, parseFloat(e.target.value) || 0)} className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500" />
                   </div>
                 ))}
               </div>
-              {comps.filter((c: any) => c.isActive).map((company: any) => (
-                <div key={company.id} className="mt-4 border border-orange-200 bg-orange-50 rounded-lg p-3">
-                  <label className="block text-sm font-medium text-orange-800 mb-2">Precios para {company.name} (opcional)</label>
-                  <div className="space-y-2">
-                    {tiers.map((tier: any) => (
-                      <div key={tier.id} className="flex items-center gap-3">
-                        <span className="text-sm w-32">{tier.name}</span>
-                        <input type="number" step="0.01" min="0" placeholder={`Global: ${form.prices.find((p: any) => p.priceTierId === tier.id && !p.companyId)?.price || '0.00'}`} value={form.prices.find((p: any) => p.priceTierId === tier.id && p.companyId === company.id)?.price || ''} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0, company.id)} className="flex-1 px-3 py-2 border rounded-lg" />
-                      </div>
+            </section>
+          )}
+
+          {/* Precios */}
+          {tiers.length > 0 && (
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <Wallet size={14} className="text-gray-400" />
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Precios</h3>
+              </div>
+
+              {comps.filter((c: any) => c.isActive).length > 0 ? (
+                <>
+                  <div className="flex flex-wrap gap-1.5 mb-3 border-b border-gray-200">
+                    <button type="button" onClick={() => setPricesTab('global')} className={`px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${pricesTab === 'global' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                      Global
+                    </button>
+                    {comps.filter((c: any) => c.isActive).map((c: any) => (
+                      <button key={c.id} type="button" onClick={() => setPricesTab(c.id)} className={`px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${pricesTab === c.id ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                        {c.name}
+                      </button>
                     ))}
                   </div>
+                  <p className="text-xs text-gray-500 mb-3">
+                    {pricesTab === 'global'
+                      ? 'Precios por defecto. Se aplican si no defines uno específico para un almacén.'
+                      : 'Precios específicos para este almacén. Si lo dejas vacío se usa el precio global.'}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {tiers.map((tier: any) => {
+                      const isGlobal = pricesTab === 'global';
+                      const value = form.prices.find((p) => p.priceTierId === tier.id && (isGlobal ? !p.companyId : p.companyId === pricesTab))?.price || '';
+                      const globalFallback = !isGlobal ? form.prices.find((p) => p.priceTierId === tier.id && !p.companyId)?.price : null;
+                      return (
+                        <div key={tier.id} className="flex items-center gap-3 px-3 py-2 border border-gray-200 rounded-xl bg-white">
+                          <span className="text-sm flex-1 truncate text-gray-700">{tier.name}</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-400">S/</span>
+                            <input type="number" step="0.01" min="0" placeholder={globalFallback ? globalFallback.toFixed(2) : '0.00'} value={value} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0, isGlobal ? undefined : pricesTab)} className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {tiers.map((tier: any) => (
+                    <div key={tier.id} className="flex items-center gap-3 px-3 py-2 border border-gray-200 rounded-xl bg-white">
+                      <span className="text-sm flex-1 truncate text-gray-700">{tier.name}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-400">S/</span>
+                        <input type="number" step="0.01" min="0" placeholder="0.00" value={form.prices.find((p) => p.priceTierId === tier.id && !p.companyId)?.price || ''} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0)} className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </section>
           )}
-          <button type="submit" disabled={editing ? updateProduct.isPending : createProduct.isPending} className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">{editing ? (updateProduct.isPending ? 'Actualizando...' : 'Actualizar') : (createProduct.isPending ? 'Creando...' : 'Crear')}</button>
+
+          <div className="flex gap-3 pt-2 border-t border-gray-100">
+            <button type="button" onClick={() => setShowModal(false)} className="flex-1 sm:flex-none sm:px-6 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-medium transition-colors">Cancelar</button>
+            <button type="submit" disabled={editing ? updateProduct.isPending : createProduct.isPending} className="flex-1 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-colors shadow-sm">
+              {editing ? (updateProduct.isPending ? 'Actualizando...' : 'Guardar cambios') : (createProduct.isPending ? 'Creando...' : 'Crear producto')}
+            </button>
+          </div>
         </form>
       </Modal>
       <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Desactivar Producto">
@@ -472,6 +681,7 @@ export function ProductsPage() {
                   <span className="text-sm font-medium text-gray-500">#{idx + 1}</span>
                   <span className="font-medium">{bp.name || 'Sin nombre'}</span>
                   {bp.categoryId && <span className="text-xs text-gray-500">{cats.find((c: any) => c.id === bp.categoryId)?.name}</span>}
+                  {bp.laboratoryId && <span className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded-full font-medium">{labsById.get(bp.laboratoryId)?.name}</span>}
                   {!bp.name && <span className="text-xs text-red-500">* Requerido</span>}
                 </div>
                 <div className="flex items-center gap-1">
@@ -486,13 +696,14 @@ export function ProductsPage() {
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label><input value={bp.name} onChange={(e) => updateBulkProduct(idx, 'name', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Nombre del producto" /></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input value={bp.description} onChange={(e) => updateBulkProduct(idx, 'description', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Opcional" /></div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría *</label><select value={bp.categoryId} onChange={(e) => updateBulkProduct(idx, 'categoryId', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Seleccionar...</option>{cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Laboratorio</label><select value={bp.laboratoryId} onChange={(e) => updateBulkProduct(idx, 'laboratoryId', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Sin laboratorio</option>{labs.filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label><select value={bp.unit} onChange={(e) => updateBulkProduct(idx, 'unit', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">{allUnits.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo IGV</label><select value={bp.taxType} onChange={(e) => updateBulkProduct(idx, 'taxType', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">{TAX_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
                   </div>
                   {comps.length > 0 && (
-                    <div><label className="block text-sm font-medium text-gray-700 mb-2">Stock Inicial por Empresa</label>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-2">Stock Inicial por Almacén</label>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">{comps.filter((c: any) => c.isActive).map((c: any) => (
                         <div key={c.id} className="flex items-center gap-2">
                           <span className="text-xs w-20 truncate">{c.name}</span>

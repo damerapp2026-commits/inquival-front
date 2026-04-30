@@ -14,7 +14,27 @@
       "Bash(grep -E \"\\\\.ts$\")",
       "Bash(npx --prefix /home/ricardo/dev/System-of-Marco/agrosystem-backend tsc -p /home/ricardo/dev/System-of-Marco/agrosystem-backend/tsconfig.json --noEmit)",
       "Bash(git sparse-checkout *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(gh auth *)",
+      "Bash(curl -s -o /dev/null -w \"front: %{http_code}\\\\n\" https://github.com/damerapp2026-commits/inquival-front)",
+      "Bash(curl -s -o /dev/null -w \"back: %{http_code}\\\\n\" https://github.com/damerapp2026-commits/inquival-back)",
+      "Bash(gh repo *)",
+      "Bash(git ls-remote *)",
+      "Bash(git remote *)",
+      "Bash(git branch *)",
+      "Bash(git -C /home/ricardo/dev/Damer/agrosystem-backend remote -v)",
+      "Bash(git -C /home/ricardo/dev/Damer/agrosystem-backend branch -a)",
+      "Bash(git -C /home/ricardo/dev/Damer/agrosystem-backend status)",
+      "Bash(git -C /home/ricardo/dev/Damer/agrosystem-backend remote rename origin old-origin)",
+      "Bash(git -C /home/ricardo/dev/Damer/agrosystem-backend remote add origin https://github.com/damerapp2026-commits/inquival-back.git)",
+      "Bash(git -C /home/ricardo/dev/Damer/agrosystem-backend push -u origin main)",
+      "Bash(git -C /home/ricardo/dev/Damer/agrosystem-backend push origin develop)",
+      "Bash(git -C /home/ricardo/dev/Damer/agrosystem-backend branch --set-upstream-to=origin/develop develop)",
+      "Bash(git -C /home/ricardo/dev/Damer/agrosystem-backend branch -vv)",
+      "Bash(timeout 25 npm run start)",
+      "Bash(tee /tmp/backend-test.log)",
+      "Bash(mv /home/ricardo/dev/Damer/agrosystem-backend /home/ricardo/dev/Damer/inquival-back)",
+      "Bash(mv /home/ricardo/dev/Damer/agrosystem-frontend /home/ricardo/dev/Damer/inquival-front)"
     ]
   }
 }

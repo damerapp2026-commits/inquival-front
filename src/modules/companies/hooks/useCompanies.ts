@@ -7,9 +7,9 @@ export function useCompanies() {
 }
 export function useCreateCompany() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: companyService.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }); toast.success('Empresa creada'); }, onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error') });
+  return useMutation({ mutationFn: companyService.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }); toast.success('Almacén creado'); }, onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error') });
 }
 export function useUpdateCompany() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: ({ id, data }: { id: string; data: any }) => companyService.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }); toast.success('Empresa actualizada'); } });
+  return useMutation({ mutationFn: ({ id, data }: { id: string; data: any }) => companyService.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['companies'] }); toast.success('Almacén actualizado'); } });
 }
