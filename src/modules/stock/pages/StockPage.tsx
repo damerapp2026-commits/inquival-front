@@ -186,15 +186,35 @@ export function StockPage() {
   const handleAdjustment = async (e: React.FormEvent) => { e.preventDefault(); await createAdjustment.mutateAsync(adjForm); setShowAdjustment(false); };
 
   const handleExportStockExcel = async () => {
-    if (companyList.length === 0) { toast.error('No hay almacenes registrados'); return; }
     setExporting(true);
     try {
       const XLSX = await import('xlsx');
-      const allProductsResult = await import('../../products/services/productService').then(m => m.productService.getAll({ limit: 9999 }));
-      const allProducts: Product[] = (allProductsResult?.data || []).filter((p: Product) => p.isActive);
+
+      // Fetch fresh companies and products at click time so the export does not depend on cached state
+      const { companyService } = await import('../../companies/services/companyService');
+      const { productService } = await import('../../products/services/productService');
+      const [freshCompaniesRaw, freshProductsRaw] = await Promise.all([
+        companyService.getAll(),
+        productService.getAll({ limit: 9999 }),
+      ]);
+
+      const freshCompanies: Company[] = Array.isArray(freshCompaniesRaw)
+        ? freshCompaniesRaw
+        : (freshCompaniesRaw as any)?.data || [];
+      const allProducts: Product[] = ((freshProductsRaw as any)?.data || []).filter((p: Product) => p.isActive);
+
+      if (freshCompanies.length === 0) {
+        toast.error('No hay almacenes registrados. Crea al menos uno en /companies.');
+        return;
+      }
+      if (allProducts.length === 0) {
+        toast.error('No hay productos activos para exportar');
+        return;
+      }
 
       const stocksByCompany: Record<string, Record<string, number>> = {};
-      for (const company of companyList) {
+      for (const company of freshCompanies) {
+        if (!company.isActive) continue;
         try {
           const result: any = await stockService.getByCompany(company.id, { limit: 9999 });
           const list: any[] = Array.isArray(result) ? result : result?.data || [];
@@ -210,7 +230,7 @@ export function StockPage() {
       }
 
       const rows: any[] = [];
-      for (const company of companyList) {
+      for (const company of freshCompanies) {
         if (!company.isActive) continue;
         for (const product of allProducts) {
           const current = stocksByCompany[company.id]?.[product.id] ?? 0;
@@ -226,6 +246,11 @@ export function StockPage() {
         }
       }
 
+      if (rows.length === 0) {
+        toast.error('No hay filas para exportar');
+        return;
+      }
+
       const ws = XLSX.utils.json_to_sheet(rows);
       ws['!cols'] = [
         { wch: 28 }, { wch: 22 }, { wch: 28 }, { wch: 32 }, { wch: 10 }, { wch: 14 }, { wch: 14 },
@@ -234,7 +259,7 @@ export function StockPage() {
       XLSX.utils.book_append_sheet(wb, ws, 'Stock');
       const dateStr = new Date().toISOString().slice(0, 10);
       XLSX.writeFile(wb, `stock_${dateStr}.xlsx`);
-      toast.success(`${rows.length} filas exportadas`);
+      toast.success(`${rows.length} filas exportadas (${freshCompanies.length} almacenes × ${allProducts.length} productos)`);
     } catch (err: any) {
       toast.error('Error al exportar: ' + (err?.message || 'desconocido'));
     } finally {
@@ -256,10 +281,20 @@ export function StockPage() {
 
       if (rows.length === 0) { toast.error('El archivo está vacío'); return; }
 
+      // Fetch fresh companies and products to validate against current data
+      const { companyService } = await import('../../companies/services/companyService');
+      const { productService } = await import('../../products/services/productService');
+      const [freshCompaniesRaw, freshProductsRaw] = await Promise.all([
+        companyService.getAll(),
+        productService.getAll({ limit: 9999 }),
+      ]);
+      const freshCompanies: Company[] = Array.isArray(freshCompaniesRaw)
+        ? freshCompaniesRaw
+        : (freshCompaniesRaw as any)?.data || [];
       const productById = new Map<string, Product>(
-        (await import('../../products/services/productService').then(m => m.productService.getAll({ limit: 9999 }))).data?.map((p: Product) => [p.id, p]) || []
+        ((freshProductsRaw as any)?.data || []).map((p: Product) => [p.id, p])
       );
-      const companyById = new Map<string, Company>(companyList.map((c: Company) => [c.id, c]));
+      const companyById = new Map<string, Company>(freshCompanies.map((c: Company) => [c.id, c]));
 
       const preview: typeof importPreview = [];
       let skipped = 0;
