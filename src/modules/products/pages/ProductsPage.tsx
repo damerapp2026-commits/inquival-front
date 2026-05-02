@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct } from '../hooks/useProducts';
 import { productService } from '../services/productService';
@@ -9,14 +10,17 @@ import { useCategories } from '../../categories/hooks/useCategories';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { useUnits } from '../../units/hooks/useUnits';
 import { useCompanies } from '../../companies/hooks/useCompanies';
+import { useUsers } from '../../users/hooks/useUsers';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, Download, Upload, Truck, ImagePlus, Loader2, Tag, Boxes, Receipt, Wallet, PackageSearch, FlaskConical } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, Download, Upload, Truck, ImagePlus, Loader2, Tag, Boxes, Receipt, Wallet, PackageSearch, FlaskConical, Percent, BookOpen } from 'lucide-react';
 import { ProductSuppliersModal } from '../components/ProductSuppliersModal';
+import { PriceCatalogView } from '../components/PriceCatalogView';
+import { downloadProductCatalogPdf } from '../utils/productCatalogPdf';
 import toast from 'react-hot-toast';
-import type { Product } from '../../../shared/types';
+import type { Product, ProductCommission } from '../../../shared/types';
 
 const TAX_TYPES = [
   { value: 'GRAVADO', label: 'Gravado (IGV 18%)' },
@@ -37,6 +41,14 @@ interface BulkProduct {
 }
 
 export function ProductsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view: 'list' | 'catalog' = searchParams.get('view') === 'catalog' ? 'catalog' : 'list';
+  const setView = (v: 'list' | 'catalog') => {
+    const next = new URLSearchParams(searchParams);
+    if (v === 'list') next.delete('view'); else next.set('view', v);
+    setSearchParams(next, { replace: true });
+  };
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [activeIngredientFilter, setActiveIngredientFilter] = useState('');
@@ -55,11 +67,16 @@ export function ProductsPage() {
   const { data: laboratories } = useLaboratories();
   const { data: companies } = useCompanies();
   const { data: unitsData } = useUnits();
+  const { data: fieldSellersData } = useUsers({ limit: 100, role: 'VENDEDOR_CAMPO' });
+  const fieldSellers: any[] = Array.isArray(fieldSellersData)
+    ? fieldSellersData
+    : (fieldSellersData as any)?.data || [];
+  const activeFieldSellers = fieldSellers.filter((u: any) => u.isActive !== false);
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
 
-  const [form, setForm] = useState({ name: '', description: '', categoryId: '', laboratoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [] as { priceTierId: string; companyId?: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[] });
+  const [form, setForm] = useState({ name: '', description: '', categoryId: '', laboratoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [] as { priceTierId: string; companyId?: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[], commissions: [] as ProductCommission[] });
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [suppliersTarget, setSuppliersTarget] = useState<Product | null>(null);
   const [showBulkModal, setShowBulkModal] = useState(false);
@@ -76,8 +93,8 @@ export function ProductsPage() {
   const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', laboratoryId: '', unit: '', taxType: 'GRAVADO', prices: [], initialStocks: [], expanded: true });
 
 
-  const openCreate = () => { setEditing(null); setPricesTab('global'); setForm({ name: '', description: '', categoryId: '', laboratoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [], initialStocks: [] }); setShowModal(true); };
-  const openEdit = (product: Product) => { setEditing(product); setPricesTab('global'); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, laboratoryId: product.laboratoryId || '', unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, imageUrl: product.imageUrl || '', prices: product.prices || [], initialStocks: [] }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setPricesTab('global'); setForm({ name: '', description: '', categoryId: '', laboratoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [], initialStocks: [], commissions: [] }); setShowModal(true); };
+  const openEdit = (product: Product) => { setEditing(product); setPricesTab('global'); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, laboratoryId: product.laboratoryId || '', unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, imageUrl: product.imageUrl || '', prices: product.prices || [], initialStocks: [], commissions: product.commissions || [] }); setShowModal(true); };
   const openBulk = () => { setBulkProducts([emptyBulkProduct()]); setShowBulkModal(true); };
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -100,12 +117,14 @@ export function ProductsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanCommissions = form.commissions.filter((c) => c.workerId && c.value > 0);
     if (editing) {
       const { initialStocks, ...editData } = form;
-      const editPayload: any = { ...editData, imageUrl: form.imageUrl || null, laboratoryId: form.laboratoryId || null };
+      const editPayload: any = { ...editData, commissions: cleanCommissions, imageUrl: form.imageUrl || null, laboratoryId: form.laboratoryId || null };
       await updateProduct.mutateAsync({ id: editing.id, data: editPayload });
     } else {
       const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, activeIngredient: form.activeIngredient || undefined, taxType: form.taxType, tracksLot: form.tracksLot, prices: form.prices };
+      if (cleanCommissions.length > 0) payload.commissions = cleanCommissions;
       if (form.laboratoryId) payload.laboratoryId = form.laboratoryId;
       if (form.imageUrl) payload.imageUrl = form.imageUrl;
       const validStocks = form.initialStocks.filter(s => s.quantity > 0 && s.companyId);
@@ -113,6 +132,20 @@ export function ProductsPage() {
       await createProduct.mutateAsync(payload);
     }
     setShowModal(false);
+  };
+
+  const handleCommissionChange = (workerId: string, patch: Partial<ProductCommission>) => {
+    setForm((prev) => {
+      const list = [...prev.commissions];
+      const idx = list.findIndex((c) => c.workerId === workerId);
+      if (idx >= 0) list[idx] = { ...list[idx], ...patch };
+      else list.push({ workerId, type: 'PERCENT', value: 0, ...patch });
+      return { ...prev, commissions: list };
+    });
+  };
+
+  const handleCommissionRemove = (workerId: string) => {
+    setForm((prev) => ({ ...prev, commissions: prev.commissions.filter((c) => c.workerId !== workerId) }));
   };
 
   const handleStockChange = (companyId: string, quantity: number) => {
@@ -339,6 +372,38 @@ export function ProductsPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const [exportingCatalog, setExportingCatalog] = useState(false);
+  const handleExportCatalog = async () => {
+    setExportingCatalog(true);
+    const t = toast.loading('Generando catálogo PDF…');
+    try {
+      const result = await productService.getAll({
+        limit: 1000,
+        search: debouncedSearch || undefined,
+        activeIngredient: debouncedIngredient || undefined,
+        laboratoryId: laboratoryFilter || undefined,
+        category: categoryFilter || undefined,
+      });
+      const allProducts: Product[] = result?.data || [];
+      const catsList = Array.isArray(categories) ? categories : [];
+      const labsList = Array.isArray(laboratories) ? laboratories : [];
+      const enriched = allProducts.map((p) => ({
+        ...p,
+        categoryName: catsList.find((c: any) => c.id === p.categoryId)?.name,
+        laboratoryName: labsList.find((l: any) => l.id === p.laboratoryId)?.name,
+      }));
+      if (enriched.length === 0) { toast.dismiss(t); toast.error('No hay productos con los filtros actuales'); return; }
+      await downloadProductCatalogPdf({ products: enriched, includeImages: true, withPrices: false });
+      toast.dismiss(t);
+      toast.success(`Catálogo generado (${enriched.length} producto${enriched.length > 1 ? 's' : ''})`);
+    } catch (err) {
+      toast.dismiss(t);
+      toast.error('Error al generar el catálogo');
+    } finally {
+      setExportingCatalog(false);
+    }
+  };
+
   const handleDownloadTemplate = async () => {
     const XLSX = await import('xlsx');
     const tiersList = Array.isArray(priceTiers) ? priceTiers : [];
@@ -439,16 +504,43 @@ export function ProductsPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold text-gray-800">Productos</h1>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={handleDownloadTemplate} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Download size={16} /> Plantilla .xlsx</button>
-          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Upload size={16} /> Importar</button>
-          <button onClick={openBulk} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"><Layers size={16} /> Carga Masiva</button>
-          <button onClick={openCreate} className="flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm"><Plus size={16} /> Nuevo Producto</button>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" />
-        </div>
+        {view === 'list' && (
+          <div className="flex flex-wrap gap-2">
+            <button onClick={handleExportCatalog} disabled={exportingCatalog} className="flex items-center gap-2 px-3 py-2 border border-emerald-300 text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 text-sm disabled:opacity-60 disabled:cursor-wait">
+              {exportingCatalog ? <Loader2 size={16} className="animate-spin" /> : <BookOpen size={16} />}
+              Catálogo PDF
+            </button>
+            <button onClick={handleDownloadTemplate} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Download size={16} /> Plantilla .xlsx</button>
+            <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Upload size={16} /> Importar</button>
+            <button onClick={openBulk} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"><Layers size={16} /> Carga Masiva</button>
+            <button onClick={openCreate} className="flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm"><Plus size={16} /> Nuevo Producto</button>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" />
+          </div>
+        )}
       </div>
+
+      <div className="flex gap-1 mb-5 border-b border-gray-200">
+        <button
+          type="button"
+          onClick={() => setView('list')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${view === 'list' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          Listado
+        </button>
+        <button
+          type="button"
+          onClick={() => setView('catalog')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${view === 'catalog' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          Catálogo de precios
+        </button>
+      </div>
+
+      {view === 'catalog' && <PriceCatalogView enabled={view === 'catalog'} />}
+
+      {view === 'list' && (<>
       <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="relative">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -477,6 +569,7 @@ export function ProductsPage() {
       )}
       <DataTable columns={columns} data={products} isLoading={isLoading} />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+      </>)}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar producto' : 'Nuevo producto'} size="xl">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Imagen + datos básicos */}
@@ -653,6 +746,55 @@ export function ProductsPage() {
                   ))}
                 </div>
               )}
+            </section>
+          )}
+
+          {/* Comisiones por vendedor */}
+          {activeFieldSellers.length > 0 && (
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <Percent size={14} className="text-gray-400" />
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Comisiones por vendedor de campo</h3>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">
+                Define cuánto gana cada vendedor por unidad vendida de este producto. Vendedores sin valor (o en 0) no reciben comisión.
+              </p>
+              <div className="space-y-2">
+                {activeFieldSellers.map((seller: any) => {
+                  const entry = form.commissions.find((c) => c.workerId === seller.id);
+                  const isActive = !!entry && entry.value > 0;
+                  return (
+                    <div key={seller.id} className={`flex items-center gap-2 px-3 py-2 border rounded-xl ${isActive ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-200'}`}>
+                      <span className="text-sm flex-1 truncate text-gray-700 font-medium">{seller.fullName || seller.username}</span>
+                      <select
+                        value={entry?.type || 'PERCENT'}
+                        onChange={(e) => handleCommissionChange(seller.id, { type: e.target.value as 'PERCENT' | 'AMOUNT' })}
+                        className="text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white"
+                      >
+                        <option value="PERCENT">% sobre venta</option>
+                        <option value="AMOUNT">S/ por unidad</option>
+                      </select>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0"
+                          value={entry?.value || ''}
+                          onChange={(e) => handleCommissionChange(seller.id, { value: parseFloat(e.target.value) || 0 })}
+                          className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        />
+                        <span className="text-xs text-gray-400 w-3">{entry?.type === 'AMOUNT' ? 'S/' : '%'}</span>
+                      </div>
+                      {isActive && (
+                        <button type="button" onClick={() => handleCommissionRemove(seller.id)} className="text-gray-400 hover:text-red-500" title="Quitar comisión">
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </section>
           )}
 

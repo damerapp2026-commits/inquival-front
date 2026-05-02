@@ -23,11 +23,13 @@ export function QuotesPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | ''>('');
-  const { data, isLoading } = useQuotes({ page, limit: 20, status: statusFilter || undefined });
+  const { user } = useAuth();
+  const isFieldSeller = user?.role === 'VENDEDOR_CAMPO';
+  const sellerScope = isFieldSeller ? user?.id : undefined;
+  const { data, isLoading } = useQuotes({ page, limit: 20, status: statusFilter || undefined, sellerId: sellerScope });
   const { data: productsData } = useProducts({ limit: 500 });
   const { data: companiesData } = useCompanies();
   const { data: clientsData } = useClients();
-  const { user } = useAuth();
   const updateStatus = useUpdateQuoteStatus();
 
   const quotes: Quote[] = data?.data || [];
@@ -61,6 +63,7 @@ export function QuotesPage() {
       );
     }},
     { key: 'clientName', header: 'Cliente', render: (q: Quote) => q.clientName || '—' },
+    ...(!isFieldSeller ? [{ key: 'sellerName', header: 'Vendedor', render: (q: Quote) => q.sellerName ? <span className="text-emerald-700">{q.sellerName}</span> : <span className="text-gray-300">—</span> }] : []),
     { key: 'items', header: 'Ítems', render: (q: Quote) => `${q.items.length}` },
     { key: 'total', header: 'Total', render: (q: Quote) => <span className="font-medium">S/ {q.total.toFixed(2)}</span> },
     { key: 'status', header: 'Estado', render: (q: Quote) => {
@@ -100,7 +103,7 @@ export function QuotesPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><ScrollText size={24} /> Cotizaciones</h1>
+        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><ScrollText size={24} /> {isFieldSeller ? 'Mis Cotizaciones' : 'Cotizaciones'}</h1>
       </div>
 
       <div className="mb-4 flex gap-2 flex-wrap">

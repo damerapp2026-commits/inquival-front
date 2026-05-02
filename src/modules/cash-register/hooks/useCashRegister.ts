@@ -3,7 +3,12 @@ import { cashRegisterService } from '../services/cashRegisterService';
 import toast from 'react-hot-toast';
 
 export function useCashRegisterToday() {
-  return useQuery({ queryKey: ['cash-register-today'], queryFn: () => cashRegisterService.getToday() });
+  const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+  return useQuery({
+    queryKey: ['cash-register-today', todayKey],
+    queryFn: () => cashRegisterService.getToday(),
+    refetchInterval: 5 * 60 * 1000,
+  });
 }
 export function useOpenCashRegister() {
   const qc = useQueryClient();

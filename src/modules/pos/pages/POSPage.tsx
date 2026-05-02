@@ -8,12 +8,14 @@ import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods
 import { useCreateSale } from '../../sales/hooks/useSales';
 import { useCreateQuote, useQuote, useConvertQuote } from '../../quotes/hooks/useQuotes';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueries } from '@tanstack/react-query';
 import { stockService } from '../../stock/services/stockService';
-import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { Product, ProductPrice, Category, Company, Client, PriceTier, PaymentMethod, CreditAccount } from '../../../shared/types';
 import { useOpenClientCredits } from '../../credits/hooks/useCredits';
+import { useAuth } from '../../../app/providers/AuthProvider';
+import { useUsers } from '../../users/hooks/useUsers';
 
 const IGV_RATE = 0.18;
 
@@ -36,6 +38,8 @@ function getPaymentMethodColors(name: string, selected: boolean): string {
     : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300';
 }
 
+const ALL_COMPANIES = '__ALL__';
+
 interface CartItem {
   productId: string;
   name: string;
@@ -44,6 +48,7 @@ interface CartItem {
   unitPrice: number;
   tierOverride?: string;   // if set, uses this tier instead of global
   isCustomPrice?: boolean; // true = manually edited, don't re-resolve
+  sourceCompanyId?: string; // when global selector is "Todos", store which warehouse this item comes from
 }
 
 function resolvePrice(product: Product, tierId: string, companyId: string): number | undefined {
@@ -55,6 +60,15 @@ function resolvePrice(product: Product, tierId: string, companyId: string): numb
 }
 
 export function POSPage() {
+  const { user } = useAuth();
+  const isFieldSeller = user?.role === 'VENDEDOR_CAMPO';
+  const { data: usersData } = useUsers({ limit: 100, role: 'VENDEDOR_CAMPO' });
+  const sellerOptions: any[] = useMemo(() => {
+    const raw: any = usersData;
+    const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
+    return list.filter((u) => u.isActive !== false);
+  }, [usersData]);
+
   const { data: productsData } = useProducts({ limit: 500 });
   const { data: categoriesData } = useCategories();
   const { data: companiesData } = useCompanies();
@@ -99,6 +113,7 @@ export function POSPage() {
   const [categoryId, setCategoryId] = useState<string>(''); // '' = Todos
   const [search, setSearch] = useState('');
   const [ingredientFilter, setIngredientFilter] = useState('');
+  const [onlyInStock, setOnlyInStock] = useState(true);
   const [companyId, setCompanyId] = useState<string>('');
   const [tierId, setTierId] = useState<string>('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -126,26 +141,71 @@ export function POSPage() {
   const [isCredit, setIsCredit] = useState(false);
   const [creditAccountId, setCreditAccountId] = useState<string>('new');
   const [creditName, setCreditName] = useState('');
+  const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
+  const [sellerId, setSellerId] = useState<string>('');
   const searchRef = useRef<HTMLInputElement>(null);
 
   const { data: openCredits } = useOpenClientCredits(isCredit ? clientId : '');
 
-  const { data: stockList } = useQuery({
-    queryKey: ['stock', companyId],
-    queryFn: () => stockService.getByCompany(companyId, { limit: 9999 }),
-    enabled: !!companyId,
-    staleTime: 30_000,
+  const stockQueries = useQueries({
+    queries: companies.map((c) => ({
+      queryKey: ['stock', c.id],
+      queryFn: () => stockService.getByCompany(c.id, { limit: 9999 }),
+      staleTime: 30_000,
+    })),
   });
+  const stockQueryDataKey = stockQueries.map((q) => q.dataUpdatedAt).join('|');
 
-  const stockByProduct = useMemo(() => {
-    const map: Record<string, number> = {};
-    const list: any[] = Array.isArray(stockList) ? stockList : (stockList as any)?.data || [];
-    list.forEach((s) => {
-      const pid = s.productId || s.product?.id || s.product?._id || s.product;
-      if (pid) map[String(pid)] = s.quantity;
+  // { [companyId]: { [productId]: quantity } }
+  const stockByCompany = useMemo(() => {
+    const result: Record<string, Record<string, number>> = {};
+    companies.forEach((c, idx) => {
+      const raw: any = stockQueries[idx]?.data;
+      const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
+      const map: Record<string, number> = {};
+      list.forEach((s) => {
+        const pid = s.productId || s.product?.id || s.product?._id || s.product;
+        if (pid) map[String(pid)] = s.quantity;
+      });
+      result[c.id] = map;
     });
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companies, stockQueryDataKey]);
+
+  // Aggregated or per-company depending on selector mode
+  const stockByProduct = useMemo(() => {
+    if (companyId === ALL_COMPANIES) {
+      const result: Record<string, number> = {};
+      Object.values(stockByCompany).forEach((perCompany) => {
+        Object.entries(perCompany).forEach(([pid, qty]) => {
+          result[pid] = (result[pid] || 0) + qty;
+        });
+      });
+      return result;
+    }
+    return stockByCompany[companyId] || {};
+  }, [stockByCompany, companyId]);
+
+  // Picks the warehouse with the most stock for a product (used in "Todos" mode)
+  const findSourceCompanyForProduct = (productId: string): string | null => {
+    let bestId: string | null = null;
+    let bestQty = 0;
+    Object.entries(stockByCompany).forEach(([cid, map]) => {
+      const qty = map[productId] || 0;
+      if (qty > 0 && qty > bestQty) {
+        bestId = cid;
+        bestQty = qty;
+      }
+    });
+    return bestId;
+  };
+
+  const companyNameById = useMemo(() => {
+    const map: Record<string, string> = {};
+    companies.forEach((c) => { map[c.id] = c.name; });
     return map;
-  }, [stockList]);
+  }, [companies]);
 
   // Preload cart from quote (if ?fromQuote=... param)
   useEffect(() => {
@@ -167,6 +227,7 @@ export function POSPage() {
         unitPrice: i.unitPrice,
         tierOverride: i.priceTier,
         isCustomPrice: true,
+        sourceCompanyId: preloadedQuote.companyId || undefined,
       };
     });
     setCart(items);
@@ -176,8 +237,11 @@ export function POSPage() {
 
   // Defaults once data loads
   useEffect(() => {
-    if (!companyId && companies.length) setCompanyId(companies[0].id);
+    if (!companyId && companies.length) setCompanyId(ALL_COMPANIES);
   }, [companies, companyId]);
+  useEffect(() => {
+    if (isFieldSeller && user?.id && sellerId !== user.id) setSellerId(user.id);
+  }, [isFieldSeller, user?.id, sellerId]);
   useEffect(() => {
     if (!tierId && tiers.length) setTierId(tiers[0].id);
   }, [tiers, tierId]);
@@ -206,7 +270,9 @@ export function POSPage() {
         const effectiveTier = item.tierOverride || tierId;
         const product = products.find((p) => p.id === item.productId);
         if (!product) return item;
-        const price = resolvePrice(product, effectiveTier, companyId);
+        const itemCompany = item.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : '');
+        if (!itemCompany) return item;
+        const price = resolvePrice(product, effectiveTier, itemCompany);
         if (price == null || price === item.unitPrice) return item;
         return { ...item, unitPrice: price };
       }),
@@ -221,9 +287,10 @@ export function POSPage() {
       if (categoryId && p.categoryId !== categoryId) return false;
       if (term && !p.name.toLowerCase().includes(term)) return false;
       if (ing && !(p.activeIngredient || '').toLowerCase().includes(ing)) return false;
+      if (onlyInStock && (stockByProduct[p.id] ?? 0) <= 0) return false;
       return true;
     });
-  }, [products, categoryId, search, ingredientFilter]);
+  }, [products, categoryId, search, ingredientFilter, onlyInStock, stockByProduct]);
 
   const cartQty = (productId: string) => cart.find((i) => i.productId === productId)?.quantity || 0;
 
@@ -236,7 +303,20 @@ export function POSPage() {
       toast.error('Selecciona un rango de precio');
       return;
     }
-    const price = resolvePrice(product, tierId, companyId);
+
+    let sourceCompanyId: string;
+    if (companyId === ALL_COMPANIES) {
+      const found = findSourceCompanyForProduct(product.id);
+      if (!found) {
+        toast.error(`Sin stock de ${product.name} en ningún almacén`);
+        return;
+      }
+      sourceCompanyId = found;
+    } else {
+      sourceCompanyId = companyId;
+    }
+
+    const price = resolvePrice(product, tierId, sourceCompanyId);
     if (price == null) {
       toast.error(`Sin precio configurado para ${product.name}`);
       return;
@@ -256,15 +336,24 @@ export function POSPage() {
           unit: product.unit,
           quantity: 1,
           unitPrice: price,
+          sourceCompanyId,
         },
       ];
     });
   };
 
+  const stockForCartItem = (item: CartItem | undefined): number => {
+    if (!item) return 0;
+    const cid = item.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : '');
+    if (!cid) return 0;
+    return stockByCompany[cid]?.[item.productId] ?? 0;
+  };
+
   const updateQty = (productId: string, delta: number) => {
     if (delta > 0) {
-      const stock = stockByProduct[productId] ?? 0;
-      const current = cart.find((i) => i.productId === productId)?.quantity || 0;
+      const item = cart.find((i) => i.productId === productId);
+      const stock = stockForCartItem(item);
+      const current = item?.quantity || 0;
       if (current + delta > stock) {
         toast.error(`Solo hay ${stock} en stock`);
         return;
@@ -281,7 +370,8 @@ export function POSPage() {
 
   const setQty = (productId: string, value: number) => {
     if (isNaN(value) || value <= 0) { removeFromCart(productId); return; }
-    const stock = stockByProduct[productId] ?? 0;
+    const item = cart.find((i) => i.productId === productId);
+    const stock = stockForCartItem(item);
     if (value > stock) { toast.error(`Solo hay ${stock} en stock`); value = stock; }
     setCart((prev) => prev.map((i) => i.productId === productId ? { ...i, quantity: value } : i));
   };
@@ -299,7 +389,12 @@ export function POSPage() {
         const product = products.find((p) => p.id === i.productId);
         if (!product) return i;
         const useTier = newTierId || tierId;
-        const price = resolvePrice(product, useTier, companyId);
+        const itemCompany = i.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : '');
+        if (!itemCompany) {
+          toast.error('Sin almacén asignado para este item');
+          return i;
+        }
+        const price = resolvePrice(product, useTier, itemCompany);
         if (price == null) {
           toast.error('Sin precio configurado para ese rango');
           return i;
@@ -339,10 +434,16 @@ export function POSPage() {
       toast.error('No hay métodos de pago configurados');
       return;
     }
+    const itemMissingSource = cart.find((i) => !i.sourceCompanyId && companyId === ALL_COMPANIES);
+    if (itemMissingSource) {
+      toast.error(`Selecciona un almacén para "${itemMissingSource.name}"`);
+      return;
+    }
     setIsCredit(false);
     setCreditAccountId('new');
     setCreditName('');
     setSplitPayments([{ paymentMethodId, amount: 0 }]);
+    setCheckoutStep(1);
     setShowCheckout(true);
   };
 
@@ -363,15 +464,17 @@ export function POSPage() {
     }
     const validPayments = isCredit ? [] : splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
     try {
+      const effectiveSellerId = sellerId || (isFieldSeller ? user?.id : undefined);
       if (sourceQuoteId) {
         await convertQuote.mutateAsync({
           id: sourceQuoteId,
           payload: {
-            companyId,
+            companyId: companyId === ALL_COMPANIES ? (cart[0]?.sourceCompanyId || '') : companyId,
             clientId: clientId || undefined,
             voucherType,
             isCredit,
             payments: validPayments,
+            sellerId: effectiveSellerId,
           },
         });
       } else {
@@ -381,9 +484,10 @@ export function POSPage() {
           isCredit,
           creditAccountId: isCredit && creditAccountId !== 'new' ? creditAccountId : undefined,
           creditName: isCredit && creditAccountId === 'new' ? creditName.trim() : undefined,
+          sellerId: effectiveSellerId,
           items: cart.map((i) => ({
             productId: i.productId,
-            companyId,
+            companyId: i.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : ''),
             quantity: i.quantity,
             priceTier: i.tierOverride || tierId,
             unitPrice: i.unitPrice,
@@ -439,6 +543,7 @@ export function POSPage() {
               onChange={(e) => setCompanyId(e.target.value)}
               className="text-sm bg-white border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
+              <option value={ALL_COMPANIES}>Todos los almacenes</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
@@ -448,6 +553,18 @@ export function POSPage() {
 
         {/* Category tabs */}
         <div className="bg-white border-b border-gray-200 px-6 py-2 flex gap-2 overflow-x-auto">
+          <button
+            onClick={() => setOnlyInStock((v) => !v)}
+            title={onlyInStock ? 'Mostrar todos (incluye agotados)' : 'Ocultar productos sin stock'}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors border ${
+              onlyInStock
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100'
+            }`}
+          >
+            {onlyInStock ? '✓ Con stock' : 'Con stock'}
+          </button>
+          <div className="w-px bg-gray-200 my-1 mx-1" />
           <button
             onClick={() => setCategoryId('')}
             className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
@@ -474,14 +591,27 @@ export function POSPage() {
           {filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
               <Package size={48} className="mb-3" />
-              <div className="text-sm">
-                {search ? 'Sin resultados para tu búsqueda' : 'Sin productos en esta categoría'}
+              <div className="text-sm mb-3">
+                {search ? 'Sin resultados para tu búsqueda' : onlyInStock ? 'Sin productos con stock en este almacén' : 'Sin productos en esta categoría'}
               </div>
+              {onlyInStock && !search && (
+                <button
+                  onClick={() => setOnlyInStock(false)}
+                  className="text-xs text-primary-600 hover:text-primary-800 font-medium underline underline-offset-2"
+                >
+                  Mostrar todos los productos (incluye agotados)
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-5 gap-4">
               {filteredProducts.map((p) => {
-                const price = tierId && companyId ? resolvePrice(p, tierId, companyId) : undefined;
+                const effectiveCompanyForPrice = companyId === ALL_COMPANIES
+                  ? findSourceCompanyForProduct(p.id) || ''
+                  : companyId;
+                const price = tierId && effectiveCompanyForPrice
+                  ? resolvePrice(p, tierId, effectiveCompanyForPrice)
+                  : undefined;
                 const qty = cartQty(p.id);
                 const stock = stockByProduct[p.id] ?? 0;
                 const available = stock - qty;
@@ -491,6 +621,9 @@ export function POSPage() {
                     : stock <= 10
                     ? 'bg-yellow-50 text-yellow-700'
                     : 'bg-gray-50 text-gray-600';
+                const sourceLabel = companyId === ALL_COMPANIES && effectiveCompanyForPrice
+                  ? companyNameById[effectiveCompanyForPrice]
+                  : null;
                 return (
                   <button
                     key={p.id}
@@ -518,6 +651,11 @@ export function POSPage() {
                     <div className="text-sm font-medium text-gray-800 leading-tight line-clamp-2 min-h-[2.5rem]">
                       {p.name}
                     </div>
+                    {sourceLabel && (
+                      <div className="mt-1 text-[11px] text-gray-500 truncate" title={sourceLabel}>
+                        📍 {sourceLabel}
+                      </div>
+                    )}
                     <div className="mt-2 flex items-center justify-between">
                       <span className="text-base font-bold text-gray-900">
                         {price != null ? `S/ ${price.toFixed(2)}` : '—'}
@@ -601,6 +739,11 @@ export function POSPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-base font-medium text-gray-800 truncate">{item.name}</div>
+                      {companyId === ALL_COMPANIES && item.sourceCompanyId && (
+                        <div className="text-[11px] text-primary-700 bg-primary-50 inline-block px-1.5 py-0.5 rounded mt-0.5 mr-1">
+                          📍 {companyNameById[item.sourceCompanyId] || '—'}
+                        </div>
+                      )}
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-sm text-gray-500">
                           S/ {item.unitPrice.toFixed(2)} · {item.unit}
@@ -800,19 +943,20 @@ export function POSPage() {
                 onClick={async () => {
                   try {
                     await createQuote.mutateAsync({
-                      companyId,
+                      companyId: companyId === ALL_COMPANIES ? (cart[0]?.sourceCompanyId || '') : companyId,
                       clientId: quoteClientId || undefined,
                       clientName: quoteClientName || undefined,
                       validUntil: quoteValidUntil,
                       notes: quoteNotes || undefined,
+                      sellerId: sellerId || (isFieldSeller ? user?.id : undefined),
                       items: cart.map(i => ({
                         productId: i.productId,
-                        companyId,
+                        companyId: i.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : ''),
                         quantity: i.quantity,
                         priceTier: i.tierOverride || tierId,
                         unitPrice: i.unitPrice,
                       })),
-                    });
+                    } as any);
                     setShowQuoteModal(false);
                     setCart([]);
                     setQuoteClientId('');
@@ -863,231 +1007,313 @@ export function POSPage() {
               </div>
             </div>
 
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-
-              {/* 1. Cliente */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-xs font-bold flex items-center justify-center shrink-0">1</span>
-                  <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Cliente</span>
-                  <span className="text-xs text-gray-400 font-normal normal-case">opcional</span>
-                </div>
-                <select
-                  value={clientId}
-                  onChange={(e) => { setClientId(e.target.value); if (!e.target.value) setIsCredit(false); }}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
+            {/* Step indicator */}
+            <div className="px-6 pt-5 pb-1 shrink-0">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCheckoutStep(1)}
+                  className={`flex items-center gap-2 ${checkoutStep === 1 ? 'text-primary-700' : 'text-gray-400 hover:text-gray-600'}`}
                 >
-                  <option value="">— Consumidor final —</option>
-                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-
-              <div className="border-t border-gray-100" />
-
-              {/* 2. Comprobante */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-xs font-bold flex items-center justify-center shrink-0">2</span>
-                  <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Comprobante</span>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  {(['NONE', 'BOLETA', 'FACTURA'] as const).map((v) => (
-                    <button
-                      key={v}
-                      onClick={() => setVoucherType(v)}
-                      className={`py-3 rounded-xl text-sm font-semibold transition-colors border-2 ${
-                        voucherType === v
-                          ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300 hover:bg-primary-50'
-                      }`}
-                    >
-                      {v === 'NONE' ? 'Ninguno' : v === 'BOLETA' ? 'Boleta' : 'Factura'}
-                    </button>
-                  ))}
+                  <span className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center transition-colors ${
+                    checkoutStep === 1 ? 'bg-primary-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500'
+                  }`}>1</span>
+                  <span className="text-sm font-semibold">Detalles</span>
+                </button>
+                <div className={`h-0.5 flex-1 rounded-full transition-colors ${checkoutStep === 2 ? 'bg-primary-300' : 'bg-gray-200'}`} />
+                <div className={`flex items-center gap-2 ${checkoutStep === 2 ? 'text-primary-700' : 'text-gray-400'}`}>
+                  <span className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center transition-colors ${
+                    checkoutStep === 2 ? 'bg-primary-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500'
+                  }`}>2</span>
+                  <span className="text-sm font-semibold">Pago</span>
                 </div>
               </div>
+            </div>
 
-              <div className="border-t border-gray-100" />
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
 
-              {/* 3. Tipo de pago */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-xs font-bold flex items-center justify-center shrink-0">3</span>
-                  <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Tipo de pago</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsCredit(false)}
-                    className={`py-3 rounded-xl text-sm font-semibold transition-colors border-2 flex items-center justify-center gap-2 ${
-                      !isCredit ? 'bg-primary-600 text-white border-primary-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300 hover:bg-primary-50'
-                    }`}
-                  >
-                    <CreditCard size={16} /> Pago inmediato
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!clientId}
-                    onClick={() => setIsCredit(true)}
-                    className={`py-3 rounded-xl text-sm font-semibold transition-colors border-2 flex items-center justify-center gap-2 ${
-                      isCredit ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300 hover:bg-orange-50'
-                    } disabled:opacity-40 disabled:cursor-not-allowed`}
-                  >
-                    <Landmark size={16} /> A crédito
-                  </button>
-                </div>
-                {!clientId && (
-                  <p className="mt-2 text-xs text-gray-400 flex items-center gap-1">
-                    <User size={11} /> Selecciona un cliente para habilitar el pago a crédito
-                  </p>
-                )}
-              </div>
-
-              {/* Crédito — cuenta */}
-              {isCredit && (
+              {checkoutStep === 1 && (
                 <>
-                  <div className="border-t border-gray-100" />
+                  {/* Vendedor (solo ADMIN puede atribuir) */}
+                  {!isFieldSeller && sellerOptions.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <User size={14} className="text-gray-500" />
+                        <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Vendedor</span>
+                        <span className="text-xs text-gray-400 font-normal normal-case">opcional</span>
+                      </div>
+                      <select
+                        value={sellerId}
+                        onChange={(e) => setSellerId(e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
+                      >
+                        <option value="">— Sin atribuir —</option>
+                        {sellerOptions.map((s) => <option key={s.id} value={s.id}>{s.fullName || s.username}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {isFieldSeller && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-2">
+                      <User size={14} className="text-emerald-600" />
+                      <span className="text-sm font-medium text-emerald-800">Vendedor: <strong>{user?.fullName || user?.username}</strong></span>
+                    </div>
+                  )}
+
+                  {/* Cliente */}
                   <div>
                     <div className="flex items-center gap-2 mb-3">
-                      <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-700 text-xs font-bold flex items-center justify-center shrink-0">4</span>
-                      <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Cuenta de crédito</span>
+                      <User size={14} className="text-gray-500" />
+                      <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Cliente</span>
+                      <span className="text-xs text-gray-400 font-normal normal-case">opcional</span>
                     </div>
-                    <div className="space-y-2">
-                      <button
-                        type="button"
-                        onClick={() => { setCreditAccountId('new'); setCreditName(''); }}
-                        className={`w-full px-4 py-3 rounded-xl text-sm font-semibold border-2 text-left transition-colors ${
-                          creditAccountId === 'new' ? 'bg-orange-50 border-orange-400 text-orange-800' : 'bg-white border-gray-200 text-gray-500 hover:border-orange-300'
-                        }`}
-                      >
-                        + Nueva cuenta
-                      </button>
-                      {(openCredits as CreditAccount[] | undefined)?.map((acc) => (
+                    <select
+                      value={clientId}
+                      onChange={(e) => { setClientId(e.target.value); if (!e.target.value) setIsCredit(false); }}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
+                    >
+                      <option value="">— Consumidor final —</option>
+                      {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="border-t border-gray-100" />
+
+                  {/* Comprobante */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <ScrollText size={14} className="text-gray-500" />
+                      <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Comprobante</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {(['NONE', 'BOLETA', 'FACTURA'] as const).map((v) => (
                         <button
-                          key={acc.id}
-                          type="button"
-                          onClick={() => setCreditAccountId(acc.id)}
-                          className={`w-full px-4 py-3 rounded-xl border-2 text-left transition-colors ${
-                            creditAccountId === acc.id ? 'bg-orange-50 border-orange-400' : 'bg-white border-gray-200 hover:border-orange-300'
+                          key={v}
+                          onClick={() => setVoucherType(v)}
+                          className={`py-3 rounded-xl text-sm font-semibold transition-colors border-2 ${
+                            voucherType === v
+                              ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300 hover:bg-primary-50'
                           }`}
                         >
-                          <div className="font-semibold text-gray-800">{acc.name || 'Sin nombre'}</div>
-                          <div className="text-sm text-red-500 mt-0.5">Deuda actual: S/ {acc.pendingAmount.toFixed(2)}</div>
+                          {v === 'NONE' ? 'Ninguno' : v === 'BOLETA' ? 'Boleta' : 'Factura'}
                         </button>
                       ))}
                     </div>
-                    {creditAccountId === 'new' && (
-                      <input
-                        value={creditName}
-                        onChange={(e) => setCreditName(e.target.value)}
-                        placeholder="Nombre de la cuenta  (ej: Tomates, Maíz)"
-                        className="mt-3 w-full px-4 py-3 border-2 border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-                        autoFocus
-                      />
-                    )}
                   </div>
                 </>
               )}
 
-              {/* Pago inmediato — métodos */}
-              {!isCredit && (
+              {checkoutStep === 2 && (
                 <>
-                  <div className="border-t border-gray-100" />
+                  {/* Tipo de pago */}
                   <div>
                     <div className="flex items-center gap-2 mb-3">
-                      <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 text-xs font-bold flex items-center justify-center shrink-0">4</span>
-                      <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Método de pago</span>
+                      <Tag size={14} className="text-gray-500" />
+                      <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Tipo de pago</span>
                     </div>
-                    <div className="space-y-3">
-                      {splitPayments.map((p, idx) => (
-                        <div key={idx} className="bg-gray-50 rounded-xl p-4 space-y-3">
-                          <div className="flex flex-wrap gap-2">
-                            {paymentMethods.map((m) => (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() => { const next = [...splitPayments]; next[idx] = { ...next[idx], paymentMethodId: m.id }; setSplitPayments(next); }}
-                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border-2 ${getPaymentMethodColors(m.name, p.paymentMethodId === m.id)}`}
-                              >
-                                {m.name}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="relative flex-1">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">S/</span>
-                              <input
-                                type="number" min="0" step="0.01"
-                                value={p.amount || ''}
-                                onFocus={(e) => e.target.select()}
-                                onChange={(e) => { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: parseFloat(e.target.value) || 0 }; setSplitPayments(next); }}
-                                placeholder="0.00"
-                                className="w-full pl-9 pr-3 py-3 border-2 border-gray-200 rounded-xl text-base text-right font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
-                              />
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setIsCredit(false)}
+                        className={`py-3 rounded-xl text-sm font-semibold transition-colors border-2 flex items-center justify-center gap-2 ${
+                          !isCredit ? 'bg-primary-600 text-white border-primary-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300 hover:bg-primary-50'
+                        }`}
+                      >
+                        <CreditCard size={16} /> Pago inmediato
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!clientId}
+                        onClick={() => setIsCredit(true)}
+                        className={`py-3 rounded-xl text-sm font-semibold transition-colors border-2 flex items-center justify-center gap-2 ${
+                          isCredit ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+                        } disabled:opacity-40 disabled:cursor-not-allowed`}
+                      >
+                        <Landmark size={16} /> A crédito
+                      </button>
+                    </div>
+                    {!clientId && (
+                      <p className="mt-2 text-xs text-gray-400 flex items-center gap-1">
+                        <User size={11} /> Selecciona un cliente en el paso 1 para habilitar el crédito
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Crédito — cuenta */}
+                  {isCredit && (
+                    <>
+                      <div className="border-t border-gray-100" />
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <Landmark size={14} className="text-orange-500" />
+                          <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Cuenta de crédito</span>
+                        </div>
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => { setCreditAccountId('new'); setCreditName(''); }}
+                            className={`w-full px-4 py-3 rounded-xl text-sm font-semibold border-2 text-left transition-colors ${
+                              creditAccountId === 'new' ? 'bg-orange-50 border-orange-400 text-orange-800' : 'bg-white border-gray-200 text-gray-500 hover:border-orange-300'
+                            }`}
+                          >
+                            + Nueva cuenta
+                          </button>
+                          {(openCredits as CreditAccount[] | undefined)?.map((acc) => (
+                            <button
+                              key={acc.id}
+                              type="button"
+                              onClick={() => setCreditAccountId(acc.id)}
+                              className={`w-full px-4 py-3 rounded-xl border-2 text-left transition-colors ${
+                                creditAccountId === acc.id ? 'bg-orange-50 border-orange-400' : 'bg-white border-gray-200 hover:border-orange-300'
+                              }`}
+                            >
+                              <div className="font-semibold text-gray-800">{acc.name || 'Sin nombre'}</div>
+                              <div className="text-sm text-red-500 mt-0.5">Deuda actual: S/ {acc.pendingAmount.toFixed(2)}</div>
+                            </button>
+                          ))}
+                        </div>
+                        {creditAccountId === 'new' && (
+                          <input
+                            value={creditName}
+                            onChange={(e) => setCreditName(e.target.value)}
+                            placeholder="Nombre de la cuenta  (ej: Tomates, Maíz)"
+                            className="mt-3 w-full px-4 py-3 border-2 border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                            autoFocus
+                          />
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Pago inmediato — métodos */}
+                  {!isCredit && (
+                    <>
+                      <div className="border-t border-gray-100" />
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <CreditCard size={14} className="text-gray-500" />
+                          <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Método de pago</span>
+                        </div>
+                        <div className="space-y-3">
+                          {splitPayments.map((p, idx) => (
+                            <div key={idx} className="bg-gray-50 rounded-xl p-4 space-y-3">
+                              <div className="flex flex-wrap gap-2">
+                                {paymentMethods.map((m) => (
+                                  <button
+                                    key={m.id}
+                                    type="button"
+                                    onClick={() => { const next = [...splitPayments]; next[idx] = { ...next[idx], paymentMethodId: m.id }; setSplitPayments(next); }}
+                                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border-2 ${getPaymentMethodColors(m.name, p.paymentMethodId === m.id)}`}
+                                  >
+                                    {m.name}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="relative flex-1">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">S/</span>
+                                  <input
+                                    type="number" min="0" step="0.01"
+                                    value={p.amount || ''}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: parseFloat(e.target.value) || 0 }; setSplitPayments(next); }}
+                                    placeholder="0.00"
+                                    className="w-full pl-9 pr-3 py-3 border-2 border-gray-200 rounded-xl text-base text-right font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
+                                  />
+                                </div>
+                                {splitPayments.length > 1 && (
+                                  <button type="button" onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-2 rounded-xl hover:bg-red-50">
+                                    <X size={18} />
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            {splitPayments.length > 1 && (
-                              <button type="button" onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-2 rounded-xl hover:bg-red-50">
-                                <X size={18} />
+                          ))}
+                        </div>
+
+                        {/* Estado del pago */}
+                        {splitPayments.length > 0 && (
+                          <div className={`mt-3 rounded-xl px-4 py-3 flex items-center justify-between ${
+                            Math.abs(splitRemaining) <= 0.01 ? 'bg-green-50 border-2 border-green-200' :
+                            splitRemaining > 0 ? 'bg-orange-50 border-2 border-orange-200' : 'bg-blue-50 border-2 border-blue-200'
+                          }`}>
+                            <span className={`font-bold text-base ${Math.abs(splitRemaining) <= 0.01 ? 'text-green-700' : splitRemaining > 0 ? 'text-orange-700' : 'text-blue-700'}`}>
+                              {Math.abs(splitRemaining) <= 0.01 ? '✓ Pago completo' : splitRemaining > 0 ? `Falta S/ ${splitRemaining.toFixed(2)}` : `Vuelto S/ ${Math.abs(splitRemaining).toFixed(2)}`}
+                            </span>
+                            {splitRemaining > 0.01 && (
+                              <button type="button" onClick={() => {
+                                const idx = splitPayments.findIndex(p => p.amount === 0);
+                                if (idx >= 0) { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: splitRemaining }; setSplitPayments(next); }
+                                else { const last = splitPayments.length - 1; const next = [...splitPayments]; next[last] = { ...next[last], amount: (next[last].amount || 0) + splitRemaining }; setSplitPayments(next); }
+                              }} className="text-sm font-bold text-orange-700 hover:text-orange-900 underline underline-offset-2">
+                                Completar →
                               </button>
                             )}
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        )}
 
-                    {/* Estado del pago */}
-                    {splitPayments.length > 0 && (
-                      <div className={`mt-3 rounded-xl px-4 py-3 flex items-center justify-between ${
-                        Math.abs(splitRemaining) <= 0.01 ? 'bg-green-50 border-2 border-green-200' :
-                        splitRemaining > 0 ? 'bg-orange-50 border-2 border-orange-200' : 'bg-blue-50 border-2 border-blue-200'
-                      }`}>
-                        <span className={`font-bold text-base ${Math.abs(splitRemaining) <= 0.01 ? 'text-green-700' : splitRemaining > 0 ? 'text-orange-700' : 'text-blue-700'}`}>
-                          {Math.abs(splitRemaining) <= 0.01 ? '✓ Pago completo' : splitRemaining > 0 ? `Falta S/ ${splitRemaining.toFixed(2)}` : `Vuelto S/ ${Math.abs(splitRemaining).toFixed(2)}`}
-                        </span>
-                        {splitRemaining > 0.01 && (
-                          <button type="button" onClick={() => {
-                            const idx = splitPayments.findIndex(p => p.amount === 0);
-                            if (idx >= 0) { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: splitRemaining }; setSplitPayments(next); }
-                            else { const last = splitPayments.length - 1; const next = [...splitPayments]; next[last] = { ...next[last], amount: (next[last].amount || 0) + splitRemaining }; setSplitPayments(next); }
-                          }} className="text-sm font-bold text-orange-700 hover:text-orange-900 underline underline-offset-2">
-                            Completar →
+                        {paymentMethods.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const used = new Set(splitPayments.map(p => p.paymentMethodId));
+                              const next = paymentMethods.find(m => !used.has(m.id)) || paymentMethods[0];
+                              if (!next) return;
+                              setSplitPayments([...splitPayments, { paymentMethodId: next.id, amount: Math.max(0, splitRemaining) }]);
+                            }}
+                            className="mt-3 w-full py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-400 hover:border-primary-400 hover:text-primary-600 transition-colors"
+                          >
+                            + Agregar método de pago
                           </button>
                         )}
                       </div>
-                    )}
-
-                    {paymentMethods.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const used = new Set(splitPayments.map(p => p.paymentMethodId));
-                          const next = paymentMethods.find(m => !used.has(m.id)) || paymentMethods[0];
-                          if (!next) return;
-                          setSplitPayments([...splitPayments, { paymentMethodId: next.id, amount: Math.max(0, splitRemaining) }]);
-                        }}
-                        className="mt-3 w-full py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-400 hover:border-primary-400 hover:text-primary-600 transition-colors"
-                      >
-                        + Agregar método de pago
-                      </button>
-                    )}
-                  </div>
+                    </>
+                  )}
                 </>
               )}
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-5 border-t-2 border-gray-100 shrink-0">
-              <button
-                onClick={confirmSale}
-                disabled={createSale.isPending}
-                className={`w-full py-4 text-white rounded-xl disabled:opacity-50 font-bold text-lg transition-colors shadow-sm flex items-center justify-center gap-2 ${
-                  isCredit ? 'bg-orange-500 hover:bg-orange-600' : 'bg-primary-600 hover:bg-primary-700'
-                }`}
-              >
-                {isCredit ? <Landmark size={20} /> : <CreditCard size={20} />}
-                {createSale.isPending ? 'Procesando…' : isCredit ? `Registrar a Crédito · S/ ${total.toFixed(2)}` : `Confirmar Venta · S/ ${total.toFixed(2)}`}
-              </button>
+            <div className="px-6 py-5 border-t-2 border-gray-100 shrink-0 flex items-center gap-3">
+              {checkoutStep === 1 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowCheckout(false)}
+                    className="px-5 py-3.5 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-100 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCheckoutStep(2)}
+                    className="flex-1 py-3.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-bold text-base transition-colors shadow-sm flex items-center justify-center gap-2"
+                  >
+                    Siguiente <ChevronRight size={18} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setCheckoutStep(1)}
+                    className="px-4 py-3.5 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-100 transition-colors flex items-center gap-1"
+                  >
+                    <ChevronLeft size={18} /> Atrás
+                  </button>
+                  <button
+                    onClick={confirmSale}
+                    disabled={createSale.isPending}
+                    className={`flex-1 py-3.5 text-white rounded-xl disabled:opacity-50 font-bold text-base transition-colors shadow-sm flex items-center justify-center gap-2 ${
+                      isCredit ? 'bg-orange-500 hover:bg-orange-600' : 'bg-primary-600 hover:bg-primary-700'
+                    }`}
+                  >
+                    {isCredit ? <Landmark size={18} /> : <CreditCard size={18} />}
+                    {createSale.isPending ? 'Procesando…' : isCredit ? `A Crédito · S/ ${total.toFixed(2)}` : `Confirmar · S/ ${total.toFixed(2)}`}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

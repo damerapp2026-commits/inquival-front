@@ -1,12 +1,12 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useAPAlerts } from '../../modules/accounts-payable/hooks/useAccountsPayable';
 import {
   Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight,
   LogOut, Menu, X, Wallet, CreditCard, BarChart3, FolderTree, Shield,
-  ClipboardList, FileText, Bell, AlertTriangle, Clock, ScanLine, Ruler, ScrollText,
-  ChevronLeft, ChevronRight, FlaskConical, Warehouse,
+  ClipboardList, FileText, Bell, AlertTriangle, Clock, ScanLine, Ruler, ScrollText, Receipt,
+  ChevronLeft, ChevronRight, Percent, Briefcase,
 } from 'lucide-react';
 import type { AccountPayable } from '../types';
 
@@ -16,42 +16,53 @@ type NavSection = { label: string; items: NavItem[] };
 const navSections: NavSection[] = [
   {
     label: 'PRINCIPAL',
-    items: [{ path: '/dashboard', label: 'Inicio', icon: BarChart3 }],
+    items: [{ path: '/dashboard', label: 'Inicio', icon: BarChart3, roles: ['ADMIN'] }],
+  },
+  {
+    label: 'MIS DATOS',
+    items: [
+      { path: '/sales', label: 'Mis Ventas', icon: ShoppingCart, roles: ['VENDEDOR_CAMPO'] },
+      { path: '/quotes', label: 'Mis Cotizaciones', icon: ScrollText, roles: ['VENDEDOR_CAMPO'] },
+      { path: '/my-commissions', label: 'Mis Comisiones', icon: Percent, roles: ['VENDEDOR_CAMPO'] },
+    ],
   },
   {
     label: 'OPERACIONES',
     items: [
       { path: '/pos', label: 'POS', icon: ScanLine },
-      { path: '/quotes', label: 'Cotizaciones', icon: ScrollText },
+      { path: '/quotes', label: 'Cotizaciones', icon: ScrollText, roles: ['ADMIN'] },
       { path: '/products', label: 'Productos', icon: Package },
-      { path: '/purchases', label: 'Compras', icon: TrendingUp },
-      { path: '/sales', label: 'Ventas', icon: ShoppingCart },
-      { path: '/stock', label: 'Stock', icon: ArrowLeftRight },
-      { path: '/kardex', label: 'Kardex', icon: ClipboardList },
+      { path: '/purchases', label: 'Compras', icon: TrendingUp, roles: ['ADMIN'] },
+      { path: '/sales', label: 'Ventas', icon: ShoppingCart, roles: ['ADMIN'] },
+      { path: '/stock', label: 'Stock', icon: ArrowLeftRight, roles: ['ADMIN'] },
+      { path: '/kardex', label: 'Kardex', icon: ClipboardList, roles: ['ADMIN'] },
     ],
   },
   {
     label: 'FINANZAS',
     items: [
-      { path: '/cash-register', label: 'Caja', icon: Wallet },
-      { path: '/credits', label: 'Créditos', icon: CreditCard },
-      { path: '/accounts-payable', label: 'Cuentas por Pagar', icon: FileText },
+      { path: '/cash-register', label: 'Caja', icon: Wallet, roles: ['ADMIN'] },
+      { path: '/credits', label: 'Créditos', icon: CreditCard, roles: ['ADMIN'] },
+      { path: '/accounts-payable', label: 'Cuentas por Pagar', icon: FileText, roles: ['ADMIN'] },
+      { path: '/invoices', label: 'Facturas', icon: Receipt, roles: ['ADMIN'] },
     ],
   },
   {
     label: 'CATÁLOGO',
     items: [
       { path: '/clients', label: 'Clientes', icon: Users },
-      { path: '/categories', label: 'Categorías', icon: FolderTree },
-      { path: '/laboratories', label: 'Laboratorios', icon: FlaskConical },
-      { path: '/units', label: 'Unidades de Medida', icon: Ruler },
-      { path: '/companies', label: 'Almacenes', icon: Warehouse },
-      { path: '/price-tiers', label: 'Rangos de Precio', icon: Layers },
+      { path: '/categories', label: 'Categorías', icon: FolderTree, roles: ['ADMIN'] },
+      { path: '/units', label: 'Unidades de Medida', icon: Ruler, roles: ['ADMIN'] },
+      { path: '/companies', label: 'Almacenes', icon: Building2, roles: ['ADMIN'] },
+      { path: '/price-tiers', label: 'Rangos de Precio', icon: Layers, roles: ['ADMIN'] },
     ],
   },
   {
-    label: 'CONFIGURACIÓN',
-    items: [{ path: '/users', label: 'Usuarios', icon: Shield, roles: ['ADMIN'] }],
+    label: 'GESTIÓN',
+    items: [
+      { path: '/commissions-report', label: 'Reporte Comisiones', icon: Briefcase, roles: ['ADMIN'] },
+      { path: '/users', label: 'Usuarios', icon: Shield, roles: ['ADMIN'] },
+    ],
   },
 ];
 
@@ -72,24 +83,54 @@ export function Layout() {
   }, [collapsed]);
 
   const { data: apAlerts } = useAPAlerts(3);
-  const overdueCount = apAlerts?.overdue?.length || 0;
-  const upcomingCount = apAlerts?.upcoming?.length || 0;
-  const alertCount = overdueCount + upcomingCount;
 
-  const getNextDueDate = (ap: AccountPayable) => {
-    if (ap.paymentScheduleType === 'INSTALLMENTS' && ap.installments?.length) {
-      const next = ap.installments.find((i: any) => i.status === 'PENDING');
-      if (next) return new Date(next.dueDate).toLocaleDateString('es-PE');
-    }
-    return ap.dueDate ? new Date(ap.dueDate).toLocaleDateString('es-PE') : '-';
-  };
+  type DayAlertGroup = { dateStr: string; count: number; total: number; isOverdue: boolean };
 
-  const getNextPendingAmount = (ap: AccountPayable) => {
-    if (ap.paymentScheduleType === 'INSTALLMENTS' && ap.installments?.length) {
-      const next = ap.installments.find((i: any) => i.status === 'PENDING');
-      if (next) return next.amount;
-    }
-    return ap.pendingAmount;
+  const dayAlertGroups = useMemo((): DayAlertGroup[] => {
+    if (!apAlerts) return [];
+    const byDate: Record<string, DayAlertGroup> = {};
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const maxDate = new Date(today); maxDate.setDate(maxDate.getDate() + 3);
+
+    const processAP = (ap: AccountPayable, isOverdue: boolean) => {
+      if (ap.paymentScheduleType === 'INSTALLMENTS') {
+        (ap.installments || []).forEach((inst: any) => {
+          if (inst.status !== 'PENDING') return;
+          const dateStr = inst.dueDate.slice(0, 10);
+          const dueDate = new Date(dateStr + 'T00:00:00');
+          if (isOverdue && dueDate >= today) return;
+          if (!isOverdue && dueDate > maxDate) return;
+          if (!byDate[dateStr]) byDate[dateStr] = { dateStr, count: 0, total: 0, isOverdue };
+          byDate[dateStr].count++;
+          byDate[dateStr].total += inst.amount;
+        });
+      } else if (ap.dueDate) {
+        const dateStr = ap.dueDate.slice(0, 10);
+        const dueDate = new Date(dateStr + 'T00:00:00');
+        if (isOverdue && dueDate >= today) return;
+        if (!isOverdue && dueDate > maxDate) return;
+        if (!byDate[dateStr]) byDate[dateStr] = { dateStr, count: 0, total: 0, isOverdue };
+        byDate[dateStr].count++;
+        byDate[dateStr].total += ap.pendingAmount;
+      }
+    };
+
+    (apAlerts.overdue || []).forEach((ap: AccountPayable) => processAP(ap, true));
+    (apAlerts.upcoming || []).forEach((ap: AccountPayable) => processAP(ap, false));
+
+    return Object.values(byDate).sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+  }, [apAlerts]);
+
+  const alertCount = dayAlertGroups.length;
+
+  const formatAlertDate = (dateStr: string): string => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const date = new Date(dateStr + 'T00:00:00');
+    const diffDays = Math.round((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return `Vencido · ${date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}`;
+    if (diffDays === 0) return 'Hoy';
+    if (diffDays === 1) return 'Mañana';
+    return `En ${diffDays} días · ${date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}`;
   };
 
   useEffect(() => {
@@ -244,56 +285,33 @@ export function Layout() {
                         Sin alertas pendientes
                       </div>
                     )}
-                    {overdueCount > 0 && (
-                      <>
-                        <div className="px-4 py-2 bg-red-50 text-xs font-medium text-red-700 flex items-center gap-1">
-                          <AlertTriangle size={12} /> Pagos vencidos ({overdueCount})
+                    {dayAlertGroups.map((group) => (
+                      <div
+                        key={group.dateStr}
+                        className={`px-4 py-3 border-b border-gray-100 cursor-pointer transition-colors ${
+                          group.isOverdue
+                            ? 'bg-red-50/60 hover:bg-red-100'
+                            : 'bg-amber-50/60 hover:bg-amber-100'
+                        }`}
+                        onClick={() => {
+                          setBellOpen(false);
+                          navigate(`/accounts-payable?date=${group.dateStr}`);
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className={`text-sm font-semibold ${group.isOverdue ? 'text-red-700' : 'text-amber-700'}`}>
+                            {formatAlertDate(group.dateStr)}
+                          </span>
+                          <span className={`text-sm font-bold ${group.isOverdue ? 'text-red-600' : 'text-amber-600'}`}>
+                            S/ {group.total.toFixed(2)}
+                          </span>
                         </div>
-                        {apAlerts!.overdue.slice(0, 5).map((ap: AccountPayable) => (
-                          <div
-                            key={ap.id}
-                            className="px-4 py-2 border-b border-gray-100 bg-red-50/50 hover:bg-red-100 cursor-pointer"
-                            onClick={() => {
-                              setBellOpen(false);
-                              navigate('/accounts-payable');
-                            }}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium text-gray-800">{ap.supplier}</span>
-                              <span className="text-sm font-bold text-red-600">
-                                S/ {getNextPendingAmount(ap).toFixed(2)}
-                              </span>
-                            </div>
-                            <div className="text-xs text-red-500">Vencido: {getNextDueDate(ap)}</div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                    {upcomingCount > 0 && (
-                      <>
-                        <div className="px-4 py-2 bg-yellow-50 text-xs font-medium text-yellow-700 flex items-center gap-1">
-                          <Clock size={12} /> Próximos a vencer ({upcomingCount})
+                        <div className={`text-xs mt-0.5 flex items-center gap-1 ${group.isOverdue ? 'text-red-500' : 'text-amber-600'}`}>
+                          {group.isOverdue ? <AlertTriangle size={10} /> : <Clock size={10} />}
+                          {group.count} pago{group.count > 1 ? 's' : ''} pendiente{group.count > 1 ? 's' : ''}
                         </div>
-                        {apAlerts!.upcoming.slice(0, 5).map((ap: AccountPayable) => (
-                          <div
-                            key={ap.id}
-                            className="px-4 py-2 border-b border-gray-100 hover:bg-yellow-50 cursor-pointer"
-                            onClick={() => {
-                              setBellOpen(false);
-                              navigate('/accounts-payable');
-                            }}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium text-gray-800">{ap.supplier}</span>
-                              <span className="text-sm font-bold text-yellow-600">
-                                S/ {getNextPendingAmount(ap).toFixed(2)}
-                              </span>
-                            </div>
-                            <div className="text-xs text-yellow-600">Vence: {getNextDueDate(ap)}</div>
-                          </div>
-                        ))}
-                      </>
-                    )}
+                      </div>
+                    ))}
                   </div>
                   {alertCount > 0 && (
                     <div className="px-4 py-2 bg-gray-50 border-t">
@@ -304,7 +322,7 @@ export function Layout() {
                         }}
                         className="text-xs text-primary-600 hover:text-primary-800 font-medium w-full text-center"
                       >
-                        Ver todas las cuentas por pagar
+                        Ver calendario de pagos
                       </button>
                     </div>
                   )}

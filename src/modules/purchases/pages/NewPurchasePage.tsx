@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useCreatePurchase } from '../hooks/usePurchases';
+import { useCreatePurchase, useLastPrice } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts, useCreateProduct } from '../../products/hooks/useProducts';
 import { useCategories } from '../../categories/hooks/useCategories';
@@ -12,7 +12,7 @@ import { Modal } from '../../../shared/components/Modal';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import {
   ArrowLeft, ShoppingCart, Trash2, Search, Loader2, DollarSign, PackagePlus,
-  FileText, CopyIcon, Dices, Wand2, Building2, Users, CreditCard, Package, FlaskConical, X,
+  FileText, CopyIcon, Dices, Wand2, Building2, Users, CreditCard, Package,
 } from 'lucide-react';
 import type { Company, Product, Category } from '../../../shared/types';
 import toast from 'react-hot-toast';
@@ -40,9 +40,12 @@ const emptyItem = (): PurchaseFormItem => ({
   costoAdquisicion: 0, markupPercent: 0, precioVenta: 0, precioVentaMode: 'markup',
 });
 
-function recalcItem(item: PurchaseFormItem): PurchaseFormItem {
+function recalcItem(item: PurchaseFormItem, currency: 'PEN' | 'USD' = 'PEN', exchangeRate: number | null = null): PurchaseFormItem {
   const unitPriceConIgv = Math.round(item.unitPriceSinIgv * (1 + IGV_RATE) * 100) / 100;
-  const costoAdquisicion = Math.round((unitPriceConIgv + item.flete + item.otrosCostos) * 100) / 100;
+  const unitPriceConIgvSoles = currency === 'USD'
+    ? (exchangeRate ? unitPriceConIgv * exchangeRate : 0)
+    : unitPriceConIgv;
+  const costoAdquisicion = Math.round((unitPriceConIgvSoles + item.flete + item.otrosCostos) * 100) / 100;
 
   let precioVenta = item.precioVenta;
   let markupPercent = item.markupPercent;
@@ -58,6 +61,29 @@ function recalcItem(item: PurchaseFormItem): PurchaseFormItem {
   }
 
   return { ...item, unitPriceConIgv, costoAdquisicion, precioVenta, markupPercent };
+}
+
+function LastPriceBadge({ productId, supplierId }: { productId: string; supplierId: string }) {
+  const { data } = useLastPrice(productId, supplierId);
+  if (!data || data.unitPriceSinIgv == null) return null;
+  const symbol = data.currency === 'USD' ? '$' : 'S/';
+  const dateStr = data.date
+    ? new Date(data.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '';
+  const docInfo = data.documentSeries && data.documentNumber
+    ? `${data.documentSeries}-${data.documentNumber}`
+    : '';
+  const tcInfo = data.currency === 'USD' && data.exchangeRate ? ` · TC ${data.exchangeRate.toFixed(4)}` : '';
+  return (
+    <div className="mt-1.5">
+      <span
+        className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-medium"
+        title={[docInfo, tcInfo.trim()].filter(Boolean).join(' · ')}
+      >
+        Última: {symbol} {data.unitPriceSinIgv.toFixed(2)} sin IGV{dateStr ? ` — ${dateStr}` : ''}
+      </span>
+    </div>
+  );
 }
 
 function SectionCard({ title, icon: Icon, children, className = '' }: { title: string; icon: any; children: React.ReactNode; className?: string }) {
@@ -90,7 +116,7 @@ export function NewPurchasePage() {
   const categories: Category[] = Array.isArray(categoriesData) ? categoriesData : (categoriesData as any)?.data || [];
 
   const today = new Date().toISOString().slice(0, 10);
-  const [currency, setCurrency] = useState<'PEN' | 'USD'>('PEN');
+  const [currency, setCurrency] = useState<'PEN' | 'USD'>('USD');
   const [form, setForm] = useState({
     companyId: '', supplier: '', supplierRuc: '', supplierId: '',
     paymentType: 'CONTADO' as 'CONTADO' | 'CREDITO',
@@ -112,7 +138,6 @@ export function NewPurchasePage() {
   const [installmentGen, setInstallmentGen] = useState({ count: 6, intervalDays: 30, firstDaysFromPurchase: 30 });
   const [showNewProduct, setShowNewProduct] = useState(false);
   const [newProductForIdx, setNewProductForIdx] = useState<number>(-1);
-  const [labFilter, setLabFilter] = useState<string>('');
   const [newProduct, setNewProduct] = useState({ name: '', categoryId: '', laboratoryId: '', unit: 'unidad' });
 
   const companyList = Array.isArray(companies) ? companies : [];
@@ -143,10 +168,25 @@ export function NewPurchasePage() {
     if (field === 'markupPercent') item.precioVentaMode = 'markup';
     if (field === 'precioVenta') item.precioVentaMode = 'direct';
     const costoFields = ['unitPriceSinIgv', 'flete', 'otrosCostos', 'markupPercent', 'precioVenta', 'productId'];
-    if (costoFields.includes(field)) item = recalcItem(item);
+    if (costoFields.includes(field)) item = recalcItem(item, currency, exchangeRate);
     items[idx] = item;
     return { ...prev, items };
   });
+
+  useEffect(() => {
+    setForm(prev => ({ ...prev, items: prev.items.map(i => recalcItem(i, currency, exchangeRate)) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency, exchangeRate]);
+
+  useEffect(() => {
+    if (currency === 'USD' && form.purchaseDate && exchangeRate == null) {
+      tipoCambioMutation.mutate(form.purchaseDate, {
+        onSuccess: (data) => { setExchangeRate(data.venta); setExchangeRateDate(data.fecha); },
+        onError: () => { setExchangeRate(null); setExchangeRateDate(''); },
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDateChange = (date: string) => {
     setForm(prev => ({ ...prev, purchaseDate: date }));
@@ -534,27 +574,7 @@ export function NewPurchasePage() {
 
         {/* Productos */}
         <SectionCard title={`Productos (${form.items.length})`} icon={Package}>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <FlaskConical size={14} className="text-gray-400 shrink-0" />
-              <span className="text-xs font-medium text-gray-600 hidden sm:inline">Filtrar por laboratorio:</span>
-              <select
-                value={labFilter}
-                onChange={(e) => setLabFilter(e.target.value)}
-                className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                title="Solo muestra productos del laboratorio elegido al buscar"
-              >
-                <option value="">Todos los laboratorios</option>
-                {(Array.isArray(laboratoriesData) ? laboratoriesData : []).filter((l: any) => l.isActive).map((l: any) => (
-                  <option key={l.id} value={l.id}>{l.name}</option>
-                ))}
-              </select>
-              {labFilter && (
-                <button type="button" onClick={() => setLabFilter('')} className="text-gray-400 hover:text-gray-600" title="Quitar filtro">
-                  <X size={14} />
-                </button>
-              )}
-            </div>
+          <div className="flex items-center justify-end mb-3">
             <button type="button" onClick={addItem} className="text-sm text-primary-600 hover:text-primary-800 font-medium">+ Agregar producto</button>
           </div>
           <div className="space-y-3">
@@ -572,15 +592,13 @@ export function NewPurchasePage() {
                       <div className="flex gap-1">
                         <div className="flex-1">
                           <SearchableSelect
-                            options={products
-                              .filter((p: Product) => !labFilter || p.laboratoryId === labFilter || p.id === item.productId)
-                              .map((p: Product) => {
-                                const labName = p.laboratoryId ? labsById.get(p.laboratoryId)?.name : null;
-                                return { value: p.id, label: labName ? `${p.name} — ${labName}` : p.name };
-                              })}
+                            options={products.map((p: Product) => {
+                              const labName = p.laboratoryId ? labsById.get(p.laboratoryId)?.name : null;
+                              return { value: p.id, label: labName ? `${p.name} — ${labName}` : p.name };
+                            })}
                             value={item.productId}
                             onChange={(v) => updateItem(idx, 'productId', v)}
-                            placeholder={labFilter ? `Buscar en ${labsById.get(labFilter)?.name || 'laboratorio'}...` : 'Buscar producto...'}
+                            placeholder="Buscar producto..."
                             minChars={1}
                             required
                           />
@@ -595,6 +613,9 @@ export function NewPurchasePage() {
                             Lab: {labsById.get(product.laboratoryId).name}
                           </span>
                         </div>
+                      )}
+                      {item.productId && form.supplierId && (
+                        <LastPriceBadge productId={item.productId} supplierId={form.supplierId} />
                       )}
                     </div>
                     <div className="col-span-4 sm:col-span-2">
@@ -621,23 +642,23 @@ export function NewPurchasePage() {
                   </div>
                   <div className="grid grid-cols-12 gap-1.5 items-end mt-2 pt-2 border-t border-gray-200 pr-6">
                     <div className="col-span-4 sm:col-span-2">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">P.U. sin IGV</label>
+                      <label className="block text-[10px] text-gray-500 mb-0.5">P.U. sin IGV ({currency === 'USD' ? '$' : 'S/'})</label>
                       <input type="number" min="0" step="0.01" value={item.unitPriceSinIgv || ''} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', parseFloat(e.target.value) || 0)} className="w-full px-1.5 py-1 border rounded text-xs" placeholder="0.00" />
                     </div>
                     <div className="col-span-4 sm:col-span-2">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">PC + IGV</label>
+                      <label className="block text-[10px] text-gray-500 mb-0.5">PC + IGV ({currency === 'USD' ? '$' : 'S/'})</label>
                       <input type="text" readOnly value={item.unitPriceConIgv ? item.unitPriceConIgv.toFixed(2) : '0.00'} className="w-full px-1.5 py-1 border border-green-200 rounded text-xs bg-green-50 text-green-800 font-medium" />
                     </div>
                     <div className="col-span-4 sm:col-span-1">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">Flete</label>
+                      <label className="block text-[10px] text-gray-500 mb-0.5">Flete (S/)</label>
                       <input type="number" min="0" step="0.01" value={item.flete || ''} onChange={(e) => updateItem(idx, 'flete', parseFloat(e.target.value) || 0)} className="w-full px-1.5 py-1 border rounded text-xs" placeholder="0" />
                     </div>
                     <div className="col-span-4 sm:col-span-1">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">Otros</label>
+                      <label className="block text-[10px] text-gray-500 mb-0.5">Otros (S/)</label>
                       <input type="number" min="0" step="0.01" value={item.otrosCostos || ''} onChange={(e) => updateItem(idx, 'otrosCostos', parseFloat(e.target.value) || 0)} className="w-full px-1.5 py-1 border rounded text-xs" placeholder="0" />
                     </div>
                     <div className="col-span-4 sm:col-span-2">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">C. Adquisición</label>
+                      <label className="block text-[10px] text-gray-500 mb-0.5">C. Adquisición (S/)</label>
                       <input type="text" readOnly value={item.costoAdquisicion ? item.costoAdquisicion.toFixed(2) : '0.00'} className="w-full px-1.5 py-1 border border-green-200 rounded text-xs bg-green-50 text-green-800 font-semibold" />
                     </div>
                     <div className="col-span-4 sm:col-span-2">
@@ -652,7 +673,7 @@ export function NewPurchasePage() {
                   {item.quantity > 0 && item.costoAdquisicion > 0 && (
                     <div className="mt-1.5 text-right pr-6">
                       <span className="text-[10px] text-gray-500">Subtotal: </span>
-                      <span className="text-xs font-semibold text-gray-700">{currency === 'USD' ? '$' : 'S/'} {(item.quantity * item.costoAdquisicion).toFixed(2)}</span>
+                      <span className="text-xs font-semibold text-gray-700">S/ {(item.quantity * item.costoAdquisicion).toFixed(2)}</span>
                     </div>
                   )}
                 </div>
@@ -686,7 +707,7 @@ export function NewPurchasePage() {
             <div className="bg-gray-50 rounded-lg p-3 space-y-1">
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <span>Subtotal por items (calculado)</span>
-                <span>{currency === 'USD' ? '$' : 'S/'} {itemsSubtotal.toFixed(2)}</span>
+                <span>S/ {itemsSubtotal.toFixed(2)}</span>
               </div>
               {currency === 'USD' && exchangeRate != null && form.totalCostUsd > 0 && (
                 <div className="flex items-center justify-between text-xs text-blue-600">

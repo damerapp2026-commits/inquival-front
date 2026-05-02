@@ -80,11 +80,17 @@ export function UsersPage() {
     { key: 'username', header: 'Usuario' },
     { key: 'email', header: 'Email', render: (item: User) => <span>{item.email || '-'}</span> },
     {
-      key: 'role', header: 'Rol', render: (item: User) => (
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${item.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
-          {item.role}
-        </span>
-      ),
+      key: 'role', header: 'Rol', render: (item: User) => {
+        const colorClass = item.role === 'ADMIN'
+          ? 'bg-purple-100 text-purple-800'
+          : item.role === 'VENDEDOR_CAMPO'
+            ? 'bg-emerald-100 text-emerald-800'
+            : 'bg-blue-100 text-blue-800';
+        const label = item.role === 'VENDEDOR_CAMPO' ? 'Vendedor Campo' : item.role;
+        return (
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${colorClass}`}>{label}</span>
+        );
+      },
     },
     {
       key: 'isActive', header: 'Estado', render: (item: User) => (
@@ -126,6 +132,7 @@ export function UsersPage() {
           <option value="">Todos los roles</option>
           <option value="ADMIN">Admin</option>
           <option value="VENDEDOR">Vendedor</option>
+          <option value="VENDEDOR_CAMPO">Vendedor de Campo</option>
         </select>
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500">
           <option value="">Todos los estados</option>
@@ -160,6 +167,7 @@ export function UsersPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
             <select value={createForm.role} onChange={(e) => setCreateForm({ ...createForm, role: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
               <option value="VENDEDOR">Vendedor</option>
+              <option value="VENDEDOR_CAMPO">Vendedor de Campo</option>
               <option value="ADMIN">Admin</option>
             </select>
           </div>
@@ -188,6 +196,7 @@ export function UsersPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
             <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
               <option value="VENDEDOR">Vendedor</option>
+              <option value="VENDEDOR_CAMPO">Vendedor de Campo</option>
               <option value="ADMIN">Admin</option>
             </select>
           </div>

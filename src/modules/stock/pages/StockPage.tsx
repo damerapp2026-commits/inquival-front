@@ -1,15 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { useStock, useStockAlerts, useTransferStock } from '../hooks/useStock';
 import { useStockAdjustments, useCreateStockAdjustment } from '../hooks/useStockAdjustments';
 import { useProductLots, useExpiringLots } from '../hooks/useProductLots';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
+import { stockService } from '../services/stockService';
+import { stockAdjustmentService } from '../services/stockAdjustmentService';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import { Package, ArrowRightLeft, AlertTriangle, Trash2, Plus, ClipboardList, ChevronDown, ChevronUp, Search, CalendarClock, Boxes } from 'lucide-react';
+import { Package, ArrowRightLeft, AlertTriangle, Trash2, Plus, ClipboardList, ChevronDown, ChevronUp, Search, CalendarClock, Boxes, Download, Upload, Loader2 } from 'lucide-react';
 import type { Stock, Company, Product, StockAdjustment, ProductLot } from '../../../shared/types';
 
 export function StockPage() {
@@ -46,6 +50,15 @@ export function StockPage() {
     return acc;
   }, {});
   const [adjForm, setAdjForm] = useState({ productId: '', companyId: '', type: 'INCREASE' as 'INCREASE' | 'DECREASE', quantity: 0, reason: '' });
+
+  // Bulk import state
+  const [showImportPreview, setShowImportPreview] = useState(false);
+  const [importPreview, setImportPreview] = useState<{ productId: string; productName: string; companyId: string; companyName: string; currentQty: number; newQty: number; delta: number }[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({ done: 0, total: 0, errors: 0 });
+  const [exporting, setExporting] = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
 
   const companyList = Array.isArray(companies) ? companies : [];
   const products = productsData?.data || [];
@@ -172,6 +185,151 @@ export function StockPage() {
   };
   const handleAdjustment = async (e: React.FormEvent) => { e.preventDefault(); await createAdjustment.mutateAsync(adjForm); setShowAdjustment(false); };
 
+  const handleExportStockExcel = async () => {
+    if (companyList.length === 0) { toast.error('No hay almacenes registrados'); return; }
+    setExporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      const allProductsResult = await import('../../products/services/productService').then(m => m.productService.getAll({ limit: 9999 }));
+      const allProducts: Product[] = (allProductsResult?.data || []).filter((p: Product) => p.isActive);
+
+      const stocksByCompany: Record<string, Record<string, number>> = {};
+      for (const company of companyList) {
+        try {
+          const result: any = await stockService.getByCompany(company.id, { limit: 9999 });
+          const list: any[] = Array.isArray(result) ? result : result?.data || [];
+          const map: Record<string, number> = {};
+          list.forEach((s: any) => {
+            const pid = s.productId || s.product?.id || s.product?._id || s.product;
+            if (pid) map[String(pid)] = s.quantity;
+          });
+          stocksByCompany[company.id] = map;
+        } catch {
+          stocksByCompany[company.id] = {};
+        }
+      }
+
+      const rows: any[] = [];
+      for (const company of companyList) {
+        if (!company.isActive) continue;
+        for (const product of allProducts) {
+          const current = stocksByCompany[company.id]?.[product.id] ?? 0;
+          rows.push({
+            'ID Almacen (no editar)': company.id,
+            'Almacen': company.name,
+            'ID Producto (no editar)': product.id,
+            'Producto': product.name,
+            'Unidad': product.unit,
+            'Stock Actual': current,
+            'Stock Nuevo': current,
+          });
+        }
+      }
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 28 }, { wch: 22 }, { wch: 28 }, { wch: 32 }, { wch: 10 }, { wch: 14 }, { wch: 14 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Stock');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `stock_${dateStr}.xlsx`);
+      toast.success(`${rows.length} filas exportadas`);
+    } catch (err: any) {
+      toast.error('Error al exportar: ' + (err?.message || 'desconocido'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (importFileRef.current) importFileRef.current.value = '';
+    if (!file) return;
+
+    try {
+      const XLSX = await import('xlsx');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: any[] = XLSX.utils.sheet_to_json(ws);
+
+      if (rows.length === 0) { toast.error('El archivo está vacío'); return; }
+
+      const productById = new Map<string, Product>(
+        (await import('../../products/services/productService').then(m => m.productService.getAll({ limit: 9999 }))).data?.map((p: Product) => [p.id, p]) || []
+      );
+      const companyById = new Map<string, Company>(companyList.map((c: Company) => [c.id, c]));
+
+      const preview: typeof importPreview = [];
+      let skipped = 0;
+      for (const row of rows) {
+        const productId = String(row['ID Producto (no editar)'] || '').trim();
+        const companyId = String(row['ID Almacen (no editar)'] || '').trim();
+        const newQtyRaw = row['Stock Nuevo'];
+        const currentQtyRaw = row['Stock Actual'];
+
+        if (!productId || !companyId) { skipped++; continue; }
+        const newQty = Number(newQtyRaw);
+        const currentQty = Number(currentQtyRaw);
+        if (isNaN(newQty) || newQty < 0) { skipped++; continue; }
+
+        const product = productById.get(productId);
+        const company = companyById.get(companyId);
+        if (!product || !company) { skipped++; continue; }
+
+        const delta = Math.round((newQty - (isNaN(currentQty) ? 0 : currentQty)) * 100) / 100;
+        if (delta === 0) continue;
+
+        preview.push({ productId, productName: product.name, companyId, companyName: company.name, currentQty: isNaN(currentQty) ? 0 : currentQty, newQty, delta });
+      }
+
+      if (preview.length === 0) {
+        toast(skipped > 0 ? `Sin cambios detectados (${skipped} filas ignoradas)` : 'Sin cambios detectados', { icon: 'ℹ️' });
+        return;
+      }
+
+      setImportPreview(preview);
+      setImportProgress({ done: 0, total: preview.length, errors: 0 });
+      setShowImportPreview(true);
+      if (skipped > 0) toast(`${skipped} fila(s) ignorada(s) por datos inválidos`, { icon: '⚠️' });
+    } catch (err: any) {
+      toast.error('Error al leer el archivo: ' + (err?.message || 'desconocido'));
+    }
+  };
+
+  const applyImport = async () => {
+    setImporting(true);
+    let done = 0;
+    let errors = 0;
+    for (const change of importPreview) {
+      try {
+        await stockAdjustmentService.create({
+          productId: change.productId,
+          companyId: change.companyId,
+          type: change.delta > 0 ? 'INCREASE' : 'DECREASE',
+          quantity: Math.abs(change.delta),
+          reason: 'Carga masiva por Excel',
+        });
+        done++;
+      } catch {
+        errors++;
+      }
+      setImportProgress({ done: done + errors, total: importPreview.length, errors });
+    }
+    queryClient.invalidateQueries({ queryKey: ['stock'] });
+    queryClient.invalidateQueries({ queryKey: ['stock-adjustments'] });
+    queryClient.invalidateQueries({ queryKey: ['stock-alerts'] });
+    setImporting(false);
+    if (errors === 0) {
+      toast.success(`${done} ajuste(s) aplicado(s)`);
+      setShowImportPreview(false);
+      setImportPreview([]);
+    } else {
+      toast.error(`${done} aplicado(s), ${errors} con error`);
+    }
+  };
+
   React.useEffect(() => { if (!companyId && companyList.length > 0) setCompanyId(companyList[0].id); }, [companyList, companyId]);
 
   const stockColumns = [
@@ -203,8 +361,35 @@ export function StockPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Package size={24} /> Stock</h1>
         <div className="flex flex-wrap gap-2">
-          {activeTab === 'inventory' && <button onClick={() => openAdjustment()} className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"><Plus size={18} /> Ajuste</button>}
-          {activeTab === 'inventory' && <button onClick={openTransfer} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"><ArrowRightLeft size={18} /> Transferir</button>}
+          {activeTab === 'inventory' && (
+            <>
+              <button
+                onClick={handleExportStockExcel}
+                disabled={exporting}
+                className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm"
+                title="Descargar Excel con stock actual de todos los productos en todos los almacenes"
+              >
+                {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                Descargar Excel
+              </button>
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleImportFileSelected}
+              />
+              <button
+                onClick={() => importFileRef.current?.click()}
+                className="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm"
+                title="Subir Excel modificado. Cada fila con cambio en 'Stock Nuevo' generará un ajuste."
+              >
+                <Upload size={16} /> Subir Excel
+              </button>
+              <button onClick={() => openAdjustment()} className="flex items-center gap-2 px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm"><Plus size={16} /> Ajuste</button>
+              <button onClick={openTransfer} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"><ArrowRightLeft size={16} /> Transferir</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -624,6 +809,87 @@ export function StockPage() {
           </div>
           <button type="submit" disabled={createAdjustment.isPending} className="w-full py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed">{createAdjustment.isPending ? 'Registrando...' : 'Registrar Ajuste'}</button>
         </form>
+      </Modal>
+
+      {/* Modal carga masiva por Excel */}
+      <Modal isOpen={showImportPreview} onClose={() => { if (!importing) { setShowImportPreview(false); setImportPreview([]); } }} title={`Vista previa: ${importPreview.length} cambio${importPreview.length !== 1 ? 's' : ''} a aplicar`} size="lg">
+        <div className="space-y-4">
+          {!importing && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+              Se generará <strong>1 ajuste por cada fila</strong> con la diferencia entre Stock Nuevo y Stock Actual.
+              Las filas sin cambios se ignoran. Razón: <em>"Carga masiva por Excel"</em>.
+            </div>
+          )}
+
+          {importing && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+              <div className="flex items-center justify-between text-sm mb-2">
+                <span className="font-medium text-orange-800">Aplicando ajustes…</span>
+                <span className="text-orange-700">{importProgress.done} / {importProgress.total}</span>
+              </div>
+              <div className="h-2 bg-orange-100 rounded overflow-hidden">
+                <div
+                  className="h-full bg-orange-600 transition-all"
+                  style={{ width: `${importProgress.total > 0 ? (importProgress.done / importProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+              {importProgress.errors > 0 && (
+                <div className="text-xs text-red-600 mt-2">{importProgress.errors} con error</div>
+              )}
+            </div>
+          )}
+
+          <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Almacén</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Producto</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Actual</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Nuevo</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Δ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {importPreview.slice(0, 200).map((c, i) => (
+                  <tr key={i} className="hover:bg-gray-50">
+                    <td className="px-3 py-1.5 text-gray-600">{c.companyName}</td>
+                    <td className="px-3 py-1.5">{c.productName}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-500">{c.currentQty}</td>
+                    <td className="px-3 py-1.5 text-right font-medium">{c.newQty}</td>
+                    <td className={`px-3 py-1.5 text-right font-bold ${c.delta > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                      {c.delta > 0 ? `+${c.delta}` : c.delta}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {importPreview.length > 200 && (
+              <div className="px-3 py-2 text-xs text-gray-500 bg-gray-50 border-t">
+                Mostrando los primeros 200 cambios de {importPreview.length}. Todos se aplicarán.
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3 pt-2 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => { setShowImportPreview(false); setImportPreview([]); }}
+              disabled={importing}
+              className="flex-1 sm:flex-none sm:px-6 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={applyImport}
+              disabled={importing}
+              className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 font-semibold flex items-center justify-center gap-2"
+            >
+              {importing ? <><Loader2 size={16} className="animate-spin" /> Aplicando…</> : <>Aplicar {importPreview.length} ajuste{importPreview.length !== 1 ? 's' : ''}</>}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

@@ -9,6 +9,8 @@ import { useClients } from '../../clients/hooks/useClients';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { stockService } from '../../stock/services/stockService';
+import { useUsers } from '../../users/hooks/useUsers';
+import { useAuth } from '../../../app/providers/AuthProvider';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
@@ -36,14 +38,30 @@ interface PaymentSplit {
 type PaymentMode = string; // paymentMethodId | 'MIXED' | 'CREDIT'
 
 export function SalesPage() {
+  const { user } = useAuth();
+  const isFieldSeller = user?.role === 'VENDEDOR_CAMPO';
   const [activeTab, setActiveTab] = useState<'sales' | 'boletas' | 'facturas' | 'loans'>('sales');
   const [page, setPage] = useState(1);
   const [boletaPage, setBoletaPage] = useState(1);
   const [facturaPage, setFacturaPage] = useState(1);
   const [loanPage, setLoanPage] = useState(1);
   const [companyFilter, setCompanyFilter] = useState('');
+  const [sellerFilter, setSellerFilter] = useState('');
   const [startDate, setStartDate] = useState(getMonthStart);
   const [endDate, setEndDate] = useState(getToday);
+
+  const { data: sellersData } = useUsers({ limit: 100, role: 'VENDEDOR_CAMPO' });
+  const sellers: any[] = useMemo(() => {
+    const raw: any = sellersData;
+    return Array.isArray(raw) ? raw : raw?.data || [];
+  }, [sellersData]);
+  const sellerNameById = useMemo(() => {
+    const map: Record<string, string> = {};
+    sellers.forEach((s: any) => { map[s.id] = s.fullName || s.username; });
+    return map;
+  }, [sellers]);
+
+  const effectiveSellerId = isFieldSeller ? user?.id : (sellerFilter || undefined);
   const [showModal, setShowModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [viewingSale, setViewingSale] = useState<Sale | null>(null);
@@ -51,9 +69,9 @@ export function SalesPage() {
   const [returningLoan, setReturningLoan] = useState<Loan | null>(null);
   const [loanStatusFilter, setLoanStatusFilter] = useState('');
 
-  const { data, isLoading } = useSales({ page, limit: 10, companyId: companyFilter || undefined, startDate, endDate });
-  const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 10, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'BOLETA' });
-  const { data: facturasData, isLoading: facturasLoading } = useSales({ page: facturaPage, limit: 10, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'FACTURA' });
+  const { data, isLoading } = useSales({ page, limit: 10, companyId: companyFilter || undefined, startDate, endDate, sellerId: effectiveSellerId });
+  const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 10, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'BOLETA', sellerId: effectiveSellerId });
+  const { data: facturasData, isLoading: facturasLoading } = useSales({ page: facturaPage, limit: 10, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'FACTURA', sellerId: effectiveSellerId });
   const { data: loansData, isLoading: loansLoading } = useLoans({ page: loanPage, limit: 10, status: loanStatusFilter || undefined, startDate, endDate });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 200 });
@@ -289,6 +307,7 @@ export function SalesPage() {
   const getCompanyName = (id?: string) => id ? companyMap.get(id)?.name || 'N/A' : 'Mixta';
   const getClientName = (id?: string) => id ? clientMap.get(id)?.name || 'N/A' : 'Sin cliente';
   const getProductName = (id: string) => productMap.get(id)?.name || id;
+  const getSellerName = (sale: Sale) => sale.sellerName || (sale.sellerId ? sellerNameById[sale.sellerId] : '') || '—';
 
   const saleBaseById = useMemo(() => {
     const allSales: Sale[] = [...sales, ...boletas, ...facturas];
@@ -383,6 +402,10 @@ export function SalesPage() {
       if (companyIds.length === 1) return getCompanyName(companyIds[0]);
       return <span className="text-purple-600 font-medium">Mixta</span>;
     }},
+    ...(!isFieldSeller ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
+      const name = getSellerName(item);
+      return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
+    }}] : []),
     { key: 'clientId', header: 'Cliente', render: (item: Sale) => getClientName(item.clientId) },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'total', header: 'Total', render: (item: Sale) => item.isCancelled ? <span className="line-through text-gray-400">S/ {item.total.toFixed(2)}</span> : `S/ ${item.total.toFixed(2)}` },
@@ -409,6 +432,10 @@ export function SalesPage() {
       if (companyIds.length === 1) return getCompanyName(companyIds[0]);
       return <span className="text-purple-600 font-medium">Mixta</span>;
     }},
+    ...(!isFieldSeller ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
+      const name = getSellerName(item);
+      return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
+    }}] : []),
     { key: 'clientId', header: 'Cliente', render: (item: Sale) => getClientName(item.clientId) },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'baseAmount', header: 'Valor Venta', render: (item: Sale) => {
@@ -464,15 +491,17 @@ export function SalesPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt size={24} /> Ventas</h1>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <button onClick={openLoanCreate} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
-            <HandshakeIcon size={18} /> Préstamo
-          </button>
-          <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-            <Plus size={18} /> Nueva Venta
-          </button>
-        </div>
+        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt size={24} /> {isFieldSeller ? 'Mis Ventas' : 'Ventas'}</h1>
+        {!isFieldSeller && (
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button onClick={openLoanCreate} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+              <HandshakeIcon size={18} /> Préstamo
+            </button>
+            <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+              <Plus size={18} /> Nueva Venta
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -481,6 +510,12 @@ export function SalesPage() {
           <select value={companyFilter} onChange={(e) => { setCompanyFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }} className="px-3 py-2 border rounded-lg">
             <option value="">Todos los almacenes</option>
             {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name} - {c.ruc}</option>)}
+          </select>
+        )}
+        {!isFieldSeller && (activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && sellers.length > 0 && (
+          <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }} className="px-3 py-2 border rounded-lg">
+            <option value="">Todos los vendedores</option>
+            {sellers.map((s: any) => <option key={s.id} value={s.id}>{s.fullName || s.username}</option>)}
           </select>
         )}
         {activeTab === 'loans' && (

@@ -23,7 +23,7 @@ export function PurchasesPage() {
 
   const columns = [
     { key: 'date', header: 'Fecha', render: (item: Purchase) => new Date(item.date).toLocaleDateString('es-PE') },
-    { key: 'companyId', header: 'Empresa', render: (item: Purchase) => getCompanyName(item.companyId) },
+    { key: 'companyId', header: 'Almacén', render: (item: Purchase) => getCompanyName(item.companyId) },
     { key: 'supplier', header: 'Proveedor' },
     { key: 'items', header: 'Items', render: (item: Purchase) => `${item.items.length} producto(s)` },
     { key: 'totalCost', header: 'Total', render: (item: Purchase) => (
