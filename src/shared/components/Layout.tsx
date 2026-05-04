@@ -185,9 +185,16 @@ export function Layout() {
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
 
-        <div className={`flex items-center h-16 border-b border-gray-100 ${collapsed ? 'lg:justify-center lg:px-0 px-5 justify-between' : 'px-5 justify-between'}`}>
-          <h1 className={`text-base font-bold text-gray-800 ${collapsed ? 'lg:hidden' : ''}`}>Agrosystem</h1>
-          <div className={`hidden ${collapsed ? 'lg:flex' : ''} w-9 h-9 rounded-lg bg-primary-600 text-white items-center justify-center font-bold`}>A</div>
+        <div className={`flex items-center h-20 border-b border-gray-100 ${collapsed ? 'lg:justify-center lg:px-0 px-4 justify-between' : 'px-4 justify-between'}`}>
+          <div className={`flex items-center gap-2 ${collapsed ? 'lg:hidden' : ''}`}>
+            <img src="/pwa-192x192.png" alt="Inquival" className="w-14 h-14 object-contain" />
+            <span className="text-xl font-bold text-green-800 tracking-wide">INQUIVAL</span>
+          </div>
+          <img
+            src="/pwa-192x192.png"
+            alt="Inquival"
+            className={`hidden ${collapsed ? 'lg:block' : ''} w-12 h-12 object-contain`}
+          />
           <button onClick={() => setMobileOpen(false)} className="lg:hidden text-gray-500 hover:text-gray-700">
             <X size={20} />
           </button>
@@ -266,9 +273,14 @@ export function Layout() {
       )}
 
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
-        <header className="h-16 bg-primary-600 flex items-center justify-between px-4 lg:px-6">
-          <div className="flex items-center gap-3">
-            <span className="lg:hidden text-white text-base font-bold tracking-wide">Agrosystem</span>
+        <header className="h-20 bg-primary-600 flex items-center justify-between px-4 lg:px-6">
+          <div className="flex items-center gap-2">
+            <img
+              src="/pwa-192x192.png"
+              alt="Inquival"
+              className="lg:hidden w-12 h-12 object-contain bg-white rounded-lg p-1"
+            />
+            <span className="lg:hidden text-white text-lg font-bold tracking-wide">INQUIVAL</span>
           </div>
 
           <div className="flex items-center gap-3">
