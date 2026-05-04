@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 import { useKardex } from '../hooks/useKardex';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
+import { useStockByProductSummary } from '../../stock/hooks/useStock';
+import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
-import { ClipboardList, Search, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
+import { ClipboardList, Search, ArrowUpCircle, ArrowDownCircle, X, Package, FileText, Download, Printer } from 'lucide-react';
 import type { Company, Product } from '../../../shared/types';
 
 const MOVEMENT_LABELS: Record<string, { label: string; color: string; isEntry: boolean }> = {
@@ -27,29 +30,630 @@ interface StockMovement {
   quantity: number;
   previousStock: number;
   newStock: number;
+  unitPrice?: number;
   referenceId?: string;
   referenceType?: string;
   description: string;
+  displayDescription?: string;
   userId?: string;
   date: string;
 }
 
+type Tab = 'kardex' | 'movimientos';
+
 export function KardexPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = (searchParams.get('tab') as Tab) || 'kardex';
+  const tab: Tab = tabParam === 'movimientos' ? 'movimientos' : 'kardex';
+
+  const { data: companies } = useCompanies();
+  const { data: productsData } = useProducts({ limit: 10000 });
+  const companyList: Company[] = Array.isArray(companies) ? companies : [];
+  const products: Product[] = productsData?.data || [];
+
+  const setTab = (next: Tab) => {
+    const sp = new URLSearchParams(searchParams);
+    sp.set('tab', next);
+    setSearchParams(sp, { replace: true });
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+          <ClipboardList size={24} /> Kardex
+        </h1>
+      </div>
+
+      <div className="bg-white rounded-lg shadow mb-4">
+        <div className="flex border-b">
+          <button
+            onClick={() => setTab('kardex')}
+            className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              tab === 'kardex'
+                ? 'border-primary-600 text-primary-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Package size={16} /> Kardex
+          </button>
+          <button
+            onClick={() => setTab('movimientos')}
+            className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              tab === 'movimientos'
+                ? 'border-primary-600 text-primary-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <FileText size={16} /> Movimientos
+          </button>
+        </div>
+
+        <div className="p-4">
+          {tab === 'kardex' ? (
+            <KardexTab products={products} companyList={companyList} />
+          ) : (
+            <MovementsTab products={products} companyList={companyList} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface SubProps {
+  products: Product[];
+  companyList: Company[];
+}
+
+function KardexTab({ products, companyList }: SubProps) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const productIdParam = searchParams.get('productId') || '';
+  const [productSearch, setProductSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [companyId, setCompanyId] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  const setSelectedProductId = (id: string) => {
+    const sp = new URLSearchParams(searchParams);
+    if (id) sp.set('productId', id);
+    else sp.delete('productId');
+    setSearchParams(sp, { replace: true });
+    setPage(1);
+  };
+
+  const getProductName = (id: string) => products.find((p) => p.id === id)?.name || id;
+  const getCompanyName = (id: string) => companyList.find((c) => c.id === id)?.name || id;
+
+  const filteredProducts = (productSearch
+    ? products.filter((p) => {
+        const q = productSearch.toLowerCase();
+        return (
+          p.name?.toLowerCase().includes(q) ||
+          (p as any).activeIngredient?.toLowerCase().includes(q) ||
+          (p as any).description?.toLowerCase().includes(q)
+        );
+      })
+    : products
+  )
+    .slice()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' }));
+
+  const params: Record<string, any> = { page, limit: 25 };
+  if (productIdParam) params.productId = productIdParam;
+  if (companyId) params.companyId = companyId;
+  if (startDate) params.startDate = startDate;
+  if (endDate) params.endDate = endDate;
+
+  const { data, isLoading } = useKardex(productIdParam ? params : undefined);
+  const movements: StockMovement[] = productIdParam ? data?.data || [] : [];
+  const total: number = productIdParam ? data?.total || 0 : 0;
+
+  const selectedProduct = products.find((p) => p.id === productIdParam);
+
+  const formatDate = (d: string) =>
+    new Date(d).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const descFor = (m: StockMovement) => m.displayDescription || m.description;
+
+  const isEntry = (m: StockMovement) => MOVEMENT_LABELS[m.movementType]?.isEntry;
+
+  const handleExportExcel = () => {
+    if (!selectedProduct) return;
+    // Match the client's exact Excel format (KARDEX.xlsx).
+    const aoa: any[][] = [
+      ['KARDEX CONTROL DE STOCK DE PRODUCTOS AGRICOLAS'],
+      [],
+      ['PRODUCTO:', selectedProduct.name],
+      [],
+      ['FECHA', 'DESCRIPCION', 'INGRESO', 'SALIDA', 'SALDO', '', 'PRECIO', 'ALMACEN'],
+    ];
+    // Their Excel is chronological ASC; our API returns DESC. Reverse for export.
+    const rows = [...movements].reverse();
+    for (const m of rows) {
+      const ingreso = isEntry(m) ? m.quantity : '';
+      const salida = !isEntry(m) ? m.quantity : '';
+      const precio = typeof m.unitPrice === 'number' && m.unitPrice > 0 ? m.unitPrice : '';
+      aoa.push([
+        formatDate(m.date),
+        descFor(m),
+        ingreso,
+        salida,
+        m.newStock,
+        '',
+        precio,
+        getCompanyName(m.companyId),
+      ]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [
+      { wch: 12 }, { wch: 40 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 3 }, { wch: 10 }, { wch: 18 },
+    ];
+    const wb = XLSX.utils.book_new();
+    const sheetName = selectedProduct.name.substring(0, 31).replace(/[\\/?*[\]]/g, ' ');
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, `Kardex_${selectedProduct.name.replace(/\s+/g, '_')}.xlsx`);
+  };
+
+  return (
+    <div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div className="lg:col-span-2">
+          <label className="block text-xs font-medium text-gray-500 mb-1">Producto *</label>
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Selecciona o busca un producto..."
+              value={productIdParam ? getProductName(productIdParam) : productSearch}
+              onChange={(e) => {
+                setProductSearch(e.target.value);
+                if (productIdParam) setSelectedProductId('');
+              }}
+              onFocus={() => {
+                if (productIdParam) {
+                  setProductSearch('');
+                  setSelectedProductId('');
+                }
+              }}
+              className="w-full pl-8 pr-8 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+            />
+            {(productIdParam || productSearch) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedProductId('');
+                  setProductSearch('');
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                title="Limpiar"
+              >
+                <X size={14} />
+              </button>
+            )}
+            {productSearch && !productIdParam && filteredProducts.length > 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                <div className="px-3 py-1.5 text-xs text-gray-400 border-b bg-gray-50 sticky top-0">
+                  {filteredProducts.length} resultado{filteredProducts.length === 1 ? '' : 's'}
+                </div>
+                {filteredProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      setSelectedProductId(p.id);
+                      setProductSearch('');
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {productSearch && !productIdParam && filteredProducts.length === 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg p-3 text-sm text-gray-500">
+                Sin resultados
+              </div>
+            )}
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Almacén</label>
+          <select
+            value={companyId}
+            onChange={(e) => {
+              setCompanyId(e.target.value);
+              setPage(1);
+            }}
+            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="">Todos</option>
+            {companyList.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Desde</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setPage(1);
+              }}
+              className="w-full px-2 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Hasta</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setPage(1);
+              }}
+              className="w-full px-2 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+        </div>
+      </div>
+
+      {!productIdParam ? (
+        <ProductsListView
+          products={products}
+          companyList={companyList}
+          productSearch={productSearch}
+          onSelect={setSelectedProductId}
+        />
+      ) : (
+        <>
+          {/* Excel-style header banner that mirrors the client's KARDEX.xlsx layout */}
+          <div className="border border-gray-300 bg-white print:border-black">
+            <div className="text-center py-3 border-b border-gray-300 bg-gray-50 print:bg-white">
+              <h2 className="text-base font-bold tracking-wide text-gray-800 uppercase">
+                Kardex Control de Stock de Productos Agricolas
+              </h2>
+            </div>
+            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300 bg-white">
+              <div className="flex items-baseline gap-2">
+                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Producto:</span>
+                <span className="text-sm font-bold text-gray-900">{selectedProduct?.name}</span>
+                {selectedProduct?.unit && (
+                  <span className="text-xs text-gray-500 ml-2">({selectedProduct.unit})</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 print:hidden">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 px-2 py-1 border rounded hover:bg-gray-50"
+                  title="Imprimir"
+                >
+                  <Printer size={14} /> Imprimir
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  disabled={movements.length === 0}
+                  className="flex items-center gap-1 text-xs text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1 rounded"
+                  title="Exportar a Excel (formato cliente)"
+                >
+                  <Download size={14} /> Exportar Excel
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-gray-100 print:bg-white">
+                    <th className="border border-gray-300 px-2 py-1.5 text-left font-semibold text-gray-700 uppercase text-xs">Fecha</th>
+                    <th className="border border-gray-300 px-2 py-1.5 text-left font-semibold text-gray-700 uppercase text-xs">Descripción</th>
+                    <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase text-xs">Ingreso</th>
+                    <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase text-xs">Salida</th>
+                    <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase text-xs">Saldo</th>
+                    <th className="border border-gray-300 px-2 py-1.5 text-right font-semibold text-gray-700 uppercase text-xs">Precio</th>
+                    <th className="border border-gray-300 px-2 py-1.5 text-left font-semibold text-gray-700 uppercase text-xs">Almacén</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={7} className="border border-gray-300 px-2 py-8 text-center text-gray-400">
+                        Cargando...
+                      </td>
+                    </tr>
+                  ) : movements.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="border border-gray-300 px-2 py-8 text-center text-gray-400">
+                        Sin movimientos en el rango seleccionado.
+                      </td>
+                    </tr>
+                  ) : (
+                    movements.map((m) => {
+                      const entry = isEntry(m);
+                      return (
+                        <tr key={m.id} className="hover:bg-gray-50">
+                          <td className="border border-gray-300 px-2 py-1 whitespace-nowrap text-gray-700">
+                            {formatDate(m.date)}
+                          </td>
+                          <td className="border border-gray-300 px-2 py-1 text-gray-800">
+                            <span className="block max-w-[320px] truncate" title={descFor(m)}>{descFor(m)}</span>
+                          </td>
+                          <td className="border border-gray-300 px-2 py-1 text-center font-semibold text-primary-700">
+                            {entry ? m.quantity : ''}
+                          </td>
+                          <td className="border border-gray-300 px-2 py-1 text-center font-semibold text-red-600">
+                            {!entry ? m.quantity : ''}
+                          </td>
+                          <td className="border border-gray-300 px-2 py-1 text-center font-bold text-gray-900">
+                            {m.newStock}
+                          </td>
+                          <td className="border border-gray-300 px-2 py-1 text-right text-gray-700">
+                            {typeof m.unitPrice === 'number' && m.unitPrice > 0 ? m.unitPrice.toFixed(2) : ''}
+                          </td>
+                          <td className="border border-gray-300 px-2 py-1 text-gray-600 text-xs">
+                            {getCompanyName(m.companyId)}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <Pagination page={page} totalPages={Math.ceil(total / 25)} onPageChange={setPage} />
+        </>
+      )}
+    </div>
+  );
+}
+
+interface ProductsListViewProps {
+  products: Product[];
+  companyList: Company[];
+  productSearch: string;
+  onSelect: (id: string) => void;
+}
+
+function ProductsListView({ products, companyList, productSearch, onSelect }: ProductsListViewProps) {
+  const { data: stockSummary, isLoading: stockLoading } = useStockByProductSummary();
+  const { data: laboratories } = useLaboratories();
+  const [sortBy, setSortBy] = useState<'name' | 'saldo' | 'saldo_desc' | 'lab'>('name');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [labFilter, setLabFilter] = useState<string>('');
+
+  const labById = new Map<string, string>();
+  if (Array.isArray(laboratories)) {
+    for (const l of laboratories as any[]) labById.set(l.id, l.name);
+  }
+
+  const stockByProductId = new Map<string, number>();
+  const stockByProductCompany = new Map<string, Map<string, number>>();
+  for (const s of stockSummary || []) {
+    stockByProductId.set(s.productId, s.totalQuantity);
+    const m = new Map<string, number>();
+    for (const b of s.byCompany) m.set(b.companyId, b.quantity);
+    stockByProductCompany.set(s.productId, m);
+  }
+
+  // Reset page when search/filter/sort changes.
+  React.useEffect(() => { setPage(1); }, [productSearch, sortBy, pageSize, labFilter]);
+
+  const filtered = products
+    .filter((p) => {
+      if (labFilter && (p as any).laboratoryId !== labFilter) return false;
+      if (!productSearch) return true;
+      const q = productSearch.toLowerCase();
+      const labName = labById.get((p as any).laboratoryId || '') || '';
+      return (
+        p.name?.toLowerCase().includes(q) ||
+        (p as any).activeIngredient?.toLowerCase().includes(q) ||
+        (p as any).description?.toLowerCase().includes(q) ||
+        labName.toLowerCase().includes(q)
+      );
+    })
+    .slice()
+    .sort((a, b) => {
+      if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' });
+      if (sortBy === 'lab') {
+        const la = labById.get((a as any).laboratoryId || '') || '';
+        const lb = labById.get((b as any).laboratoryId || '') || '';
+        return la.localeCompare(lb, 'es', { sensitivity: 'base' }) || (a.name || '').localeCompare(b.name || '', 'es');
+      }
+      const sa = stockByProductId.get(a.id) ?? 0;
+      const sb = stockByProductId.get(b.id) ?? 0;
+      return sortBy === 'saldo_desc' ? sb - sa : sa - sb;
+    });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const start = (safePage - 1) * pageSize;
+  const pageItems = filtered.slice(start, start + pageSize);
+
+  const formatWarehouses = (productId: string): string => {
+    const m = stockByProductCompany.get(productId);
+    if (!m) return '';
+    const parts: string[] = [];
+    for (const [cid, qty] of m.entries()) {
+      if (qty <= 0) continue;
+      const cname = companyList.find((c) => c.id === cid)?.name || cid;
+      parts.push(`${cname} (${qty})`);
+    }
+    return parts.join(' · ');
+  };
+
+  return (
+    <div className="border border-gray-300 bg-white">
+      <div className="text-center py-3 border-b border-gray-300 bg-gray-50">
+        <h2 className="text-base font-bold tracking-wide text-gray-800 uppercase">Lista de Productos</h2>
+        <p className="text-xs text-gray-500 mt-1">
+          Click en un producto para ver su kardex completo
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b border-gray-200 bg-white text-xs">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="text-gray-500">
+            {stockLoading ? (
+              'Cargando stock...'
+            ) : filtered.length === 0 ? (
+              '0 productos'
+            ) : (
+              <>
+                Mostrando <span className="font-semibold">{start + 1}-{Math.min(start + pageSize, filtered.length)}</span> de{' '}
+                <span className="font-semibold">{filtered.length}</span>
+                {filtered.length !== products.length && (
+                  <span className="text-gray-400"> (filtrado de {products.length})</span>
+                )}
+              </>
+            )}
+          </div>
+          {labFilter && (
+            <div className="flex items-center gap-1 bg-primary-50 text-primary-700 border border-primary-200 px-2 py-0.5 rounded">
+              <span className="text-gray-500">Lab:</span>
+              <span className="font-semibold">{labById.get(labFilter) || labFilter}</span>
+              <button
+                type="button"
+                onClick={() => setLabFilter('')}
+                className="ml-1 hover:text-primary-900"
+                title="Quitar filtro de laboratorio"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            <span className="text-gray-500">Ordenar:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              className="px-2 py-1 border rounded text-xs focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="name">Nombre A-Z</option>
+              <option value="saldo_desc">Saldo (mayor)</option>
+              <option value="saldo">Saldo (menor)</option>
+              <option value="lab">Laboratorio</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-gray-500">Por página:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="px-2 py-1 border rounded text-xs focus:ring-2 focus:ring-primary-500"
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="border border-gray-300 px-2 py-1.5 text-left font-semibold text-gray-700 uppercase text-xs">Producto</th>
+              <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase text-xs w-20">Saldo</th>
+              <th className="border border-gray-300 px-2 py-1.5 text-left font-semibold text-gray-700 uppercase text-xs w-44">Laboratorio</th>
+              <th className="border border-gray-300 px-2 py-1.5 text-left font-semibold text-gray-700 uppercase text-xs">Almacenes</th>
+              <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase text-xs w-16">Unidad</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageItems.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="border border-gray-300 px-2 py-8 text-center text-gray-400">
+                  {productSearch ? 'Sin resultados para tu búsqueda.' : 'No hay productos.'}
+                </td>
+              </tr>
+            ) : (
+              pageItems.map((p) => {
+                const saldo = stockByProductId.get(p.id) ?? 0;
+                const labName = labById.get((p as any).laboratoryId || '') || '';
+                return (
+                  <tr
+                    key={p.id}
+                    onClick={() => onSelect(p.id)}
+                    className="hover:bg-primary-50 cursor-pointer"
+                  >
+                    <td className="border border-gray-300 px-2 py-1.5 text-gray-800 font-medium">
+                      {p.name}
+                      {(p as any).activeIngredient && (
+                        <div className="text-xs text-gray-400 truncate max-w-[260px]">
+                          {(p as any).activeIngredient}
+                        </div>
+                      )}
+                    </td>
+                    <td className={`border border-gray-300 px-2 py-1.5 text-center font-bold ${
+                      saldo === 0 ? 'text-gray-400' : saldo < 10 ? 'text-orange-600' : 'text-gray-900'
+                    }`}>
+                      {saldo}
+                    </td>
+                    <td className="border border-gray-300 px-2 py-1.5 text-xs text-gray-700">
+                      {labName ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLabFilter((p as any).laboratoryId || '');
+                          }}
+                          className="inline-block bg-gray-100 hover:bg-primary-100 hover:text-primary-700 px-2 py-0.5 rounded transition-colors"
+                          title={`Ver solo productos de ${labName}`}
+                        >
+                          {labName}
+                        </button>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="border border-gray-300 px-2 py-1.5 text-xs text-gray-600">
+                      <span className="block max-w-[360px] truncate" title={formatWarehouses(p.id)}>
+                        {formatWarehouses(p.id) || <span className="text-gray-300">—</span>}
+                      </span>
+                    </td>
+                    <td className="border border-gray-300 px-2 py-1.5 text-center text-xs text-gray-500">
+                      {p.unit || '—'}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="border-t border-gray-200 py-2">
+          <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MovementsTab({ products, companyList }: SubProps) {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [companyId, setCompanyId] = useState('');
   const [productSearch, setProductSearch] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState('');
   const [movementType, setMovementType] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-
-  const { data: companies } = useCompanies();
-  const { data: productsData } = useProducts({ limit: 200 });
-
-  const companyList = Array.isArray(companies) ? companies : [];
-  const products = productsData?.data || [];
-
-  const [selectedProductId, setSelectedProductId] = useState('');
 
   const params: any = { page, limit: 25 };
   if (companyId) params.companyId = companyId;
@@ -59,15 +663,25 @@ export function KardexPage() {
   if (endDate) params.endDate = endDate;
 
   const { data, isLoading } = useKardex(params);
-  const movements = data?.data || [];
-  const total = data?.total || 0;
+  const movements: StockMovement[] = data?.data || [];
+  const total: number = data?.total || 0;
 
-  const getProductName = (id: string) => products.find((p: Product) => p.id === id)?.name || id;
-  const getCompanyName = (id: string) => companyList.find((c: Company) => c.id === id)?.name || id;
+  const getProductName = (id: string) => products.find((p) => p.id === id)?.name || id;
+  const getCompanyName = (id: string) => companyList.find((c) => c.id === id)?.name || id;
 
-  const filteredProducts = productSearch
-    ? products.filter((p: Product) => p.name.toLowerCase().includes(productSearch.toLowerCase()))
-    : products;
+  const filteredProducts = (productSearch
+    ? products.filter((p) => {
+        const q = productSearch.toLowerCase();
+        return (
+          p.name?.toLowerCase().includes(q) ||
+          (p as any).activeIngredient?.toLowerCase().includes(q) ||
+          (p as any).description?.toLowerCase().includes(q)
+        );
+      })
+    : products
+  )
+    .slice()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' }));
 
   const resetFilters = () => {
     setCompanyId('');
@@ -81,16 +695,29 @@ export function KardexPage() {
 
   const columns = [
     {
-      key: 'date', header: 'Fecha', render: (item: StockMovement) =>
-        new Date(item.date).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      key: 'date',
+      header: 'Fecha',
+      render: (item: StockMovement) =>
+        new Date(item.date).toLocaleDateString('es-PE', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
     },
     {
-      key: 'productId', header: 'Producto', render: (item: StockMovement) => (
+      key: 'productId',
+      header: 'Producto',
+      render: (item: StockMovement) => (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); navigate(`/kardex/product/${item.productId}`); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/kardex?tab=kardex&productId=${item.productId}`);
+          }}
           className="font-medium text-primary-700 hover:text-primary-900 hover:underline text-left"
-          title="Ver detalle del producto"
+          title="Ver kardex del producto"
         >
           {getProductName(item.productId)}
         </button>
@@ -98,100 +725,196 @@ export function KardexPage() {
     },
     { key: 'companyId', header: 'Almacén', render: (item: StockMovement) => getCompanyName(item.companyId) },
     {
-      key: 'movementType', header: 'Tipo', render: (item: StockMovement) => {
+      key: 'movementType',
+      header: 'Tipo',
+      render: (item: StockMovement) => {
         const info = MOVEMENT_LABELS[item.movementType] || { label: item.movementType, color: 'bg-gray-100 text-gray-800' };
         return <span className={`px-2 py-1 rounded-full text-xs font-medium ${info.color}`}>{info.label}</span>;
       },
     },
     {
-      key: 'entrada', header: 'Entrada', render: (item: StockMovement) => {
+      key: 'entrada',
+      header: 'Entrada',
+      render: (item: StockMovement) => {
         const info = MOVEMENT_LABELS[item.movementType];
         return info?.isEntry ? (
-          <span className="text-primary-600 font-semibold flex items-center gap-1"><ArrowUpCircle size={14} /> +{item.quantity}</span>
-        ) : <span className="text-gray-300">-</span>;
+          <span className="text-primary-600 font-semibold flex items-center gap-1">
+            <ArrowUpCircle size={14} /> +{item.quantity}
+          </span>
+        ) : (
+          <span className="text-gray-300">-</span>
+        );
       },
     },
     {
-      key: 'salida', header: 'Salida', render: (item: StockMovement) => {
+      key: 'salida',
+      header: 'Salida',
+      render: (item: StockMovement) => {
         const info = MOVEMENT_LABELS[item.movementType];
         return !info?.isEntry ? (
-          <span className="text-red-600 font-semibold flex items-center gap-1"><ArrowDownCircle size={14} /> -{item.quantity}</span>
-        ) : <span className="text-gray-300">-</span>;
+          <span className="text-red-600 font-semibold flex items-center gap-1">
+            <ArrowDownCircle size={14} /> -{item.quantity}
+          </span>
+        ) : (
+          <span className="text-gray-300">-</span>
+        );
       },
     },
-    { key: 'previousStock', header: 'Stock Ant.', render: (item: StockMovement) => <span className="text-gray-500">{item.previousStock}</span> },
-    { key: 'newStock', header: 'Stock Nuevo', render: (item: StockMovement) => <span className="font-semibold">{item.newStock}</span> },
     {
-      key: 'description', header: 'Descripcion', render: (item: StockMovement) =>
-        <span className="text-sm text-gray-600 max-w-[200px] truncate block" title={item.description}>{item.description}</span>,
+      key: 'previousStock',
+      header: 'Stock Ant.',
+      render: (item: StockMovement) => <span className="text-gray-500">{item.previousStock}</span>,
+    },
+    {
+      key: 'newStock',
+      header: 'Stock Nuevo',
+      render: (item: StockMovement) => <span className="font-semibold">{item.newStock}</span>,
+    },
+    {
+      key: 'description',
+      header: 'Descripcion',
+      render: (item: StockMovement) => (
+        <span className="text-sm text-gray-600 max-w-[200px] truncate block" title={item.description}>
+          {item.description}
+        </span>
+      ),
     },
   ];
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <ClipboardList size={24} /> Kardex
-        </h1>
-        <button onClick={resetFilters} className="text-sm text-gray-500 hover:text-gray-700 underline">Limpiar filtros</button>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-4 mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Almacén</label>
-            <select value={companyId} onChange={(e) => { setCompanyId(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500">
-              <option value="">Todas</option>
-              {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Producto</label>
-            <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Buscar producto..."
-                value={selectedProductId ? getProductName(selectedProductId) : productSearch}
-                onChange={(e) => { setProductSearch(e.target.value); setSelectedProductId(''); }}
-                onFocus={() => { if (selectedProductId) { setProductSearch(''); setSelectedProductId(''); } }}
-                className="w-full pl-8 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
-              />
-              {productSearch && !selectedProductId && filteredProducts.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {filteredProducts.slice(0, 10).map((p: Product) => (
-                    <button key={p.id} onClick={() => { setSelectedProductId(p.id); setProductSearch(''); setPage(1); }}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0">
-                      {p.name}
-                    </button>
-                  ))}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Almacén</label>
+          <select
+            value={companyId}
+            onChange={(e) => {
+              setCompanyId(e.target.value);
+              setPage(1);
+            }}
+            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="">Todas</option>
+            {companyList.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Producto</label>
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar producto..."
+              value={selectedProductId ? getProductName(selectedProductId) : productSearch}
+              onChange={(e) => {
+                setProductSearch(e.target.value);
+                setSelectedProductId('');
+                setPage(1);
+              }}
+              onFocus={() => {
+                if (selectedProductId) {
+                  setProductSearch('');
+                  setSelectedProductId('');
+                  setPage(1);
+                }
+              }}
+              className="w-full pl-8 pr-8 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+            />
+            {(selectedProductId || productSearch) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedProductId('');
+                  setProductSearch('');
+                  setPage(1);
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                title="Limpiar"
+              >
+                <X size={14} />
+              </button>
+            )}
+            {productSearch && !selectedProductId && filteredProducts.length > 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                <div className="px-3 py-1.5 text-xs text-gray-400 border-b bg-gray-50 sticky top-0">
+                  {filteredProducts.length} resultado{filteredProducts.length === 1 ? '' : 's'}
                 </div>
-              )}
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Tipo movimiento</label>
-            <select value={movementType} onChange={(e) => { setMovementType(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500">
-              <option value="">Todos</option>
-              <option value="PURCHASE">Compra</option>
-              <option value="SALE">Venta</option>
-              <option value="ADJUSTMENT_IN">Ajuste +</option>
-              <option value="ADJUSTMENT_OUT">Ajuste -</option>
-              <option value="TRANSFER_IN">Transf. entrada</option>
-              <option value="TRANSFER_OUT">Transf. salida</option>
-              <option value="LOAN_OUT">Préstamo</option>
-              <option value="LOAN_RETURN">Dev. préstamo</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Desde</label>
-            <input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Hasta</label>
-            <input type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(1); }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+                {filteredProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      setSelectedProductId(p.id);
+                      setProductSearch('');
+                      setPage(1);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {productSearch && !selectedProductId && filteredProducts.length === 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg p-3 text-sm text-gray-500">
+                Sin resultados
+              </div>
+            )}
           </div>
         </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Tipo movimiento</label>
+          <select
+            value={movementType}
+            onChange={(e) => {
+              setMovementType(e.target.value);
+              setPage(1);
+            }}
+            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="">Todos</option>
+            <option value="PURCHASE">Compra</option>
+            <option value="SALE">Venta</option>
+            <option value="ADJUSTMENT_IN">Ajuste +</option>
+            <option value="ADJUSTMENT_OUT">Ajuste -</option>
+            <option value="TRANSFER_IN">Transf. entrada</option>
+            <option value="TRANSFER_OUT">Transf. salida</option>
+            <option value="LOAN_OUT">Préstamo</option>
+            <option value="LOAN_RETURN">Dev. préstamo</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Desde</label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => {
+              setStartDate(e.target.value);
+              setPage(1);
+            }}
+            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Hasta</label>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => {
+              setEndDate(e.target.value);
+              setPage(1);
+            }}
+            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+          />
+        </div>
+      </div>
+      <div className="flex justify-end mb-2">
+        <button onClick={resetFilters} className="text-sm text-gray-500 hover:text-gray-700 underline">
+          Limpiar filtros
+        </button>
       </div>
 
       <DataTable columns={columns} data={movements} isLoading={isLoading} />

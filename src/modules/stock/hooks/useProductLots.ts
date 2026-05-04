@@ -9,10 +9,9 @@ export function useProductLots(companyId: string, productId?: string) {
   });
 }
 
-export function useExpiringLots(companyId: string, days = 30) {
+export function useExpiringLots(companyId?: string, days = 30) {
   return useQuery({
-    queryKey: ['product-lots-expiring', companyId, days],
+    queryKey: ['product-lots-expiring', companyId || 'all', days],
     queryFn: () => productLotService.getExpiring(companyId, days),
-    enabled: !!companyId,
   });
 }

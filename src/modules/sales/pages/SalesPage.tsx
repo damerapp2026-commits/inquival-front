@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
 import { useSales, useCreateSale, useCancelSale, useUpdateVoucher } from '../hooks/useSales';
 import { saleService } from '../services/saleService';
@@ -39,7 +40,7 @@ type PaymentMode = string; // paymentMethodId | 'MIXED' | 'CREDIT'
 
 export function SalesPage() {
   const { user } = useAuth();
-  const isFieldSeller = user?.role === 'VENDEDOR_CAMPO';
+  const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
   const [activeTab, setActiveTab] = useState<'sales' | 'boletas' | 'facturas' | 'loans'>('sales');
   const [page, setPage] = useState(1);
   const [boletaPage, setBoletaPage] = useState(1);
@@ -50,10 +51,11 @@ export function SalesPage() {
   const [startDate, setStartDate] = useState(getMonthStart);
   const [endDate, setEndDate] = useState(getToday);
 
-  const { data: sellersData } = useUsers({ limit: 100, role: 'VENDEDOR_CAMPO' });
+  const { data: sellersData } = useUsers({ limit: 200 });
   const sellers: any[] = useMemo(() => {
     const raw: any = sellersData;
-    return Array.isArray(raw) ? raw : raw?.data || [];
+    const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
+    return list.filter((u: any) => u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO');
   }, [sellersData]);
   const sellerNameById = useMemo(() => {
     const map: Record<string, string> = {};
@@ -61,7 +63,8 @@ export function SalesPage() {
     return map;
   }, [sellers]);
 
-  const effectiveSellerId = isFieldSeller ? user?.id : (sellerFilter || undefined);
+  const effectiveSellerId = isSellerRole ? user?.id : (sellerFilter || undefined);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showModal, setShowModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [viewingSale, setViewingSale] = useState<Sale | null>(null);
@@ -74,7 +77,7 @@ export function SalesPage() {
   const { data: facturasData, isLoading: facturasLoading } = useSales({ page: facturaPage, limit: 10, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'FACTURA', sellerId: effectiveSellerId });
   const { data: loansData, isLoading: loansLoading } = useLoans({ page: loanPage, limit: 10, status: loanStatusFilter || undefined, startDate, endDate });
   const { data: companies } = useCompanies();
-  const { data: productsData } = useProducts({ limit: 200 });
+  const { data: productsData } = useProducts({ limit: 10000 });
   const { data: clientsData } = useClients({ limit: 200 });
   const { data: priceTiers } = usePriceTiers();
   const { data: paymentMethodsData } = usePaymentMethods();
@@ -83,6 +86,37 @@ export function SalesPage() {
   const updateVoucher = useUpdateVoucher();
   const createLoan = useCreateLoan();
   const returnLoanItems = useReturnLoanItems();
+
+  const openSaleId = searchParams.get('openSaleId');
+  useEffect(() => {
+    if (!openSaleId || viewingSale) return;
+    const allSales: Sale[] = [
+      ...(data?.data || []),
+      ...(boletasData?.data || []),
+      ...(facturasData?.data || []),
+    ];
+    const found = allSales.find((s) => s.id === openSaleId);
+    if (found) {
+      setViewingSale(found);
+      const next = new URLSearchParams(searchParams);
+      next.delete('openSaleId');
+      setSearchParams(next, { replace: true });
+    } else {
+      // Sale not in current page; widen date range to current month and let user search
+      saleService.getAll({ search: openSaleId, limit: 1 })
+        .then((r: any) => {
+          const list: Sale[] = r?.data || r || [];
+          const sale = Array.isArray(list) ? list.find((s) => s.id === openSaleId) : undefined;
+          if (sale) {
+            setViewingSale(sale);
+            const next = new URLSearchParams(searchParams);
+            next.delete('openSaleId');
+            setSearchParams(next, { replace: true });
+          }
+        })
+        .catch(() => { /* ignore */ });
+    }
+  }, [openSaleId, data, boletasData, facturasData, viewingSale, searchParams, setSearchParams]);
 
   const activeCompanies: Company[] = (Array.isArray(companies) ? companies : []).filter((c: Company) => c.isActive);
   const stockQueries = useQueries({
@@ -402,7 +436,7 @@ export function SalesPage() {
       if (companyIds.length === 1) return getCompanyName(companyIds[0]);
       return <span className="text-purple-600 font-medium">Mixta</span>;
     }},
-    ...(!isFieldSeller ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
+    ...(!isSellerRole ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
       const name = getSellerName(item);
       return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
     }}] : []),
@@ -432,7 +466,7 @@ export function SalesPage() {
       if (companyIds.length === 1) return getCompanyName(companyIds[0]);
       return <span className="text-purple-600 font-medium">Mixta</span>;
     }},
-    ...(!isFieldSeller ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
+    ...(!isSellerRole ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
       const name = getSellerName(item);
       return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
     }}] : []),
@@ -491,8 +525,8 @@ export function SalesPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt size={24} /> {isFieldSeller ? 'Mis Ventas' : 'Ventas'}</h1>
-        {!isFieldSeller && (
+        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt size={24} /> {isSellerRole ? 'Mis Ventas' : 'Ventas'}</h1>
+        {!isSellerRole && (
           <div className="flex flex-col sm:flex-row gap-2">
             <button onClick={openLoanCreate} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
               <HandshakeIcon size={18} /> Préstamo
@@ -512,7 +546,7 @@ export function SalesPage() {
             {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name} - {c.ruc}</option>)}
           </select>
         )}
-        {!isFieldSeller && (activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && sellers.length > 0 && (
+        {!isSellerRole && (activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && sellers.length > 0 && (
           <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }} className="px-3 py-2 border rounded-lg">
             <option value="">Todos los vendedores</option>
             {sellers.map((s: any) => <option key={s.id} value={s.id}>{s.fullName || s.username}</option>)}

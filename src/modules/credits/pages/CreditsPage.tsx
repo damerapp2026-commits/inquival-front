@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { useCredits, useDeleteCredit, useCreditById } from '../hooks/useCredits';
+import { useCredits, useDeleteCredit, useCreditById, useEditCredit } from '../hooks/useCredits';
 import { useClients } from '../../clients/hooks/useClients';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
@@ -7,7 +7,7 @@ import { BatchPaymentModal } from '../components/BatchPaymentModal';
 import { EditCreditItemsModal } from '../components/EditCreditItemsModal';
 import { ExportClientStatementButton } from '../components/ExportClientStatementButton';
 import { downloadCreditsSummaryPdf, downloadCreditsDetailedPdf } from '../utils/creditsPdf';
-import { CreditCard, DollarSign, Edit2, Trash2, ChevronDown, ChevronRight, Search, User, Eye, ShoppingBag, FileDown } from 'lucide-react';
+import { CreditCard, DollarSign, Edit2, Trash2, ChevronDown, ChevronRight, Search, User, Eye, ShoppingBag, FileDown, CalendarClock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { CreditAccount, Client } from '../../../shared/types';
 
@@ -30,6 +30,19 @@ const statusLabels: Record<Status, { label: string; class: string }> = {
   PAID: { label: 'Pagado', class: 'bg-primary-100 text-primary-800' },
 };
 
+function getDueState(dueDate?: string, status?: Status): { label: string; class: string; days: number | null } {
+  if (!dueDate) return { label: '—', class: 'text-gray-400', days: null };
+  if (status === 'PAID') return { label: new Date(dueDate).toLocaleDateString('es-PE'), class: 'text-gray-400', days: null };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate.slice(0, 10) + 'T00:00:00');
+  const days = Math.ceil((due.getTime() - today.getTime()) / 86400000);
+  const label = due.toLocaleDateString('es-PE');
+  if (days < 0) return { label: `${label} · vencido ${-days}d`, class: 'text-red-600 font-medium', days };
+  if (days === 0) return { label: `${label} · hoy`, class: 'text-red-500 font-medium', days };
+  if (days <= 7) return { label: `${label} · ${days}d`, class: 'text-orange-600', days };
+  return { label, class: 'text-gray-600', days };
+}
+
 const PAGE_SIZE = 10;
 
 export function CreditsPage() {
@@ -43,6 +56,8 @@ export function CreditsPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [editDueCredit, setEditDueCredit] = useState<CreditAccount | null>(null);
+  const [editDueDate, setEditDueDate] = useState('');
   const [selectedCredit, setSelectedCredit] = useState<CreditAccount | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const { data: detailCredit } = useCreditById(showDetailModal && selectedCredit ? selectedCredit.id : '');
@@ -51,6 +66,7 @@ export function CreditsPage() {
   const { data, isLoading } = useCredits({ limit: 1000, status: statusFilter || undefined });
   const { data: clientsData } = useClients({ limit: 500 });
   const deleteCreditMutation = useDeleteCredit();
+  const editCreditMutation = useEditCredit();
 
   const credits: CreditAccount[] = data?.data || [];
   const clients: Client[] = clientsData?.data || [];
@@ -130,6 +146,18 @@ export function CreditsPage() {
   const handleDelete = async () => {
     await deleteCreditMutation.mutateAsync(selectedCredit!.id);
     setShowDeleteModal(false);
+  };
+
+  const openEditDue = (credit: CreditAccount) => {
+    setEditDueCredit(credit);
+    setEditDueDate(credit.dueDate ? credit.dueDate.slice(0, 10) : '');
+  };
+
+  const handleSaveDueDate = async () => {
+    if (!editDueCredit || !editDueDate) return;
+    await editCreditMutation.mutateAsync({ creditId: editDueCredit.id, data: { dueDate: editDueDate } });
+    setEditDueCredit(null);
+    setEditDueDate('');
   };
 
   return (
@@ -331,6 +359,7 @@ export function CreditsPage() {
                             <tr className="text-xs text-gray-500 text-left">
                               <th className="py-2 pr-3 font-medium">Cuenta</th>
                               <th className="py-2 pr-3 font-medium">Fecha</th>
+                              <th className="py-2 pr-3 font-medium">Vencimiento</th>
                               <th className="py-2 pr-3 font-medium">Total</th>
                               <th className="py-2 pr-3 font-medium">Pagado</th>
                               <th className="py-2 pr-3 font-medium">Pendiente</th>
@@ -341,6 +370,7 @@ export function CreditsPage() {
                           <tbody className="divide-y divide-gray-200">
                             {group.credits.map((c) => {
                               const cst = statusLabels[c.status as Status];
+                              const dueState = getDueState(c.dueDate, c.status as Status);
                               return (
                                 <tr key={c.id} className="hover:bg-white">
                                   <td className="py-2 pr-3">
@@ -352,6 +382,16 @@ export function CreditsPage() {
                                   </td>
                                   <td className="py-2 pr-3 text-gray-600">
                                     {new Date(c.createdAt).toLocaleDateString('es-PE')}
+                                  </td>
+                                  <td className={`py-2 pr-3 text-xs ${dueState.class}`}>
+                                    <button
+                                      onClick={() => openEditDue(c)}
+                                      className="inline-flex items-center gap-1 hover:underline"
+                                      title={c.dueDate ? 'Editar fecha límite' : 'Establecer fecha límite'}
+                                    >
+                                      <CalendarClock size={12} />
+                                      {dueState.label}
+                                    </button>
                                   </td>
                                   <td className="py-2 pr-3 text-gray-700">S/ {c.totalAmount.toFixed(2)}</td>
                                   <td className="py-2 pr-3 text-primary-600">S/ {c.paidAmount.toFixed(2)}</td>
@@ -371,7 +411,7 @@ export function CreditsPage() {
                                       <button
                                         onClick={() => openEdit(c)}
                                         className="text-blue-600 hover:text-blue-800"
-                                        title="Editar"
+                                        title="Editar productos"
                                       >
                                         <Edit2 size={13} />
                                       </button>
@@ -507,6 +547,40 @@ export function CreditsPage() {
         onClose={() => setShowEditModal(false)}
       />
 
+
+      <Modal isOpen={!!editDueCredit} onClose={() => setEditDueCredit(null)} title="Fecha límite de pago">
+        <div className="space-y-4">
+          <div className="bg-gray-50 p-3 rounded-lg text-sm">
+            <div>Cuenta: <span className="font-medium">{editDueCredit?.name || '—'}</span></div>
+            <div>Pendiente: <span className="text-red-600 font-medium">S/ {editDueCredit?.pendingAmount.toFixed(2)}</span></div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Fecha límite</label>
+            <input
+              type="date"
+              value={editDueDate}
+              onChange={(e) => setEditDueDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <p className="mt-1 text-xs text-gray-400">El cliente recibirá alertas cuando se aproxime el vencimiento.</p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setEditDueCredit(null)}
+              className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSaveDueDate}
+              disabled={!editDueDate || editCreditMutation.isPending}
+              className="flex-1 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {editCreditMutation.isPending ? 'Guardando…' : 'Guardar'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)} title="Eliminar Crédito">
         <div className="space-y-4">

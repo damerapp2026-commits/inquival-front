@@ -13,3 +13,11 @@ export function useUpdateClient() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: ({ id, data }: { id: string; data: any }) => clientService.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); toast.success('Cliente actualizado'); } });
 }
+export function useDeleteClient() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: clientService.delete,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clients'] }); toast.success('Cliente eliminado'); },
+    onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'No se pudo eliminar el cliente'),
+  });
+}

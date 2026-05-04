@@ -8,6 +8,9 @@ export function useStock(companyId: string, params?: any) {
 export function useStockAlerts(companyId: string, threshold?: number) {
   return useQuery({ queryKey: ['stock-alerts', companyId, threshold], queryFn: () => stockService.getAlerts(companyId, threshold), enabled: !!companyId });
 }
+export function useStockByProductSummary() {
+  return useQuery({ queryKey: ['stock-by-product-summary'], queryFn: stockService.getByProductSummary, staleTime: 30_000 });
+}
 export function useTransferStock() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: stockService.transfer, onSuccess: () => { qc.invalidateQueries({ queryKey: ['stock'] }); toast.success('Transferencia realizada'); }, onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error') });

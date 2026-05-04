@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useStock, useStockAlerts, useTransferStock } from '../hooks/useStock';
-import { useStockAdjustments, useCreateStockAdjustment } from '../hooks/useStockAdjustments';
+import { useStockAdjustments } from '../hooks/useStockAdjustments';
 import { useProductLots, useExpiringLots } from '../hooks/useProductLots';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
@@ -13,11 +14,22 @@ import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import { Package, ArrowRightLeft, AlertTriangle, Trash2, Plus, ClipboardList, ChevronDown, ChevronUp, Search, CalendarClock, Boxes, Download, Upload, Loader2 } from 'lucide-react';
+import { Package, ArrowRightLeft, AlertTriangle, Trash2, Plus, ClipboardList, ChevronDown, ChevronUp, Search, CalendarClock, Boxes, Download, Upload, Loader2, Ban, HelpCircle, PenLine, AlertCircle, Pencil } from 'lucide-react';
 import type { Stock, Company, Product, StockAdjustment, ProductLot } from '../../../shared/types';
 
+const ADJUSTMENT_REASONS = [
+  { value: 'Conteo físico', icon: ClipboardList },
+  { value: 'Merma / vencimiento', icon: AlertCircle },
+  { value: 'Robo / pérdida', icon: Ban },
+  { value: 'Error de carga', icon: Pencil },
+  { value: 'Ingreso manual', icon: PenLine },
+  { value: 'Otro motivo', icon: HelpCircle },
+] as const;
+
 export function StockPage() {
-  const [activeTab, setActiveTab] = useState<'inventory' | 'lots' | 'adjustments' | 'transfers'>('inventory');
+  const [searchParams] = useSearchParams();
+  const initialTab = (searchParams.get('tab') as 'inventory' | 'lots' | 'adjustments' | 'transfers' | null) || 'inventory';
+  const [activeTab, setActiveTab] = useState<'inventory' | 'lots' | 'adjustments' | 'transfers'>(initialTab);
   const [page, setPage] = useState(1);
   const [companyId, setCompanyId] = useState('');
   const [showTransfer, setShowTransfer] = useState(false);
@@ -28,16 +40,22 @@ export function StockPage() {
   const [ingredientFilter, setIngredientFilter] = useState('');
   const debouncedIngredient = useDebounce(ingredientFilter);
   const [showExpiringDetail, setShowExpiringDetail] = useState(false);
-  const [lotFilter, setLotFilter] = useState<'all' | 'active' | 'expiring' | 'expired'>('all');
+  const initialLotFilter = (searchParams.get('filter') as 'all' | 'active' | 'expiring' | 'expired' | null) || 'all';
+  const [lotFilter, setLotFilter] = useState<'all' | 'active' | 'expiring' | 'expired'>(initialLotFilter);
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t === 'inventory' || t === 'lots' || t === 'adjustments' || t === 'transfers') setActiveTab(t);
+    const f = searchParams.get('filter');
+    if (f === 'all' || f === 'active' || f === 'expiring' || f === 'expired') setLotFilter(f);
+  }, [searchParams]);
   const [expandedStock, setExpandedStock] = useState<Record<string, boolean>>({});
 
   const { data: companies } = useCompanies();
-  const { data: productsData } = useProducts({ limit: 200, activeIngredient: debouncedIngredient || undefined });
+  const { data: productsData } = useProducts({ limit: 10000, activeIngredient: debouncedIngredient || undefined });
   const { data, isLoading } = useStock(companyId, { page, limit: 20 });
   const { data: alerts } = useStockAlerts(companyId, 10);
   const transferStock = useTransferStock();
   const { data: adjustmentsData, isLoading: adjLoading } = useStockAdjustments({ page: adjPage, limit: 20, companyId: companyId || undefined });
-  const createAdjustment = useCreateStockAdjustment();
   const { data: lotsData, isLoading: lotsLoading } = useProductLots(companyId);
   const { data: expiringData } = useExpiringLots(companyId, 30);
 
@@ -49,7 +67,72 @@ export function StockPage() {
     acc[l.productId].push(l);
     return acc;
   }, {});
-  const [adjForm, setAdjForm] = useState({ productId: '', companyId: '', type: 'INCREASE' as 'INCREASE' | 'DECREASE', quantity: 0, reason: '' });
+  // Bulk adjustment modal state
+  const [adjCompanyId, setAdjCompanyId] = useState('');
+  const [adjSearch, setAdjSearch] = useState('');
+  const debouncedAdjSearch = useDebounce(adjSearch);
+  const [adjSelected, setAdjSelected] = useState<Record<string, boolean>>({});
+  const [adjNewQty, setAdjNewQty] = useState<Record<string, string>>({});
+  const [adjReason, setAdjReason] = useState<string>('Conteo físico');
+  const [adjApplying, setAdjApplying] = useState(false);
+  const [adjProgress, setAdjProgress] = useState({ done: 0, total: 0, errors: 0 });
+  const [adjFlashProductId, setAdjFlashProductId] = useState<string | null>(null);
+
+  // Fetch every product (no ingredient filter) and every stock row for the chosen warehouse
+  // when the bulk modal is open. Both queries are gated on showAdjustment so we don't pay
+  // the cost while the modal is closed.
+  const { data: adjProductsData } = useProducts(showAdjustment ? { limit: 10000 } : undefined);
+  const { data: adjStockResponse } = useQuery({
+    queryKey: ['stock', adjCompanyId, 'bulk-adjust'],
+    queryFn: () => stockService.getByCompany(adjCompanyId, { limit: 9999 }),
+    enabled: !!adjCompanyId && showAdjustment,
+  });
+
+  const adjAllProducts: Product[] = useMemo(() => {
+    const list: Product[] = (adjProductsData?.data || []).filter((p: Product) => p.isActive !== false);
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  }, [adjProductsData]);
+  const adjStockByProductId: Record<string, number> = useMemo(() => {
+    const list: any[] = Array.isArray(adjStockResponse) ? adjStockResponse : adjStockResponse?.data || [];
+    const map: Record<string, number> = {};
+    list.forEach((s: any) => {
+      const pid = s.productId || s.product?.id || s.product?._id || s.product;
+      if (pid) map[String(pid)] = Number(s.quantity) || 0;
+    });
+    return map;
+  }, [adjStockResponse]);
+
+  const adjVisibleProducts = useMemo(() => {
+    const q = debouncedAdjSearch.trim().toLowerCase();
+    if (!q) return adjAllProducts;
+    return adjAllProducts.filter(p => p.name.toLowerCase().includes(q));
+  }, [adjAllProducts, debouncedAdjSearch]);
+
+  const adjSelectedCount = Object.values(adjSelected).filter(Boolean).length;
+  const adjPendingChanges = useMemo(() => {
+    return Object.entries(adjSelected)
+      .filter(([, sel]) => sel)
+      .map(([pid]) => {
+        const current = adjStockByProductId[pid] ?? 0;
+        const raw = adjNewQty[pid];
+        const parsed = raw === undefined || raw === '' ? current : Number(raw);
+        const next = isNaN(parsed) ? current : parsed;
+        const delta = Math.round((next - current) * 100) / 100;
+        return { productId: pid, current, next, delta };
+      })
+      .filter(c => Math.abs(c.delta) > 0.0001 && c.next >= 0);
+  }, [adjSelected, adjNewQty, adjStockByProductId]);
+  const adjHasInvalid = useMemo(() => {
+    return Object.entries(adjSelected)
+      .filter(([, sel]) => sel)
+      .some(([pid]) => {
+        const raw = adjNewQty[pid];
+        if (raw === undefined || raw === '') return false;
+        const parsed = Number(raw);
+        return isNaN(parsed) || parsed < 0;
+      });
+  }, [adjSelected, adjNewQty]);
+  const adjCanApply = !adjApplying && !!adjCompanyId && !!adjReason && adjPendingChanges.length > 0 && !adjHasInvalid;
 
   // Bulk import state
   const [showImportPreview, setShowImportPreview] = useState(false);
@@ -105,15 +188,44 @@ export function StockPage() {
 
   const openTransfer = () => { setTransferForm({ fromCompanyId: companyId || '', toCompanyId: '', items: [{ productId: '', quantity: 0, lotAllocations: [] }] }); setShowTransfer(true); };
   const openAdjustment = (preset?: { productId?: string; companyId?: string }) => {
-    setAdjForm({
-      productId: preset?.productId || '',
-      companyId: preset?.companyId || companyId || (companyList[0]?.id || ''),
-      type: 'INCREASE',
-      quantity: 0,
-      reason: '',
-    });
+    const targetCompanyId = preset?.companyId || companyId || (companyList[0]?.id || '');
+    setAdjCompanyId(targetCompanyId);
+    setAdjSearch('');
+    setAdjSelected(preset?.productId ? { [preset.productId]: true } : {});
+    setAdjNewQty({});
+    setAdjReason('Conteo físico');
+    setAdjProgress({ done: 0, total: 0, errors: 0 });
+    setAdjFlashProductId(preset?.productId || null);
     setShowAdjustment(true);
   };
+  const closeAdjustment = () => {
+    if (adjApplying) return;
+    setShowAdjustment(false);
+    setAdjSelected({});
+    setAdjNewQty({});
+    setAdjSearch('');
+    setAdjFlashProductId(null);
+  };
+  const toggleAdjProduct = (productId: string) => {
+    setAdjSelected(prev => {
+      const next = { ...prev };
+      const wasSelected = !!next[productId];
+      if (wasSelected) delete next[productId]; else next[productId] = true;
+      // Toggling off discards the typed value so re-toggling shows the live current stock
+      if (wasSelected) {
+        setAdjNewQty(qty => { const n = { ...qty }; delete n[productId]; return n; });
+      }
+      return next;
+    });
+  };
+  const selectAllVisibleAdj = () => {
+    setAdjSelected(prev => {
+      const next = { ...prev };
+      adjVisibleProducts.forEach(p => { next[p.id] = true; });
+      return next;
+    });
+  };
+  const clearAdjSelection = () => { setAdjSelected({}); setAdjNewQty({}); };
 
   const addTransferItem = () => setTransferForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0, lotAllocations: [] }] }));
   const transferSourceLots = (productId: string): ProductLot[] => {
@@ -183,7 +295,42 @@ export function StockPage() {
     await transferStock.mutateAsync(payload);
     setShowTransfer(false);
   };
-  const handleAdjustment = async (e: React.FormEvent) => { e.preventDefault(); await createAdjustment.mutateAsync(adjForm); setShowAdjustment(false); };
+  const applyBulkAdjustments = async () => {
+    if (!adjCanApply) return;
+    setAdjApplying(true);
+    setAdjProgress({ done: 0, total: adjPendingChanges.length, errors: 0 });
+    let done = 0;
+    let errors = 0;
+    for (const change of adjPendingChanges) {
+      try {
+        await stockAdjustmentService.create({
+          productId: change.productId,
+          companyId: adjCompanyId,
+          type: change.delta > 0 ? 'INCREASE' : 'DECREASE',
+          quantity: Math.abs(change.delta),
+          reason: adjReason,
+        });
+        done++;
+      } catch {
+        errors++;
+      }
+      setAdjProgress({ done: done + errors, total: adjPendingChanges.length, errors });
+    }
+    queryClient.invalidateQueries({ queryKey: ['stock'] });
+    queryClient.invalidateQueries({ queryKey: ['stock-adjustments'] });
+    queryClient.invalidateQueries({ queryKey: ['stock-alerts'] });
+    setAdjApplying(false);
+    if (errors === 0) {
+      toast.success(`${done} ajuste${done !== 1 ? 's' : ''} aplicado${done !== 1 ? 's' : ''}`);
+      setShowAdjustment(false);
+      setAdjSelected({});
+      setAdjNewQty({});
+      setAdjSearch('');
+      setAdjFlashProductId(null);
+    } else {
+      toast.error(`${done} aplicado${done !== 1 ? 's' : ''}, ${errors} con error`);
+    }
+  };
 
   const handleExportStockExcel = async () => {
     setExporting(true);
@@ -198,17 +345,29 @@ export function StockPage() {
         productService.getAll({ limit: 9999 }),
       ]);
 
-      const freshCompanies: Company[] = Array.isArray(freshCompaniesRaw)
-        ? freshCompaniesRaw
-        : (freshCompaniesRaw as any)?.data || [];
-      const allProducts: Product[] = ((freshProductsRaw as any)?.data || []).filter((p: Product) => p.isActive);
+      // Robustly resolve list shape from different response wrappings
+      const resolveList = (raw: any): any[] => {
+        if (Array.isArray(raw)) return raw;
+        if (Array.isArray(raw?.data)) return raw.data;
+        if (Array.isArray(raw?.data?.data)) return raw.data.data;
+        return [];
+      };
+      const freshCompanies: Company[] = resolveList(freshCompaniesRaw);
+      // Accept products where isActive is explicitly true OR undefined (legacy rows)
+      const allProducts: Product[] = resolveList(freshProductsRaw).filter((p: Product) => p.isActive !== false);
+
+      // Log raw shapes to help diagnose if numbers come out wrong
+      // eslint-disable-next-line no-console
+      console.log('[stock-export] companies raw:', freshCompaniesRaw, '→ resolved:', freshCompanies.length);
+      // eslint-disable-next-line no-console
+      console.log('[stock-export] products raw:', freshProductsRaw, '→ resolved:', allProducts.length);
 
       if (freshCompanies.length === 0) {
         toast.error('No hay almacenes registrados. Crea al menos uno en /companies.');
         return;
       }
       if (allProducts.length === 0) {
-        toast.error('No hay productos activos para exportar');
+        toast.error('No hay productos detectados. Revisa la consola del navegador para ver la respuesta del backend.');
         return;
       }
 
@@ -288,11 +447,15 @@ export function StockPage() {
         companyService.getAll(),
         productService.getAll({ limit: 9999 }),
       ]);
-      const freshCompanies: Company[] = Array.isArray(freshCompaniesRaw)
-        ? freshCompaniesRaw
-        : (freshCompaniesRaw as any)?.data || [];
+      const resolveList = (raw: any): any[] => {
+        if (Array.isArray(raw)) return raw;
+        if (Array.isArray(raw?.data)) return raw.data;
+        if (Array.isArray(raw?.data?.data)) return raw.data.data;
+        return [];
+      };
+      const freshCompanies: Company[] = resolveList(freshCompaniesRaw);
       const productById = new Map<string, Product>(
-        ((freshProductsRaw as any)?.data || []).map((p: Product) => [p.id, p])
+        resolveList(freshProductsRaw).map((p: Product) => [p.id, p])
       );
       const companyById = new Map<string, Company>(freshCompanies.map((c: Company) => [c.id, c]));
 
@@ -366,6 +529,11 @@ export function StockPage() {
   };
 
   React.useEffect(() => { if (!companyId && companyList.length > 0) setCompanyId(companyList[0].id); }, [companyList, companyId]);
+  React.useEffect(() => {
+    if (!adjFlashProductId) return;
+    const t = setTimeout(() => setAdjFlashProductId(null), 1800);
+    return () => clearTimeout(t);
+  }, [adjFlashProductId]);
 
   const stockColumns = [
     { key: 'productId', header: 'Producto', render: (item: Stock) => getProductName(item.productId) },
@@ -811,39 +979,205 @@ export function StockPage() {
         </form>
       </Modal>
 
-      <Modal isOpen={showAdjustment} onClose={() => setShowAdjustment(false)} title="Ajuste de Stock">
-        <form onSubmit={handleAdjustment} className="space-y-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Almacén</label>
-            <select value={adjForm.companyId} onChange={(e) => setAdjForm({ ...adjForm, companyId: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required>
-              <option value="">Seleccionar...</option>
-              {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Producto</label>
-            <SearchableSelect
-              options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
-              value={adjForm.productId}
-              onChange={(v) => setAdjForm({ ...adjForm, productId: v })}
-              placeholder="Buscar producto..."
-              required
+      <Modal isOpen={showAdjustment} onClose={closeAdjustment} title="Ajustar stock" size="2xl">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 -mt-2">
+            Seleccioná uno o varios productos y registrá su nuevo stock. Cada cambio queda asentado en el ledger de movimientos.
+          </p>
+
+          {companyList.length > 1 && (
+            <div className="flex flex-wrap gap-2">
+              {companyList.map((c: Company) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => { setAdjCompanyId(c.id); setAdjSelected({}); setAdjNewQty({}); }}
+                  disabled={adjApplying}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${adjCompanyId === c.id ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'} disabled:opacity-50`}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 border border-gray-200 rounded-xl px-3 py-2 bg-gray-50">
+            <Search size={16} className="text-gray-400 flex-shrink-0" />
+            <input
+              type="text"
+              value={adjSearch}
+              onChange={(e) => setAdjSearch(e.target.value)}
+              placeholder="Buscar por nombre..."
+              className="flex-1 bg-transparent outline-none text-sm"
             />
+            <span className="text-sm text-gray-500 flex-shrink-0">
+              <span className="font-semibold text-gray-800">{adjSelectedCount}</span> seleccionado{adjSelectedCount !== 1 ? 's' : ''}
+            </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
-              <select value={adjForm.type} onChange={(e) => setAdjForm({ ...adjForm, type: e.target.value as 'INCREASE' | 'DECREASE' })} className="w-full px-3 py-2 border rounded-lg">
-                <option value="INCREASE">Aumento</option>
-                <option value="DECREASE">Disminucion</option>
-              </select>
+
+          <div className="flex items-center justify-between text-xs">
+            <button type="button" onClick={selectAllVisibleAdj} disabled={adjApplying} className="text-orange-600 font-medium hover:text-orange-700 disabled:opacity-50">
+              Seleccionar todos los visibles
+            </button>
+            {adjSelectedCount > 0 && (
+              <button type="button" onClick={clearAdjSelection} disabled={adjApplying} className="text-gray-500 hover:text-gray-700 disabled:opacity-50">
+                Limpiar selección
+              </button>
+            )}
+          </div>
+
+          <div className="border border-gray-200 rounded-xl overflow-hidden">
+            <div className="max-h-96 overflow-y-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    <th className="w-10 px-3 py-2"></th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Stock actual</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Stock final</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider pr-4">Resultado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {adjVisibleProducts.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-8 text-gray-400">Sin productos</td>
+                    </tr>
+                  ) : adjVisibleProducts.map(p => {
+                    const current = adjStockByProductId[p.id] ?? 0;
+                    const isSelected = !!adjSelected[p.id];
+                    const raw = adjNewQty[p.id];
+                    const parsed = raw === undefined || raw === '' ? current : Number(raw);
+                    const isInvalid = isSelected && raw !== undefined && raw !== '' && (isNaN(parsed) || parsed < 0);
+                    const next = isInvalid ? current : (isNaN(parsed) ? current : parsed);
+                    const delta = Math.round((next - current) * 100) / 100;
+                    const flash = adjFlashProductId === p.id;
+                    return (
+                      <tr
+                        key={p.id}
+                        className={`${isSelected ? 'bg-orange-50/60' : 'hover:bg-gray-50'} ${flash ? 'ring-2 ring-inset ring-orange-300' : ''} transition-colors`}
+                      >
+                        <td className="px-3 py-2 align-middle">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleAdjProduct(p.id)}
+                            disabled={adjApplying}
+                            className="w-4 h-4 accent-orange-600 cursor-pointer disabled:cursor-not-allowed"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="font-medium text-gray-800">{p.name}</div>
+                          {p.unit && <div className="text-[11px] text-gray-400">{p.unit}</div>}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700">{current}</td>
+                        <td className="px-3 py-2 text-right">
+                          {isSelected ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={raw ?? String(current)}
+                              onChange={(e) => setAdjNewQty(prev => ({ ...prev, [p.id]: e.target.value }))}
+                              disabled={adjApplying}
+                              className={`w-24 px-2 py-1 border rounded text-right text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${isInvalid ? 'border-red-400 bg-red-50' : 'border-gray-300'} disabled:opacity-50`}
+                            />
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right pr-4">
+                          {!isSelected ? (
+                            <span className="text-gray-300">—</span>
+                          ) : isInvalid ? (
+                            <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">Inválido</span>
+                          ) : delta === 0 ? (
+                            <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">Sin cambio</span>
+                          ) : (
+                            <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${delta > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                              {delta > 0 ? `+${delta}` : delta}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Cantidad</label>
-              <input type="number" min="0.01" step="0.01" value={adjForm.quantity || ''} onChange={(e) => setAdjForm({ ...adjForm, quantity: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border rounded-lg" required />
+          </div>
+
+          {adjSelectedCount > 0 && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Motivo del ajuste</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {ADJUSTMENT_REASONS.map(r => {
+                  const Icon = r.icon;
+                  const active = adjReason === r.value;
+                  return (
+                    <button
+                      key={r.value}
+                      type="button"
+                      onClick={() => setAdjReason(r.value)}
+                      disabled={adjApplying}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${active ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'} disabled:opacity-50`}
+                    >
+                      <Icon size={14} className="flex-shrink-0" />
+                      <span className="text-left">{r.value}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {adjApplying && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+              <div className="flex items-center justify-between text-sm mb-2">
+                <span className="font-medium text-orange-800">Aplicando ajustes…</span>
+                <span className="text-orange-700">{adjProgress.done} / {adjProgress.total}</span>
+              </div>
+              <div className="h-2 bg-orange-100 rounded overflow-hidden">
+                <div className="h-full bg-orange-600 transition-all" style={{ width: `${adjProgress.total > 0 ? (adjProgress.done / adjProgress.total) * 100 : 0}%` }} />
+              </div>
+              {adjProgress.errors > 0 && <div className="text-xs text-red-600 mt-2">{adjProgress.errors} con error</div>}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-3 pt-3 border-t border-gray-100">
+            <div className="text-xs flex items-center gap-1.5 min-h-[20px]">
+              {adjHasInvalid ? (
+                <span className="text-red-600 font-medium flex items-center gap-1.5">
+                  <AlertTriangle size={14} /> Hay valores inválidos (negativos o no numéricos)
+                </span>
+              ) : adjSelectedCount > 0 && adjPendingChanges.length === 0 ? (
+                <span className="text-amber-700 flex items-center gap-1.5">
+                  <AlertTriangle size={14} /> Modificá el stock final de algún producto seleccionado
+                </span>
+              ) : adjPendingChanges.length > 0 ? (
+                <span className="text-gray-500">{adjPendingChanges.length} cambio{adjPendingChanges.length !== 1 ? 's' : ''} a aplicar</span>
+              ) : null}
+            </div>
+            <div className="flex gap-3 flex-shrink-0">
+              <button
+                type="button"
+                onClick={closeAdjustment}
+                disabled={adjApplying}
+                className="px-6 py-2 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={applyBulkAdjustments}
+                disabled={!adjCanApply}
+                className="px-6 py-2 bg-orange-600 text-white rounded-xl hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold flex items-center gap-2"
+              >
+                {adjApplying ? <><Loader2 size={16} className="animate-spin" /> Aplicando…</> : 'Aplicar ajustes'}
+              </button>
             </div>
           </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Razon</label>
-            <textarea value={adjForm.reason} onChange={(e) => setAdjForm({ ...adjForm, reason: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} required placeholder="Motivo del ajuste..." />
-          </div>
-          <button type="submit" disabled={createAdjustment.isPending} className="w-full py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed">{createAdjustment.isPending ? 'Registrando...' : 'Registrar Ajuste'}</button>
-        </form>
+        </div>
       </Modal>
 
       {/* Modal carga masiva por Excel */}

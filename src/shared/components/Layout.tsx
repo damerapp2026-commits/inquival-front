@@ -2,13 +2,14 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useAPAlerts } from '../../modules/accounts-payable/hooks/useAccountsPayable';
+import { useExpiringLots } from '../../modules/stock/hooks/useProductLots';
 import {
   Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight,
   LogOut, Menu, X, Wallet, CreditCard, BarChart3, FolderTree, Shield,
   ClipboardList, FileText, Bell, AlertTriangle, Clock, ScanLine, Ruler, ScrollText, Receipt,
-  ChevronLeft, ChevronRight, Percent, Briefcase,
+  ChevronLeft, ChevronRight, Percent, Briefcase, CalendarClock, MoreHorizontal,
 } from 'lucide-react';
-import type { AccountPayable } from '../types';
+import type { AccountPayable, ProductLot } from '../types';
 
 type NavItem = { path: string; label: string; icon: any; roles?: string[] };
 type NavSection = { label: string; items: NavItem[] };
@@ -21,9 +22,9 @@ const navSections: NavSection[] = [
   {
     label: 'MIS DATOS',
     items: [
-      { path: '/sales', label: 'Mis Ventas', icon: ShoppingCart, roles: ['VENDEDOR_CAMPO'] },
-      { path: '/quotes', label: 'Mis Cotizaciones', icon: ScrollText, roles: ['VENDEDOR_CAMPO'] },
-      { path: '/my-commissions', label: 'Mis Comisiones', icon: Percent, roles: ['VENDEDOR_CAMPO'] },
+      { path: '/sales', label: 'Mis Ventas', icon: ShoppingCart, roles: ['VENDEDOR_CAMPO', 'VENDEDOR'] },
+      { path: '/quotes', label: 'Mis Cotizaciones', icon: ScrollText, roles: ['VENDEDOR_CAMPO', 'VENDEDOR'] },
+      { path: '/my-commissions', label: 'Mis Comisiones', icon: Percent, roles: ['VENDEDOR_CAMPO', 'VENDEDOR'] },
     ],
   },
   {
@@ -83,6 +84,8 @@ export function Layout() {
   }, [collapsed]);
 
   const { data: apAlerts } = useAPAlerts(3);
+  const { data: expiringLotsData } = useExpiringLots(undefined, 30);
+  const expiringLots: ProductLot[] = Array.isArray(expiringLotsData) ? expiringLotsData : [];
 
   type DayAlertGroup = { dateStr: string; count: number; total: number; isOverdue: boolean };
 
@@ -121,7 +124,26 @@ export function Layout() {
     return Object.values(byDate).sort((a, b) => a.dateStr.localeCompare(b.dateStr));
   }, [apAlerts]);
 
-  const alertCount = dayAlertGroups.length;
+  const expiringSummary = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const expired: ProductLot[] = [];
+    const within7: ProductLot[] = [];
+    const within30: ProductLot[] = [];
+    for (const l of expiringLots) {
+      if (!l.expirationDate || l.currentQuantity <= 0) continue;
+      const exp = new Date(l.expirationDate);
+      const days = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      if (days < 0) expired.push(l);
+      else if (days <= 7) within7.push(l);
+      else if (days <= 30) within30.push(l);
+    }
+    return { expired, within7, within30 };
+  }, [expiringLots]);
+
+  const expiringGroupCount = (expiringSummary.expired.length > 0 ? 1 : 0)
+    + (expiringSummary.within7.length > 0 ? 1 : 0)
+    + (expiringSummary.within30.length > 0 ? 1 : 0);
+  const alertCount = dayAlertGroups.length + expiringGroupCount;
 
   const formatAlertDate = (dateStr: string): string => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -246,17 +268,10 @@ export function Layout() {
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
         <header className="h-16 bg-primary-600 flex items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-3">
-            <button onClick={() => setMobileOpen(true)} className="lg:hidden text-white/80 hover:text-white">
-              <Menu size={20} />
-            </button>
+            <span className="lg:hidden text-white text-base font-bold tracking-wide">Agrosystem</span>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 bg-white/15 hover:bg-white/25 transition-colors border border-white/20 rounded-full px-4 py-1.5 cursor-default">
-              <span className="w-2 h-2 rounded-full bg-green-300 shadow-[0_0_6px_2px_rgba(134,239,172,0.6)]"></span>
-              <span className="text-white text-sm font-semibold tracking-wide">Sucursal Principal</span>
-            </div>
-
             <div className="relative" ref={bellRef}>
               <button
                 onClick={() => setBellOpen(!bellOpen)}
@@ -279,10 +294,67 @@ export function Layout() {
                       </span>
                     )}
                   </div>
-                  <div className="max-h-72 overflow-y-auto">
+                  <div className="max-h-96 overflow-y-auto">
                     {alertCount === 0 && (
                       <div className="px-4 py-6 text-center text-sm text-gray-400">
                         Sin alertas pendientes
+                      </div>
+                    )}
+                    {expiringSummary.expired.length > 0 && (
+                      <div
+                        className="px-4 py-3 border-b border-gray-100 cursor-pointer transition-colors bg-red-50/60 hover:bg-red-100"
+                        onClick={() => { setBellOpen(false); navigate('/stock?tab=lots&filter=expired'); }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-red-700 flex items-center gap-1">
+                            <AlertTriangle size={12} /> Productos vencidos
+                          </span>
+                          <span className="text-sm font-bold text-red-600">
+                            {expiringSummary.expired.length}
+                          </span>
+                        </div>
+                        <div className="text-xs mt-0.5 text-red-500 truncate">
+                          {expiringSummary.expired.slice(0, 2).map((l) => l.productName || 'Producto').join(', ')}
+                          {expiringSummary.expired.length > 2 && ` y ${expiringSummary.expired.length - 2} más`}
+                        </div>
+                      </div>
+                    )}
+                    {expiringSummary.within7.length > 0 && (
+                      <div
+                        className="px-4 py-3 border-b border-gray-100 cursor-pointer transition-colors bg-orange-50/60 hover:bg-orange-100"
+                        onClick={() => { setBellOpen(false); navigate('/stock?tab=lots&filter=expiring'); }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-orange-700 flex items-center gap-1">
+                            <CalendarClock size={12} /> Vencen en 7 días
+                          </span>
+                          <span className="text-sm font-bold text-orange-600">
+                            {expiringSummary.within7.length}
+                          </span>
+                        </div>
+                        <div className="text-xs mt-0.5 text-orange-500 truncate">
+                          {expiringSummary.within7.slice(0, 2).map((l) => l.productName || 'Producto').join(', ')}
+                          {expiringSummary.within7.length > 2 && ` y ${expiringSummary.within7.length - 2} más`}
+                        </div>
+                      </div>
+                    )}
+                    {expiringSummary.within30.length > 0 && (
+                      <div
+                        className="px-4 py-3 border-b border-gray-100 cursor-pointer transition-colors bg-yellow-50/60 hover:bg-yellow-100"
+                        onClick={() => { setBellOpen(false); navigate('/stock?tab=lots&filter=expiring'); }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-yellow-700 flex items-center gap-1">
+                            <CalendarClock size={12} /> Vencen en 30 días
+                          </span>
+                          <span className="text-sm font-bold text-yellow-600">
+                            {expiringSummary.within30.length}
+                          </span>
+                        </div>
+                        <div className="text-xs mt-0.5 text-yellow-600 truncate">
+                          {expiringSummary.within30.slice(0, 2).map((l) => l.productName || 'Producto').join(', ')}
+                          {expiringSummary.within30.length > 2 && ` y ${expiringSummary.within30.length - 2} más`}
+                        </div>
                       </div>
                     )}
                     {dayAlertGroups.map((group) => (
@@ -332,10 +404,67 @@ export function Layout() {
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-8 overflow-auto min-w-0">
+        <main className="flex-1 p-4 pb-20 lg:p-8 overflow-auto min-w-0">
           <Outlet />
         </main>
       </div>
+
+      {/* Bottom nav (mobile only) */}
+      <nav
+        className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-200 grid grid-cols-4 h-16 pb-[env(safe-area-inset-bottom)]"
+        aria-label="Navegación principal"
+      >
+        {(user?.role === 'VENDEDOR_CAMPO' || user?.role === 'VENDEDOR'
+          ? [
+              { path: '/sales', label: 'Ventas', icon: ShoppingCart },
+              { path: '/quotes', label: 'Cotizar', icon: ScrollText },
+            ]
+          : [
+              { path: '/dashboard', label: 'Inicio', icon: BarChart3 },
+              { path: '/cash-register', label: 'Caja', icon: Wallet },
+            ]
+        ).map((item) => {
+          const Icon = item.icon;
+          const isActive = location.pathname.startsWith(item.path);
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`flex flex-col items-center justify-center gap-0.5 transition-colors ${
+                isActive ? 'text-primary-600' : 'text-gray-500 active:text-gray-700'
+              }`}
+            >
+              <Icon size={20} />
+              <span className="text-[10px] font-medium">{item.label}</span>
+            </Link>
+          );
+        })}
+        <Link
+          to="/pos"
+          className="relative flex flex-col items-center justify-end pb-1.5"
+          aria-label="POS"
+        >
+          <span className="absolute -top-5 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-primary-600 text-white shadow-[0_8px_24px_-4px_rgba(220,86,8,0.45)] flex items-center justify-center ring-4 ring-white">
+            <ScanLine size={22} />
+          </span>
+          <span
+            className={`text-[10px] font-semibold ${
+              location.pathname.startsWith('/pos') ? 'text-primary-700' : 'text-gray-500'
+            }`}
+          >
+            POS
+          </span>
+        </Link>
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          className="flex flex-col items-center justify-center gap-0.5 text-gray-500 active:text-gray-700 transition-colors"
+          aria-label="Más opciones"
+        >
+          <MoreHorizontal size={20} />
+          <span className="text-[10px] font-medium">Más</span>
+        </button>
+      </nav>
     </div>
   );
 }

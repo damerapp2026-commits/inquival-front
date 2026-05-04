@@ -6,16 +6,17 @@ import { useClients } from '../../clients/hooks/useClients';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useCreateSale } from '../../sales/hooks/useSales';
-import { useCreateQuote, useQuote, useConvertQuote } from '../../quotes/hooks/useQuotes';
+import { useQuote, useConvertQuote } from '../../quotes/hooks/useQuotes';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { stockService } from '../../stock/services/stockService';
-import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark, ChevronLeft, ChevronRight, Receipt, Building2, FileText, CheckCircle2, Eye, Banknote } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { Product, ProductPrice, Category, Company, Client, PriceTier, PaymentMethod, CreditAccount } from '../../../shared/types';
 import { useOpenClientCredits } from '../../credits/hooks/useCredits';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { useUsers } from '../../users/hooks/useUsers';
+import { VoucherPreviewModal, type VoucherSnapshot } from '../../sales/components/VoucherPreviewModal';
 
 const IGV_RATE = 0.18;
 
@@ -40,15 +41,30 @@ function getPaymentMethodColors(name: string, selected: boolean): string {
 
 const ALL_COMPANIES = '__ALL__';
 
+type TaxType = 'GRAVADO' | 'EXONERADO' | 'INAFECTO';
+
 interface CartItem {
   productId: string;
   name: string;
   unit: string;
   quantity: number;
   unitPrice: number;
+  taxType: TaxType;        // affects IGV calculation: only GRAVADO items contribute IGV
   tierOverride?: string;   // if set, uses this tier instead of global
   isCustomPrice?: boolean; // true = manually edited, don't re-resolve
   sourceCompanyId?: string; // when global selector is "Todos", store which warehouse this item comes from
+}
+
+function normalizeTaxType(value: unknown): TaxType {
+  const v = String(value || '').trim().toUpperCase();
+  return v === 'EXONERADO' || v === 'INAFECTO' ? v : 'GRAVADO';
+}
+
+function productInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '·';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
 function resolvePrice(product: Product, tierId: string, companyId: string): number | undefined {
@@ -61,15 +77,15 @@ function resolvePrice(product: Product, tierId: string, companyId: string): numb
 
 export function POSPage() {
   const { user } = useAuth();
-  const isFieldSeller = user?.role === 'VENDEDOR_CAMPO';
-  const { data: usersData } = useUsers({ limit: 100, role: 'VENDEDOR_CAMPO' });
+  const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
+  const { data: usersData } = useUsers({ limit: 200 });
   const sellerOptions: any[] = useMemo(() => {
     const raw: any = usersData;
     const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
-    return list.filter((u) => u.isActive !== false);
+    return list.filter((u) => u.isActive !== false && (u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO'));
   }, [usersData]);
 
-  const { data: productsData } = useProducts({ limit: 500 });
+  const { data: productsData } = useProducts({ limit: 10000 });
   const { data: categoriesData } = useCategories();
   const { data: companiesData } = useCompanies();
   const { data: clientsData } = useClients({ limit: 500 });
@@ -119,15 +135,6 @@ export function POSPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCheckout, setShowCheckout] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
-  const [showQuoteModal, setShowQuoteModal] = useState(false);
-  const [quoteClientId, setQuoteClientId] = useState('');
-  const [quoteClientName, setQuoteClientName] = useState('');
-  const [quoteValidUntil, setQuoteValidUntil] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 15);
-    return d.toISOString().slice(0, 10);
-  });
-  const [quoteNotes, setQuoteNotes] = useState('');
-  const createQuote = useCreateQuote();
   const convertQuote = useConvertQuote();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -141,9 +148,13 @@ export function POSPage() {
   const [isCredit, setIsCredit] = useState(false);
   const [creditAccountId, setCreditAccountId] = useState<string>('new');
   const [creditName, setCreditName] = useState('');
+  const [creditDueDate, setCreditDueDate] = useState('');
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [sellerId, setSellerId] = useState<string>('');
   const searchRef = useRef<HTMLInputElement>(null);
+  const [successSale, setSuccessSale] = useState<VoucherSnapshot | null>(null);
+  const [successCountdown, setSuccessCountdown] = useState(5);
+  const [voucherPreview, setVoucherPreview] = useState<VoucherSnapshot | null>(null);
 
   const { data: openCredits } = useOpenClientCredits(isCredit ? clientId : '');
 
@@ -225,6 +236,7 @@ export function POSPage() {
         unit: p?.unit || '',
         quantity: i.quantity,
         unitPrice: i.unitPrice,
+        taxType: normalizeTaxType(p?.taxType),
         tierOverride: i.priceTier,
         isCustomPrice: true,
         sourceCompanyId: preloadedQuote.companyId || undefined,
@@ -240,8 +252,8 @@ export function POSPage() {
     if (!companyId && companies.length) setCompanyId(ALL_COMPANIES);
   }, [companies, companyId]);
   useEffect(() => {
-    if (isFieldSeller && user?.id && sellerId !== user.id) setSellerId(user.id);
-  }, [isFieldSeller, user?.id, sellerId]);
+    if (isSellerRole && user?.id && sellerId !== user.id) setSellerId(user.id);
+  }, [isSellerRole, user?.id, sellerId]);
   useEffect(() => {
     if (!tierId && tiers.length) setTierId(tiers[0].id);
   }, [tiers, tierId]);
@@ -336,6 +348,7 @@ export function POSPage() {
           unit: product.unit,
           quantity: 1,
           unitPrice: price,
+          taxType: normalizeTaxType(product.taxType),
           sourceCompanyId,
         },
       ];
@@ -421,9 +434,28 @@ export function POSPage() {
 
   const [editingPriceFor, setEditingPriceFor] = useState<string | null>(null);
 
-  const subtotal = cart.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-  const igv = subtotal * IGV_RATE;
-  const total = subtotal;
+  // Solo los items GRAVADO contribuyen IGV. Los precios en carrito vienen con IGV incluido,
+  // así que la base gravada se obtiene dividiendo el total gravado entre (1 + IGV_RATE).
+  const { gravadoBase, exoneradoBase, inafectoBase, igv, total } = useMemo(() => {
+    let gravadoConIgv = 0;
+    let exo = 0;
+    let inaf = 0;
+    for (const i of cart) {
+      const sub = i.quantity * i.unitPrice;
+      if (i.taxType === 'EXONERADO') exo += sub;
+      else if (i.taxType === 'INAFECTO') inaf += sub;
+      else gravadoConIgv += sub;
+    }
+    const base = gravadoConIgv / (1 + IGV_RATE);
+    const igvAmount = gravadoConIgv - base;
+    return {
+      gravadoBase: base,
+      exoneradoBase: exo,
+      inafectoBase: inaf,
+      igv: igvAmount,
+      total: gravadoConIgv + exo + inaf,
+    };
+  }, [cart]);
 
   const openCheckout = () => {
     if (cart.length === 0) {
@@ -442,6 +474,7 @@ export function POSPage() {
     setIsCredit(false);
     setCreditAccountId('new');
     setCreditName('');
+    setCreditDueDate('');
     setSplitPayments([{ paymentMethodId, amount: 0 }]);
     setCheckoutStep(1);
     setShowCheckout(true);
@@ -463,10 +496,33 @@ export function POSPage() {
       }
     }
     const validPayments = isCredit ? [] : splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
+    const saleTotal = total;
+    const saleVoucherType = voucherType;
+    const saleSnapshotBase = {
+      total: saleTotal,
+      voucherType: saleVoucherType as VoucherSnapshot['voucherType'],
+      date: new Date(),
+      items: cart.map((i) => ({
+        name: i.name,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+        subtotal: i.quantity * i.unitPrice,
+      })),
+      payments: validPayments.map((p) => ({
+        methodName: paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '',
+        amount: p.amount,
+      })),
+      clientName: clients.find((c) => c.id === clientId)?.name,
+      clientDocument: clients.find((c) => c.id === clientId)?.documentNumber,
+      clientPhone: clients.find((c) => c.id === clientId)?.phone,
+      igv,
+      baseImponible: gravadoBase,
+    };
     try {
-      const effectiveSellerId = sellerId || (isFieldSeller ? user?.id : undefined);
+      const effectiveSellerId = sellerId || (isSellerRole ? user?.id : undefined);
+      let saleResult: any;
       if (sourceQuoteId) {
-        await convertQuote.mutateAsync({
+        saleResult = await convertQuote.mutateAsync({
           id: sourceQuoteId,
           payload: {
             companyId: companyId === ALL_COMPANIES ? (cart[0]?.sourceCompanyId || '') : companyId,
@@ -478,12 +534,13 @@ export function POSPage() {
           },
         });
       } else {
-        await createSale.mutateAsync({
+        saleResult = await createSale.mutateAsync({
           clientId: clientId || undefined,
           voucherType,
           isCredit,
           creditAccountId: isCredit && creditAccountId !== 'new' ? creditAccountId : undefined,
           creditName: isCredit && creditAccountId === 'new' ? creditName.trim() : undefined,
+          creditDueDate: isCredit && creditAccountId === 'new' && creditDueDate ? creditDueDate : undefined,
           sellerId: effectiveSellerId,
           items: cart.map((i) => ({
             productId: i.productId,
@@ -502,18 +559,48 @@ export function POSPage() {
       setIsCredit(false);
       setCreditAccountId('new');
       setCreditName('');
+      setCreditDueDate('');
       setShowCheckout(false);
       if (sourceQuoteId) {
         setSourceQuoteId('');
         setSearchParams({});
       }
+      const saleId = saleResult?.id || saleResult?.sale?.id || '';
+      setSuccessSale({ id: saleId, ...saleSnapshotBase });
+      setSuccessCountdown(5);
     } catch {
       // errors handled by mutation onError
     }
   };
 
+  // Auto-close countdown + keyboard shortcuts for success modal
+  useEffect(() => {
+    if (!successSale) return;
+    const tick = setInterval(() => setSuccessCountdown((c) => (c <= 1 ? 0 : c - 1)), 1000);
+    return () => clearInterval(tick);
+  }, [successSale]);
+
+  useEffect(() => {
+    if (successSale && successCountdown === 0) setSuccessSale(null);
+  }, [successCountdown, successSale]);
+
+  useEffect(() => {
+    if (!successSale) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); setSuccessSale(null); }
+      else if (e.key === 'Enter') { e.preventDefault(); setSuccessSale(null); searchRef.current?.focus(); }
+      else if (e.key === 'v' || e.key === 'V') {
+        e.preventDefault();
+        setVoucherPreview(successSale);
+        setSuccessSale(null);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [successSale]);
+
   return (
-    <div className="-m-4 lg:-m-8 h-[calc(100vh-4rem)] flex bg-surface">
+    <div className="-mx-4 -mt-4 -mb-20 lg:-m-8 h-[calc(100vh-8rem)] lg:h-[calc(100vh-4rem)] flex bg-surface">
       {/* Products panel */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
@@ -635,34 +722,46 @@ export function POSPage() {
                       addToCart(p);
                     }}
                     disabled={stock === 0}
-                    className="relative bg-white rounded-xl shadow-card p-4 text-left hover:shadow-card-hover hover:-translate-y-0.5 transition-all group disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                    className="relative bg-white rounded-2xl shadow-card text-left overflow-hidden hover:shadow-card-hover hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-card"
                   >
-                    {qty > 0 && (
-                      <span className="absolute top-2 left-2 bg-primary-600 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
-                        {qty}
-                      </span>
-                    )}
-                    <span className={`absolute top-2 right-2 text-xs font-semibold px-2 py-1 rounded-md shadow-sm ${stockColor}`}>
-                      Stock: {stock}
-                    </span>
-                    <div className="w-full aspect-square rounded-lg bg-primary-50 text-primary-700 flex items-center justify-center mb-3 group-hover:bg-primary-100 transition-colors">
-                      <Package size={32} />
+                    <div className="aspect-square relative bg-gradient-to-br from-primary-50 to-primary-100 overflow-hidden">
+                      {p.imageUrl ? (
+                        <img
+                          src={p.imageUrl}
+                          alt={p.name}
+                          loading="lazy"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <span className="text-4xl font-bold text-primary-300 tracking-tight select-none">
+                            {productInitials(p.name)}
+                          </span>
+                        </div>
+                      )}
+                      {qty > 0 && (
+                        <span className="absolute top-2 right-2 bg-primary-600 text-white text-xs font-bold rounded-full min-w-[24px] h-6 px-1.5 flex items-center justify-center shadow">
+                          {qty}
+                        </span>
+                      )}
                     </div>
-                    <div className="text-sm font-medium text-gray-800 leading-tight line-clamp-2 min-h-[2.5rem]">
-                      {p.name}
-                    </div>
-                    {sourceLabel && (
-                      <div className="mt-1 text-[11px] text-gray-500 truncate" title={sourceLabel}>
-                        📍 {sourceLabel}
+                    <div className="p-3">
+                      <div className="text-sm font-medium text-gray-800 leading-tight line-clamp-2 min-h-[2.5rem]">
+                        {p.name}
                       </div>
-                    )}
-                    <div className="mt-2 flex items-center justify-between">
-                      <span className="text-base font-bold text-gray-900">
-                        {price != null ? `S/ ${price.toFixed(2)}` : '—'}
-                      </span>
-                      <span className="w-7 h-7 rounded-lg bg-primary-600 text-white flex items-center justify-center shadow-sm group-hover:bg-primary-700">
-                        <Plus size={14} />
-                      </span>
+                      {sourceLabel && (
+                        <div className="mt-1 text-[11px] text-gray-500 truncate" title={sourceLabel}>
+                          📍 {sourceLabel}
+                        </div>
+                      )}
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="text-lg font-bold text-primary-600 truncate">
+                          {price != null ? `S/ ${price.toFixed(2)}` : '—'}
+                        </span>
+                        <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-md ${stockColor}`}>
+                          {stock === 0 ? 'Agotado' : `${stock} uds`}
+                        </span>
+                      </div>
                     </div>
                   </button>
                 );
@@ -860,13 +959,27 @@ export function POSPage() {
 
         {cart.length > 0 && (
           <div className="border-t border-gray-100 px-5 py-4 space-y-2">
-            <div className="flex justify-between text-base text-gray-600">
-              <span>Subtotal</span>
-              <span className="font-medium">S/ {(subtotal / (1 + IGV_RATE)).toFixed(2)}</span>
-            </div>
+            {gravadoBase > 0 && (
+              <div className="flex justify-between text-base text-gray-600">
+                <span>Subtotal gravado</span>
+                <span className="font-medium">S/ {gravadoBase.toFixed(2)}</span>
+              </div>
+            )}
+            {exoneradoBase > 0 && (
+              <div className="flex justify-between text-base text-gray-600">
+                <span>Exonerado</span>
+                <span className="font-medium">S/ {exoneradoBase.toFixed(2)}</span>
+              </div>
+            )}
+            {inafectoBase > 0 && (
+              <div className="flex justify-between text-base text-gray-600">
+                <span>Inafecto</span>
+                <span className="font-medium">S/ {inafectoBase.toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-base text-gray-600">
               <span>IGV (18%)</span>
-              <span className="font-medium">S/ {(subtotal - subtotal / (1 + IGV_RATE)).toFixed(2)}</span>
+              <span className="font-medium">S/ {igv.toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-baseline pt-2 border-t border-gray-100">
               <span className="text-base font-semibold text-gray-700">Total</span>
@@ -876,13 +989,31 @@ export function POSPage() {
               <button
                 onClick={() => {
                   if (cart.length === 0) { toast.error('El carrito está vacío'); return; }
-                  setShowQuoteModal(true);
+                  const resolvedCompany = companyId === ALL_COMPANIES ? (cart[0]?.sourceCompanyId || '') : companyId;
+                  navigate('/quotes/new', {
+                    state: {
+                      cart: {
+                        companyId: resolvedCompany,
+                        tierId,
+                        sellerId: sellerId || (isSellerRole ? user?.id : ''),
+                        items: cart.map((i) => ({
+                          productId: i.productId,
+                          name: i.name,
+                          unit: i.unit,
+                          quantity: i.quantity,
+                          unitPrice: i.unitPrice,
+                          tierOverride: i.tierOverride,
+                          sourceCompanyId: i.sourceCompanyId || resolvedCompany || undefined,
+                        })),
+                      },
+                    },
+                  });
                 }}
                 className="flex-1 mt-2 py-3 bg-white border border-primary-600 text-primary-700 rounded-xl hover:bg-primary-50 font-semibold transition-colors flex items-center justify-center gap-2"
-                title="Guardar como cotización"
+                title="Cotizar este carrito"
               >
                 <ScrollText size={18} />
-                Cotización
+                Cotizar
               </button>
               <button
                 onClick={openCheckout}
@@ -895,84 +1026,6 @@ export function POSPage() {
           </div>
         )}
       </aside>
-
-      {/* Checkout modal */}
-      {showQuoteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowQuoteModal(false)} />
-          <div className="relative bg-white rounded-2xl shadow-card-hover w-full max-w-md mx-4">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2"><ScrollText size={18} /> Nueva Cotización</h2>
-              <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100"><X size={18} /></button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Cliente</label>
-                <select
-                  value={quoteClientId}
-                  onChange={(e) => {
-                    setQuoteClientId(e.target.value);
-                    const c = clients.find(cl => cl.id === e.target.value);
-                    setQuoteClientName(c?.name || '');
-                  }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="">— Cliente ocasional —</option>
-                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              {!quoteClientId && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombre del cliente <span className="text-gray-400 font-normal">(opcional)</span></label>
-                  <input value={quoteClientName} onChange={(e) => setQuoteClientName(e.target.value)} placeholder="Cliente ocasional" className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Válida hasta</label>
-                <input type="date" value={quoteValidUntil} onChange={(e) => setQuoteValidUntil(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Observaciones <span className="text-gray-400 font-normal">(opcional)</span></label>
-                <textarea value={quoteNotes} onChange={(e) => setQuoteNotes(e.target.value)} rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-              </div>
-              <div className="bg-primary-50 rounded-xl p-4 flex items-center justify-between">
-                <span className="text-sm text-gray-600">Total cotización</span>
-                <span className="text-2xl font-bold text-primary-700">S/ {total.toFixed(2)}</span>
-              </div>
-              <button
-                onClick={async () => {
-                  try {
-                    await createQuote.mutateAsync({
-                      companyId: companyId === ALL_COMPANIES ? (cart[0]?.sourceCompanyId || '') : companyId,
-                      clientId: quoteClientId || undefined,
-                      clientName: quoteClientName || undefined,
-                      validUntil: quoteValidUntil,
-                      notes: quoteNotes || undefined,
-                      sellerId: sellerId || (isFieldSeller ? user?.id : undefined),
-                      items: cart.map(i => ({
-                        productId: i.productId,
-                        companyId: i.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : ''),
-                        quantity: i.quantity,
-                        priceTier: i.tierOverride || tierId,
-                        unitPrice: i.unitPrice,
-                      })),
-                    } as any);
-                    setShowQuoteModal(false);
-                    setCart([]);
-                    setQuoteClientId('');
-                    setQuoteClientName('');
-                    setQuoteNotes('');
-                  } catch { /* toast handled by hook */ }
-                }}
-                disabled={createQuote.isPending}
-                className="w-full py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 font-semibold transition-colors shadow-sm"
-              >
-                {createQuote.isPending ? 'Guardando…' : 'Guardar cotización'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showCheckout && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1001,9 +1054,11 @@ export function POSPage() {
                   </div>
                 ))}
               </div>
-              <div className="flex justify-between mt-3 text-xs text-white/60">
-                <span>Base imponible: S/ {(subtotal / (1 + IGV_RATE)).toFixed(2)}</span>
-                <span>IGV 18%: S/ {(subtotal - subtotal / (1 + IGV_RATE)).toFixed(2)}</span>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 justify-between mt-3 text-xs text-white/60">
+                <span>Base imponible: S/ {gravadoBase.toFixed(2)}</span>
+                {exoneradoBase > 0 && <span>Exonerado: S/ {exoneradoBase.toFixed(2)}</span>}
+                {inafectoBase > 0 && <span>Inafecto: S/ {inafectoBase.toFixed(2)}</span>}
+                <span>IGV 18%: S/ {igv.toFixed(2)}</span>
               </div>
             </div>
 
@@ -1036,7 +1091,7 @@ export function POSPage() {
               {checkoutStep === 1 && (
                 <>
                   {/* Vendedor (solo ADMIN puede atribuir) */}
-                  {!isFieldSeller && sellerOptions.length > 0 && (
+                  {!isSellerRole && sellerOptions.length > 0 && (
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <User size={14} className="text-gray-500" />
@@ -1053,7 +1108,7 @@ export function POSPage() {
                       </select>
                     </div>
                   )}
-                  {isFieldSeller && (
+                  {isSellerRole && (
                     <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-2">
                       <User size={14} className="text-emerald-600" />
                       <span className="text-sm font-medium text-emerald-800">Vendedor: <strong>{user?.fullName || user?.username}</strong></span>
@@ -1083,22 +1138,41 @@ export function POSPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <ScrollText size={14} className="text-gray-500" />
-                      <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Comprobante</span>
+                      <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Tipo de comprobante</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      {(['NONE', 'BOLETA', 'FACTURA'] as const).map((v) => (
-                        <button
-                          key={v}
-                          onClick={() => setVoucherType(v)}
-                          className={`py-3 rounded-xl text-sm font-semibold transition-colors border-2 ${
-                            voucherType === v
-                              ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
-                              : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300 hover:bg-primary-50'
-                          }`}
-                        >
-                          {v === 'NONE' ? 'Ninguno' : v === 'BOLETA' ? 'Boleta' : 'Factura'}
-                        </button>
-                      ))}
+                    <div className="space-y-2">
+                      {([
+                        { v: 'BOLETA', icon: Receipt, title: 'Boleta de venta', subtitle: 'Para consumidores finales', iconBg: 'bg-primary-100 text-primary-700' },
+                        { v: 'FACTURA', icon: Building2, title: 'Factura', subtitle: 'Para empresas con RUC', iconBg: 'bg-blue-100 text-blue-700' },
+                        { v: 'NONE', icon: FileText, title: 'Nota de venta', subtitle: 'Sin comprobante SUNAT', iconBg: 'bg-amber-100 text-amber-700' },
+                      ] as const).map(({ v, icon: Icon, title, subtitle, iconBg }) => {
+                        const selected = voucherType === v;
+                        return (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => setVoucherType(v)}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-colors ${
+                              selected
+                                ? 'bg-primary-50 border-primary-500 shadow-sm'
+                                : 'bg-white border-gray-200 hover:border-primary-300 hover:bg-primary-50/40'
+                            }`}
+                          >
+                            <span className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+                              <Icon size={18} />
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className={`text-sm font-bold ${selected ? 'text-primary-800' : 'text-gray-800'}`}>{title}</div>
+                              <div className={`text-xs ${selected ? 'text-primary-700/80' : 'text-gray-500'}`}>{subtitle}</div>
+                            </div>
+                            <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                              selected ? 'bg-primary-600 border-primary-600' : 'border-gray-300'
+                            }`}>
+                              {selected && <div className="w-2 h-2 rounded-full bg-white" />}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </>
@@ -1106,6 +1180,12 @@ export function POSPage() {
 
               {checkoutStep === 2 && (
                 <>
+                  {/* TOTAL banner */}
+                  <div className="-mt-1 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-primary-50 border-2 border-primary-100">
+                    <span className="text-xs font-bold uppercase tracking-wider text-primary-700">Total a cobrar</span>
+                    <span className="text-2xl font-bold tabular-nums text-primary-800">S/ {total.toFixed(2)}</span>
+                  </div>
+
                   {/* Tipo de pago */}
                   <div>
                     <div className="flex items-center gap-2 mb-3">
@@ -1174,13 +1254,27 @@ export function POSPage() {
                           ))}
                         </div>
                         {creditAccountId === 'new' && (
-                          <input
-                            value={creditName}
-                            onChange={(e) => setCreditName(e.target.value)}
-                            placeholder="Nombre de la cuenta  (ej: Tomates, Maíz)"
-                            className="mt-3 w-full px-4 py-3 border-2 border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-                            autoFocus
-                          />
+                          <div className="mt-3 space-y-2">
+                            <input
+                              value={creditName}
+                              onChange={(e) => setCreditName(e.target.value)}
+                              placeholder="Nombre de la cuenta  (ej: Tomates, Maíz)"
+                              className="w-full px-4 py-3 border-2 border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                              autoFocus
+                            />
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Fecha límite de pago <span className="text-gray-400 font-normal">(opcional)</span>
+                              </label>
+                              <input
+                                type="date"
+                                value={creditDueDate}
+                                onChange={(e) => setCreditDueDate(e.target.value)}
+                                min={new Date().toISOString().slice(0, 10)}
+                                className="w-full px-4 py-3 border-2 border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                              />
+                            </div>
+                          </div>
                         )}
                       </div>
                     </>
@@ -1196,40 +1290,76 @@ export function POSPage() {
                           <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Método de pago</span>
                         </div>
                         <div className="space-y-3">
-                          {splitPayments.map((p, idx) => (
-                            <div key={idx} className="bg-gray-50 rounded-xl p-4 space-y-3">
-                              <div className="flex flex-wrap gap-2">
-                                {paymentMethods.map((m) => (
-                                  <button
-                                    key={m.id}
-                                    type="button"
-                                    onClick={() => { const next = [...splitPayments]; next[idx] = { ...next[idx], paymentMethodId: m.id }; setSplitPayments(next); }}
-                                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border-2 ${getPaymentMethodColors(m.name, p.paymentMethodId === m.id)}`}
-                                  >
-                                    {m.name}
-                                  </button>
-                                ))}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="relative flex-1">
-                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">S/</span>
-                                  <input
-                                    type="number" min="0" step="0.01"
-                                    value={p.amount || ''}
-                                    onFocus={(e) => e.target.select()}
-                                    onChange={(e) => { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: parseFloat(e.target.value) || 0 }; setSplitPayments(next); }}
-                                    placeholder="0.00"
-                                    className="w-full pl-9 pr-3 py-3 border-2 border-gray-200 rounded-xl text-base text-right font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
-                                  />
+                          {splitPayments.map((p, idx) => {
+                            const selectedMethod = paymentMethods.find((m) => m.id === p.paymentMethodId);
+                            const isCash = (selectedMethod?.name || '').toLowerCase().includes('efectivo');
+                            const setAmount = (amt: number) => {
+                              const next = [...splitPayments];
+                              next[idx] = { ...next[idx], amount: amt };
+                              setSplitPayments(next);
+                            };
+                            const quickAmounts = [10, 20, 50, 100, 200, 500];
+                            return (
+                              <div key={idx} className="bg-gray-50 rounded-xl p-4 space-y-3">
+                                <div className="flex flex-wrap gap-2">
+                                  {paymentMethods.map((m) => (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      onClick={() => { const next = [...splitPayments]; next[idx] = { ...next[idx], paymentMethodId: m.id }; setSplitPayments(next); }}
+                                      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border-2 ${getPaymentMethodColors(m.name, p.paymentMethodId === m.id)}`}
+                                    >
+                                      {m.name}
+                                    </button>
+                                  ))}
                                 </div>
-                                {splitPayments.length > 1 && (
-                                  <button type="button" onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-2 rounded-xl hover:bg-red-50">
-                                    <X size={18} />
-                                  </button>
+                                <div className="flex items-center gap-2">
+                                  <div className="relative flex-1">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">S/</span>
+                                    <input
+                                      type="number" min="0" step="0.01"
+                                      value={p.amount || ''}
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) => { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: parseFloat(e.target.value) || 0 }; setSplitPayments(next); }}
+                                      placeholder="0.00"
+                                      className="w-full pl-9 pr-3 py-3 border-2 border-gray-200 rounded-xl text-base text-right font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
+                                    />
+                                  </div>
+                                  {splitPayments.length > 1 && (
+                                    <button type="button" onClick={() => setSplitPayments(splitPayments.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-2 rounded-xl hover:bg-red-50">
+                                      <X size={18} />
+                                    </button>
+                                  )}
+                                </div>
+                                {isCash && (
+                                  <div>
+                                    <div className="flex items-center gap-2 mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                                      <Banknote size={12} /> Monto recibido
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                      {quickAmounts.map((amt) => (
+                                        <button
+                                          key={amt}
+                                          type="button"
+                                          onClick={() => setAmount(amt)}
+                                          className="py-2 rounded-lg text-sm font-semibold border-2 border-gray-200 bg-white text-gray-700 hover:border-primary-300 hover:bg-primary-50 transition-colors"
+                                        >
+                                          S/ {amt}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setAmount(Math.max(0, splitRemaining + (p.amount || 0)))}
+                                      className="mt-2 w-full py-2 rounded-lg text-sm font-semibold border-2 border-primary-200 bg-white text-primary-700 hover:bg-primary-50 transition-colors"
+                                    >
+                                      Monto exacto · S/ {Math.max(0, splitRemaining + (p.amount || 0)).toFixed(2)}
+                                    </button>
+                                  </div>
                                 )}
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
 
                         {/* Estado del pago */}
@@ -1318,6 +1448,75 @@ export function POSPage() {
           </div>
         </div>
       )}
+      {/* Success modal */}
+      {successSale && (
+        <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4" onClick={() => setSuccessSale(null)}>
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Green header */}
+            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 text-white px-8 pt-8 pb-7 text-center overflow-hidden">
+              <div className="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full" />
+              <div className="absolute -bottom-12 -left-8 w-28 h-28 bg-white/10 rounded-full" />
+              <div className="relative">
+                <div className="inline-flex w-16 h-16 rounded-full bg-white/20 items-center justify-center mb-3 backdrop-blur">
+                  <CheckCircle2 size={36} strokeWidth={2.5} className="text-white" />
+                </div>
+                <h2 className="text-2xl font-bold">¡Venta registrada!</h2>
+                <p className="text-emerald-50 text-sm mt-1">
+                  {successSale.voucherType === 'BOLETA' ? 'Boleta emitida correctamente'
+                    : successSale.voucherType === 'FACTURA' ? 'Factura emitida correctamente'
+                    : 'Nota de venta generada'}
+                </p>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 pt-6 pb-5 text-center space-y-4">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-lg text-xs font-semibold text-gray-700">
+                {successSale.voucherType === 'BOLETA' ? <Receipt size={13} />
+                  : successSale.voucherType === 'FACTURA' ? <Building2 size={13} />
+                  : <FileText size={13} />}
+                {successSale.voucherType === 'BOLETA' ? 'Boleta de venta'
+                  : successSale.voucherType === 'FACTURA' ? 'Factura'
+                  : 'Nota de venta'}
+                {successSale.id && <span className="text-gray-400 font-mono">· #{successSale.id.slice(-6).toUpperCase()}</span>}
+              </div>
+              <div className="text-3xl font-bold text-gray-900 tabular-nums">S/ {successSale.total.toFixed(2)}</div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setVoucherPreview(successSale); setSuccessSale(null); }}
+                  className="flex flex-col items-center gap-1 px-3 py-3 border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                >
+                  <Eye size={18} className="text-gray-600" />
+                  <span className="text-sm font-semibold text-gray-700">Ver comprobante</span>
+                  <span className="text-[10px] uppercase tracking-wider text-gray-400 border border-gray-200 rounded px-1.5 py-px">V</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSuccessSale(null); searchRef.current?.focus(); }}
+                  className="flex flex-col items-center gap-1 px-3 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm"
+                >
+                  <Plus size={18} />
+                  <span className="text-sm font-semibold">Nueva venta</span>
+                  <span className="text-[10px] uppercase tracking-wider text-emerald-100 border border-emerald-400 rounded px-1.5 py-px">Enter ↵</span>
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-400 pt-1">
+                Se cerrará automáticamente en {successCountdown}s · <span className="border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 font-mono">Esc</span> para cerrar
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Voucher preview */}
+      <VoucherPreviewModal sale={voucherPreview} onClose={() => setVoucherPreview(null)} />
+
       {/* Mobile overlay */}
       {cartOpen && (
         <div
@@ -1326,10 +1525,10 @@ export function POSPage() {
         />
       )}
 
-      {/* Mobile FAB — open cart */}
+      {/* Mobile FAB — open cart (sits above the bottom-nav) */}
       <button
         onClick={() => setCartOpen(true)}
-        className="lg:hidden fixed bottom-6 right-4 left-4 z-20 py-3.5 bg-gray-900 text-white rounded-2xl shadow-xl flex items-center justify-between px-5 active:scale-95 transition-transform"
+        className="lg:hidden fixed bottom-20 right-4 left-4 z-20 py-3.5 bg-gray-900 text-white rounded-2xl shadow-xl flex items-center justify-between px-5 active:scale-95 transition-transform"
       >
         <div className="flex items-center gap-3">
           <div className="relative">

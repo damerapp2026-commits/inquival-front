@@ -30,7 +30,7 @@ export function PurchaseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data, isLoading } = usePurchases({ limit: 500 });
   const { data: companies } = useCompanies();
-  const { data: productsData } = useProducts({ limit: 500 });
+  const { data: productsData } = useProducts({ limit: 10000 });
 
   const purchases: Purchase[] = data?.data || [];
   const purchase = purchases.find((p) => p.id === id);

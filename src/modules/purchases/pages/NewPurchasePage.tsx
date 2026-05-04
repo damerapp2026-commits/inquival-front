@@ -5,14 +5,16 @@ import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts, useCreateProduct } from '../../products/hooks/useProducts';
 import { useCategories } from '../../categories/hooks/useCategories';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
+import { useUnits } from '../../units/hooks/useUnits';
+import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useRucLookup, useTipoCambio } from '../../../shared/hooks/useLookup';
-import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
+import { useSupplierByRuc, useCreateSupplier, useSuppliers } from '../../suppliers/hooks/useSuppliers';
 import { useCashRegisterToday } from '../../cash-register/hooks/useCashRegister';
 import { Modal } from '../../../shared/components/Modal';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import {
   ArrowLeft, ShoppingCart, Trash2, Search, Loader2, DollarSign, PackagePlus,
-  FileText, CopyIcon, Dices, Wand2, Building2, Users, CreditCard, Package,
+  FileText, CopyIcon, Dices, Wand2, Building2, Users, CreditCard, Package, Plus, X,
 } from 'lucide-react';
 import type { Company, Product, Category } from '../../../shared/types';
 import toast from 'react-hot-toast';
@@ -40,8 +42,15 @@ const emptyItem = (): PurchaseFormItem => ({
   costoAdquisicion: 0, markupPercent: 0, precioVenta: 0, precioVentaMode: 'markup',
 });
 
-function recalcItem(item: PurchaseFormItem, currency: 'PEN' | 'USD' = 'PEN', exchangeRate: number | null = null): PurchaseFormItem {
-  const unitPriceConIgv = Math.round(item.unitPriceSinIgv * (1 + IGV_RATE) * 100) / 100;
+function recalcItem(
+  item: PurchaseFormItem,
+  currency: 'PEN' | 'USD' = 'PEN',
+  exchangeRate: number | null = null,
+  applyIgv: boolean = true,
+): PurchaseFormItem {
+  const unitPriceConIgv = applyIgv
+    ? Math.round(item.unitPriceSinIgv * (1 + IGV_RATE) * 100) / 100
+    : Math.round(item.unitPriceSinIgv * 100) / 100;
   const unitPriceConIgvSoles = currency === 'USD'
     ? (exchangeRate ? unitPriceConIgv * exchangeRate : 0)
     : unitPriceConIgv;
@@ -102,7 +111,7 @@ export function NewPurchasePage() {
   const navigate = useNavigate();
 
   const { data: companies } = useCompanies();
-  const { data: productsData } = useProducts({ limit: 200 });
+  const { data: productsData } = useProducts({ limit: 10000 });
   const createPurchase = useCreatePurchase();
   const rucLookup = useRucLookup();
   const supplierByRuc = useSupplierByRuc();
@@ -112,6 +121,14 @@ export function NewPurchasePage() {
   const { data: categoriesData } = useCategories();
   const { data: laboratoriesData } = useLaboratories();
   const labsById = new Map<string, any>((Array.isArray(laboratoriesData) ? laboratoriesData : []).map((l: any) => [l.id, l]));
+  const { data: unitsData } = useUnits();
+  const { data: priceTiersData } = usePriceTiers();
+  const priceTiers: any[] = Array.isArray(priceTiersData) ? priceTiersData : [];
+  const allUnits: { value: string; label: string }[] = Array.isArray(unitsData)
+    ? unitsData.filter((u: any) => u.isActive).map((u: any) => ({ value: u.name, label: u.abbreviation ? `${u.name} (${u.abbreviation})` : u.name }))
+    : [];
+  const { data: suppliersData } = useSuppliers({ limit: 1000 });
+  const suppliers: any[] = Array.isArray(suppliersData) ? suppliersData : (suppliersData as any)?.data || [];
   const createProduct = useCreateProduct();
   const categories: Category[] = Array.isArray(categoriesData) ? categoriesData : (categoriesData as any)?.data || [];
 
@@ -135,13 +152,21 @@ export function NewPurchasePage() {
   const [exchangeRateDate, setExchangeRateDate] = useState('');
   const [supplierLocked, setSupplierLocked] = useState(false);
   const [supplierLoading, setSupplierLoading] = useState(false);
+  const [showAddSupplier, setShowAddSupplier] = useState(false);
   const [installmentGen, setInstallmentGen] = useState({ count: 6, intervalDays: 30, firstDaysFromPurchase: 30 });
   const [showNewProduct, setShowNewProduct] = useState(false);
   const [newProductForIdx, setNewProductForIdx] = useState<number>(-1);
-  const [newProduct, setNewProduct] = useState({ name: '', categoryId: '', laboratoryId: '', unit: 'unidad' });
+  const [newProduct, setNewProduct] = useState({
+    name: '', description: '', categoryId: '', laboratoryId: '', unit: 'unidad',
+    activeIngredient: '', taxType: 'GRAVADO' as 'GRAVADO' | 'EXONERADO' | 'INAFECTO', tracksLot: false,
+  });
 
   const companyList = Array.isArray(companies) ? companies : [];
-  const products = productsData?.data || [];
+  const products = (() => {
+    const raw: any = productsData;
+    const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
+    return list.filter((p) => p.isActive !== false);
+  })();
 
   const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, emptyItem()] }));
   const repeatFromPrev = (idx: number, field: 'lotNumber' | 'expirationDate') => {
@@ -162,19 +187,46 @@ export function NewPurchasePage() {
     });
   };
   const removeItem = (idx: number) => setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
+  const itemAppliesIgv = (productId: string) => {
+    if (!productId) return true;
+    const p = products.find((pr: Product) => pr.id === productId);
+    const taxType = (p as any)?.taxType;
+    return !taxType || taxType === 'GRAVADO';
+  };
+  const seedPrecioVentaFromProduct = (productId: string): number => {
+    const prod = products.find((pr: Product) => pr.id === productId);
+    if (!prod || !prod.prices?.length) return 0;
+    const sortedTiers = priceTiers.slice().sort((a, b) => (a.priority || 0) - (b.priority || 0));
+    for (const t of sortedTiers) {
+      const found = prod.prices.find((px: any) => px.priceTierId === t.id && !px.companyId && px.price > 0);
+      if (found) return found.price;
+    }
+    const anyGlobal = prod.prices.find((px: any) => !px.companyId && px.price > 0);
+    if (anyGlobal) return anyGlobal.price;
+    const anyPrice = prod.prices.find((px: any) => px.price > 0);
+    return anyPrice?.price || 0;
+  };
+
   const updateItem = (idx: number, field: string, value: any) => setForm(prev => {
     const items = [...prev.items];
     let item = { ...items[idx], [field]: value };
     if (field === 'markupPercent') item.precioVentaMode = 'markup';
     if (field === 'precioVenta') item.precioVentaMode = 'direct';
+    if (field === 'productId') {
+      const seeded = seedPrecioVentaFromProduct(value);
+      if (seeded > 0) {
+        item.precioVenta = seeded;
+        item.precioVentaMode = 'direct';
+      }
+    }
     const costoFields = ['unitPriceSinIgv', 'flete', 'otrosCostos', 'markupPercent', 'precioVenta', 'productId'];
-    if (costoFields.includes(field)) item = recalcItem(item, currency, exchangeRate);
+    if (costoFields.includes(field)) item = recalcItem(item, currency, exchangeRate, itemAppliesIgv(item.productId));
     items[idx] = item;
     return { ...prev, items };
   });
 
   useEffect(() => {
-    setForm(prev => ({ ...prev, items: prev.items.map(i => recalcItem(i, currency, exchangeRate)) }));
+    setForm(prev => ({ ...prev, items: prev.items.map(i => recalcItem(i, currency, exchangeRate, itemAppliesIgv(i.productId))) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currency, exchangeRate]);
 
@@ -242,14 +294,27 @@ export function NewPurchasePage() {
 
   const openQuickProduct = (idx: number) => {
     setNewProductForIdx(idx);
-    setNewProduct({ name: '', categoryId: '', laboratoryId: '', unit: 'unidad' });
+    setNewProduct({
+      name: '', description: '', categoryId: '', laboratoryId: '',
+      unit: allUnits[0]?.value || 'unidad',
+      activeIngredient: '', taxType: 'GRAVADO', tracksLot: false,
+    });
     setShowNewProduct(true);
   };
 
   const handleCreateQuickProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload: any = { name: newProduct.name, categoryId: newProduct.categoryId, unit: newProduct.unit, prices: [] };
+      const payload: any = {
+        name: newProduct.name.trim(),
+        categoryId: newProduct.categoryId,
+        unit: newProduct.unit,
+        taxType: newProduct.taxType,
+        tracksLot: newProduct.tracksLot,
+        prices: [],
+      };
+      if (newProduct.description.trim()) payload.description = newProduct.description.trim();
+      if (newProduct.activeIngredient.trim()) payload.activeIngredient = newProduct.activeIngredient.trim();
       if (newProduct.laboratoryId) payload.laboratoryId = newProduct.laboratoryId;
       const created = await createProduct.mutateAsync(payload);
       if (created && newProductForIdx >= 0) {
@@ -285,6 +350,7 @@ export function NewPurchasePage() {
         });
         setForm(prev => ({ ...prev, supplier: result.razonSocial, supplierId: newSupplier?.id || '' }));
         setSupplierLocked(true);
+        setShowAddSupplier(false);
         toast.success('Proveedor encontrado en SUNAT y registrado');
       }
     } catch { /* toast handled by hook */ } finally {
@@ -295,6 +361,16 @@ export function NewPurchasePage() {
   const clearSupplier = () => {
     setForm(prev => ({ ...prev, supplier: '', supplierId: '', supplierRuc: '' }));
     setSupplierLocked(false);
+    setShowAddSupplier(false);
+  };
+
+  const pickSupplier = (id: string) => {
+    if (!id) { clearSupplier(); return; }
+    const s = suppliers.find((x) => x.id === id);
+    if (!s) return;
+    setForm(prev => ({ ...prev, supplierId: s.id, supplier: s.businessName || s.name || '', supplierRuc: s.ruc || '' }));
+    setSupplierLocked(true);
+    setShowAddSupplier(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -303,6 +379,7 @@ export function NewPurchasePage() {
       toast.error('La caja del día está cerrada. No se pueden registrar compras al contado.');
       return;
     }
+    if (!form.supplier.trim()) { toast.error('Selecciona un proveedor'); return; }
     if (currency === 'USD' && (!exchangeRate || !form.totalCostUsd)) { toast.error('Ingrese el monto en USD y verifique el tipo de cambio'); return; }
     if (currency === 'PEN' && !form.totalCostPen) { toast.error('Ingrese el monto en soles'); return; }
     const missingLot = form.items.find(i => {
@@ -382,36 +459,79 @@ export function NewPurchasePage() {
                 <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
                   <Users size={12} /> Proveedor
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    value={form.supplierRuc}
-                    onChange={(e) => { const v = e.target.value.replace(/\D/g, '').slice(0, 11); setForm({ ...form, supplierRuc: v }); if (supplierLocked) clearSupplier(); }}
-                    className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                    placeholder="RUC (11 dígitos)"
-                    maxLength={11}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSupplierLookup}
-                    disabled={form.supplierRuc.length !== 11 || supplierLoading}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 text-sm"
-                  >
-                    {supplierLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                    Buscar
-                  </button>
-                  <input
-                    value={form.supplier}
-                    onChange={(e) => setForm({ ...form, supplier: e.target.value })}
-                    className={`flex-1 px-3 py-2 border rounded-lg text-sm ${supplierLocked ? 'bg-primary-50 border-primary-300' : 'border-gray-200'}`}
-                    placeholder="Nombre del proveedor"
-                    readOnly={supplierLocked}
-                    required
-                  />
-                </div>
-                {supplierLocked && (
-                  <button type="button" onClick={clearSupplier} className="mt-1 text-xs text-gray-500 hover:text-red-500">
-                    Limpiar proveedor y buscar otro
-                  </button>
+
+                {form.supplierId ? (
+                  <div className="flex items-center justify-between gap-3 px-3 py-2.5 bg-primary-50 border border-primary-200 rounded-lg">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-primary-900 truncate">{form.supplier}</div>
+                      {form.supplierRuc && (
+                        <div className="text-xs text-primary-700/80">RUC {form.supplierRuc}</div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={clearSupplier}
+                      className="text-xs text-gray-500 hover:text-red-600 inline-flex items-center gap-1 flex-shrink-0"
+                    >
+                      <X size={12} /> Cambiar
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <SearchableSelect
+                      options={suppliers.map((s) => ({
+                        value: s.id,
+                        label: s.businessName || s.name || '—',
+                        sublabel: s.ruc ? `RUC ${s.ruc}` : undefined,
+                      }))}
+                      value=""
+                      onChange={pickSupplier}
+                      placeholder="Buscar proveedor por nombre o RUC..."
+                    />
+
+                    <div className="mt-2">
+                      {!showAddSupplier ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowAddSupplier(true)}
+                          className="text-xs text-primary-700 hover:text-primary-800 inline-flex items-center gap-1 font-medium"
+                        >
+                          <Plus size={12} /> Agregar nuevo proveedor por RUC
+                        </button>
+                      ) : (
+                        <div className="mt-1 p-3 border border-dashed border-gray-300 rounded-lg bg-gray-50/60 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-gray-600">Nuevo proveedor (consulta SUNAT)</span>
+                            <button
+                              type="button"
+                              onClick={() => { setShowAddSupplier(false); setForm(prev => ({ ...prev, supplierRuc: '' })); }}
+                              className="text-xs text-gray-400 hover:text-gray-600"
+                            >Cancelar</button>
+                          </div>
+                          <div className="flex gap-2">
+                            <input
+                              value={form.supplierRuc}
+                              onChange={(e) => setForm({ ...form, supplierRuc: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+                              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                              placeholder="RUC (11 dígitos)"
+                              maxLength={11}
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={handleSupplierLookup}
+                              disabled={form.supplierRuc.length !== 11 || supplierLoading}
+                              className="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 text-sm font-semibold"
+                            >
+                              {supplierLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                              Buscar
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-gray-500">Si el RUC existe en SUNAT, se registra automáticamente y queda disponible la próxima vez.</p>
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -449,6 +569,49 @@ export function NewPurchasePage() {
             </div>
           </SectionCard>
         </div>
+
+        {/* Totales */}
+        <SectionCard title="Total de la compra" icon={DollarSign}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {currency === 'PEN' && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Monto Total (Soles)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">S/</span>
+                  <input type="number" min="0.01" step="0.01" value={form.totalCostPen || ''} onChange={(e) => setForm({ ...form, totalCostPen: parseFloat(e.target.value) || 0 })} className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm" placeholder="0.00" required />
+                </div>
+              </div>
+            )}
+            {currency === 'USD' && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Monto Total (USD)</label>
+                <div className="relative">
+                  <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input type="number" min="0.01" step="0.01" value={form.totalCostUsd || ''} onChange={(e) => setForm({ ...form, totalCostUsd: parseFloat(e.target.value) || 0 })} className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm" placeholder="0.00" required />
+                </div>
+              </div>
+            )}
+
+            <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Subtotal por items (calculado)</span>
+                <span>S/ {itemsSubtotal.toFixed(2)}</span>
+              </div>
+              {currency === 'USD' && exchangeRate != null && form.totalCostUsd > 0 && (
+                <div className="flex items-center justify-between text-xs text-blue-600">
+                  <span>Total en Soles (×{exchangeRate.toFixed(4)})</span>
+                  <span className="font-semibold">S/ {totalSoles.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between pt-1 border-t border-gray-200">
+                <span className="text-sm font-medium text-gray-700">Total</span>
+                <span className="text-xl font-bold text-primary-700">
+                  {currency === 'USD' ? `$ ${(form.totalCostUsd || 0).toFixed(2)}` : `S/ ${(form.totalCostPen || 0).toFixed(2)}`}
+                </span>
+              </div>
+            </div>
+          </div>
+        </SectionCard>
 
         {/* Pago */}
         <SectionCard title="Condiciones de pago" icon={CreditCard}>
@@ -603,8 +766,14 @@ export function NewPurchasePage() {
                             required
                           />
                         </div>
-                        <button type="button" onClick={() => openQuickProduct(idx)} className="px-2 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded hover:bg-blue-100 shrink-0" title="Crear nuevo producto">
+                        <button
+                          type="button"
+                          onClick={() => openQuickProduct(idx)}
+                          className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 bg-primary-50 text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-100 hover:border-primary-300 text-sm font-semibold transition-colors"
+                          title="Crear nuevo producto"
+                        >
                           <PackagePlus size={16} />
+                          <span className="hidden sm:inline">Nuevo</span>
                         </button>
                       </div>
                       {product?.laboratoryId && labsById.get(product.laboratoryId) && (
@@ -640,88 +809,104 @@ export function NewPurchasePage() {
                       <input type="date" value={item.expirationDate || ''} onChange={(e) => updateItem(idx, 'expirationDate', e.target.value)} className={`w-full px-2 py-1.5 border rounded text-sm ${product && !needsLot ? 'bg-gray-100 text-gray-500' : ''}`} />
                     </div>
                   </div>
-                  <div className="grid grid-cols-12 gap-1.5 items-end mt-2 pt-2 border-t border-gray-200 pr-6">
-                    <div className="col-span-4 sm:col-span-2">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">P.U. sin IGV ({currency === 'USD' ? '$' : 'S/'})</label>
-                      <input type="number" min="0" step="0.01" value={item.unitPriceSinIgv || ''} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', parseFloat(e.target.value) || 0)} className="w-full px-1.5 py-1 border rounded text-xs" placeholder="0.00" />
-                    </div>
-                    <div className="col-span-4 sm:col-span-2">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">PC + IGV ({currency === 'USD' ? '$' : 'S/'})</label>
-                      <input type="text" readOnly value={item.unitPriceConIgv ? item.unitPriceConIgv.toFixed(2) : '0.00'} className="w-full px-1.5 py-1 border border-green-200 rounded text-xs bg-green-50 text-green-800 font-medium" />
-                    </div>
-                    <div className="col-span-4 sm:col-span-1">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">Flete (S/)</label>
-                      <input type="number" min="0" step="0.01" value={item.flete || ''} onChange={(e) => updateItem(idx, 'flete', parseFloat(e.target.value) || 0)} className="w-full px-1.5 py-1 border rounded text-xs" placeholder="0" />
-                    </div>
-                    <div className="col-span-4 sm:col-span-1">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">Otros (S/)</label>
-                      <input type="number" min="0" step="0.01" value={item.otrosCostos || ''} onChange={(e) => updateItem(idx, 'otrosCostos', parseFloat(e.target.value) || 0)} className="w-full px-1.5 py-1 border rounded text-xs" placeholder="0" />
-                    </div>
-                    <div className="col-span-4 sm:col-span-2">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">C. Adquisición (S/)</label>
-                      <input type="text" readOnly value={item.costoAdquisicion ? item.costoAdquisicion.toFixed(2) : '0.00'} className="w-full px-1.5 py-1 border border-green-200 rounded text-xs bg-green-50 text-green-800 font-semibold" />
-                    </div>
-                    <div className="col-span-4 sm:col-span-2">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">% Margen</label>
-                      <input type="number" min="0" step="0.1" value={item.markupPercent || ''} onChange={(e) => updateItem(idx, 'markupPercent', parseFloat(e.target.value) || 0)} className={`w-full px-1.5 py-1 border rounded text-xs ${item.precioVentaMode === 'direct' ? 'bg-blue-50 border-blue-200 text-blue-700' : ''}`} placeholder="30" />
-                    </div>
-                    <div className="col-span-4 sm:col-span-2">
-                      <label className="block text-[10px] text-gray-500 mb-0.5">P. Venta</label>
-                      <input type="number" min="0" step="0.01" value={item.precioVenta || ''} onChange={(e) => updateItem(idx, 'precioVenta', parseFloat(e.target.value) || 0)} className={`w-full px-1.5 py-1 border rounded text-xs ${item.precioVentaMode === 'markup' ? 'bg-blue-50 border-blue-200 text-blue-700' : ''}`} placeholder="0.00" />
-                    </div>
-                  </div>
-                  {item.quantity > 0 && item.costoAdquisicion > 0 && (
-                    <div className="mt-1.5 text-right pr-6">
-                      <span className="text-[10px] text-gray-500">Subtotal: </span>
-                      <span className="text-xs font-semibold text-gray-700">S/ {(item.quantity * item.costoAdquisicion).toFixed(2)}</span>
-                    </div>
-                  )}
+                  {(() => {
+                    const sym = currency === 'USD' ? '$' : 'S/';
+                    const appliesIgv = itemAppliesIgv(item.productId);
+                    const taxType = (product as any)?.taxType;
+                    return (
+                      <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-12 gap-3 pr-6">
+                        {/* Costo de compra */}
+                        <div className="col-span-12 lg:col-span-5">
+                          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2 flex items-center justify-between">
+                            <span>Costo de compra</span>
+                            {product && !appliesIgv && (
+                              <span className="text-[10px] font-semibold normal-case tracking-normal px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded">
+                                {taxType === 'EXONERADO' ? 'Exonerado · sin IGV' : 'Inafecto · sin IGV'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">P.U. sin IGV ({sym})</label>
+                              <input type="number" min="0" step="0.01" value={item.unitPriceSinIgv || ''} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', parseFloat(e.target.value) || 0)} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0.00" />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">{appliesIgv ? `+ IGV (${sym})` : `Total (${sym})`}</label>
+                              <input
+                                type="text"
+                                readOnly
+                                value={item.unitPriceConIgv ? item.unitPriceConIgv.toFixed(2) : '0.00'}
+                                className={`w-full px-2.5 py-2 border rounded-lg text-sm tabular-nums font-medium ${
+                                  appliesIgv
+                                    ? 'border-primary-200 bg-primary-50 text-primary-800'
+                                    : 'border-gray-200 bg-gray-100 text-gray-600'
+                                }`}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">Flete (S/)</label>
+                              <input type="number" min="0" step="0.01" value={item.flete || ''} onChange={(e) => updateItem(idx, 'flete', parseFloat(e.target.value) || 0)} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0" />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">Otros costos (S/)</label>
+                              <input type="number" min="0" step="0.01" value={item.otrosCostos || ''} onChange={(e) => updateItem(idx, 'otrosCostos', parseFloat(e.target.value) || 0)} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Costo final */}
+                        <div className="col-span-6 lg:col-span-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Costo final</div>
+                          <div className="bg-gradient-to-br from-primary-50 to-primary-100/60 border-2 border-primary-200 rounded-xl px-4 py-3 h-[calc(100%-26px)]">
+                            <div className="text-[10px] uppercase text-primary-700 font-semibold tracking-wider">Costo de adquisición</div>
+                            <div className="text-xl font-bold text-primary-800 tabular-nums mt-1">S/ {item.costoAdquisicion.toFixed(2)}</div>
+                            {item.quantity > 0 && item.costoAdquisicion > 0 && (
+                              <div className="text-[11px] text-primary-700/80 mt-1">
+                                × {item.quantity} = <span className="font-semibold tabular-nums">S/ {(item.quantity * item.costoAdquisicion).toFixed(2)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Precio de venta */}
+                        <div className="col-span-6 lg:col-span-4">
+                          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2 flex items-center gap-1">
+                            <DollarSign size={11} /> Precio de venta
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">% Margen</label>
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={item.markupPercent || ''}
+                                onChange={(e) => updateItem(idx, 'markupPercent', parseFloat(e.target.value) || 0)}
+                                className={`w-full px-2.5 py-2 border rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                                  item.precioVentaMode === 'markup' ? 'bg-blue-50 border-blue-300 text-blue-800 font-semibold' : 'border-gray-200'
+                                }`}
+                                placeholder="30"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">P. Venta (S/)</label>
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={item.precioVenta || ''}
+                                onChange={(e) => updateItem(idx, 'precioVenta', parseFloat(e.target.value) || 0)}
+                                className={`w-full px-2.5 py-2 border rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                                  item.precioVentaMode === 'direct' ? 'bg-blue-50 border-blue-300 text-blue-800 font-semibold' : 'border-gray-200'
+                                }`}
+                                placeholder="0.00"
+                              />
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-gray-400 mt-1.5">El campo en azul es el que controla al otro automáticamente.</div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
-          </div>
-        </SectionCard>
-
-        {/* Totales */}
-        <SectionCard title="Total de la compra" icon={DollarSign}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {currency === 'PEN' && (
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Monto Total (Soles)</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">S/</span>
-                  <input type="number" min="0.01" step="0.01" value={form.totalCostPen || ''} onChange={(e) => setForm({ ...form, totalCostPen: parseFloat(e.target.value) || 0 })} className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm" placeholder="0.00" required />
-                </div>
-              </div>
-            )}
-            {currency === 'USD' && (
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Monto Total (USD)</label>
-                <div className="relative">
-                  <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input type="number" min="0.01" step="0.01" value={form.totalCostUsd || ''} onChange={(e) => setForm({ ...form, totalCostUsd: parseFloat(e.target.value) || 0 })} className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm" placeholder="0.00" required />
-                </div>
-              </div>
-            )}
-
-            <div className="bg-gray-50 rounded-lg p-3 space-y-1">
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>Subtotal por items (calculado)</span>
-                <span>S/ {itemsSubtotal.toFixed(2)}</span>
-              </div>
-              {currency === 'USD' && exchangeRate != null && form.totalCostUsd > 0 && (
-                <div className="flex items-center justify-between text-xs text-blue-600">
-                  <span>Total en Soles (×{exchangeRate.toFixed(4)})</span>
-                  <span className="font-semibold">S/ {totalSoles.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between pt-1 border-t border-gray-200">
-                <span className="text-sm font-medium text-gray-700">Total</span>
-                <span className="text-xl font-bold text-primary-700">
-                  {currency === 'USD' ? `$ ${(form.totalCostUsd || 0).toFixed(2)}` : `S/ ${(form.totalCostPen || 0).toFixed(2)}`}
-                </span>
-              </div>
-            </div>
           </div>
         </SectionCard>
 
@@ -743,39 +928,153 @@ export function NewPurchasePage() {
       </form>
 
       {/* Modal crear producto rápido */}
-      <Modal isOpen={showNewProduct} onClose={() => setShowNewProduct(false)} title="Crear Producto Rápido">
-        <form onSubmit={handleCreateQuickProduct} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del producto</label>
-            <input value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Ej: Agrifo, Campal..." required />
+      <Modal isOpen={showNewProduct} onClose={() => setShowNewProduct(false)} title="Nuevo producto">
+        <form onSubmit={handleCreateQuickProduct} className="space-y-5">
+          <div className="flex items-start gap-3 p-3 bg-primary-50/60 border border-primary-100 rounded-xl">
+            <div className="w-9 h-9 rounded-lg bg-primary-100 text-primary-700 flex items-center justify-center flex-shrink-0">
+              <PackagePlus size={18} />
+            </div>
+            <div className="text-xs text-gray-600">
+              Crea el producto y se asignará automáticamente a la fila de la compra. Los precios de venta se completan después en <span className="font-semibold text-gray-800">Productos</span>.
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
-            <select value={newProduct.categoryId} onChange={(e) => setNewProduct({ ...newProduct, categoryId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required>
-              <option value="">Seleccionar...</option>
-              {categories.map((c: Category) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+
+          {/* Identidad */}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                Nombre <span className="text-red-500 normal-case">*</span>
+              </label>
+              <input
+                value={newProduct.name}
+                onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400"
+                placeholder="Ej: Antracol 70 WP, Agrifo, Campal..."
+                required
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                Descripción <span className="text-gray-400 normal-case font-normal">— opcional</span>
+              </label>
+              <input
+                value={newProduct.description}
+                onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400"
+                placeholder="Notas, presentación, observaciones..."
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                Ingrediente activo <span className="text-gray-400 normal-case font-normal">— opcional</span>
+              </label>
+              <input
+                value={newProduct.activeIngredient}
+                onChange={(e) => setNewProduct({ ...newProduct, activeIngredient: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400"
+                placeholder="Ej: Propineb 70%"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Laboratorio <span className="text-gray-400 font-normal">(opcional)</span></label>
-            <select value={newProduct.laboratoryId} onChange={(e) => setNewProduct({ ...newProduct, laboratoryId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm">
-              <option value="">Sin laboratorio</option>
-              {(Array.isArray(laboratoriesData) ? laboratoriesData : []).filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+
+          {/* Clasificación */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                Categoría <span className="text-red-500 normal-case">*</span>
+              </label>
+              <select
+                value={newProduct.categoryId}
+                onChange={(e) => setNewProduct({ ...newProduct, categoryId: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400"
+                required
+              >
+                <option value="">Seleccionar...</option>
+                {categories.map((c: Category) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                Laboratorio <span className="text-gray-400 normal-case font-normal">— opcional</span>
+              </label>
+              <select
+                value={newProduct.laboratoryId}
+                onChange={(e) => setNewProduct({ ...newProduct, laboratoryId: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400"
+              >
+                <option value="">Sin laboratorio</option>
+                {(Array.isArray(laboratoriesData) ? laboratoriesData : []).filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                Unidad <span className="text-red-500 normal-case">*</span>
+              </label>
+              <select
+                value={newProduct.unit}
+                onChange={(e) => setNewProduct({ ...newProduct, unit: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400"
+                required
+              >
+                {allUnits.length === 0 && <option value="unidad">Unidad</option>}
+                {allUnits.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                Tipo IGV <span className="text-red-500 normal-case">*</span>
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(['GRAVADO', 'EXONERADO', 'INAFECTO'] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setNewProduct({ ...newProduct, taxType: t })}
+                    className={`py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${
+                      newProduct.taxType === t
+                        ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'
+                    }`}
+                  >
+                    {t === 'GRAVADO' ? 'Gravado' : t === 'EXONERADO' ? 'Exonerado' : 'Inafecto'}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label>
-            <select value={newProduct.unit} onChange={(e) => setNewProduct({ ...newProduct, unit: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm">
-              <option value="unidad">Unidad</option>
-              <option value="kg">Kilogramo</option>
-              <option value="litro">Litro</option>
-              <option value="saco">Saco</option>
-              <option value="caja">Caja</option>
-            </select>
+
+          {/* Lote */}
+          <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={newProduct.tracksLot}
+              onChange={(e) => setNewProduct({ ...newProduct, tracksLot: e.target.checked })}
+              className="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <div className="text-sm">
+              <div className="font-semibold text-gray-800">Llevar control por lote</div>
+              <div className="text-xs text-gray-500 mt-0.5">Cada compra deberá registrar número de lote y fecha de vencimiento.</div>
+            </div>
+          </label>
+
+          <div className="flex gap-3 pt-3 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setShowNewProduct(false)}
+              className="flex-1 sm:flex-none sm:px-6 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-medium"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={createProduct.isPending}
+              className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-semibold shadow-sm disabled:opacity-50"
+            >
+              {createProduct.isPending ? <Loader2 size={16} className="animate-spin" /> : <PackagePlus size={16} />}
+              {createProduct.isPending ? 'Creando...' : 'Crear y agregar a compra'}
+            </button>
           </div>
-          <button type="submit" disabled={createProduct.isPending} className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
-            {createProduct.isPending ? 'Creando...' : 'Crear Producto'}
-          </button>
         </form>
       </Modal>
     </div>

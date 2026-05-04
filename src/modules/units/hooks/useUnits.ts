@@ -21,3 +21,11 @@ export function useUpdateUnit() {
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error al actualizar'),
   });
 }
+export function useDeleteUnit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: unitService.delete,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['units'] }); toast.success('Unidad eliminada'); },
+    onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'No se pudo eliminar la unidad'),
+  });
+}

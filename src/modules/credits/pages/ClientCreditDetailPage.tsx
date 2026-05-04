@@ -158,11 +158,23 @@ export function ClientCreditDetailPage() {
           const st = statusLabels[credit.status] || { label: credit.status, class: 'bg-gray-100' };
           return (
             <div key={credit.id} className="bg-white border rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <div className="flex items-center gap-3 flex-wrap">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${st.class}`}>{st.label}</span>
                   <span className="text-sm text-gray-500">{new Date(credit.createdAt).toLocaleDateString('es-PE')}</span>
                   {credit.name && <span className="text-sm font-medium text-gray-700">· {credit.name}</span>}
+                  {credit.dueDate && credit.status !== 'PAID' && (() => {
+                    const today = new Date(); today.setHours(0, 0, 0, 0);
+                    const due = new Date(credit.dueDate.slice(0, 10) + 'T00:00:00');
+                    const days = Math.ceil((due.getTime() - today.getTime()) / 86400000);
+                    const cls = days < 0 ? 'bg-red-100 text-red-700' : days <= 7 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600';
+                    const suffix = days < 0 ? `vencido ${-days}d` : days === 0 ? 'hoy' : days <= 7 ? `${days}d` : '';
+                    return (
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${cls}`}>
+                        Vence {due.toLocaleDateString('es-PE')}{suffix && ` · ${suffix}`}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="text-sm">Total: <span className="font-bold">S/ {credit.totalAmount.toFixed(2)}</span></span>

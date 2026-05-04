@@ -9,7 +9,13 @@ function loadPdfMake() {
     ]).then(([pdfMakeMod, pdfFontsMod]) => {
       const pdfMake: any = (pdfMakeMod as any).default || pdfMakeMod;
       const pdfFonts: any = (pdfFontsMod as any).default || pdfFontsMod;
-      pdfMake.vfs = pdfFonts.vfs || pdfFonts.pdfMake?.vfs;
+      // See productCatalogPdf for the rationale; same fix.
+      const vfs = pdfFonts.vfs || pdfFonts.pdfMake?.vfs || pdfFonts;
+      if (typeof pdfMake.addVirtualFileSystem === 'function') {
+        pdfMake.addVirtualFileSystem(vfs);
+      } else {
+        pdfMake.vfs = vfs;
+      }
       return pdfMake;
     });
   }

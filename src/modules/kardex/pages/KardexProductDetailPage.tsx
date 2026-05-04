@@ -9,7 +9,7 @@ import { productService } from '../../products/services/productService';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { ArrowLeft, ClipboardList, ArrowUpCircle, ArrowDownCircle, Users, Package } from 'lucide-react';
+import { ArrowLeft, ClipboardList, ArrowDownCircle, Users, Package } from 'lucide-react';
 import type { Company, Client, Sale, SaleItem } from '../../../shared/types';
 
 const MOVEMENT_LABELS: Record<string, { label: string; color: string; isEntry: boolean }> = {
@@ -31,6 +31,7 @@ interface StockMovement {
   quantity: number;
   previousStock: number;
   newStock: number;
+  unitPrice?: number;
   referenceId?: string;
   referenceType?: string;
   description: string;
@@ -175,41 +176,33 @@ function MovementsTab({ productId, companyList, getCompanyName }: TabProps) {
           day: '2-digit',
           month: '2-digit',
           year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
         }),
     },
     {
-      key: 'companyId',
-      header: 'Almacén',
-      render: (item: StockMovement) => getCompanyName(item.companyId),
-    },
-    {
-      key: 'movementType',
-      header: 'Tipo',
+      key: 'description',
+      header: 'Descripción',
       render: (item: StockMovement) => {
-        const info = MOVEMENT_LABELS[item.movementType] || {
-          label: item.movementType,
-          color: 'bg-gray-100 text-gray-800',
-        };
+        const info = MOVEMENT_LABELS[item.movementType];
+        const dot = info?.isEntry ? 'bg-primary-500' : 'bg-red-400';
         return (
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${info.color}`}>
-            {info.label}
-          </span>
+          <div className="flex items-start gap-2">
+            <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dot}`}></span>
+            <span className="text-sm text-gray-700 max-w-[280px] truncate block" title={item.description}>
+              {item.description}
+            </span>
+          </div>
         );
       },
     },
     {
       key: 'entrada',
-      header: 'Entrada',
+      header: 'Ingreso',
       render: (item: StockMovement) => {
         const info = MOVEMENT_LABELS[item.movementType];
         return info?.isEntry ? (
-          <span className="text-primary-600 font-semibold flex items-center gap-1">
-            <ArrowUpCircle size={14} /> +{item.quantity}
-          </span>
+          <span className="text-primary-700 font-semibold">{item.quantity}</span>
         ) : (
-          <span className="text-gray-300">-</span>
+          <span className="text-gray-300">—</span>
         );
       },
     },
@@ -219,33 +212,30 @@ function MovementsTab({ productId, companyList, getCompanyName }: TabProps) {
       render: (item: StockMovement) => {
         const info = MOVEMENT_LABELS[item.movementType];
         return !info?.isEntry ? (
-          <span className="text-red-600 font-semibold flex items-center gap-1">
-            <ArrowDownCircle size={14} /> -{item.quantity}
-          </span>
+          <span className="text-red-600 font-semibold">{item.quantity}</span>
         ) : (
-          <span className="text-gray-300">-</span>
+          <span className="text-gray-300">—</span>
         );
       },
     },
     {
-      key: 'previousStock',
-      header: 'Stock Ant.',
-      render: (item: StockMovement) => (
-        <span className="text-gray-500">{item.previousStock}</span>
-      ),
-    },
-    {
       key: 'newStock',
-      header: 'Stock Nuevo',
-      render: (item: StockMovement) => <span className="font-semibold">{item.newStock}</span>,
+      header: 'Saldo',
+      render: (item: StockMovement) => <span className="font-bold text-gray-900">{item.newStock}</span>,
     },
     {
-      key: 'description',
-      header: 'Descripción',
+      key: 'unitPrice',
+      header: 'Precio',
+      render: (item: StockMovement) =>
+        typeof item.unitPrice === 'number' && item.unitPrice > 0
+          ? <span className="text-gray-700">S/ {item.unitPrice.toFixed(2)}</span>
+          : <span className="text-gray-300">—</span>,
+    },
+    {
+      key: 'companyId',
+      header: 'Almacén',
       render: (item: StockMovement) => (
-        <span className="text-sm text-gray-600 max-w-[240px] truncate block" title={item.description}>
-          {item.description}
-        </span>
+        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{getCompanyName(item.companyId)}</span>
       ),
     },
   ];

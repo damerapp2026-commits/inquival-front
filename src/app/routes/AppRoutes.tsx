@@ -39,6 +39,7 @@ const AccountsPayablePage = lazy(() => import('../../modules/accounts-payable/pa
 const InvoicesPage = lazy(() => import('../../modules/invoices/pages/InvoicesPage').then(m => ({ default: m.InvoicesPage })));
 const POSPage = lazy(() => import('../../modules/pos/pages/POSPage').then(m => ({ default: m.POSPage })));
 const QuotesPage = lazy(() => import('../../modules/quotes/pages/QuotesPage').then(m => ({ default: m.QuotesPage })));
+const NewQuotePage = lazy(() => import('../../modules/quotes/pages/NewQuotePage').then(m => ({ default: m.NewQuotePage })));
 const MyCommissionsPage = lazy(() => import('../../modules/commissions/pages/MyCommissionsPage').then(m => ({ default: m.MyCommissionsPage })));
 const CommissionsReportPage = lazy(() => import('../../modules/commissions/pages/CommissionsReportPage').then(m => ({ default: m.CommissionsReportPage })));
 
@@ -57,6 +58,7 @@ export function AppRoutes() {
         <Route path="purchases/:id" element={<AdminOnly><Suspense fallback={<Loading />}><PurchaseDetailPage /></Suspense></AdminOnly>} />
         <Route path="pos" element={<Suspense fallback={<Loading />}><POSPage /></Suspense>} />
         <Route path="quotes" element={<Suspense fallback={<Loading />}><QuotesPage /></Suspense>} />
+        <Route path="quotes/new" element={<Suspense fallback={<Loading />}><NewQuotePage /></Suspense>} />
         <Route path="sales" element={<Suspense fallback={<Loading />}><SalesPage /></Suspense>} />
         <Route path="stock" element={<AdminOnly><Suspense fallback={<Loading />}><StockPage /></Suspense></AdminOnly>} />
         <Route path="cash-register" element={<AdminOnly><Suspense fallback={<Loading />}><CashRegisterPage /></Suspense></AdminOnly>} />
@@ -74,7 +76,7 @@ export function AppRoutes() {
         <Route path="kardex/product/:productId" element={<AdminOnly><Suspense fallback={<Loading />}><KardexProductDetailPage /></Suspense></AdminOnly>} />
         <Route path="accounts-payable" element={<AdminOnly><Suspense fallback={<Loading />}><AccountsPayablePage /></Suspense></AdminOnly>} />
         <Route path="invoices" element={<AdminOnly><Suspense fallback={<Loading />}><InvoicesPage /></Suspense></AdminOnly>} />
-        <Route path="my-commissions" element={<RoleGate allowedRoles={['VENDEDOR_CAMPO', 'ADMIN']}><Suspense fallback={<Loading />}><MyCommissionsPage /></Suspense></RoleGate>} />
+        <Route path="my-commissions" element={<RoleGate allowedRoles={['VENDEDOR', 'VENDEDOR_CAMPO', 'ADMIN']}><Suspense fallback={<Loading />}><MyCommissionsPage /></Suspense></RoleGate>} />
         <Route path="commissions-report" element={<AdminOnly><Suspense fallback={<Loading />}><CommissionsReportPage /></Suspense></AdminOnly>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

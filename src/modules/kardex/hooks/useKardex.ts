@@ -5,5 +5,6 @@ export function useKardex(params?: any) {
   return useQuery({
     queryKey: ['kardex', params],
     queryFn: () => kardexService.getMovements(params),
+    enabled: params !== undefined,
   });
 }

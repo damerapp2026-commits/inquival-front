@@ -21,10 +21,11 @@ export function CommissionsReportPage() {
   const [endDate, setEndDate] = useState(getToday);
   const [sellerFilter, setSellerFilter] = useState('');
 
-  const { data: sellersData } = useUsers({ limit: 100, role: 'VENDEDOR_CAMPO' });
+  const { data: sellersData } = useUsers({ limit: 200 });
   const sellers: any[] = useMemo(() => {
     const raw: any = sellersData;
-    return Array.isArray(raw) ? raw : raw?.data || [];
+    const list = Array.isArray(raw) ? raw : raw?.data || [];
+    return list.filter((u: any) => u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO');
   }, [sellersData]);
 
   const { data: salesData, isLoading } = useSales({
@@ -40,14 +41,19 @@ export function CommissionsReportPage() {
   const products: Product[] = useMemo(() => productsData?.data || [], [productsData]);
 
   const grouped = useMemo(() => {
-    const map: Record<string, { sellerId: string; name: string; sales: number; total: number; commission: number }> = {};
+    const map: Record<string, { sellerId: string; name: string; sales: number; creditSales: number; total: number; commission: number; creditCommission: number }> = {};
     sales.forEach((sale) => {
       const sellerId = sale.sellerId!;
       const name = sale.sellerName || sellers.find((s) => s.id === sellerId)?.fullName || sellers.find((s) => s.id === sellerId)?.username || sellerId;
-      if (!map[sellerId]) map[sellerId] = { sellerId, name, sales: 0, total: 0, commission: 0 };
+      if (!map[sellerId]) map[sellerId] = { sellerId, name, sales: 0, creditSales: 0, total: 0, commission: 0, creditCommission: 0 };
+      const c = commissionForSale(sale, products);
       map[sellerId].sales++;
       map[sellerId].total += sale.total;
-      map[sellerId].commission += commissionForSale(sale, products);
+      map[sellerId].commission += c;
+      if (sale.isCredit) {
+        map[sellerId].creditSales++;
+        map[sellerId].creditCommission += c;
+      }
     });
     return Object.values(map).sort((a, b) => b.commission - a.commission);
   }, [sales, products, sellers]);
@@ -57,11 +63,14 @@ export function CommissionsReportPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <Briefcase size={24} /> Reporte de Comisiones
         </h1>
       </div>
+      <p className="text-xs text-gray-500 mb-6">
+        Las comisiones se calculan sobre <strong>todas las ventas no anuladas</strong>, incluyendo las ventas a crédito (no se espera al cobro).
+      </p>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} className="px-3 py-2 border rounded-lg">
@@ -111,6 +120,7 @@ export function CommissionsReportPage() {
                 <th className="text-left px-4 py-2">Vendedor</th>
                 <th className="text-right px-4 py-2"># Ventas</th>
                 <th className="text-right px-4 py-2">Total Vendido</th>
+                <th className="text-right px-4 py-2">Comisión por crédito</th>
                 <th className="text-right px-4 py-2">% Efectiva</th>
                 <th className="text-right px-4 py-2">Comisión</th>
               </tr>
@@ -119,8 +129,18 @@ export function CommissionsReportPage() {
               {grouped.map((g) => (
                 <tr key={g.sellerId} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-800">{g.name}</td>
-                  <td className="px-4 py-3 text-right text-gray-600">{g.sales}</td>
+                  <td className="px-4 py-3 text-right text-gray-600">
+                    {g.sales}
+                    {g.creditSales > 0 && (
+                      <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded-full">
+                        {g.creditSales} a crédito
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right text-gray-700">S/ {g.total.toFixed(2)}</td>
+                  <td className="px-4 py-3 text-right text-gray-500 tabular-nums">
+                    {g.creditCommission > 0 ? `S/ ${g.creditCommission.toFixed(2)}` : <span className="text-gray-300">—</span>}
+                  </td>
                   <td className="px-4 py-3 text-right text-gray-500">
                     {g.total > 0 ? `${((g.commission / g.total) * 100).toFixed(2)}%` : '—'}
                   </td>

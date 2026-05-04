@@ -13,3 +13,11 @@ export function useUpdateCategory() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: ({ id, data }: { id: string; data: any }) => categoryService.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); toast.success('Categoría actualizada'); } });
 }
+export function useDeleteCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: categoryService.delete,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); toast.success('Categoría eliminada'); },
+    onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'No se pudo eliminar la categoría'),
+  });
+}

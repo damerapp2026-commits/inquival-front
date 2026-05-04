@@ -66,8 +66,7 @@ export function PriceCatalogView({ enabled }: Props) {
       if (!term) return true;
       return (
         r.productName?.toLowerCase().includes(term) ||
-        r.activeIngredient?.toLowerCase().includes(term) ||
-        r.supplierName?.toLowerCase().includes(term)
+        r.activeIngredient?.toLowerCase().includes(term)
       );
     });
   }, [rows, search, categoryId, laboratoryId]);
@@ -84,7 +83,7 @@ export function PriceCatalogView({ enabled }: Props) {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por producto, ingrediente activo o proveedor…"
+              placeholder="Buscar por producto o ingrediente activo…"
               className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-100 focus:border-primary-400"
             />
           </div>
@@ -131,16 +130,12 @@ export function PriceCatalogView({ enabled }: Props) {
             <thead>
               <tr className="bg-gray-50 text-gray-600 border-b border-gray-200">
                 <th className="text-left px-3 py-2 font-medium">Producto</th>
-                <th className="text-left px-3 py-2 font-medium">Categoría</th>
-                <th className="text-left px-3 py-2 font-medium">Ing. activo</th>
                 <th className="text-left px-3 py-2 font-medium">Laboratorio</th>
-                <th className="text-left px-3 py-2 font-medium">Proveedor</th>
                 <th className="text-right px-2 py-2 font-medium bg-amber-100 text-amber-800">USD s/IGV</th>
                 <th className="text-right px-2 py-2 font-medium bg-stone-100 text-stone-700">PEN s/IGV</th>
                 <th className="text-right px-2 py-2 font-medium bg-amber-100 text-amber-800">USD c/IGV</th>
                 <th className="text-right px-2 py-2 font-medium bg-stone-100 text-stone-700">PEN c/IGV</th>
                 <th className="text-right px-2 py-2 font-medium bg-cyan-100 text-cyan-800">P. Mayorista</th>
-                <th className="text-right px-2 py-2 font-medium bg-cyan-100 text-cyan-800">P. Minorista</th>
                 <th className="text-right px-2 py-2 font-medium bg-orange-100 text-orange-800">Margen %</th>
                 <th className="text-right px-3 py-2 font-medium">Última compra</th>
               </tr>
@@ -148,14 +143,14 @@ export function PriceCatalogView({ enabled }: Props) {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={13} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={9} className="px-4 py-12 text-center text-gray-400">
                     <Loader2 size={20} className="animate-spin inline" /> Cargando catálogo…
                   </td>
                 </tr>
               )}
               {!isLoading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={9} className="px-4 py-12 text-center text-gray-400">
                     {rows.length === 0
                       ? 'Aún no hay compras registradas para alimentar el catálogo.'
                       : 'Ningún registro coincide con los filtros.'}
@@ -165,8 +160,6 @@ export function PriceCatalogView({ enabled }: Props) {
               {filtered.map((r, idx) => (
                 <tr key={`${r.productId}-${r.supplierId || 'none'}-${idx}`} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">{r.productName}</td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.categoryName || '—'}</td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.activeIngredient || '—'}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {r.laboratoryName ? (
                       <span className="text-[11px] bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded">
@@ -174,16 +167,11 @@ export function PriceCatalogView({ enabled }: Props) {
                       </span>
                     ) : '—'}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    <div className="text-gray-800">{r.supplierName}</div>
-                    {r.supplierRuc && <div className="text-[10px] text-gray-400">RUC {r.supplierRuc}</div>}
-                  </td>
                   <td className="px-2 py-2 text-right tabular-nums bg-amber-50 text-amber-900">{fmt(r.unitPriceSinIgvUsd)}</td>
                   <td className="px-2 py-2 text-right tabular-nums bg-stone-50 text-stone-800">{fmt(r.unitPriceSinIgvPen)}</td>
                   <td className="px-2 py-2 text-right tabular-nums bg-amber-50 text-amber-900">{fmt(r.unitPriceConIgvUsd)}</td>
                   <td className="px-2 py-2 text-right tabular-nums bg-stone-50 text-stone-800">{fmt(r.unitPriceConIgvPen)}</td>
                   <td className="px-2 py-2 text-right tabular-nums bg-cyan-50 text-cyan-900">{fmt(r.precioMinorista)}</td>
-                  <td className="px-2 py-2 text-right tabular-nums bg-cyan-50 text-cyan-900">{fmt(r.precioVenta)}</td>
                   <td className="px-2 py-2 text-right tabular-nums bg-orange-50 text-orange-900 font-medium">
                     {r.markupPercent != null ? `${r.markupPercent.toFixed(1)}%` : '—'}
                   </td>
