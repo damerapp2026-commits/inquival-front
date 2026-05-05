@@ -16,8 +16,9 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download } from 'lucide-react';
+import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download, FileText, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { VoucherPreviewModal, type VoucherSnapshot } from '../components/VoucherPreviewModal';
 import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod, Stock } from '../../../shared/types';
 
 function getMonthStart() {
@@ -146,6 +147,7 @@ export function SalesPage() {
 
   const [cancellingsale, setCancellingSale] = useState<Sale | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+  const [voucherPreview, setVoucherPreview] = useState<VoucherSnapshot | null>(null);
 
   const [form, setForm] = useState({
     clientId: '',
@@ -843,153 +845,251 @@ export function SalesPage() {
       </Modal>
 
       {/* Modal detalle de venta */}
-      <Modal isOpen={!!viewingSale} onClose={() => setViewingSale(null)} title="Detalle de Venta" size="lg">
-        {viewingSale && (
-          <div className="space-y-4">
-            {/* Banner anulada */}
-            {viewingSale.isCancelled && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                <span className="text-sm font-medium text-red-700">Venta anulada</span>
-                {viewingSale.cancelReason && <p className="text-xs text-red-600 mt-1">Razón: {viewingSale.cancelReason}</p>}
+      {viewingSale && (() => {
+        const sale = viewingSale;
+        const baseImponible = getSaleBaseAmount(sale);
+        const igv = getSaleIgv(sale);
+        const paymentLabel = sale.isCredit
+          ? 'Crédito'
+          : sale.payments && sale.payments.length > 0
+            ? sale.payments.map((p) => p.paymentMethodName).join(' + ')
+            : 'Efectivo';
+        const voucherLabel = sale.voucherType === 'BOLETA' ? 'Boleta' : sale.voucherType === 'FACTURA' ? 'Factura' : 'Nota de venta';
+        const client = sale.clientId ? clientMap.get(sale.clientId) : undefined;
+        const sellerName = sale.sellerName || (sale.sellerId ? sellerNameById[sale.sellerId] : '') || 'Sin asignar';
+        const openVoucherPreview = () => {
+          setVoucherPreview({
+            id: sale.id,
+            total: sale.total,
+            voucherType: sale.voucherType,
+            date: new Date(sale.date),
+            items: sale.items.map((it) => ({
+              name: productMap.get(it.productId)?.name || it.productId,
+              quantity: it.quantity,
+              unitPrice: it.unitPrice,
+              subtotal: it.subtotal,
+            })),
+            payments: (sale.payments || []).map((p) => ({ methodName: p.paymentMethodName, amount: p.amount })),
+            sellerName,
+            clientName: client?.name,
+            clientDocument: client?.documentNumber,
+            clientPhone: client?.phone,
+            igv,
+            baseImponible,
+          });
+        };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setViewingSale(null)} />
+            <div className="relative bg-white rounded-2xl shadow-card-hover w-full max-w-xl mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="flex items-start justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center text-primary-600">
+                    <Receipt size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900">Detalle de venta</h2>
+                    <p className="text-xs text-gray-500">Información completa de la transacción</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setViewingSale(null)}
+                  className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1.5 rounded-lg transition-colors"
+                >
+                  <X size={18} />
+                </button>
               </div>
-            )}
 
-            {/* Info general */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <span className="block text-xs text-gray-500">Fecha</span>
-                <span className="text-sm font-medium">{new Date(viewingSale.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <span className="block text-xs text-gray-500">Cliente</span>
-                <span className="text-sm font-medium">{getClientName(viewingSale.clientId)}</span>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <span className="block text-xs text-gray-500">Tipo de pago</span>
-                <span className={`text-sm font-medium ${viewingSale.isCredit ? 'text-orange-600' : 'text-primary-600'}`}>
-                  {viewingSale.isCredit ? 'Crédito' : 'Pago inmediato'}
-                </span>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <span className="block text-xs text-gray-500 mb-1">Comprobante</span>
-                {viewingSale.isCancelled ? (
-                  <span className={`text-sm font-medium ${viewingSale.voucherType === 'BOLETA' ? 'text-primary-600' : viewingSale.voucherType === 'FACTURA' ? 'text-blue-600' : 'text-gray-500'}`}>
-                    {viewingSale.voucherType === 'BOLETA' ? 'Boleta' : viewingSale.voucherType === 'FACTURA' ? 'Factura' : 'Sin comprobante'}
-                  </span>
-                ) : (
-                  <div className="flex gap-1">
-                    {([['NONE', 'No'], ['BOLETA', 'Boleta'], ['FACTURA', 'Factura']] as const).map(([val, label]) => (
-                      <button key={val} type="button"
-                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${viewingSale.voucherType === val ? (val === 'BOLETA' ? 'bg-primary-600 text-white' : val === 'FACTURA' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-white') : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
-                        disabled={updateVoucher.isPending}
-                        onClick={() => {
-                          if (viewingSale.voucherType !== val) {
-                            updateVoucher.mutate({ id: viewingSale.id, voucherType: val }, {
-                              onSuccess: () => setViewingSale({ ...viewingSale, voucherType: val }),
-                            });
-                          }
-                        }}
-                      >{label}</button>
-                    ))}
+              {/* Body */}
+              <div className="px-6 py-5 overflow-y-auto flex-1 space-y-4">
+                {/* Total cobrado */}
+                <div className={`rounded-xl p-4 border ${sale.isCancelled ? 'bg-red-50 border-red-100' : 'bg-primary-50/60 border-primary-100'}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className={`text-xs font-semibold uppercase tracking-wide ${sale.isCancelled ? 'text-red-600' : 'text-primary-700'}`}>
+                        Total cobrado
+                      </span>
+                      <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                        S/ {sale.total.toFixed(2)}
+                      </div>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                      {sale.isCancelled ? 'Anulada' : 'Completada'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    {new Date(sale.date).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                    {' · '}
+                    {new Date(sale.date).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                  {sale.isCancelled && sale.cancelReason && (
+                    <p className="text-xs text-red-600 mt-2">Razón: {sale.cancelReason}</p>
+                  )}
+                </div>
+
+                {/* Comprobante + Método de pago */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="border border-gray-200 rounded-xl p-3">
+                    <span className="block text-xs text-gray-500 mb-1.5">Comprobante</span>
+                    {sale.isCancelled ? (
+                      <div className="text-sm font-medium text-gray-900">{voucherLabel}</div>
+                    ) : (
+                      <div className="flex gap-1">
+                        {([['NONE', 'No'], ['BOLETA', 'Boleta'], ['FACTURA', 'Factura']] as const).map(([val, label]) => (
+                          <button
+                            key={val}
+                            type="button"
+                            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                              sale.voucherType === val
+                                ? val === 'BOLETA'
+                                  ? 'bg-primary-600 text-white'
+                                  : val === 'FACTURA'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-600 text-white'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                            disabled={updateVoucher.isPending}
+                            onClick={() => {
+                              if (sale.voucherType !== val) {
+                                updateVoucher.mutate(
+                                  { id: sale.id, voucherType: val },
+                                  { onSuccess: () => setViewingSale({ ...sale, voucherType: val }) },
+                                );
+                              }
+                            }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="border border-gray-200 rounded-xl p-3">
+                    <span className="block text-xs text-gray-500 mb-1.5">Método de pago</span>
+                    <div className={`text-sm font-medium ${sale.isCredit ? 'text-orange-600' : 'text-gray-900'}`}>
+                      {paymentLabel}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cliente + Vendedor */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="border border-gray-200 rounded-xl p-3">
+                    <span className="block text-xs text-gray-500 mb-0.5">Cliente</span>
+                    <div className="text-sm font-medium text-gray-900 truncate">{getClientName(sale.clientId)}</div>
+                  </div>
+                  <div className="border border-gray-200 rounded-xl p-3">
+                    <span className="block text-xs text-gray-500 mb-0.5">Vendedor</span>
+                    <div className="text-sm font-medium text-gray-900 truncate">{getSellerName(sale)}</div>
+                  </div>
+                </div>
+
+                {/* Desglose de pagos (solo si hay más de uno) */}
+                {!sale.isCredit && sale.payments && sale.payments.length > 1 && (
+                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                        Desglose de pagos
+                      </span>
+                    </div>
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-gray-100">
+                        {sale.payments.map((payment, idx) => (
+                          <tr key={idx}>
+                            <td className="px-4 py-2 font-medium text-gray-700">{payment.paymentMethodName}</td>
+                            <td className="px-4 py-2 text-right text-primary-600 font-medium">
+                              S/ {payment.amount.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
-              </div>
-            </div>
 
-            {/* Desglose de pagos */}
-            {!viewingSale.isCredit && viewingSale.payments && viewingSale.payments.length > 0 && (
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Desglose de pagos</h3>
-                <div className="border rounded-lg overflow-hidden">
-                  <table className="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Método</th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Monto</th>
+                {/* Productos */}
+                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                  <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                      Productos · {sale.items.length}
+                    </span>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[11px] text-gray-500 uppercase tracking-wide">
+                        <th className="px-4 py-2 text-left font-medium">Producto</th>
+                        <th className="px-2 py-2 text-right font-medium">Cant.</th>
+                        <th className="px-2 py-2 text-right font-medium">P. Unit.</th>
+                        <th className="px-4 py-2 text-right font-medium">Subtotal</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {viewingSale.payments.map((payment, idx) => (
-                        <tr key={idx}>
-                          <td className="px-3 py-2 font-medium">{payment.paymentMethodName}</td>
-                          <td className="px-3 py-2 text-right text-primary-600 font-medium">S/ {payment.amount.toFixed(2)}</td>
-                        </tr>
-                      ))}
+                      {sale.items.map((item, idx) => {
+                        const product = productMap.get(item.productId);
+                        const company = companyMap.get(item.companyId);
+                        const tier = tiers.find((t: PriceTier) => t.id === item.priceTier);
+                        return (
+                          <tr key={idx}>
+                            <td className="px-4 py-2.5">
+                              <div className="font-medium text-gray-900">{product?.name || item.productId}</div>
+                              <div className="text-xs text-gray-400">
+                                {[company?.name, tier?.name].filter(Boolean).join(' · ') || ''}
+                              </div>
+                            </td>
+                            <td className="px-2 py-2.5 text-right text-gray-700">{item.quantity}</td>
+                            <td className="px-2 py-2.5 text-right text-gray-500">S/ {item.unitPrice.toFixed(2)}</td>
+                            <td className="px-4 py-2.5 text-right font-semibold text-gray-900">S/ {item.subtotal.toFixed(2)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
-              </div>
-            )}
 
-            {/* Productos */}
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Productos ({viewingSale.items.length})</h3>
-              <div className="border rounded-lg overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Producto</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Almacén</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Cant.</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">P. Unit.</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">IGV Unit.</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Subtotal</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {viewingSale.items.map((item, idx) => {
-                      const product = productMap.get(item.productId);
-                      const company = companyMap.get(item.companyId);
-                      const tier = tiers.find((t: PriceTier) => t.id === item.priceTier);
-                      const taxType = product?.taxType || 'GRAVADO';
-                      const sunatTier = tiers.find((t: PriceTier) => t.name === 'PRECIO SUNAT');
-                      const sunatPrice = sunatTier ? product?.prices?.find((p: ProductPrice) => p.priceTierId === sunatTier.id)?.price : undefined;
-                      const precioVenta = sunatPrice != null
-                        ? (taxType === 'GRAVADO' ? sunatPrice / 1.18 : sunatPrice)
-                        : null;
-                      return (
-                        <tr key={idx}>
-                          <td className="px-3 py-2">
-                            <div className="font-medium">{product?.name || item.productId}</div>
-                            {tier && <div className="text-xs text-gray-400">{tier.name}</div>}
-                          </td>
-                          <td className="px-3 py-2 text-gray-600">{company?.name || 'N/A'}</td>
-                          <td className="px-3 py-2 text-right">{item.quantity}</td>
-                          <td className="px-3 py-2 text-right">S/ {item.unitPrice.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right">
-                            {precioVenta != null ? (
-                              <span className="inline-flex items-center gap-1">
-                                S/ {precioVenta.toFixed(8)}
-                                <button
-                                  type="button"
-                                  onClick={() => { navigator.clipboard.writeText(precioVenta.toFixed(8)); toast.success('Precio copiado'); }}
-                                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                                  title="Copiar precio"
-                                >
-                                  <Copy size={13} />
-                                </button>
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-right font-medium">S/ {item.subtotal.toFixed(2)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                {/* Subtotal / IGV / Total */}
+                <div className="border border-gray-200 rounded-xl p-4 space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Subtotal</span>
+                    <span className="text-gray-900">S/ {baseImponible.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">IGV</span>
+                    <span className="text-gray-900">S/ {igv.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                    <span className="text-base font-semibold text-gray-900">Total</span>
+                    <span className="text-lg font-bold text-primary-600">S/ {sale.total.toFixed(2)}</span>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* Total */}
-            <div className="bg-primary-50 p-3 rounded-lg flex items-center justify-between">
-              <span className="text-sm font-medium text-primary-800">Total</span>
-              <span className="text-xl font-bold text-primary-700">S/ {viewingSale.total.toFixed(2)}</span>
+              {/* Footer */}
+              <div className="flex items-center gap-3 px-6 py-4 border-t border-gray-100 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={openVoucherPreview}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+                >
+                  <FileText size={16} /> Ver comprobante
+                </button>
+                {!sale.isCancelled && (
+                  <button
+                    type="button"
+                    onClick={() => { setCancellingSale(sale); setCancelReason(''); setViewingSale(null); }}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors text-sm font-semibold"
+                  >
+                    <XCircle size={16} /> Anular
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        )}
-      </Modal>
+        );
+      })()}
+
+      {/* Modal vista previa del comprobante */}
+      <VoucherPreviewModal sale={voucherPreview} onClose={() => setVoucherPreview(null)} />
 
       {/* Modal crear préstamo */}
       <Modal isOpen={showLoanModal} onClose={() => setShowLoanModal(false)} title="Nuevo Préstamo" size="lg">

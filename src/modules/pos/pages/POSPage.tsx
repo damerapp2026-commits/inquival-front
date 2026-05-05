@@ -293,11 +293,14 @@ export function POSPage() {
   }, [tierId, companyId]);
 
   const filteredProducts = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const ing = ingredientFilter.trim().toLowerCase();
     return products.filter((p) => {
       if (categoryId && p.categoryId !== categoryId) return false;
-      if (term && !p.name.toLowerCase().includes(term)) return false;
+      if (tokens.length) {
+        const haystack = `${p.name || ''} ${p.activeIngredient || ''} ${p.description || ''}`.toLowerCase();
+        if (!tokens.every((t) => haystack.includes(t))) return false;
+      }
       if (ing && !(p.activeIngredient || '').toLowerCase().includes(ing)) return false;
       if (onlyInStock && (stockByProduct[p.id] ?? 0) <= 0) return false;
       return true;
@@ -498,6 +501,11 @@ export function POSPage() {
     const validPayments = isCredit ? [] : splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
     const saleTotal = total;
     const saleVoucherType = voucherType;
+    const snapshotSellerId = sellerId || (isSellerRole ? user?.id : '');
+    const snapshotSeller = sellerOptions.find((s) => s.id === snapshotSellerId);
+    const sellerName: string = snapshotSeller?.fullName || snapshotSeller?.username
+      || (isSellerRole ? (user?.fullName || user?.username || '') : '')
+      || 'Sin asignar';
     const saleSnapshotBase = {
       total: saleTotal,
       voucherType: saleVoucherType as VoucherSnapshot['voucherType'],
@@ -512,6 +520,7 @@ export function POSPage() {
         methodName: paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '',
         amount: p.amount,
       })),
+      sellerName,
       clientName: clients.find((c) => c.id === clientId)?.name,
       clientDocument: clients.find((c) => c.id === clientId)?.documentNumber,
       clientPhone: clients.find((c) => c.id === clientId)?.phone,

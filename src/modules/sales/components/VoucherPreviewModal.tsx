@@ -9,6 +9,7 @@ export interface VoucherSnapshot {
   date: Date;
   items: { name: string; quantity: number; unitPrice: number; subtotal: number }[];
   payments: { methodName: string; amount: number }[];
+  sellerName: string;
   clientName?: string;
   clientDocument?: string;
   clientPhone?: string;
@@ -93,7 +94,8 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   <div class="hr"></div>
   ${sale.clientName ? `<div class="kv"><span class="bold">Cliente:</span><span>${escapeHtml(sale.clientName)}</span></div>` : ''}
   ${sale.clientDocument ? `<div class="kv"><span class="bold">Doc:</span><span>${escapeHtml(sale.clientDocument)}</span></div>` : ''}
-  ${sale.clientName || sale.clientDocument ? '<div class="hr"></div>' : ''}
+  <div class="kv"><span class="bold">Vendedor:</span><span>${escapeHtml(sale.sellerName)}</span></div>
+  <div class="hr"></div>
   <table class="items">
     <thead>
       <tr>
@@ -179,6 +181,7 @@ function buildA4Html(sale: VoucherSnapshot): string {
   <div class="meta">
     <div><strong>Cliente:</strong> ${escapeHtml(sale.clientName) || 'Consumidor final'}</div>
     ${sale.clientDocument ? `<div><strong>Documento:</strong> ${escapeHtml(sale.clientDocument)}</div>` : ''}
+    <div><strong>Vendedor:</strong> ${escapeHtml(sale.sellerName)}</div>
   </div>
 
   <table>
@@ -215,6 +218,7 @@ function buildWhatsappText(sale: VoucherSnapshot): string {
   lines.push(`${COMPANY_INFO.legalName}`);
   lines.push(`Fecha: ${formatDate(sale.date)}`);
   if (sale.clientName) lines.push(`Cliente: ${sale.clientName}`);
+  lines.push(`Vendedor: ${sale.sellerName}`);
   lines.push('');
   lines.push('*Productos:*');
   sale.items.forEach((i) => {
