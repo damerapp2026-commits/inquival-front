@@ -3,11 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useCashRegisterToday, useOpenCashRegister, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useUsers } from '../../users/hooks/useUsers';
+import { useRucLookup } from '../../../shared/hooks/useLookup';
+import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
 import { Modal } from '../../../shared/components/Modal';
 import {
   Wallet, TrendingUp, TrendingDown, Edit2, Trash2, Lock, History, ChevronDown, ChevronRight,
   Layers, Clock, ExternalLink, ArrowDownCircle, ArrowUpCircle, Scale, CheckCircle2, AlertCircle,
-  ReceiptText, FileText, CircleDashed,
+  ReceiptText, FileText, CircleDashed, Search, Loader2,
 } from 'lucide-react';
 import type { CashRegisterEntry } from '../../../shared/types';
 import { groupEntries } from '../utils/groupEntries';
@@ -106,10 +108,17 @@ export function CashRegisterPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const { data: paymentMethods = [] } = usePaymentMethods();
-  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, voucherType: 'NONE' as string, paymentMethodName: '' });
-  const [editForm, setEditForm] = useState({ amount: 0, reason: '', voucherType: 'NONE' as string });
+  const rucLookup = useRucLookup();
+  const supplierByRuc = useSupplierByRuc();
+  const createSupplier = useCreateSupplier();
+
+  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '' });
+  const [editForm, setEditForm] = useState({ amount: 0, reason: '', voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '' });
   const [deleteReason, setDeleteReason] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
+  const [rucInput, setRucInput] = useState('');
+  const [rucFound, setRucFound] = useState('');
+  const [rucLoading, setRucLoading] = useState(false);
 
   const isClosed = register?.status === 'CLOSED';
   const entries: CashRegisterEntry[] = register?.entries || [];
@@ -118,9 +127,34 @@ export function CashRegisterPage() {
   const totalExpense = activeEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
   const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
 
-  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', paymentMethodName: '' }); setShowAddModal(true); };
-  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', paymentMethodName: 'Efectivo' }); setShowAddModal(true); };
-  const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', voucherType: entry.voucherType || 'NONE' }); setShowEditModal(true); };
+  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '' }); setShowAddModal(true); };
+  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo' }); setRucInput(''); setRucFound(''); setShowAddModal(true); };
+  const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', voucherType: entry.voucherType || 'NONE', voucherSeries: entry.voucherSeries || '', voucherNumber: entry.voucherNumber || '' }); setShowEditModal(true); };
+
+  const handleRucLookup = async () => {
+    const ruc = rucInput.trim();
+    if (ruc.length !== 11) return;
+    setRucLoading(true);
+    try {
+      const local = await supplierByRuc.mutateAsync(ruc);
+      if (local) {
+        setRucFound(local.businessName);
+        setAddForm((prev) => ({ ...prev, description: local.businessName }));
+        setRucLoading(false);
+        return;
+      }
+    } catch { /* not found locally, try SUNAT */ }
+    try {
+      const result = await rucLookup.mutateAsync(ruc);
+      if (result?.razonSocial) {
+        await createSupplier.mutateAsync({ ruc, businessName: result.razonSocial, address: result.direccion || '' });
+        setRucFound(result.razonSocial);
+        setAddForm((prev) => ({ ...prev, description: result.razonSocial }));
+      }
+    } catch { /* error toasts handled by hooks */ } finally {
+      setRucLoading(false);
+    }
+  };
   const openDelete = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setDeleteReason(''); setShowDeleteModal(true); };
 
   const handleOpen = async (e: React.FormEvent) => {
@@ -439,6 +473,36 @@ export function CashRegisterPage() {
               )}
             </div>
           )}
+          {addForm.type === 'EXPENSE' && (
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                Empresa por RUC <span className="text-gray-400 font-normal normal-case">(opcional)</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  value={rucInput}
+                  onChange={(e) => { setRucInput(e.target.value.replace(/\D/g, '').slice(0, 11)); setRucFound(''); }}
+                  className="w-40 px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="RUC (11 dígitos)"
+                  maxLength={11}
+                />
+                <button
+                  type="button"
+                  onClick={handleRucLookup}
+                  disabled={rucInput.length !== 11 || rucLoading}
+                  className="px-3.5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 text-sm font-medium"
+                >
+                  {rucLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                  Buscar
+                </button>
+                {rucFound && (
+                  <div className="flex-1 min-w-0 px-3.5 py-2.5 bg-primary-50 border border-primary-200 rounded-xl text-sm text-primary-800 font-medium truncate">
+                    {rucFound}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Descripción <span className="text-red-500 normal-case">*</span></label>
             <input value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" required autoFocus />
@@ -453,9 +517,33 @@ export function CashRegisterPage() {
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Comprobante</label>
-              <VoucherSelector value={addForm.voucherType} onChange={(v) => setAddForm({ ...addForm, voucherType: v })} />
+              <VoucherSelector value={addForm.voucherType} onChange={(v) => setAddForm({ ...addForm, voucherType: v === 'NONE' ? v : v, voucherSeries: v === 'NONE' ? '' : addForm.voucherSeries, voucherNumber: v === 'NONE' ? '' : addForm.voucherNumber })} />
             </div>
           </div>
+          {addForm.voucherType !== 'NONE' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Serie</label>
+                <input
+                  value={addForm.voucherSeries}
+                  onChange={(e) => setAddForm({ ...addForm, voucherSeries: e.target.value.toUpperCase() })}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder={addForm.voucherType === 'BOLETA' ? 'B001' : 'F001'}
+                  maxLength={10}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Número</label>
+                <input
+                  value={addForm.voucherNumber}
+                  onChange={(e) => setAddForm({ ...addForm, voucherNumber: e.target.value.replace(/\D/g, '') })}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="0001234"
+                  maxLength={12}
+                />
+              </div>
+            </div>
+          )}
           <div className="flex gap-3 pt-2 border-t border-gray-100">
             <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 sm:flex-none sm:px-6 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-medium">Cancelar</button>
             <button type="submit" disabled={addEntry.isPending} className={`flex-1 py-2.5 text-white rounded-xl font-semibold shadow-sm disabled:opacity-50 ${addForm.type === 'INCOME' ? 'bg-primary-600 hover:bg-primary-700' : 'bg-rose-600 hover:bg-rose-700'}`}>
@@ -481,8 +569,32 @@ export function CashRegisterPage() {
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Comprobante</label>
-            <VoucherSelector value={editForm.voucherType} onChange={(v) => setEditForm({ ...editForm, voucherType: v })} />
+            <VoucherSelector value={editForm.voucherType} onChange={(v) => setEditForm({ ...editForm, voucherType: v, voucherSeries: v === 'NONE' ? '' : editForm.voucherSeries, voucherNumber: v === 'NONE' ? '' : editForm.voucherNumber })} />
           </div>
+          {editForm.voucherType !== 'NONE' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Serie</label>
+                <input
+                  value={editForm.voucherSeries}
+                  onChange={(e) => setEditForm({ ...editForm, voucherSeries: e.target.value.toUpperCase() })}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder={editForm.voucherType === 'BOLETA' ? 'B001' : 'F001'}
+                  maxLength={10}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Número</label>
+                <input
+                  value={editForm.voucherNumber}
+                  onChange={(e) => setEditForm({ ...editForm, voucherNumber: e.target.value.replace(/\D/g, '') })}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="0001234"
+                  maxLength={12}
+                />
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Razón del cambio <span className="text-red-500 normal-case">*</span></label>
             <textarea value={editForm.reason} onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" rows={2} required />
@@ -655,9 +767,20 @@ function VendorChip({ name }: { name: string }) {
   );
 }
 
-function VoucherPill({ type }: { type: string }) {
-  if (type === 'BOLETA') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100"><ReceiptText size={11} /> Boleta</span>;
-  if (type === 'FACTURA') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100"><FileText size={11} /> Factura</span>;
+function VoucherPill({ type, series, number }: { type: string; series?: string; number?: string }) {
+  const ref = series && number ? `${series}-${number}` : '';
+  if (type === 'BOLETA') return (
+    <span className="inline-flex flex-col items-center gap-0.5">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100"><ReceiptText size={11} /> Boleta</span>
+      {ref && <span className="text-[10px] font-mono text-gray-500 tabular-nums">{ref}</span>}
+    </span>
+  );
+  if (type === 'FACTURA') return (
+    <span className="inline-flex flex-col items-center gap-0.5">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100"><FileText size={11} /> Factura</span>
+      {ref && <span className="text-[10px] font-mono text-gray-500 tabular-nums">{ref}</span>}
+    </span>
+  );
   return <span className="text-gray-300">—</span>;
 }
 
@@ -738,7 +861,7 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
       <td className={`px-4 py-3.5 text-right font-semibold tabular-nums ${entry.type === 'INCOME' ? 'text-primary-700' : 'text-rose-600'}`}>
         {entry.type === 'INCOME' ? '+' : '−'} S/ {entry.amount.toFixed(2)}
       </td>
-      <td className="px-4 py-3.5 text-center"><VoucherPill type={entry.voucherType} /></td>
+      <td className="px-4 py-3.5 text-center"><VoucherPill type={entry.voucherType} series={entry.voucherSeries} number={entry.voucherNumber} /></td>
       {!isClosed && (
         <td className="px-4 sm:px-6 py-3.5">
           {!entry.isDeleted && !nested && (
