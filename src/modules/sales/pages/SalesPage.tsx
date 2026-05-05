@@ -524,8 +524,31 @@ export function SalesPage() {
   );
   const paymentValid = isCredit || (form.paymentMode !== '' && (isMixed ? mixedSumValid : true));
 
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? 'Buenos días,' : hour < 19 ? 'Buenas tardes,' : 'Buenas noches,';
+  const sellerFirstName = (user?.fullName || user?.username || '').split(' ')[0] || 'Vendedor';
+  const formattedToday = now.toLocaleDateString('es-PE', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+
   return (
     <div>
+      {isSellerRole && (
+        <div className="mb-6 rounded-2xl bg-gradient-to-br from-primary-600 via-primary-500 to-orange-400 px-5 py-5 sm:px-7 sm:py-6 text-white shadow-card-hover">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-white/85">{greeting}</div>
+              <h2 className="text-2xl sm:text-3xl font-bold mt-0.5 truncate">{sellerFirstName}</h2>
+            </div>
+            <div className="flex items-center gap-2 text-sm font-medium text-white/90">
+              <CalendarDays size={16} />
+              <span className="capitalize">{formattedToday}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt size={24} /> {isSellerRole ? 'Mis Ventas' : 'Ventas'}</h1>
         {!isSellerRole && (
