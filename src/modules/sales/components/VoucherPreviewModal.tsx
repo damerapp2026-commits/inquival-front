@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, FileText, Smartphone, FileText as FileIcon, Printer, ExternalLink, MessageCircle, Download } from 'lucide-react';
+import { X, FileText, Smartphone, FileText as FileIcon, Printer, ExternalLink, MessageCircle, Download, Loader2 } from 'lucide-react';
 import { COMPANY_INFO } from '../../../config/companyInfo';
+import { buildVoucherPdfBlob } from '../utils/voucherPdf';
 
 export interface VoucherSnapshot {
   id: string;
@@ -243,6 +244,7 @@ interface Props {
 
 export function VoucherPreviewModal({ sale, onClose }: Props) {
   const [format, setFormat] = useState<Format>('TICKET');
+  const [whatsappLoading, setWhatsappLoading] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const html = useMemo(() => {
@@ -289,11 +291,46 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
     URL.revokeObjectURL(url);
   };
 
-  const handleWhatsapp = () => {
-    const text = encodeURIComponent(buildWhatsappText(sale));
+  const handleWhatsapp = async () => {
+    const text = buildWhatsappText(sale);
     const phone = (sale.clientPhone || '').replace(/\D/g, '');
-    const url = phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
-    window.open(url, '_blank');
+    const fallback = () => {
+      const encoded = encodeURIComponent(text);
+      const url = phone ? `https://wa.me/${phone}?text=${encoded}` : `https://wa.me/?text=${encoded}`;
+      window.open(url, '_blank');
+    };
+
+    // Web Share API with files only works on most mobile browsers and a few desktops.
+    // If unsupported, fall back to wa.me with text only.
+    if (typeof navigator.canShare !== 'function') {
+      fallback();
+      return;
+    }
+
+    setWhatsappLoading(true);
+    try {
+      const blob = await buildVoucherPdfBlob(sale);
+      const file = new File([blob], `${number}.pdf`, { type: 'application/pdf' });
+      const data: ShareData = {
+        files: [file],
+        text,
+        title: `${title} ${number}`,
+      };
+      if (!navigator.canShare(data)) {
+        fallback();
+        return;
+      }
+      try {
+        await navigator.share(data);
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return; // user canceled the native share sheet
+        fallback();
+      }
+    } catch {
+      fallback();
+    } finally {
+      setWhatsappLoading(false);
+    }
   };
 
   return (
@@ -392,9 +429,11 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
           <button
             type="button"
             onClick={handleWhatsapp}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#25D366] text-white rounded-xl hover:bg-[#1ebe57] text-sm font-semibold transition-colors shadow-sm"
+            disabled={whatsappLoading}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#25D366] text-white rounded-xl hover:bg-[#1ebe57] disabled:opacity-60 disabled:cursor-wait text-sm font-semibold transition-colors shadow-sm"
           >
-            <MessageCircle size={15} /> WhatsApp
+            {whatsappLoading ? <Loader2 size={15} className="animate-spin" /> : <MessageCircle size={15} />}
+            {whatsappLoading ? 'Preparando...' : 'WhatsApp'}
           </button>
           <button
             type="button"
