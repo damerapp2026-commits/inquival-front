@@ -8,6 +8,7 @@ import {
   LogOut, Menu, X, Wallet, CreditCard, BarChart3, FolderTree, Shield,
   ClipboardList, FileText, Bell, AlertTriangle, Clock, ScanLine, Ruler, ScrollText, Receipt,
   ChevronLeft, ChevronRight, Percent, Briefcase, CalendarClock, MoreHorizontal,
+  FlaskConical,
 } from 'lucide-react';
 import type { AccountPayable, ProductLot } from '../types';
 
@@ -53,6 +54,7 @@ const navSections: NavSection[] = [
     items: [
       { path: '/clients', label: 'Clientes', icon: Users },
       { path: '/categories', label: 'Categorías', icon: FolderTree, roles: ['ADMIN'] },
+      { path: '/laboratories', label: 'Laboratorios', icon: FlaskConical, roles: ['ADMIN'] },
       { path: '/units', label: 'Unidades de Medida', icon: Ruler, roles: ['ADMIN'] },
       { path: '/companies', label: 'Almacenes', icon: Building2, roles: ['ADMIN'] },
       { path: '/price-tiers', label: 'Rangos de Precio', icon: Layers, roles: ['ADMIN'] },
