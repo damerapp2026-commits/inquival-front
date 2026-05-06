@@ -26,6 +26,14 @@ const blurOnWheel = (e: React.WheelEvent<HTMLInputElement>) => {
   (e.currentTarget as HTMLInputElement).blur();
 };
 
+// Muestra 2 decimales si el número ya es exacto a céntimos; si no, hasta 4.
+// Se usa para precios unitarios donde 4 decimales (4.565) son válidos.
+const fmtPrice = (n: number): string => {
+  if (!Number.isFinite(n) || n === 0) return '0.00';
+  const r2 = Math.round(n * 100) / 100;
+  return Math.abs(n - r2) < 1e-9 ? n.toFixed(2) : n.toFixed(4);
+};
+
 interface PurchaseFormItem {
   companyId: string;
   productId: string;
@@ -53,12 +61,15 @@ function recalcItem(
   exchangeRate: number | null = null,
   applyIgv: boolean = true,
 ): PurchaseFormItem {
+  // Mantenemos el unitario con precisión total (sin redondear a céntimos)
+  // para que `cantidad × precio` sume exacto. El redondeo a 2 decimales
+  // se hace una sola vez al calcular el total del documento.
   const unitPriceConIgv = applyIgv
-    ? Math.round(item.unitPriceSinIgv * (1 + IGV_RATE) * 100) / 100
-    : Math.round(item.unitPriceSinIgv * 100) / 100;
-  const costoAdquisicion = Math.round(unitPriceConIgv * 100) / 100;
+    ? item.unitPriceSinIgv * (1 + IGV_RATE)
+    : item.unitPriceSinIgv;
+  const costoAdquisicion = unitPriceConIgv;
   const costoEnSoles = currency === 'USD'
-    ? (exchangeRate ? Math.round(unitPriceConIgv * exchangeRate * 100) / 100 : 0)
+    ? (exchangeRate ? unitPriceConIgv * exchangeRate : 0)
     : costoAdquisicion;
 
   let precioVenta = item.precioVenta;
@@ -94,7 +105,7 @@ function LastPriceBadge({ productId, supplierId }: { productId: string; supplier
         className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-medium"
         title={[docInfo, tcInfo.trim()].filter(Boolean).join(' · ')}
       >
-        Última: {symbol} {data.unitPriceSinIgv.toFixed(2)} sin IGV{dateStr ? ` — ${dateStr}` : ''}
+        Última: {symbol} {fmtPrice(data.unitPriceSinIgv)} sin IGV{dateStr ? ` — ${dateStr}` : ''}
       </span>
     </div>
   );
@@ -288,7 +299,7 @@ export function NewPurchasePage() {
   const creditTotal = documentTotal;
   const creditSymbol = currency === 'USD' ? '$' : 'S/';
 
-  const itemsSubtotal = form.items.reduce((s, i) => s + (i.quantity * i.costoAdquisicion || 0), 0);
+  const itemsSubtotal = Math.round(form.items.reduce((s, i) => s + (i.quantity * i.costoAdquisicion || 0), 0) * 100) / 100;
 
   const generateInstallments = () => {
     const { count, intervalDays, firstDaysFromPurchase } = installmentGen;
@@ -667,15 +678,15 @@ export function NewPurchasePage() {
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">P.U. sin IGV ({sym})</label>
-                              <input type="number" min="0" step="0.01" value={item.unitPriceSinIgv || ''} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', parseFloat(e.target.value) || 0)} onWheel={blurOnWheel} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0.00" />
+                              <label className="block text-[11px] text-gray-500 mb-1">P.U. sin IGV ({sym}) <span className="text-gray-400 font-normal">— hasta 4 dec.</span></label>
+                              <input type="number" min="0" step="0.0001" value={item.unitPriceSinIgv || ''} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', parseFloat(e.target.value) || 0)} onWheel={blurOnWheel} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0.0000" />
                             </div>
                             <div>
                               <label className="block text-[11px] text-gray-500 mb-1">{appliesIgv ? `+ IGV (${sym})` : `Total (${sym})`}</label>
                               <input
                                 type="text"
                                 readOnly
-                                value={item.unitPriceConIgv ? item.unitPriceConIgv.toFixed(2) : '0.00'}
+                                value={fmtPrice(item.unitPriceConIgv)}
                                 className={`w-full px-2.5 py-2 border rounded-lg text-sm tabular-nums font-medium ${
                                   appliesIgv
                                     ? 'border-primary-200 bg-primary-50 text-primary-800'
@@ -705,14 +716,14 @@ export function NewPurchasePage() {
                           <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Costo final</div>
                           <div className="bg-gradient-to-br from-primary-50 to-primary-100/60 border-2 border-primary-200 rounded-xl px-4 py-3 h-[calc(100%-26px)]">
                             <div className="text-[10px] uppercase text-primary-700 font-semibold tracking-wider">Costo de adquisición</div>
-                            <div className="text-xl font-bold text-primary-800 tabular-nums mt-1">{sym} {item.costoAdquisicion.toFixed(2)}</div>
+                            <div className="text-xl font-bold text-primary-800 tabular-nums mt-1">{sym} {fmtPrice(item.costoAdquisicion)}</div>
                             {item.quantity > 0 && item.costoAdquisicion > 0 && (
                               <div className="text-[11px] text-primary-700/80 mt-1">
                                 × {item.quantity} = <span className="font-semibold tabular-nums">{sym} {(item.quantity * item.costoAdquisicion).toFixed(2)}</span>
                               </div>
                             )}
                             {currency === 'USD' && exchangeRate && item.costoEnSoles > 0 && (
-                              <div className="text-[10px] text-primary-700/70 mt-1 italic">≈ S/ {item.costoEnSoles.toFixed(2)} {item.quantity > 0 && <>· × {item.quantity} = S/ {(item.quantity * item.costoEnSoles).toFixed(2)}</>}</div>
+                              <div className="text-[10px] text-primary-700/70 mt-1 italic">≈ S/ {fmtPrice(item.costoEnSoles)} {item.quantity > 0 && <>· × {item.quantity} = S/ {(item.quantity * item.costoEnSoles).toFixed(2)}</>}</div>
                             )}
                           </div>
                         </div>
