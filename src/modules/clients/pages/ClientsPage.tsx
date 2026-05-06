@@ -5,7 +5,7 @@ import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
-import { Plus, Search, Edit2, Trash2, Users, Loader2, AlertTriangle, UserCheck, UserX, Contact, MapPin } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Users, Loader2, AlertTriangle, UserCheck, UserX, Contact, MapPin, CreditCard } from 'lucide-react';
 import type { Client } from '../../../shared/types';
 import { clientService } from '../services/clientService';
 import { ExportClientStatementButton } from '../../credits/components/ExportClientStatementButton';
@@ -29,13 +29,13 @@ export function ClientsPage() {
   const rucLookup = useRucLookup();
 
   const [docType, setDocType] = useState<'DNI' | 'RUC'>('DNI');
-  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', city: '' });
+  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', city: '', creditLimit: '' });
   const [lookupLoading, setLookupLoading] = useState(false);
 
   const openCreate = () => {
     setEditing(null);
     setDocType('DNI');
-    setForm({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', city: '' });
+    setForm({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', city: '', creditLimit: '' });
     setShowModal(true);
   };
 
@@ -51,6 +51,7 @@ export function ClientsPage() {
       address: client.address || '',
       department: client.department || '',
       city: client.city || '',
+      creditLimit: typeof client.creditLimit === 'number' ? String(client.creditLimit) : '',
     });
     setShowModal(true);
   };
@@ -78,6 +79,7 @@ export function ClientsPage() {
           address: localMatch.address || '',
           department: localMatch.department || '',
           city: localMatch.city || '',
+          creditLimit: typeof localMatch.creditLimit === 'number' ? String(localMatch.creditLimit) : '',
         });
         toast.success('Cliente encontrado en el sistema');
         setLookupLoading(false);
@@ -103,7 +105,12 @@ export function ClientsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanForm = Object.fromEntries(Object.entries(form).filter(([, v]) => v !== ''));
+    const cleanForm: Record<string, any> = Object.fromEntries(Object.entries(form).filter(([, v]) => v !== ''));
+    if (cleanForm.creditLimit !== undefined) {
+      const parsed = Number(cleanForm.creditLimit);
+      if (Number.isFinite(parsed) && parsed >= 0) cleanForm.creditLimit = parsed;
+      else delete cleanForm.creditLimit;
+    }
     if (editing) await updateClient.mutateAsync({ id: editing.id, data: cleanForm });
     else await createClient.mutateAsync(cleanForm);
     setShowModal(false);
@@ -123,6 +130,16 @@ export function ClientsPage() {
         : <span className="text-gray-300">—</span>,
     },
     { key: 'phone', header: 'Teléfono', render: (item: Client) => item.phone || <span className="text-gray-300">—</span> },
+    {
+      key: 'creditLimit', header: 'Límite crédito',
+      render: (item: Client) => typeof item.creditLimit === 'number' && item.creditLimit > 0
+        ? (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100 tabular-nums">
+            <CreditCard size={12} /> S/ {item.creditLimit.toFixed(2)}
+          </span>
+        )
+        : <span className="text-gray-300">—</span>,
+    },
     {
       key: 'zone', header: 'Zona',
       render: (item: Client) => {
@@ -261,6 +278,29 @@ export function ClientsPage() {
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Dirección</label>
             <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <CreditCard size={13} className="text-primary-600" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Límite de crédito</span>
+              <span className="text-[11px] text-gray-400 normal-case font-normal">— opcional, en S/</span>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">S/</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.creditLimit}
+                onChange={(e) => setForm({ ...form, creditLimit: e.target.value })}
+                className="w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500"
+                placeholder="Sin límite"
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] text-gray-400">
+              Si se define, las nuevas ventas a crédito que excedan este monto serán rechazadas.
+            </p>
           </div>
 
           <div>
