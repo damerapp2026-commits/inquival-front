@@ -556,9 +556,6 @@ export function NewPurchasePage() {
 
         {/* Productos */}
         <SectionCard title={`Productos (${form.items.length})`} icon={Package}>
-          <div className="flex items-center justify-end mb-3">
-            <button type="button" onClick={addItem} className="text-sm text-primary-600 hover:text-primary-800 font-medium">+ Agregar producto</button>
-          </div>
           <div className="space-y-3">
             {form.items.map((item, idx) => {
               const product = products.find((p: Product) => p.id === item.productId);
@@ -728,6 +725,13 @@ export function NewPurchasePage() {
               );
             })}
           </div>
+          <button
+            type="button"
+            onClick={addItem}
+            className="mt-3 w-full py-3 border-2 border-dashed border-primary-200 rounded-lg text-sm font-semibold text-primary-700 hover:border-primary-400 hover:bg-primary-50 transition-colors inline-flex items-center justify-center gap-2"
+          >
+            <Package size={16} /> + Agregar producto
+          </button>
         </SectionCard>
 
         {/* Totales */}
