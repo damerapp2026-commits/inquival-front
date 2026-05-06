@@ -22,15 +22,18 @@ import toast from 'react-hot-toast';
 
 const IGV_RATE = 0.18;
 
+const blurOnWheel = (e: React.WheelEvent<HTMLInputElement>) => {
+  (e.currentTarget as HTMLInputElement).blur();
+};
+
 interface PurchaseFormItem {
+  companyId: string;
   productId: string;
   quantity: number;
   lotNumber?: string;
   expirationDate?: string;
   unitPriceSinIgv: number;
   unitPriceConIgv: number;
-  flete: number;
-  otrosCostos: number;
   costoAdquisicion: number;
   markupPercent: number;
   precioVenta: number;
@@ -38,8 +41,8 @@ interface PurchaseFormItem {
 }
 
 const emptyItem = (): PurchaseFormItem => ({
-  productId: '', quantity: 0, lotNumber: '', expirationDate: '',
-  unitPriceSinIgv: 0, unitPriceConIgv: 0, flete: 0, otrosCostos: 0,
+  companyId: '', productId: '', quantity: 0, lotNumber: '', expirationDate: '',
+  unitPriceSinIgv: 0, unitPriceConIgv: 0,
   costoAdquisicion: 0, markupPercent: 0, precioVenta: 0, precioVentaMode: 'markup',
 });
 
@@ -55,7 +58,7 @@ function recalcItem(
   const unitPriceConIgvSoles = currency === 'USD'
     ? (exchangeRate ? unitPriceConIgv * exchangeRate : 0)
     : unitPriceConIgv;
-  const costoAdquisicion = Math.round((unitPriceConIgvSoles + item.flete + item.otrosCostos) * 100) / 100;
+  const costoAdquisicion = Math.round(unitPriceConIgvSoles * 100) / 100;
 
   let precioVenta = item.precioVenta;
   let markupPercent = item.markupPercent;
@@ -135,7 +138,7 @@ export function NewPurchasePage() {
   const today = new Date().toISOString().slice(0, 10);
   const [currency, setCurrency] = useState<'PEN' | 'USD'>('USD');
   const [form, setForm] = useState({
-    companyId: '', supplier: '', supplierRuc: '', supplierId: '',
+    supplier: '', supplierRuc: '', supplierId: '',
     paymentType: 'CONTADO' as 'CONTADO' | 'CREDITO',
     paymentScheduleType: 'SINGLE_DATE' as 'SINGLE_DATE' | 'INSTALLMENTS', dueDate: '',
     installments: [] as { amount: number; dueDate: string }[],
@@ -167,7 +170,12 @@ export function NewPurchasePage() {
     return list.filter((p) => p.isActive !== false);
   })();
 
-  const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, emptyItem()] }));
+  const addItem = () => setForm(prev => {
+    const last = prev.items[prev.items.length - 1];
+    const next = emptyItem();
+    if (last?.companyId) next.companyId = last.companyId;
+    return { ...prev, items: [...prev.items, next] };
+  });
   const repeatFromPrev = (idx: number, field: 'lotNumber' | 'expirationDate') => {
     if (idx === 0) return;
     setForm(prev => {
@@ -218,7 +226,7 @@ export function NewPurchasePage() {
         item.precioVentaMode = 'direct';
       }
     }
-    const costoFields = ['unitPriceSinIgv', 'flete', 'otrosCostos', 'markupPercent', 'precioVenta', 'productId'];
+    const costoFields = ['unitPriceSinIgv', 'markupPercent', 'precioVenta', 'productId'];
     if (costoFields.includes(field)) item = recalcItem(item, currency, exchangeRate, itemAppliesIgv(item.productId));
     items[idx] = item;
     return { ...prev, items };
@@ -261,7 +269,8 @@ export function NewPurchasePage() {
 
   const documentTotal = Math.round(form.items.reduce((s, i) => s + (i.quantity * i.unitPriceConIgv || 0), 0) * 100) / 100;
   const totalSoles = currency === 'USD' && exchangeRate && documentTotal ? Math.round(documentTotal * exchangeRate * 100) / 100 : 0;
-  const creditTotal = currency === 'USD' ? totalSoles : documentTotal;
+  const creditTotal = documentTotal;
+  const creditSymbol = currency === 'USD' ? '$' : 'S/';
 
   const itemsSubtotal = form.items.reduce((s, i) => s + (i.quantity * i.costoAdquisicion || 0), 0);
 
@@ -298,7 +307,7 @@ export function NewPurchasePage() {
       name: '', description: '', categoryId: '', laboratoryId: '',
       unit: allUnits[0]?.value || 'unidad',
       activeIngredient: '', taxType: 'GRAVADO', tracksLot: false,
-      companyId: form.companyId || '',
+      companyId: form.items[idx]?.companyId || '',
     });
     setShowNewProduct(true);
   };
@@ -323,8 +332,8 @@ export function NewPurchasePage() {
       const created = await createProduct.mutateAsync(payload);
       if (created && newProductForIdx >= 0) {
         updateItem(newProductForIdx, 'productId', created.id);
-        if (!form.companyId && newProduct.companyId) {
-          setForm(prev => ({ ...prev, companyId: newProduct.companyId }));
+        if (newProduct.companyId) {
+          updateItem(newProductForIdx, 'companyId', newProduct.companyId);
         }
       }
       setShowNewProduct(false);
@@ -389,21 +398,22 @@ export function NewPurchasePage() {
     if (!form.supplier.trim()) { toast.error('Selecciona un proveedor'); return; }
     if (!documentTotal) { toast.error('Agrega productos con cantidad y costo unitario'); return; }
     if (currency === 'USD' && !exchangeRate) { toast.error('Verifique el tipo de cambio'); return; }
+    const missingCompany = form.items.find(i => !i.companyId);
+    if (missingCompany) { toast.error('Selecciona el almacén destino para cada producto'); return; }
     const missingLot = form.items.find(i => {
       const p = products.find((pr: Product) => pr.id === i.productId);
       return p?.tracksLot && !i.lotNumber;
     });
     if (missingLot) { toast.error('Hay productos que requieren número de lote'); return; }
     const payload: any = {
-      companyId: form.companyId, supplier: form.supplier,
+      supplier: form.supplier,
       items: form.items.map(i => ({
+        companyId: i.companyId,
         productId: i.productId,
         quantity: i.quantity,
         unitCost: i.costoAdquisicion,
         unitPriceSinIgv: i.unitPriceSinIgv,
         unitPriceConIgv: i.unitPriceConIgv,
-        flete: i.flete || undefined,
-        otrosCostos: i.otrosCostos || undefined,
         precioVenta: i.precioVenta || undefined,
         markupPercent: i.markupPercent || undefined,
         ...(i.lotNumber ? { lotNumber: i.lotNumber } : {}),
@@ -427,6 +437,7 @@ export function NewPurchasePage() {
     if (form.supplierRuc) payload.supplierRuc = form.supplierRuc;
     if (form.paymentType === 'CREDITO') {
       payload.paymentScheduleType = form.paymentScheduleType;
+      payload.currency = currency;
       if (form.paymentScheduleType === 'SINGLE_DATE') payload.dueDate = form.dueDate;
       if (form.paymentScheduleType === 'INSTALLMENTS') payload.installments = form.installments;
     }
@@ -451,17 +462,9 @@ export function NewPurchasePage() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Almacén y proveedor */}
-          <SectionCard title="Almacén y proveedor" icon={Building2}>
+          {/* Proveedor */}
+          <SectionCard title="Proveedor" icon={Users}>
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Almacén</label>
-                <select value={form.companyId} onChange={(e) => setForm({ ...form, companyId: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-100 focus:border-primary-400" required>
-                  <option value="">Seleccionar...</option>
-                  {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
                   <Users size={12} /> Proveedor
@@ -610,7 +613,7 @@ export function NewPurchasePage() {
                     </div>
                     <div className="col-span-4 sm:col-span-2">
                       <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
-                      <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                      <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} onWheel={blurOnWheel} className="w-full px-2 py-1.5 border rounded text-sm" required />
                     </div>
                     <div className="col-span-8 sm:col-span-3">
                       <label className="block text-xs text-gray-500 mb-1 flex items-center justify-between">
@@ -649,7 +652,7 @@ export function NewPurchasePage() {
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label className="block text-[11px] text-gray-500 mb-1">P.U. sin IGV ({sym})</label>
-                              <input type="number" min="0" step="0.01" value={item.unitPriceSinIgv || ''} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', parseFloat(e.target.value) || 0)} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0.00" />
+                              <input type="number" min="0" step="0.01" value={item.unitPriceSinIgv || ''} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', parseFloat(e.target.value) || 0)} onWheel={blurOnWheel} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0.00" />
                             </div>
                             <div>
                               <label className="block text-[11px] text-gray-500 mb-1">{appliesIgv ? `+ IGV (${sym})` : `Total (${sym})`}</label>
@@ -664,13 +667,19 @@ export function NewPurchasePage() {
                                 }`}
                               />
                             </div>
-                            <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">Flete (S/)</label>
-                              <input type="number" min="0" step="0.01" value={item.flete || ''} onChange={(e) => updateItem(idx, 'flete', parseFloat(e.target.value) || 0)} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0" />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">Otros costos (S/)</label>
-                              <input type="number" min="0" step="0.01" value={item.otrosCostos || ''} onChange={(e) => updateItem(idx, 'otrosCostos', parseFloat(e.target.value) || 0)} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0" />
+                            <div className="col-span-2">
+                              <label className="block text-[11px] text-gray-500 mb-1 flex items-center gap-1">
+                                <Building2 size={11} /> Almacén destino <span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={item.companyId}
+                                onChange={(e) => updateItem(idx, 'companyId', e.target.value)}
+                                className={`w-full px-2.5 py-2 border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 ${item.companyId ? 'border-gray-200' : 'border-red-300 bg-red-50'}`}
+                                required
+                              >
+                                <option value="">Seleccionar almacén...</option>
+                                {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
                             </div>
                           </div>
                         </div>
@@ -701,6 +710,7 @@ export function NewPurchasePage() {
                                 type="number" min="0" step="0.01"
                                 value={item.markupPercent || ''}
                                 onChange={(e) => updateItem(idx, 'markupPercent', parseFloat(e.target.value) || 0)}
+                                onWheel={blurOnWheel}
                                 className={`w-full px-2.5 py-2 border rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 ${
                                   item.precioVentaMode === 'markup' ? 'bg-blue-50 border-blue-300 text-blue-800 font-semibold' : 'border-gray-200'
                                 }`}
@@ -713,6 +723,7 @@ export function NewPurchasePage() {
                                 type="number" min="0" step="0.01"
                                 value={item.precioVenta || ''}
                                 onChange={(e) => updateItem(idx, 'precioVenta', parseFloat(e.target.value) || 0)}
+                                onWheel={blurOnWheel}
                                 className={`w-full px-2.5 py-2 border rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 ${
                                   item.precioVentaMode === 'direct' ? 'bg-blue-50 border-blue-300 text-blue-800 font-semibold' : 'border-gray-200'
                                 }`}
@@ -816,15 +827,15 @@ export function NewPurchasePage() {
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <label className="block text-[11px] text-gray-500 mb-1"># de cuotas</label>
-                        <input type="number" min="1" max="36" step="1" value={installmentGen.count || ''} onChange={(e) => setInstallmentGen({ ...installmentGen, count: parseInt(e.target.value) || 0 })} className="w-full px-2 py-1.5 border rounded text-sm" />
+                        <input type="number" min="1" max="36" step="1" value={installmentGen.count || ''} onChange={(e) => setInstallmentGen({ ...installmentGen, count: parseInt(e.target.value) || 0 })} onWheel={blurOnWheel} className="w-full px-2 py-1.5 border rounded text-sm" />
                       </div>
                       <div>
                         <label className="block text-[11px] text-gray-500 mb-1">Cada (días)</label>
-                        <input type="number" min="1" step="1" value={installmentGen.intervalDays || ''} onChange={(e) => setInstallmentGen({ ...installmentGen, intervalDays: parseInt(e.target.value) || 0 })} className="w-full px-2 py-1.5 border rounded text-sm" />
+                        <input type="number" min="1" step="1" value={installmentGen.intervalDays || ''} onChange={(e) => setInstallmentGen({ ...installmentGen, intervalDays: parseInt(e.target.value) || 0 })} onWheel={blurOnWheel} className="w-full px-2 py-1.5 border rounded text-sm" />
                       </div>
                       <div>
                         <label className="block text-[11px] text-gray-500 mb-1">1ra cuota (días)</label>
-                        <input type="number" min="0" step="1" value={installmentGen.firstDaysFromPurchase} onChange={(e) => setInstallmentGen({ ...installmentGen, firstDaysFromPurchase: parseInt(e.target.value) || 0 })} className="w-full px-2 py-1.5 border rounded text-sm" />
+                        <input type="number" min="0" step="1" value={installmentGen.firstDaysFromPurchase} onChange={(e) => setInstallmentGen({ ...installmentGen, firstDaysFromPurchase: parseInt(e.target.value) || 0 })} onWheel={blurOnWheel} className="w-full px-2 py-1.5 border rounded text-sm" />
                       </div>
                     </div>
                     <div className="flex items-center justify-between gap-2 pt-1">
@@ -849,9 +860,9 @@ export function NewPurchasePage() {
                     <label className="text-xs text-gray-500">
                       Cuotas {form.installments.length > 0 && (
                         <span className="ml-1 text-[11px]">
-                          (Total: S/ {form.installments.reduce((s, i) => s + (i.amount || 0), 0).toFixed(2)}
+                          (Total: {creditSymbol} {form.installments.reduce((s, i) => s + (i.amount || 0), 0).toFixed(2)}
                           {creditTotal > 0 && Math.abs(form.installments.reduce((s, i) => s + (i.amount || 0), 0) - creditTotal) > 0.01 && (
-                            <span className="text-red-600"> · no coincide con {creditTotal.toFixed(2)}</span>
+                            <span className="text-red-600"> · no coincide con {creditSymbol} {creditTotal.toFixed(2)}</span>
                           )}
                           )
                         </span>
@@ -863,8 +874,8 @@ export function NewPurchasePage() {
                     <div key={idx} className="flex gap-2 mb-2 items-end">
                       <div className="w-10 pb-2 text-xs text-gray-400 font-medium text-right">#{idx + 1}</div>
                       <div className="flex-1">
-                        <label className="block text-xs text-gray-500 mb-1">Monto</label>
-                        <input type="number" min="0.01" step="0.01" value={inst.amount || ''} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], amount: parseFloat(e.target.value) || 0 }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                        <label className="block text-xs text-gray-500 mb-1">Monto ({creditSymbol})</label>
+                        <input type="number" min="0.01" step="0.01" value={inst.amount || ''} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], amount: parseFloat(e.target.value) || 0 }; setForm({ ...form, installments }); }} onWheel={blurOnWheel} className="w-full px-2 py-1.5 border rounded text-sm" required />
                       </div>
                       <div className="flex-1">
                         <label className="block text-xs text-gray-500 mb-1">Fecha</label>
@@ -885,7 +896,7 @@ export function NewPurchasePage() {
           <div className="flex items-center justify-between gap-3 max-w-full">
             <div className="text-xs text-gray-500 hidden sm:block">
               {form.items.length} producto{form.items.length !== 1 ? 's' : ''}
-              {creditTotal > 0 && <> · Total <span className="font-semibold text-gray-700">S/ {creditTotal.toFixed(2)}</span></>}
+              {creditTotal > 0 && <> · Total <span className="font-semibold text-gray-700">{creditSymbol} {creditTotal.toFixed(2)}</span></>}
             </div>
             <div className="flex gap-2 ml-auto">
               <Link to="/purchases" className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">Cancelar</Link>
@@ -985,7 +996,7 @@ export function NewPurchasePage() {
                 Laboratorio <span className="text-gray-400 normal-case font-normal">— opcional</span>
               </label>
               <SmartSearchSelect
-                items={(Array.isArray(laboratoriesData) ? laboratoriesData : []).filter((l: any) => l.isActive)}
+                items={(Array.isArray(laboratoriesData) ? laboratoriesData : []).filter((l: any) => l.isActive !== false)}
                 value={newProduct.laboratoryId}
                 onChange={(id) => setNewProduct({ ...newProduct, laboratoryId: id })}
                 getId={(l: any) => l.id}
