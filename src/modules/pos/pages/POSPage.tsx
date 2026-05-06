@@ -313,12 +313,13 @@ export function POSPage() {
   }, [tierId, companyId]);
 
   const filteredProducts = useMemo(() => {
+    const isSearching = debouncedSearch.trim().length > 0 || debouncedIngredient.trim().length > 0;
     return products.filter((p) => {
       if (categoryId && p.categoryId !== categoryId) return false;
-      if (onlyInStock && (stockByProduct[p.id] ?? 0) <= 0) return false;
+      if (!isSearching && onlyInStock && (stockByProduct[p.id] ?? 0) <= 0) return false;
       return true;
     });
-  }, [products, categoryId, onlyInStock, stockByProduct]);
+  }, [products, categoryId, onlyInStock, stockByProduct, debouncedSearch, debouncedIngredient]);
 
   const cartQty = (productId: string) => cart.find((i) => i.productId === productId)?.quantity || 0;
 
