@@ -1,17 +1,20 @@
 import { useState, useMemo } from 'react';
 import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart, useExchangeRate } from '../hooks/useDashboard';
 import { useAPAlerts } from '../../accounts-payable/hooks/useAccountsPayable';
+import { useSales } from '../../sales/hooks/useSales';
+import { useUsers } from '../../users/hooks/useUsers';
 import { useAuth } from '../../../app/providers/AuthProvider';
-import { TrendingUp, TrendingDown, DollarSign, CreditCard, FileText, AlertTriangle, Clock, Tag, Truck, ShoppingCart, Package, BarChart3, Wallet } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, CreditCard, FileText, AlertTriangle, Clock, Tag, Truck, ShoppingCart, Package, BarChart3, Wallet, Users as UsersIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, Cell,
 } from 'recharts';
-import type { AccountPayable } from '../../../shared/types';
+import type { AccountPayable, Sale } from '../../../shared/types';
 
 const CHART_COLORS = ['#16a34a', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
 const SUPPLIER_COLORS = ['#15803d', '#0ea5e9', '#f43f5e', '#84cc16', '#fb923c'];
+const SELLER_COLORS = ['#16a34a', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1'];
 
 function toInputDate(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -129,6 +132,30 @@ export function DashboardPage() {
   const { data: categorySales } = useCategorySales(chartRange.start, chartRange.end);
   const { data: topSuppliers } = useTopSuppliers(chartRange.start, chartRange.end);
   const { data: catSalesChart } = useCategorySalesChart(catChartRange.start, catChartRange.end);
+  const { data: sellerSalesData, isLoading: sellerSalesLoading } = useSales({ page: 1, limit: 1000, startDate: chartRange.start, endDate: chartRange.end });
+  const { data: usersData } = useUsers({ limit: 200 });
+
+  const sellersList: any[] = useMemo(() => {
+    const raw: any = usersData;
+    const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
+    return list.filter((u: any) => u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO');
+  }, [usersData]);
+
+  const sellerComparison = useMemo(() => {
+    const sales: Sale[] = (sellerSalesData?.data || []).filter((s: Sale) => !s.isCancelled && s.sellerId);
+    const map: Record<string, { name: string; total: number; count: number }> = {};
+    sales.forEach((sale) => {
+      const id = sale.sellerId!;
+      const name = sale.sellerName
+        || sellersList.find((s) => s.id === id)?.fullName
+        || sellersList.find((s) => s.id === id)?.username
+        || 'Vendedor';
+      if (!map[id]) map[id] = { name, total: 0, count: 0 };
+      map[id].total += sale.total;
+      map[id].count += 1;
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [sellerSalesData, sellersList]);
 
   const dailySales = salesChart?.dailySales || [];
   const categorySalesData: { name: string; total: number }[] = Array.isArray(categorySales) ? categorySales : [];
@@ -506,6 +533,50 @@ export function DashboardPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Comparativo de Vendedores */}
+      <div className="bg-white rounded-xl shadow-card p-5">
+        <h2 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+          <UsersIcon size={18} className="text-primary-600" /> Comparativo de Vendedores
+        </h2>
+        {sellerSalesLoading ? (
+          <div className="flex items-center justify-center h-[300px] text-gray-400 text-sm">Cargando vendedores...</div>
+        ) : sellerComparison.length > 0 ? (
+          <>
+            <ResponsiveContainer width="100%" height={Math.max(280, sellerComparison.length * 48)}>
+              <BarChart data={sellerComparison} layout="vertical" margin={{ left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `S/${v}`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={140} />
+                <Tooltip
+                  formatter={(value: any, name: any) => [
+                    name === 'total' ? `S/ ${Number(value || 0).toFixed(2)}` : value,
+                    name === 'total' ? 'Total vendido' : 'Ventas',
+                  ]}
+                />
+                <Bar dataKey="total" radius={[0, 4, 4, 0]}>
+                  {sellerComparison.map((_, i) => (
+                    <Cell key={i} fill={SELLER_COLORS[i % SELLER_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+              {sellerComparison.map((s, i) => (
+                <div key={s.name + i} className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: SELLER_COLORS[i % SELLER_COLORS.length] }} />
+                    <span className="truncate">{s.name}</span>
+                  </div>
+                  <span className="text-gray-400 whitespace-nowrap">{s.count} venta{s.count !== 1 ? 's' : ''}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-center h-[280px] text-gray-400 text-sm">Sin ventas registradas en el período</div>
+        )}
       </div>
 
       {/* Accounts Payable Alerts */}
