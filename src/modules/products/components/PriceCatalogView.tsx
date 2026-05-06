@@ -1,10 +1,15 @@
 import { useMemo, useState } from 'react';
-import { Search, Loader2, FileSpreadsheet, X, Check, AlertTriangle } from 'lucide-react';
+import { Search, Loader2, FileSpreadsheet, X, Check, AlertTriangle, DollarSign } from 'lucide-react';
 import { usePriceCatalog, useUpdatePriceCatalog } from '../../purchases/hooks/usePurchases';
 import { useProducts } from '../hooks/useProducts';
 import { useCategories } from '../../categories/hooks/useCategories';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
+import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import type { Product } from '../../../shared/types';
+
+const IGV_RATE = 0.18;
+const r2 = (n: number) => Math.round(n * 100) / 100;
+const appliesIgv = (taxType?: string) => !taxType || taxType === 'GRAVADO';
 
 interface PriceCatalogRow {
   productId: string;
@@ -42,6 +47,7 @@ interface MergedRow {
   laboratoryName?: string;
   categoryId?: string;
   activeIngredient?: string;
+  taxType?: string;
   unitPriceSinIgvUsd?: number;
   unitPriceSinIgvPen?: number;
   unitPriceConIgvUsd?: number;
@@ -80,6 +86,8 @@ export function PriceCatalogView({ enabled }: Props) {
   );
   const { data: categoriesData } = useCategories();
   const { data: laboratoriesData } = useLaboratories();
+  const { data: tipoCambioData, isLoading: tcLoading } = useTodayTipoCambio(enabled);
+  const tc = tipoCambioData?.venta ?? null;
   const updatePriceCatalog = useUpdatePriceCatalog();
 
   const [search, setSearch] = useState('');
@@ -126,6 +134,7 @@ export function PriceCatalogView({ enabled }: Props) {
         laboratoryName: labName ?? row?.laboratoryName,
         categoryId: p.categoryId,
         activeIngredient: p.activeIngredient,
+        taxType: (p as any).taxType ?? row?.taxType,
         unitPriceSinIgvUsd: row?.unitPriceSinIgvUsd,
         unitPriceSinIgvPen: row?.unitPriceSinIgvPen,
         unitPriceConIgvUsd: row?.unitPriceConIgvUsd,
@@ -165,11 +174,44 @@ export function PriceCatalogView({ enabled }: Props) {
     return fmt(row[field] as number | undefined);
   };
 
+  const computeDerivedFromUsdSinIgv = (usdSinIgv: number, taxType?: string): {
+    unitPriceSinIgvPen: number;
+    unitPriceConIgvUsd: number;
+    unitPriceConIgvPen: number;
+  } | null => {
+    if (!tc || !Number.isFinite(usdSinIgv) || usdSinIgv < 0) return null;
+    const igvFactor = appliesIgv(taxType) ? 1 + IGV_RATE : 1;
+    const unitPriceSinIgvPen = r2(usdSinIgv * tc);
+    const unitPriceConIgvUsd = r2(usdSinIgv * igvFactor);
+    const unitPriceConIgvPen = r2(usdSinIgv * igvFactor * tc);
+    return { unitPriceSinIgvPen, unitPriceConIgvUsd, unitPriceConIgvPen };
+  };
+
   const handleChange = (productId: string, field: EditableField, value: string) => {
-    setEdits((prev) => ({
-      ...prev,
-      [productId]: { ...(prev[productId] || {}), [field]: value },
-    }));
+    setEdits((prev) => {
+      const current = prev[productId] || {};
+      const next: Partial<Record<EditableField, string>> = { ...current, [field]: value };
+
+      if (field === 'unitPriceSinIgvUsd') {
+        const row = merged.find((r) => r.productId === productId);
+        const trimmed = value.trim();
+        const num = parseFloat(trimmed);
+        if (trimmed === '' || !Number.isFinite(num) || num < 0 || !tc) {
+          delete next.unitPriceSinIgvPen;
+          delete next.unitPriceConIgvUsd;
+          delete next.unitPriceConIgvPen;
+        } else {
+          const derived = computeDerivedFromUsdSinIgv(num, row?.taxType);
+          if (derived) {
+            next.unitPriceSinIgvPen = derived.unitPriceSinIgvPen.toFixed(2);
+            next.unitPriceConIgvUsd = derived.unitPriceConIgvUsd.toFixed(2);
+            next.unitPriceConIgvPen = derived.unitPriceConIgvPen.toFixed(2);
+          }
+        }
+      }
+
+      return { ...prev, [productId]: next };
+    });
   };
 
   const clearEdit = (productId: string, field: EditableField) => {
@@ -211,9 +253,30 @@ export function PriceCatalogView({ enabled }: Props) {
     }
 
     const stored = row[field] as number | undefined;
-    if (stored != null && Math.abs(stored - num) < 1e-6) {
+    if (stored != null && Math.abs(stored - num) < 1e-6 && field !== 'unitPriceSinIgvUsd') {
       clearEdit(row.productId, field);
       return;
+    }
+
+    let payload: Record<string, number> = { [field]: num };
+    let fieldsToClear: EditableField[] = [field];
+
+    if (field === 'unitPriceSinIgvUsd' && tc) {
+      const derived = computeDerivedFromUsdSinIgv(num, row.taxType);
+      if (derived) {
+        payload = {
+          unitPriceSinIgvUsd: num,
+          unitPriceSinIgvPen: derived.unitPriceSinIgvPen,
+          unitPriceConIgvUsd: derived.unitPriceConIgvUsd,
+          unitPriceConIgvPen: derived.unitPriceConIgvPen,
+        };
+        fieldsToClear = [
+          'unitPriceSinIgvUsd',
+          'unitPriceSinIgvPen',
+          'unitPriceConIgvUsd',
+          'unitPriceConIgvPen',
+        ];
+      }
     }
 
     setSavingIds((s) => new Set(s).add(row.productId));
@@ -225,9 +288,9 @@ export function PriceCatalogView({ enabled }: Props) {
     try {
       await updatePriceCatalog.mutateAsync({
         productId: row.productId,
-        data: { [field]: num },
+        data: payload,
       });
-      clearEdit(row.productId, field);
+      fieldsToClear.forEach((f) => clearEdit(row.productId, f));
       flashSaved(row.productId);
     } catch {
       setErrorIds((s) => new Set(s).add(row.productId));
@@ -300,9 +363,26 @@ export function PriceCatalogView({ enabled }: Props) {
             <span>{filtered.length} de {merged.length} productos</span>
           </div>
         </div>
-        <p className="mt-2 text-[11px] text-gray-500">
-          Tocá fuera del campo para guardar. Los productos sin compras registradas muestran <span className="italic">—</span> y la próxima compra los inicializa.
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 border border-blue-200 text-[11px] text-blue-800">
+            <DollarSign size={12} />
+            {tcLoading ? (
+              <span className="inline-flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Cargando TC…</span>
+            ) : tc ? (
+              <span>
+                <span className="font-medium">TC hoy: S/ {tc.toFixed(4)}</span>
+                {tipoCambioData?.fecha && (
+                  <span className="text-blue-600/70"> · {tipoCambioData.fecha}</span>
+                )}
+              </span>
+            ) : (
+              <span className="text-blue-700/80">TC no disponible — autollenado USD desactivado</span>
+            )}
+          </div>
+          <p className="text-[11px] text-gray-500">
+            Editá <span className="font-medium text-amber-700">USD s/IGV</span> y los otros 3 precios se autocompletan con el TC del día. Cualquier celda se puede editar manualmente.
+          </p>
+        </div>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
@@ -352,9 +432,6 @@ export function PriceCatalogView({ enabled }: Props) {
                   <tr key={r.productId} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">
                       <div>{r.productName}</div>
-                      {r.activeIngredient && (
-                        <div className="text-[10px] text-green-700">{r.activeIngredient}</div>
-                      )}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {r.laboratoryName ? (

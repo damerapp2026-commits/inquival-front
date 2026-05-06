@@ -494,22 +494,34 @@ export function POSPage() {
     setShowCheckout(true);
   };
 
-  const splitTotal = splitPayments.reduce((s, p) => s + (p.amount || 0), 0);
+  const splitTotal = Math.round(splitPayments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100;
   const splitRemaining = Math.round((total - splitTotal) * 100) / 100;
+  const downPayment = isCredit ? Math.min(splitTotal, total) : 0;
+  const creditPending = isCredit ? Math.max(0, Math.round((total - downPayment) * 100) / 100) : 0;
+  const downPaymentExceedsTotal = isCredit && splitTotal > total + 0.01;
 
   const selectedClient = clients.find((c) => c.id === clientId);
   const creditLimit = typeof selectedClient?.creditLimit === 'number' ? selectedClient.creditLimit : 0;
   const currentDebt = (openCredits as CreditAccount[] | undefined)?.reduce((s, acc) => s + acc.pendingAmount, 0) ?? 0;
-  const creditOverLimit = isCredit && creditLimit > 0 && currentDebt + total > creditLimit + 0.001;
+  const creditOverLimit = isCredit && creditLimit > 0 && currentDebt + creditPending > creditLimit + 0.001;
   const creditDelta = creditOverLimit
-    ? currentDebt + total - creditLimit
-    : Math.max(creditLimit - currentDebt - total, 0);
+    ? currentDebt + creditPending - creditLimit
+    : Math.max(creditLimit - currentDebt - creditPending, 0);
 
   const confirmSale = async () => {
     if (isCredit) {
       if (!clientId) { toast.error('Selecciona un cliente para la venta a crédito'); return; }
       if (creditOverLimit) {
         toast.error(`Esta venta supera el límite de crédito del cliente (S/ ${creditLimit.toFixed(2)})`);
+        return;
+      }
+      if (downPaymentExceedsTotal) {
+        toast.error('El anticipo no puede superar el total. Cambia a "Pago inmediato" si cubre todo.');
+        return;
+      }
+      const partial = splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
+      if (partial.length > 0 && Math.abs(splitTotal - total) <= 0.01) {
+        toast.error('El anticipo cubre el total. Cambia a "Pago inmediato".');
         return;
       }
     } else {
@@ -520,7 +532,7 @@ export function POSPage() {
         return;
       }
     }
-    const validPayments = isCredit ? [] : splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
+    const validPayments = splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
     const saleTotal = total;
     const saleVoucherType = voucherType;
     const snapshotSellerId = sellerId || (isSellerRole ? user?.id : '');
@@ -1281,12 +1293,12 @@ export function POSPage() {
                               <span className="font-semibold tabular-nums">S/ {currentDebt.toFixed(2)}</span>
                             </div>
                             <div className="flex items-center justify-between mt-0.5">
-                              <span className="text-xs">+ Esta venta</span>
-                              <span className="font-semibold tabular-nums">S/ {total.toFixed(2)}</span>
+                              <span className="text-xs">+ Saldo de esta venta</span>
+                              <span className="font-semibold tabular-nums">S/ {creditPending.toFixed(2)}</span>
                             </div>
                             <div className="flex items-center justify-between mt-1 pt-1 border-t border-current/20">
                               <span className="text-xs font-semibold">= Deuda total</span>
-                              <span className="font-semibold tabular-nums">S/ {(currentDebt + total).toFixed(2)}</span>
+                              <span className="font-semibold tabular-nums">S/ {(currentDebt + creditPending).toFixed(2)}</span>
                             </div>
                             <div className="flex items-center justify-between mt-0.5">
                               <span className="text-xs">− Límite del cliente</span>
@@ -1340,15 +1352,24 @@ export function POSPage() {
                     </>
                   )}
 
-                  {/* Pago inmediato — métodos */}
-                  {!isCredit && (
-                    <>
+                  {/* Métodos de pago — total (pago inmediato) o anticipo (crédito parcial) */}
+                  <>
                       <div className="border-t border-gray-100" />
                       <div>
                         <div className="flex items-center gap-2 mb-3">
-                          <CreditCard size={14} className="text-gray-500" />
-                          <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Método de pago</span>
+                          <CreditCard size={14} className={isCredit ? 'text-orange-500' : 'text-gray-500'} />
+                          <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">
+                            {isCredit ? 'Anticipo' : 'Método de pago'}
+                          </span>
+                          {isCredit && (
+                            <span className="text-xs text-gray-400 font-normal normal-case">opcional</span>
+                          )}
                         </div>
+                        {isCredit && (
+                          <p className="-mt-2 mb-3 text-xs text-gray-500">
+                            ¿El cliente pagó una parte ahora? Indica el anticipo y el saldo quedará a crédito.
+                          </p>
+                        )}
                         <div className="space-y-3">
                           {splitPayments.map((p, idx) => {
                             const selectedMethod = paymentMethods.find((m) => m.id === p.paymentMethodId);
@@ -1424,23 +1445,45 @@ export function POSPage() {
 
                         {/* Estado del pago */}
                         {splitPayments.length > 0 && (
-                          <div className={`mt-3 rounded-xl px-4 py-3 flex items-center justify-between ${
-                            Math.abs(splitRemaining) <= 0.01 ? 'bg-green-50 border-2 border-green-200' :
-                            splitRemaining > 0 ? 'bg-orange-50 border-2 border-orange-200' : 'bg-blue-50 border-2 border-blue-200'
-                          }`}>
-                            <span className={`font-bold text-base ${Math.abs(splitRemaining) <= 0.01 ? 'text-green-700' : splitRemaining > 0 ? 'text-orange-700' : 'text-blue-700'}`}>
-                              {Math.abs(splitRemaining) <= 0.01 ? '✓ Pago completo' : splitRemaining > 0 ? `Falta S/ ${splitRemaining.toFixed(2)}` : `Vuelto S/ ${Math.abs(splitRemaining).toFixed(2)}`}
-                            </span>
-                            {splitRemaining > 0.01 && (
-                              <button type="button" onClick={() => {
-                                const idx = splitPayments.findIndex(p => p.amount === 0);
-                                if (idx >= 0) { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: splitRemaining }; setSplitPayments(next); }
-                                else { const last = splitPayments.length - 1; const next = [...splitPayments]; next[last] = { ...next[last], amount: (next[last].amount || 0) + splitRemaining }; setSplitPayments(next); }
-                              }} className="text-sm font-bold text-orange-700 hover:text-orange-900 underline underline-offset-2">
-                                Completar →
-                              </button>
-                            )}
-                          </div>
+                          isCredit ? (
+                            splitTotal > 0.01 && (
+                              <div className={`mt-3 rounded-xl px-4 py-3 ${
+                                downPaymentExceedsTotal ? 'bg-red-50 border-2 border-red-200' : 'bg-orange-50 border-2 border-orange-200'
+                              }`}>
+                                <div className="flex items-center justify-between text-sm">
+                                  <span className="font-medium text-gray-600">Anticipo</span>
+                                  <span className="font-bold tabular-nums text-gray-800">S/ {downPayment.toFixed(2)}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-sm mt-1">
+                                  <span className="font-medium text-orange-700">Saldo a crédito</span>
+                                  <span className="font-bold tabular-nums text-orange-700">S/ {creditPending.toFixed(2)}</span>
+                                </div>
+                                {downPaymentExceedsTotal && (
+                                  <div className="mt-2 text-xs text-red-700">
+                                    El anticipo supera el total. Reduce el monto o cambia a "Pago inmediato".
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          ) : (
+                            <div className={`mt-3 rounded-xl px-4 py-3 flex items-center justify-between ${
+                              Math.abs(splitRemaining) <= 0.01 ? 'bg-green-50 border-2 border-green-200' :
+                              splitRemaining > 0 ? 'bg-orange-50 border-2 border-orange-200' : 'bg-blue-50 border-2 border-blue-200'
+                            }`}>
+                              <span className={`font-bold text-base ${Math.abs(splitRemaining) <= 0.01 ? 'text-green-700' : splitRemaining > 0 ? 'text-orange-700' : 'text-blue-700'}`}>
+                                {Math.abs(splitRemaining) <= 0.01 ? '✓ Pago completo' : splitRemaining > 0 ? `Falta S/ ${splitRemaining.toFixed(2)}` : `Vuelto S/ ${Math.abs(splitRemaining).toFixed(2)}`}
+                              </span>
+                              {splitRemaining > 0.01 && (
+                                <button type="button" onClick={() => {
+                                  const idx = splitPayments.findIndex(p => p.amount === 0);
+                                  if (idx >= 0) { const next = [...splitPayments]; next[idx] = { ...next[idx], amount: splitRemaining }; setSplitPayments(next); }
+                                  else { const last = splitPayments.length - 1; const next = [...splitPayments]; next[last] = { ...next[last], amount: (next[last].amount || 0) + splitRemaining }; setSplitPayments(next); }
+                                }} className="text-sm font-bold text-orange-700 hover:text-orange-900 underline underline-offset-2">
+                                  Completar →
+                                </button>
+                              )}
+                            </div>
+                          )
                         )}
 
                         {paymentMethods.length > 1 && (
@@ -1450,7 +1493,7 @@ export function POSPage() {
                               const used = new Set(splitPayments.map(p => p.paymentMethodId));
                               const next = paymentMethods.find(m => !used.has(m.id)) || paymentMethods[0];
                               if (!next) return;
-                              setSplitPayments([...splitPayments, { paymentMethodId: next.id, amount: Math.max(0, splitRemaining) }]);
+                              setSplitPayments([...splitPayments, { paymentMethodId: next.id, amount: isCredit ? 0 : Math.max(0, splitRemaining) }]);
                             }}
                             className="mt-3 w-full py-2.5 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-400 hover:border-primary-400 hover:text-primary-600 transition-colors"
                           >
@@ -1459,7 +1502,6 @@ export function POSPage() {
                         )}
                       </div>
                     </>
-                  )}
                 </>
               )}
             </div>
@@ -1494,13 +1536,19 @@ export function POSPage() {
                   </button>
                   <button
                     onClick={confirmSale}
-                    disabled={createSale.isPending || creditOverLimit}
+                    disabled={createSale.isPending || creditOverLimit || downPaymentExceedsTotal}
                     className={`flex-1 py-3.5 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed font-bold text-base transition-colors shadow-sm flex items-center justify-center gap-2 ${
                       isCredit ? 'bg-orange-500 hover:bg-orange-600' : 'bg-primary-600 hover:bg-primary-700'
                     }`}
                   >
                     {isCredit ? <Landmark size={18} /> : <CreditCard size={18} />}
-                    {createSale.isPending ? 'Procesando…' : isCredit ? `A Crédito · S/ ${total.toFixed(2)}` : `Confirmar · S/ ${total.toFixed(2)}`}
+                    {createSale.isPending
+                      ? 'Procesando…'
+                      : isCredit
+                        ? downPayment > 0
+                          ? `Anticipo S/ ${downPayment.toFixed(2)} + Crédito S/ ${creditPending.toFixed(2)}`
+                          : `A Crédito · S/ ${total.toFixed(2)}`
+                        : `Confirmar · S/ ${total.toFixed(2)}`}
                   </button>
                 </>
               )}

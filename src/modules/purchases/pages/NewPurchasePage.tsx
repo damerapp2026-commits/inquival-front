@@ -121,7 +121,6 @@ export function NewPurchasePage() {
   const { data: cashRegisterToday } = useCashRegisterToday();
   const { data: categoriesData } = useCategories();
   const { data: laboratoriesData } = useLaboratories();
-  const labsById = new Map<string, any>((Array.isArray(laboratoriesData) ? laboratoriesData : []).map((l: any) => [l.id, l]));
   const { data: unitsData } = useUnits();
   const { data: priceTiersData } = usePriceTiers();
   const priceTiers: any[] = Array.isArray(priceTiersData) ? priceTiersData : [];
@@ -158,6 +157,7 @@ export function NewPurchasePage() {
   const [newProduct, setNewProduct] = useState({
     name: '', description: '', categoryId: '', laboratoryId: '', unit: 'unidad',
     activeIngredient: '', taxType: 'GRAVADO' as 'GRAVADO' | 'EXONERADO' | 'INAFECTO', tracksLot: false,
+    companyId: '',
   });
 
   const companyList = Array.isArray(companies) ? companies : [];
@@ -298,12 +298,16 @@ export function NewPurchasePage() {
       name: '', description: '', categoryId: '', laboratoryId: '',
       unit: allUnits[0]?.value || 'unidad',
       activeIngredient: '', taxType: 'GRAVADO', tracksLot: false,
+      companyId: form.companyId || '',
     });
     setShowNewProduct(true);
   };
 
   const handleCreateQuickProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newProduct.name.trim()) { toast.error('Ingresa el nombre del producto'); return; }
+    if (!newProduct.companyId) { toast.error('Selecciona el almacén'); return; }
+    if (!newProduct.categoryId) { toast.error('Selecciona la categoría'); return; }
     try {
       const payload: any = {
         name: newProduct.name.trim(),
@@ -319,6 +323,9 @@ export function NewPurchasePage() {
       const created = await createProduct.mutateAsync(payload);
       if (created && newProductForIdx >= 0) {
         updateItem(newProductForIdx, 'productId', created.id);
+        if (!form.companyId && newProduct.companyId) {
+          setForm(prev => ({ ...prev, companyId: newProduct.companyId }));
+        }
       }
       setShowNewProduct(false);
     } catch { /* error handled by hook */ }
@@ -579,10 +586,7 @@ export function NewPurchasePage() {
                       <div className="flex gap-1">
                         <div className="flex-1">
                           <SearchableSelect
-                            options={products.map((p: Product) => {
-                              const labName = p.laboratoryId ? labsById.get(p.laboratoryId)?.name : null;
-                              return { value: p.id, label: labName ? `${p.name} — ${labName}` : p.name };
-                            })}
+                            options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
                             value={item.productId}
                             onChange={(v) => updateItem(idx, 'productId', v)}
                             placeholder="Buscar producto..."
@@ -600,13 +604,6 @@ export function NewPurchasePage() {
                           <span className="hidden sm:inline">Nuevo</span>
                         </button>
                       </div>
-                      {product?.laboratoryId && labsById.get(product.laboratoryId) && (
-                        <div className="mt-1.5">
-                          <span className="text-[11px] bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-medium">
-                            Lab: {labsById.get(product.laboratoryId).name}
-                          </span>
-                        </div>
-                      )}
                       {item.productId && form.supplierId && (
                         <LastPriceBadge productId={item.productId} supplierId={form.supplierId} />
                       )}
@@ -953,32 +950,51 @@ export function NewPurchasePage() {
 
           {/* Clasificación */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                Almacén <span className="text-red-500 normal-case">*</span>
+              </label>
+              <select
+                value={newProduct.companyId}
+                onChange={(e) => setNewProduct({ ...newProduct, companyId: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400"
+                required
+              >
+                <option value="">Seleccionar almacén...</option>
+                {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <p className="text-[11px] text-gray-400 mt-1">Almacén donde quedará registrado este producto.</p>
+            </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
                 Categoría <span className="text-red-500 normal-case">*</span>
               </label>
-              <select
+              <SmartSearchSelect
+                items={categories}
                 value={newProduct.categoryId}
-                onChange={(e) => setNewProduct({ ...newProduct, categoryId: e.target.value })}
-                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400"
-                required
-              >
-                <option value="">Seleccionar...</option>
-                {categories.map((c: Category) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+                onChange={(id) => setNewProduct({ ...newProduct, categoryId: id })}
+                getId={(c: any) => c.id}
+                getLabel={(c: any) => c.name}
+                searchFields={(c: any) => [c.name]}
+                placeholder="Buscar categoría…"
+                emptyText="Sin categorías que coincidan"
+              />
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
                 Laboratorio <span className="text-gray-400 normal-case font-normal">— opcional</span>
               </label>
-              <select
+              <SmartSearchSelect
+                items={(Array.isArray(laboratoriesData) ? laboratoriesData : []).filter((l: any) => l.isActive)}
                 value={newProduct.laboratoryId}
-                onChange={(e) => setNewProduct({ ...newProduct, laboratoryId: e.target.value })}
-                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400"
-              >
-                <option value="">Sin laboratorio</option>
-                {(Array.isArray(laboratoriesData) ? laboratoriesData : []).filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+                onChange={(id) => setNewProduct({ ...newProduct, laboratoryId: id })}
+                getId={(l: any) => l.id}
+                getLabel={(l: any) => l.name}
+                searchFields={(l: any) => [l.name]}
+                placeholder="Buscar laboratorio…"
+                emptyText="Sin laboratorios que coincidan"
+                accent="gray"
+              />
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">

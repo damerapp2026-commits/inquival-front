@@ -17,7 +17,12 @@ const categoryLabels: Record<string, string> = {
   CREDIT_PAYMENT: 'Pago Crédito',
   PURCHASE: 'Compra',
   ADJUSTMENT: 'Ajuste',
-  OTHER: 'Otro',
+  SERVICES: 'Servicios',
+  SALARY: 'Sueldos',
+  SUPPLIES: 'Insumos',
+  RENT: 'Alquiler',
+  TRANSPORT: 'Transporte',
+  OTHER: 'Otros',
 };
 
 const VENDOR_PALETTE = [

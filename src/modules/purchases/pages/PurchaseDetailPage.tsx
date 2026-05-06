@@ -1,8 +1,12 @@
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { usePurchases } from '../hooks/usePurchases';
+import { usePurchases, useUpdatePurchase } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
-import { ArrowLeft, ShoppingCart, Building2, Users, FileText, CreditCard, Package } from 'lucide-react';
+import { useSuppliers } from '../../suppliers/hooks/useSuppliers';
+import { Modal } from '../../../shared/components/Modal';
+import { SmartSearchSelect } from '../../../shared/components/SmartSearchSelect';
+import { ArrowLeft, ShoppingCart, Building2, FileText, CreditCard, Package, Pencil, Loader2 } from 'lucide-react';
 import type { Purchase, Company, Product } from '../../../shared/types';
 
 function InfoCell({ label, children }: { label: string; children: React.ReactNode }) {
@@ -31,6 +35,7 @@ export function PurchaseDetailPage() {
   const { data, isLoading } = usePurchases({ limit: 500 });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
+  const [showEdit, setShowEdit] = useState(false);
 
   const purchases: Purchase[] = data?.data || [];
   const purchase = purchases.find((p) => p.id === id);
@@ -70,12 +75,19 @@ export function PurchaseDetailPage() {
         <Link to="/purchases" className="p-2 rounded-lg hover:bg-gray-100 text-gray-600" title="Volver">
           <ArrowLeft size={18} />
         </Link>
-        <div>
+        <div className="flex-1">
           <div className="text-xs text-gray-500 flex items-center gap-1">
             <ShoppingCart size={12} /> Compras
           </div>
           <h1 className="text-2xl font-bold text-gray-800">Detalle de Compra</h1>
         </div>
+        <button
+          onClick={() => setShowEdit(true)}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-primary-200 text-primary-700 rounded-lg hover:bg-primary-50 hover:border-primary-300 text-sm font-semibold transition-colors"
+          title="Editar comprobante y proveedor"
+        >
+          <Pencil size={14} /> Editar
+        </button>
       </div>
 
       <div className="space-y-5">
@@ -174,6 +186,210 @@ export function PurchaseDetailPage() {
           </div>
         </SectionCard>
       </div>
+
+      <EditPurchaseModal
+        isOpen={showEdit}
+        onClose={() => setShowEdit(false)}
+        purchase={purchase}
+      />
     </div>
+  );
+}
+
+interface EditPurchaseModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  purchase: Purchase;
+}
+
+function EditPurchaseModal({ isOpen, onClose, purchase }: EditPurchaseModalProps) {
+  const update = useUpdatePurchase();
+  const { data: suppliersData } = useSuppliers({ limit: 1000 });
+  const suppliers: any[] = Array.isArray(suppliersData) ? suppliersData : (suppliersData as any)?.data || [];
+
+  const issueDateStr = (d: any) => {
+    if (!d) return '';
+    const dt = new Date(d);
+    if (isNaN(dt.getTime())) return '';
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  };
+
+  const [form, setForm] = useState({
+    supplierId: purchase.supplierId || '',
+    supplier: purchase.supplier || '',
+    supplierRuc: purchase.supplierRuc || '',
+    documentType: (purchase.documentType || '') as '' | 'FACTURA' | 'BOLETA' | 'GUIA' | 'NOTA_CREDITO' | 'OTRO',
+    documentSeries: purchase.documentSeries || '',
+    documentNumber: purchase.documentNumber || '',
+    issueDate: issueDateStr(purchase.issueDate),
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      setForm({
+        supplierId: purchase.supplierId || '',
+        supplier: purchase.supplier || '',
+        supplierRuc: purchase.supplierRuc || '',
+        documentType: (purchase.documentType || '') as any,
+        documentSeries: purchase.documentSeries || '',
+        documentNumber: purchase.documentNumber || '',
+        issueDate: issueDateStr(purchase.issueDate),
+      });
+    }
+  }, [isOpen, purchase]);
+
+  const pickSupplier = (id: string) => {
+    if (!id) {
+      setForm((prev) => ({ ...prev, supplierId: '', supplier: '', supplierRuc: '' }));
+      return;
+    }
+    const s = suppliers.find((x) => x.id === id);
+    if (!s) return;
+    setForm((prev) => ({
+      ...prev,
+      supplierId: s.id,
+      supplier: s.businessName || s.name || '',
+      supplierRuc: s.ruc || '',
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.supplier.trim()) return;
+    const payload = {
+      supplier: form.supplier.trim(),
+      supplierId: form.supplierId || null,
+      supplierRuc: form.supplierRuc.trim() || null,
+      documentType: form.documentType || null,
+      documentSeries: form.documentSeries.trim().toUpperCase() || null,
+      documentNumber: form.documentNumber.trim() || null,
+      issueDate: form.issueDate || null,
+    };
+    await update.mutateAsync({ id: purchase.id, data: payload });
+    onClose();
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Editar compra" size="lg">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="flex items-start gap-3 p-3 bg-amber-50/70 border border-amber-200 rounded-xl">
+          <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
+            <Pencil size={16} />
+          </div>
+          <div className="text-xs text-amber-800">
+            Solo puedes corregir <span className="font-semibold">datos del comprobante y del proveedor</span>. Items, cantidades, precios y tipo de pago no se editan: para esos cambios anula y vuelve a registrar la compra.
+          </div>
+        </div>
+
+        {/* Proveedor */}
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+            Proveedor <span className="text-red-500 normal-case">*</span>
+          </label>
+          <SmartSearchSelect
+            items={suppliers}
+            value={form.supplierId}
+            onChange={(id) => pickSupplier(id)}
+            getId={(s: any) => s.id}
+            getLabel={(s: any) => s.businessName || s.name || '—'}
+            getSubLabel={(s: any) => (s.ruc ? `RUC ${s.ruc}` : '')}
+            searchFields={(s: any) => [s.businessName, s.name, s.ruc]}
+            placeholder="Buscar proveedor por nombre o RUC…"
+            emptyText="No se encontraron proveedores"
+          />
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1">Razón social (texto)</label>
+              <input
+                value={form.supplier}
+                onChange={(e) => setForm({ ...form, supplier: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1">RUC</label>
+              <input
+                value={form.supplierRuc}
+                onChange={(e) => setForm({ ...form, supplierRuc: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                placeholder="—"
+                maxLength={11}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Comprobante */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <FileText size={14} className="text-primary-600" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Comprobante de pago</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1">Tipo</label>
+              <select
+                value={form.documentType}
+                onChange={(e) => setForm({ ...form, documentType: e.target.value as any })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+              >
+                <option value="">Sin comprobante</option>
+                <option value="FACTURA">Factura</option>
+                <option value="BOLETA">Boleta</option>
+                <option value="GUIA">Guía</option>
+                <option value="NOTA_CREDITO">Nota Crédito</option>
+                <option value="OTRO">Otro</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1">F. Emisión</label>
+              <input
+                type="date"
+                value={form.issueDate}
+                onChange={(e) => setForm({ ...form, issueDate: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1">Serie</label>
+              <input
+                value={form.documentSeries}
+                onChange={(e) => setForm({ ...form, documentSeries: e.target.value.toUpperCase() })}
+                placeholder="F001"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm uppercase"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1">Número</label>
+              <input
+                value={form.documentNumber}
+                onChange={(e) => setForm({ ...form, documentNumber: e.target.value })}
+                placeholder="00012345"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-3 border-t border-gray-100">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-5 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-medium text-sm"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={update.isPending || !form.supplier.trim()}
+            className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-semibold text-sm disabled:opacity-50"
+          >
+            {update.isPending ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={14} />}
+            {update.isPending ? 'Guardando…' : 'Guardar cambios'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

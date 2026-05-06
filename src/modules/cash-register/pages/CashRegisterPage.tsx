@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { CashRegisterEntry } from '../../../shared/types';
 import { groupEntries } from '../utils/groupEntries';
+import { EXPENSE_CATEGORIES } from '../utils/expenseCategories';
 
 // --- Helpers --------------------------------------------------------------
 
@@ -21,7 +22,12 @@ const categoryLabels: Record<string, string> = {
   CREDIT_PAYMENT: 'Pago Crédito',
   PURCHASE: 'Compra',
   ADJUSTMENT: 'Ajuste',
-  OTHER: 'Otro',
+  SERVICES: 'Servicios',
+  SALARY: 'Sueldos',
+  SUPPLIES: 'Insumos',
+  RENT: 'Alquiler',
+  TRANSPORT: 'Transporte',
+  OTHER: 'Otros',
 };
 
 const categoryStyles: Record<string, string> = {
@@ -29,6 +35,11 @@ const categoryStyles: Record<string, string> = {
   CREDIT_PAYMENT: 'bg-amber-50 text-amber-700 border-amber-100',
   PURCHASE: 'bg-rose-50 text-rose-700 border-rose-100',
   ADJUSTMENT: 'bg-blue-50 text-blue-700 border-blue-100',
+  SERVICES: 'bg-cyan-50 text-cyan-700 border-cyan-100',
+  SALARY: 'bg-violet-50 text-violet-700 border-violet-100',
+  SUPPLIES: 'bg-amber-50 text-amber-700 border-amber-100',
+  RENT: 'bg-orange-50 text-orange-700 border-orange-100',
+  TRANSPORT: 'bg-teal-50 text-teal-700 border-teal-100',
   OTHER: 'bg-gray-100 text-gray-600 border-gray-200',
 };
 
@@ -471,6 +482,30 @@ export function CashRegisterPage() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+          {addForm.type === 'EXPENSE' && (
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Tipo de gasto <span className="text-red-500 normal-case">*</span></label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {EXPENSE_CATEGORIES.filter((c) => c.pickable).map((cat) => {
+                  const Icon = cat.icon;
+                  const active = addForm.category === cat.key;
+                  return (
+                    <button
+                      key={cat.key}
+                      type="button"
+                      onClick={() => setAddForm({ ...addForm, category: cat.key })}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium border-2 transition-colors ${
+                        active ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-gray-700 border-gray-200 hover:border-rose-300'
+                      }`}
+                    >
+                      <Icon size={15} />
+                      <span className="truncate">{cat.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
           {addForm.type === 'EXPENSE' && (

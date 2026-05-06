@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../shared/components/Modal';
-import { SearchableSelect } from '../../../shared/components/SearchableSelect';
+import { SmartSearchSelect } from '../../../shared/components/SmartSearchSelect';
+import { QuickClientModal } from '../../clients/components/QuickClientModal';
 import { useCreateHistoricalCredit } from '../hooks/useCredits';
 import { useClients } from '../../clients/hooks/useClients';
 import type { Client } from '../../../shared/types';
@@ -42,6 +43,8 @@ function todayIsoDate(): string {
 
 export function RegisterHistoricalCreditModal({ isOpen, onClose, initialClientId }: Props) {
   const [form, setForm] = useState<FormState>(empty);
+  const [clientSearch, setClientSearch] = useState('');
+  const [showQuickClient, setShowQuickClient] = useState(false);
   const { data: clientsData } = useClients({ limit: 500 });
   const create = useCreateHistoricalCredit();
 
@@ -105,15 +108,23 @@ export function RegisterHistoricalCreditModal({ isOpen, onClose, initialClientId
           <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5 flex items-center gap-1.5">
             <User size={12} /> Cliente <span className="text-red-500 normal-case">*</span>
           </label>
-          <SearchableSelect
+          <SmartSearchSelect
+            items={clients}
             value={form.clientId}
-            onChange={(v) => setForm({ ...form, clientId: v })}
-            options={clients.map((c) => ({
-              value: c.id,
-              label: c.name,
-              sublabel: c.documentNumber || c.city || c.department || '',
-            }))}
-            placeholder="Buscar cliente por nombre o DNI/RUC..."
+            onChange={(id) => { setForm({ ...form, clientId: id }); setClientSearch(''); }}
+            getId={(c) => c.id}
+            getLabel={(c) => c.name}
+            getSubLabel={(c) => (
+              <span className="flex items-center gap-2">
+                {c.documentNumber && <span className="font-mono">{c.documentNumber}</span>}
+                {c.phone && <span>· {c.phone}</span>}
+              </span>
+            )}
+            searchFields={(c) => [c.name, c.documentNumber, c.phone]}
+            placeholder="Buscar por nombre, DNI/RUC o teléfono…"
+            emptyText="No se encontraron clientes con esa búsqueda"
+            onAddNew={(text) => { setClientSearch(text); setShowQuickClient(true); }}
+            addNewLabel="Añadir nuevo cliente"
           />
           {limitInfo && (
             <p className="mt-1.5 text-[11px] text-blue-700">{limitInfo}</p>
@@ -244,6 +255,14 @@ export function RegisterHistoricalCreditModal({ isOpen, onClose, initialClientId
           </button>
         </div>
       </form>
+
+      <QuickClientModal
+        isOpen={showQuickClient}
+        onClose={() => setShowQuickClient(false)}
+        onCreated={(client) => { setForm((prev) => ({ ...prev, clientId: client.id })); setClientSearch(''); }}
+        prefillName={clientSearch.trim() && !/^\d+$/.test(clientSearch.trim()) ? clientSearch.trim() : undefined}
+        prefillDocument={clientSearch.trim() && /^\d+$/.test(clientSearch.trim()) ? clientSearch.trim() : undefined}
+      />
     </Modal>
   );
 }
