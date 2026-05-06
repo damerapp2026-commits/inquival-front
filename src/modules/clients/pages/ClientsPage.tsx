@@ -5,10 +5,11 @@ import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
-import { Plus, Search, Edit2, Trash2, Users, Loader2, AlertTriangle, UserCheck, UserX, Contact } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Users, Loader2, AlertTriangle, UserCheck, UserX, Contact, MapPin } from 'lucide-react';
 import type { Client } from '../../../shared/types';
 import { clientService } from '../services/clientService';
 import { ExportClientStatementButton } from '../../credits/components/ExportClientStatementButton';
+import { PERU_DEPARTMENTS } from '../constants/peruRegions';
 import toast from 'react-hot-toast';
 
 export function ClientsPage() {
@@ -28,13 +29,13 @@ export function ClientsPage() {
   const rucLookup = useRucLookup();
 
   const [docType, setDocType] = useState<'DNI' | 'RUC'>('DNI');
-  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '' });
+  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', city: '' });
   const [lookupLoading, setLookupLoading] = useState(false);
 
   const openCreate = () => {
     setEditing(null);
     setDocType('DNI');
-    setForm({ name: '', documentNumber: '', phone: '', email: '', address: '' });
+    setForm({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', city: '' });
     setShowModal(true);
   };
 
@@ -42,7 +43,15 @@ export function ClientsPage() {
     setEditing(client);
     const dn = client.documentNumber || '';
     setDocType(dn.length === 11 ? 'RUC' : 'DNI');
-    setForm({ name: client.name, documentNumber: dn, phone: client.phone || '', email: client.email || '', address: client.address || '' });
+    setForm({
+      name: client.name,
+      documentNumber: dn,
+      phone: client.phone || '',
+      email: client.email || '',
+      address: client.address || '',
+      department: client.department || '',
+      city: client.city || '',
+    });
     setShowModal(true);
   };
 
@@ -61,7 +70,15 @@ export function ClientsPage() {
       const allClients = await clientService.getAll({ search: numero, limit: 1 });
       const localMatch = (allClients?.data || allClients || []).find?.((c: Client) => c.documentNumber === numero);
       if (localMatch) {
-        setForm({ name: localMatch.name, documentNumber: localMatch.documentNumber || '', phone: localMatch.phone || '', email: localMatch.email || '', address: localMatch.address || '' });
+        setForm({
+          name: localMatch.name,
+          documentNumber: localMatch.documentNumber || '',
+          phone: localMatch.phone || '',
+          email: localMatch.email || '',
+          address: localMatch.address || '',
+          department: localMatch.department || '',
+          city: localMatch.city || '',
+        });
         toast.success('Cliente encontrado en el sistema');
         setLookupLoading(false);
         return;
@@ -106,6 +123,21 @@ export function ClientsPage() {
         : <span className="text-gray-300">—</span>,
     },
     { key: 'phone', header: 'Teléfono', render: (item: Client) => item.phone || <span className="text-gray-300">—</span> },
+    {
+      key: 'zone', header: 'Zona',
+      render: (item: Client) => {
+        if (!item.city && !item.department) return <span className="text-gray-300">—</span>;
+        return (
+          <div className="flex items-center gap-1.5 text-sm text-gray-700">
+            <MapPin size={13} className="text-gray-400 flex-shrink-0" />
+            <div className="min-w-0">
+              {item.city && <div className="font-medium truncate">{item.city}</div>}
+              {item.department && <div className="text-xs text-gray-500 truncate">{item.department}</div>}
+            </div>
+          </div>
+        );
+      },
+    },
     { key: 'email', header: 'Email', render: (item: Client) => item.email || <span className="text-gray-300">—</span> },
     {
       key: 'isActive', header: 'Estado',
@@ -230,6 +262,38 @@ export function ClientsPage() {
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Dirección</label>
             <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
+
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <MapPin size={13} className="text-primary-600" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Zona</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-medium text-gray-400 mb-1">Departamento</label>
+                <select
+                  value={form.department}
+                  onChange={(e) => setForm({ ...form, department: e.target.value })}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">— Sin asignar —</option>
+                  {PERU_DEPARTMENTS.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-gray-400 mb-1">Ciudad / Distrito</label>
+                <input
+                  value={form.city}
+                  onChange={(e) => setForm({ ...form, city: e.target.value })}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Ej: Otuzco, Trujillo..."
+                />
+              </div>
+            </div>
+          </div>
+
           <div className="flex gap-3 pt-2 border-t border-gray-100">
             <button type="button" onClick={() => setShowModal(false)} className="flex-1 sm:flex-none sm:px-6 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-medium">Cancelar</button>
             <button type="submit" disabled={editing ? updateClient.isPending : createClient.isPending} className="flex-1 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 font-semibold shadow-sm">
