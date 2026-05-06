@@ -36,7 +36,7 @@ const CategoriesPage = lazy(() => import('../../modules/categories/pages/Categor
 const LaboratoriesPage = lazy(() => import('../../modules/laboratories/pages/LaboratoriesPage').then(m => ({ default: m.LaboratoriesPage })));
 const UnitsPage = lazy(() => import('../../modules/units/pages/UnitsPage').then(m => ({ default: m.UnitsPage })));
 const DashboardPage = lazy(() => import('../../modules/dashboard/pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
-const UsersPage = lazy(() => import('../../modules/users/pages/UsersPage').then(m => ({ default: m.UsersPage })));
+const SettingsPage = lazy(() => import('../../modules/settings/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const KardexPage = lazy(() => import('../../modules/kardex/pages/KardexPage').then(m => ({ default: m.KardexPage })));
 const KardexProductDetailPage = lazy(() => import('../../modules/kardex/pages/KardexProductDetailPage').then(m => ({ default: m.KardexProductDetailPage })));
 const AccountsPayablePage = lazy(() => import('../../modules/accounts-payable/pages/AccountsPayablePage').then(m => ({ default: m.AccountsPayablePage })));
@@ -81,7 +81,8 @@ export function AppRoutes() {
         <Route path="units" element={<AdminOnly><Suspense fallback={<Loading />}><UnitsPage /></Suspense></AdminOnly>} />
         <Route path="companies" element={<AdminOnly><Suspense fallback={<Loading />}><CompaniesPage /></Suspense></AdminOnly>} />
         <Route path="price-tiers" element={<AdminOnly><Suspense fallback={<Loading />}><PriceTiersPage /></Suspense></AdminOnly>} />
-        <Route path="users" element={<AdminOnly><Suspense fallback={<Loading />}><UsersPage /></Suspense></AdminOnly>} />
+        <Route path="settings" element={<AdminOnly><Suspense fallback={<Loading />}><SettingsPage /></Suspense></AdminOnly>} />
+        <Route path="users" element={<Navigate to="/settings" replace />} />
         <Route path="kardex" element={<AdminOnly><Suspense fallback={<Loading />}><KardexPage /></Suspense></AdminOnly>} />
         <Route path="kardex/product/:productId" element={<AdminOnly><Suspense fallback={<Loading />}><KardexProductDetailPage /></Suspense></AdminOnly>} />
         <Route path="accounts-payable" element={<AdminOnly><Suspense fallback={<Loading />}><AccountsPayablePage /></Suspense></AdminOnly>} />

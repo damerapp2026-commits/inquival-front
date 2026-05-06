@@ -24,7 +24,7 @@ export interface CompanyInfo {
   plin?: WalletInfo;
 }
 
-export const COMPANY_INFO: CompanyInfo = {
+const DEFAULT_COMPANY_INFO: CompanyInfo = {
   legalName: 'Inquival',
   ruc: '',
   address: '',
@@ -32,10 +32,18 @@ export const COMPANY_INFO: CompanyInfo = {
   email: '',
   website: '',
   logoUrl: '/Icon/logosin.png',
-  bankAccounts: [
-    // { bank: 'BCP',       currency: 'PEN', accountNumber: '...', cci: '...', holder: 'Inquival ...' },
-    // { bank: 'Interbank', currency: 'USD', accountNumber: '...', cci: '...', holder: 'Inquival ...' },
-  ],
+  bankAccounts: [],
   yape: undefined,
   plin: undefined,
 };
+
+export const COMPANY_INFO: CompanyInfo = { ...DEFAULT_COMPANY_INFO };
+
+export function setCompanyInfo(next: Partial<CompanyInfo>): void {
+  Object.assign(COMPANY_INFO, {
+    ...DEFAULT_COMPANY_INFO,
+    ...next,
+    logoUrl: next.logoUrl || DEFAULT_COMPANY_INFO.logoUrl,
+    bankAccounts: next.bankAccounts ?? [],
+  });
+}

@@ -3,9 +3,10 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useAPAlerts } from '../../modules/accounts-payable/hooks/useAccountsPayable';
 import { useExpiringLots } from '../../modules/stock/hooks/useProductLots';
+import { useBusinessSettings } from '../../modules/settings/hooks/useBusinessSettings';
 import {
   Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight,
-  LogOut, Menu, X, Wallet, CreditCard, BarChart3, FolderTree, Shield,
+  LogOut, Menu, X, Wallet, CreditCard, BarChart3, FolderTree, Settings,
   ClipboardList, FileText, Bell, AlertTriangle, Clock, ScanLine, Ruler, ScrollText, Receipt,
   ChevronLeft, ChevronRight, Percent, Briefcase, CalendarClock, MoreHorizontal,
   FlaskConical, ArrowDownCircle,
@@ -65,7 +66,7 @@ const navSections: NavSection[] = [
     label: 'GESTIÓN',
     items: [
       { path: '/commissions-report', label: 'Reporte Comisiones', icon: Briefcase, roles: ['ADMIN'] },
-      { path: '/users', label: 'Usuarios', icon: Shield, roles: ['ADMIN'] },
+      { path: '/settings', label: 'Configuración', icon: Settings, roles: ['ADMIN'] },
     ],
   },
 ];
@@ -86,6 +87,7 @@ export function Layout() {
     localStorage.setItem('sidebarCollapsed', String(collapsed));
   }, [collapsed]);
 
+  useBusinessSettings();
   const { data: apAlerts } = useAPAlerts(3);
   const { data: expiringLotsData } = useExpiringLots(undefined, 30);
   const expiringLots: ProductLot[] = Array.isArray(expiringLotsData) ? expiringLotsData : [];
