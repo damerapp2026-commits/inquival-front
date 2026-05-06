@@ -12,6 +12,7 @@ import { useSupplierByRuc, useCreateSupplier, useSuppliers } from '../../supplie
 import { useCashRegisterToday } from '../../cash-register/hooks/useCashRegister';
 import { Modal } from '../../../shared/components/Modal';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
+import { SmartSearchSelect } from '../../../shared/components/SmartSearchSelect';
 import {
   ArrowLeft, ShoppingCart, Trash2, Search, Loader2, DollarSign, PackagePlus,
   FileText, CopyIcon, Dices, Wand2, Building2, Users, CreditCard, Package, Plus, X,
@@ -460,45 +461,35 @@ export function NewPurchasePage() {
                   <Users size={12} /> Proveedor
                 </label>
 
-                {form.supplierId ? (
-                  <div className="flex items-center justify-between gap-3 px-3 py-2.5 bg-primary-50 border border-primary-200 rounded-lg">
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-primary-900 truncate">{form.supplier}</div>
-                      {form.supplierRuc && (
-                        <div className="text-xs text-primary-700/80">RUC {form.supplierRuc}</div>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={clearSupplier}
-                      className="text-xs text-gray-500 hover:text-red-600 inline-flex items-center gap-1 flex-shrink-0"
-                    >
-                      <X size={12} /> Cambiar
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <SearchableSelect
-                      options={suppliers.map((s) => ({
-                        value: s.id,
-                        label: s.businessName || s.name || '—',
-                        sublabel: s.ruc ? `RUC ${s.ruc}` : undefined,
-                      }))}
-                      value=""
-                      onChange={pickSupplier}
-                      placeholder="Buscar proveedor por nombre o RUC..."
-                    />
+                <SmartSearchSelect
+                  items={suppliers}
+                  value={form.supplierId}
+                  onChange={(id) => { id ? pickSupplier(id) : clearSupplier(); }}
+                  getId={(s: any) => s.id}
+                  getLabel={(s: any) => s.businessName || s.name || '—'}
+                  getSubLabel={(s: any) => (s.ruc ? `RUC ${s.ruc}` : '')}
+                  searchFields={(s: any) => [s.businessName, s.name, s.ruc]}
+                  placeholder="Buscar proveedor por nombre o RUC…"
+                  emptyText="No se encontraron proveedores con esa búsqueda"
+                  onAddNew={(text) => {
+                    const digits = text.replace(/\D/g, '').slice(0, 11);
+                    setForm(prev => ({ ...prev, supplierRuc: digits }));
+                    setShowAddSupplier(true);
+                  }}
+                  addNewLabel="Agregar proveedor por RUC"
+                />
 
-                    <div className="mt-2">
-                      {!showAddSupplier ? (
-                        <button
-                          type="button"
-                          onClick={() => setShowAddSupplier(true)}
-                          className="text-xs text-primary-700 hover:text-primary-800 inline-flex items-center gap-1 font-medium"
-                        >
-                          <Plus size={12} /> Agregar nuevo proveedor por RUC
-                        </button>
-                      ) : (
+                {!form.supplierId && (
+                  <div className="mt-2">
+                    {!showAddSupplier ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowAddSupplier(true)}
+                        className="text-xs text-primary-700 hover:text-primary-800 inline-flex items-center gap-1 font-medium"
+                      >
+                        <Plus size={12} /> Agregar nuevo proveedor por RUC
+                      </button>
+                    ) : (
                         <div className="mt-1 p-3 border border-dashed border-gray-300 rounded-lg bg-gray-50/60 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold text-gray-600">Nuevo proveedor (consulta SUNAT)</span>
@@ -527,11 +518,10 @@ export function NewPurchasePage() {
                               Buscar
                             </button>
                           </div>
-                          <p className="text-[11px] text-gray-500">Si el RUC existe en SUNAT, se registra automáticamente y queda disponible la próxima vez.</p>
-                        </div>
-                      )}
-                    </div>
-                  </>
+                        <p className="text-[11px] text-gray-500">Si el RUC existe en SUNAT, se registra automáticamente y queda disponible la próxima vez.</p>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
