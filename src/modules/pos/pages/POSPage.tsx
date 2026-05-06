@@ -139,7 +139,7 @@ export function POSPage() {
   }, [paymentMethodsData]);
 
   const [categoryId, setCategoryId] = useState<string>(''); // '' = Todos
-  const [onlyInStock, setOnlyInStock] = useState(true);
+  const [onlyInStock, setOnlyInStock] = useState(false);
   const [companyId, setCompanyId] = useState<string>('');
   const [tierId, setTierId] = useState<string>('');
   const [cart, setCart] = useState<CartItem[]>([]);
