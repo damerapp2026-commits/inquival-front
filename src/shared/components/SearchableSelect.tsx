@@ -60,15 +60,15 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
   }, [value, selectedLabel]);
 
   useEffect(() => {
-    if (isOpen) {
-      updatePosition();
-      const scrollParent = inputRef.current?.closest('.overflow-y-auto');
-      if (scrollParent) {
-        const onScroll = () => updatePosition();
-        scrollParent.addEventListener('scroll', onScroll);
-        return () => scrollParent.removeEventListener('scroll', onScroll);
-      }
-    }
+    if (!isOpen) return;
+    updatePosition();
+    const handler = () => updatePosition();
+    window.addEventListener('scroll', handler, true);
+    window.addEventListener('resize', handler);
+    return () => {
+      window.removeEventListener('scroll', handler, true);
+      window.removeEventListener('resize', handler);
+    };
   }, [isOpen, updatePosition]);
 
   const handleFocus = () => {
