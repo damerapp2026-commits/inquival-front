@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useCreatePurchase, useLastPrice } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
@@ -35,6 +35,7 @@ interface PurchaseFormItem {
   unitPriceSinIgv: number;
   unitPriceConIgv: number;
   costoAdquisicion: number;
+  costoEnSoles: number;
   markupPercent: number;
   precioVenta: number;
   precioVentaMode: 'markup' | 'direct';
@@ -43,7 +44,7 @@ interface PurchaseFormItem {
 const emptyItem = (): PurchaseFormItem => ({
   companyId: '', productId: '', quantity: 0, lotNumber: '', expirationDate: '',
   unitPriceSinIgv: 0, unitPriceConIgv: 0,
-  costoAdquisicion: 0, markupPercent: 0, precioVenta: 0, precioVentaMode: 'markup',
+  costoAdquisicion: 0, costoEnSoles: 0, markupPercent: 0, precioVenta: 0, precioVentaMode: 'markup',
 });
 
 function recalcItem(
@@ -55,25 +56,25 @@ function recalcItem(
   const unitPriceConIgv = applyIgv
     ? Math.round(item.unitPriceSinIgv * (1 + IGV_RATE) * 100) / 100
     : Math.round(item.unitPriceSinIgv * 100) / 100;
-  const unitPriceConIgvSoles = currency === 'USD'
-    ? (exchangeRate ? unitPriceConIgv * exchangeRate : 0)
-    : unitPriceConIgv;
-  const costoAdquisicion = Math.round(unitPriceConIgvSoles * 100) / 100;
+  const costoAdquisicion = Math.round(unitPriceConIgv * 100) / 100;
+  const costoEnSoles = currency === 'USD'
+    ? (exchangeRate ? Math.round(unitPriceConIgv * exchangeRate * 100) / 100 : 0)
+    : costoAdquisicion;
 
   let precioVenta = item.precioVenta;
   let markupPercent = item.markupPercent;
 
   if (item.precioVentaMode === 'markup') {
-    precioVenta = costoAdquisicion > 0
-      ? Math.round(costoAdquisicion * (1 + markupPercent / 100) * 100) / 100
+    precioVenta = costoEnSoles > 0
+      ? Math.round(costoEnSoles * (1 + markupPercent / 100) * 100) / 100
       : 0;
   } else {
-    markupPercent = costoAdquisicion > 0
-      ? Math.round(((precioVenta / costoAdquisicion) - 1) * 10000) / 100
+    markupPercent = costoEnSoles > 0
+      ? Math.round(((precioVenta / costoEnSoles) - 1) * 10000) / 100
       : 0;
   }
 
-  return { ...item, unitPriceConIgv, costoAdquisicion, precioVenta, markupPercent };
+  return { ...item, unitPriceConIgv, costoAdquisicion, costoEnSoles, precioVenta, markupPercent };
 }
 
 function LastPriceBadge({ productId, supplierId }: { productId: string; supplierId: string }) {
@@ -155,6 +156,8 @@ export function NewPurchasePage() {
   const [supplierLoading, setSupplierLoading] = useState(false);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
   const [installmentGen, setInstallmentGen] = useState({ count: 6, intervalDays: 30, firstDaysFromPurchase: 30 });
+  const [scrollToLast, setScrollToLast] = useState(false);
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [showNewProduct, setShowNewProduct] = useState(false);
   const [newProductForIdx, setNewProductForIdx] = useState<number>(-1);
   const [newProduct, setNewProduct] = useState({
@@ -170,12 +173,15 @@ export function NewPurchasePage() {
     return list.filter((p) => p.isActive !== false);
   })();
 
-  const addItem = () => setForm(prev => {
-    const last = prev.items[prev.items.length - 1];
-    const next = emptyItem();
-    if (last?.companyId) next.companyId = last.companyId;
-    return { ...prev, items: [...prev.items, next] };
-  });
+  const addItem = () => {
+    setForm(prev => {
+      const last = prev.items[prev.items.length - 1];
+      const next = emptyItem();
+      if (last?.companyId) next.companyId = last.companyId;
+      return { ...prev, items: [...prev.items, next] };
+    });
+    setScrollToLast(true);
+  };
   const repeatFromPrev = (idx: number, field: 'lotNumber' | 'expirationDate') => {
     if (idx === 0) return;
     setForm(prev => {
@@ -236,6 +242,16 @@ export function NewPurchasePage() {
     setForm(prev => ({ ...prev, items: prev.items.map(i => recalcItem(i, currency, exchangeRate, itemAppliesIgv(i.productId))) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currency, exchangeRate]);
+
+  useEffect(() => {
+    if (scrollToLast) {
+      const last = itemRefs.current[form.items.length - 1];
+      last?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const input = last?.querySelector('input[type="text"]') as HTMLInputElement | null;
+      input?.focus();
+      setScrollToLast(false);
+    }
+  }, [scrollToLast, form.items.length]);
 
   useEffect(() => {
     if (currency === 'USD' && form.purchaseDate && exchangeRate == null) {
@@ -411,7 +427,7 @@ export function NewPurchasePage() {
         companyId: i.companyId,
         productId: i.productId,
         quantity: i.quantity,
-        unitCost: i.costoAdquisicion,
+        unitCost: i.costoEnSoles,
         unitPriceSinIgv: i.unitPriceSinIgv,
         unitPriceConIgv: i.unitPriceConIgv,
         precioVenta: i.precioVenta || undefined,
@@ -579,7 +595,7 @@ export function NewPurchasePage() {
               const product = products.find((p: Product) => p.id === item.productId);
               const needsLot = product?.tracksLot;
               return (
-                <div key={idx} className="bg-gray-50 rounded-lg p-3 relative border border-gray-100">
+                <div key={idx} ref={(el) => { itemRefs.current[idx] = el; }} className="bg-gray-50 rounded-lg p-3 relative border border-gray-100">
                   {form.items.length > 1 && (
                     <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
                   )}
@@ -689,11 +705,14 @@ export function NewPurchasePage() {
                           <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Costo final</div>
                           <div className="bg-gradient-to-br from-primary-50 to-primary-100/60 border-2 border-primary-200 rounded-xl px-4 py-3 h-[calc(100%-26px)]">
                             <div className="text-[10px] uppercase text-primary-700 font-semibold tracking-wider">Costo de adquisición</div>
-                            <div className="text-xl font-bold text-primary-800 tabular-nums mt-1">S/ {item.costoAdquisicion.toFixed(2)}</div>
+                            <div className="text-xl font-bold text-primary-800 tabular-nums mt-1">{sym} {item.costoAdquisicion.toFixed(2)}</div>
                             {item.quantity > 0 && item.costoAdquisicion > 0 && (
                               <div className="text-[11px] text-primary-700/80 mt-1">
-                                × {item.quantity} = <span className="font-semibold tabular-nums">S/ {(item.quantity * item.costoAdquisicion).toFixed(2)}</span>
+                                × {item.quantity} = <span className="font-semibold tabular-nums">{sym} {(item.quantity * item.costoAdquisicion).toFixed(2)}</span>
                               </div>
+                            )}
+                            {currency === 'USD' && exchangeRate && item.costoEnSoles > 0 && (
+                              <div className="text-[10px] text-primary-700/70 mt-1 italic">≈ S/ {item.costoEnSoles.toFixed(2)} {item.quantity > 0 && <>· × {item.quantity} = S/ {(item.quantity * item.costoEnSoles).toFixed(2)}</>}</div>
                             )}
                           </div>
                         </div>

@@ -38,7 +38,9 @@ export function SmartSearchSelect<T>({
 }: SmartSearchSelectProps<T>) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const selected = items.find((i) => getId(i) === value);
 
@@ -58,6 +60,38 @@ export function SmartSearchSelect<T>({
         .filter((i) => searchFields(i).some((f) => (f || '').toLowerCase().includes(q)))
         .slice(0, maxResults)
     : [];
+
+  useEffect(() => { setHighlightedIndex(0); }, [search, open]);
+
+  useEffect(() => {
+    if (open && matches.length > 0) {
+      optionRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlightedIndex, open, matches.length]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!open) { setOpen(true); return; }
+      if (matches.length === 0) return;
+      setHighlightedIndex((i) => (i + 1) % matches.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (matches.length === 0) return;
+      setHighlightedIndex((i) => (i - 1 + matches.length) % matches.length);
+    } else if (e.key === 'Enter') {
+      if (open && matches.length > 0) {
+        e.preventDefault();
+        const item = matches[highlightedIndex];
+        if (item) { onChange(getId(item)); setSearch(''); setOpen(false); }
+      } else if (open && matches.length === 0 && q && onAddNew) {
+        e.preventDefault();
+        onAddNew(search.trim()); setSearch(''); setOpen(false);
+      }
+    } else if (e.key === 'Escape') {
+      if (open) { e.preventDefault(); setOpen(false); }
+    }
+  };
 
   const accentChip = accent === 'primary'
     ? 'border-primary-300 bg-primary-50 text-primary-800'
@@ -95,6 +129,7 @@ export function SmartSearchSelect<T>({
         value={search}
         onChange={(e) => { setSearch(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
         autoComplete="off"
@@ -102,14 +137,16 @@ export function SmartSearchSelect<T>({
       {open && q.length > 0 && (
         <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
           {matches.length > 0 ? (
-            matches.map((item) => {
+            matches.map((item, idx) => {
               const id = getId(item);
               return (
                 <button
                   key={id}
+                  ref={(el) => { optionRefs.current[idx] = el; }}
                   type="button"
                   onClick={() => { onChange(id); setSearch(''); setOpen(false); }}
-                  className="w-full text-left px-4 py-2.5 hover:bg-primary-50 border-b border-gray-50 last:border-0"
+                  onMouseEnter={() => setHighlightedIndex(idx)}
+                  className={`w-full text-left px-4 py-2.5 border-b border-gray-50 last:border-0 ${idx === highlightedIndex ? 'bg-primary-100' : 'hover:bg-primary-50'}`}
                 >
                   <div className="text-sm font-medium text-gray-800">{getLabel(item)}</div>
                   {getSubLabel && (

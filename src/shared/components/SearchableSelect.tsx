@@ -16,8 +16,10 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
   const [search, setSearch] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const selectedLabel = options.find(o => o.value === value)?.label || '';
 
@@ -27,6 +29,14 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
         return o.label.toLowerCase().includes(q) || (o.sublabel && o.sublabel.toLowerCase().includes(q));
       })
     : [];
+
+  useEffect(() => { setHighlightedIndex(0); }, [search, isOpen]);
+
+  useEffect(() => {
+    if (isOpen && filtered.length > 0) {
+      optionRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlightedIndex, isOpen, filtered.length]);
 
   const updatePosition = useCallback(() => {
     if (inputRef.current) {
@@ -79,6 +89,31 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
     inputRef.current?.focus();
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!isOpen) { setIsOpen(true); return; }
+      if (filtered.length === 0) return;
+      setHighlightedIndex((i) => (i + 1) % filtered.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (filtered.length === 0) return;
+      setHighlightedIndex((i) => (i - 1 + filtered.length) % filtered.length);
+    } else if (e.key === 'Enter') {
+      if (isOpen && filtered.length > 0) {
+        e.preventDefault();
+        const opt = filtered[highlightedIndex];
+        if (opt) handleSelect(opt.value, opt.label);
+      }
+    } else if (e.key === 'Escape') {
+      if (isOpen) {
+        e.preventDefault();
+        setIsOpen(false);
+        setSearch(value ? selectedLabel : '');
+      }
+    }
+  };
+
   const dropdown = isOpen ? createPortal(
     <div
       id="ss-dropdown"
@@ -90,12 +125,14 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
       ) : filtered.length === 0 ? (
         <div className="px-3 py-2 text-xs text-gray-400">Sin resultados</div>
       ) : (
-        filtered.map(o => (
+        filtered.map((o, idx) => (
           <button
             key={o.value}
+            ref={(el) => { optionRefs.current[idx] = el; }}
             type="button"
             onMouseDown={(e) => { e.preventDefault(); handleSelect(o.value, o.label); }}
-            className={`w-full text-left px-3 py-2 text-sm hover:bg-primary-50 ${o.value === value ? 'bg-primary-50 font-medium' : ''}`}
+            onMouseEnter={() => setHighlightedIndex(idx)}
+            className={`w-full text-left px-3 py-2 text-sm ${idx === highlightedIndex ? 'bg-primary-100' : o.value === value ? 'bg-primary-50 font-medium' : 'hover:bg-primary-50'}`}
           >
             <div>{o.label}</div>
             {o.sublabel && <div className="text-xs text-gray-400 mt-0.5">{o.sublabel}</div>}
@@ -115,6 +152,7 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
           value={isOpen ? search : selectedLabel}
           onChange={(e) => { setSearch(e.target.value); setIsOpen(true); if (!e.target.value) onChange(''); }}
           onFocus={handleFocus}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className={`w-full px-2 py-1.5 border rounded text-sm bg-white pr-7 ${className}`}
           required={required}
