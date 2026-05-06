@@ -6,6 +6,7 @@ import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useStockByProductSummary } from '../../stock/hooks/useStock';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
+import { useExpiringLots } from '../../stock/hooks/useProductLots';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { ClipboardList, Search, ArrowUpCircle, ArrowDownCircle, X, Package, FileText, Download, Printer } from 'lucide-react';
@@ -426,6 +427,9 @@ interface ProductsListViewProps {
 function ProductsListView({ products, companyList, productSearch, onSelect }: ProductsListViewProps) {
   const { data: stockSummary, isLoading: stockLoading } = useStockByProductSummary();
   const { data: laboratories } = useLaboratories();
+  // Fetch all active lots with stock to find earliest upcoming expiration per product.
+  // The /expiring endpoint requires a days window; ~10 years covers any realistic case.
+  const { data: lotsData } = useExpiringLots(undefined, 3650);
   const [sortBy, setSortBy] = useState<'name' | 'saldo' | 'saldo_desc' | 'lab'>('name');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -443,6 +447,18 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
     const m = new Map<string, number>();
     for (const b of s.byCompany) m.set(b.companyId, b.quantity);
     stockByProductCompany.set(s.productId, m);
+  }
+
+  // Earliest (closest) upcoming expiration date per product.
+  const earliestExpiryByProduct = new Map<string, string>();
+  if (Array.isArray(lotsData)) {
+    for (const lot of lotsData as any[]) {
+      if (!lot.expirationDate || !lot.productId) continue;
+      const prev = earliestExpiryByProduct.get(lot.productId);
+      if (!prev || new Date(lot.expirationDate).getTime() < new Date(prev).getTime()) {
+        earliestExpiryByProduct.set(lot.productId, lot.expirationDate);
+      }
+    }
   }
 
   // Reset page when search/filter/sort changes.
@@ -500,6 +516,23 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
         </p>
       </div>
 
+      {labFilter && (
+        <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-primary-200 bg-primary-50">
+          <div className="flex items-center gap-2 text-sm text-primary-800">
+            <span className="text-xs uppercase tracking-wider text-primary-600 font-semibold">Filtrado por laboratorio:</span>
+            <span className="font-bold">{labById.get(labFilter) || labFilter}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLabFilter('')}
+            className="flex items-center gap-1 text-sm font-medium text-primary-700 hover:text-white hover:bg-primary-600 border border-primary-300 px-3 py-1 rounded transition-colors"
+            title="Ver todos los productos"
+          >
+            <X size={14} /> Quitar filtro · Ver todos
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b border-gray-200 bg-white text-xs">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="text-gray-500">
@@ -517,20 +550,6 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
               </>
             )}
           </div>
-          {labFilter && (
-            <div className="flex items-center gap-1 bg-primary-50 text-primary-700 border border-primary-200 px-2 py-0.5 rounded">
-              <span className="text-gray-500">Lab:</span>
-              <span className="font-semibold">{labById.get(labFilter) || labFilter}</span>
-              <button
-                type="button"
-                onClick={() => setLabFilter('')}
-                className="ml-1 hover:text-primary-900"
-                title="Quitar filtro de laboratorio"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          )}
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1">
@@ -571,12 +590,13 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
               <th className="border border-gray-300 px-2 py-1.5 text-left font-semibold text-gray-700 uppercase text-xs w-44">Laboratorio</th>
               <th className="border border-gray-300 px-2 py-1.5 text-left font-semibold text-gray-700 uppercase text-xs">Almacenes</th>
               <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase text-xs w-16">Unidad</th>
+              <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase text-xs w-28">Vencimiento</th>
             </tr>
           </thead>
           <tbody>
             {pageItems.length === 0 ? (
               <tr>
-                <td colSpan={5} className="border border-gray-300 px-2 py-8 text-center text-gray-400">
+                <td colSpan={6} className="border border-gray-300 px-2 py-8 text-center text-gray-400">
                   {productSearch ? 'Sin resultados para tu búsqueda.' : 'No hay productos.'}
                 </td>
               </tr>
@@ -584,6 +604,10 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
               pageItems.map((p) => {
                 const saldo = stockByProductId.get(p.id) ?? 0;
                 const labName = labById.get((p as any).laboratoryId || '') || '';
+                const expiry = earliestExpiryByProduct.get(p.id);
+                const expiryDays = expiry
+                  ? Math.ceil((new Date(expiry).getTime() - Date.now()) / 86400000)
+                  : null;
                 return (
                   <tr
                     key={p.id}
@@ -592,11 +616,6 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
                   >
                     <td className="border border-gray-300 px-2 py-1.5 text-gray-800 font-medium">
                       {p.name}
-                      {(p as any).activeIngredient && (
-                        <div className="text-xs text-gray-400 truncate max-w-[260px]">
-                          {(p as any).activeIngredient}
-                        </div>
-                      )}
                     </td>
                     <td className={`border border-gray-300 px-2 py-1.5 text-center font-bold ${
                       saldo === 0 ? 'text-gray-400' : saldo < 10 ? 'text-orange-600' : 'text-gray-900'
@@ -609,10 +628,19 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setLabFilter((p as any).laboratoryId || '');
+                            const labId = (p as any).laboratoryId || '';
+                            setLabFilter((curr) => (curr === labId ? '' : labId));
                           }}
-                          className="inline-block bg-gray-100 hover:bg-primary-100 hover:text-primary-700 px-2 py-0.5 rounded transition-colors"
-                          title={`Ver solo productos de ${labName}`}
+                          className={`inline-block px-2 py-0.5 rounded transition-colors ${
+                            labFilter === ((p as any).laboratoryId || '')
+                              ? 'bg-primary-600 text-white hover:bg-primary-700'
+                              : 'bg-gray-100 hover:bg-primary-100 hover:text-primary-700'
+                          }`}
+                          title={
+                            labFilter === ((p as any).laboratoryId || '')
+                              ? `Quitar filtro de ${labName}`
+                              : `Ver solo productos de ${labName}`
+                          }
                         >
                           {labName}
                         </button>
@@ -627,6 +655,27 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
                     </td>
                     <td className="border border-gray-300 px-2 py-1.5 text-center text-xs text-gray-500">
                       {p.unit || '—'}
+                    </td>
+                    <td className={`border border-gray-300 px-2 py-1.5 text-center text-xs whitespace-nowrap ${
+                      expiryDays === null
+                        ? 'text-gray-300'
+                        : expiryDays < 0
+                          ? 'text-red-600 font-semibold'
+                          : expiryDays <= 30
+                            ? 'text-orange-600 font-semibold'
+                            : 'text-gray-700'
+                    }`}
+                      title={
+                        expiry
+                          ? expiryDays! < 0
+                            ? `Vencido hace ${-expiryDays!} día(s)`
+                            : `Vence en ${expiryDays} día(s)`
+                          : undefined
+                      }
+                    >
+                      {expiry
+                        ? new Date(expiry).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                        : '—'}
                     </td>
                   </tr>
                 );
