@@ -142,8 +142,6 @@ export function NewPurchasePage() {
     installments: [] as { amount: number; dueDate: string }[],
     items: [emptyItem()] as PurchaseFormItem[],
     purchaseDate: today,
-    totalCostUsd: 0,
-    totalCostPen: 0,
     documentType: 'FACTURA' as 'FACTURA' | 'BOLETA' | 'GUIA' | 'NOTA_CREDITO' | 'OTRO',
     documentSeries: '',
     documentNumber: '',
@@ -261,8 +259,9 @@ export function NewPurchasePage() {
     }
   };
 
-  const totalSoles = currency === 'USD' && exchangeRate && form.totalCostUsd ? Math.round(form.totalCostUsd * exchangeRate * 100) / 100 : 0;
-  const creditTotal = currency === 'USD' ? totalSoles : form.totalCostPen;
+  const documentTotal = Math.round(form.items.reduce((s, i) => s + (i.quantity * i.unitPriceConIgv || 0), 0) * 100) / 100;
+  const totalSoles = currency === 'USD' && exchangeRate && documentTotal ? Math.round(documentTotal * exchangeRate * 100) / 100 : 0;
+  const creditTotal = currency === 'USD' ? totalSoles : documentTotal;
 
   const itemsSubtotal = form.items.reduce((s, i) => s + (i.quantity * i.costoAdquisicion || 0), 0);
 
@@ -381,8 +380,8 @@ export function NewPurchasePage() {
       return;
     }
     if (!form.supplier.trim()) { toast.error('Selecciona un proveedor'); return; }
-    if (currency === 'USD' && (!exchangeRate || !form.totalCostUsd)) { toast.error('Ingrese el monto en USD y verifique el tipo de cambio'); return; }
-    if (currency === 'PEN' && !form.totalCostPen) { toast.error('Ingrese el monto en soles'); return; }
+    if (!documentTotal) { toast.error('Agrega productos con cantidad y costo unitario'); return; }
+    if (currency === 'USD' && !exchangeRate) { toast.error('Verifique el tipo de cambio'); return; }
     const missingLot = form.items.find(i => {
       const p = products.find((pr: Product) => pr.id === i.productId);
       return p?.tracksLot && !i.lotNumber;
@@ -411,11 +410,11 @@ export function NewPurchasePage() {
     if (form.documentNumber) payload.documentNumber = form.documentNumber;
     if (form.issueDate) payload.issueDate = form.issueDate;
     if (currency === 'USD') {
-      payload.totalCostUsd = form.totalCostUsd;
+      payload.totalCostUsd = documentTotal;
       payload.exchangeRate = exchangeRate;
       payload.exchangeRateDate = exchangeRateDate;
     } else {
-      payload.totalCost = form.totalCostPen;
+      payload.totalCost = documentTotal;
     }
     if (form.supplierId) payload.supplierId = form.supplierId;
     if (form.supplierRuc) payload.supplierRuc = form.supplierRuc;
@@ -559,171 +558,6 @@ export function NewPurchasePage() {
             </div>
           </SectionCard>
         </div>
-
-        {/* Totales */}
-        <SectionCard title="Total de la compra" icon={DollarSign}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {currency === 'PEN' && (
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Monto Total (Soles)</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">S/</span>
-                  <input type="number" min="0.01" step="0.01" value={form.totalCostPen || ''} onChange={(e) => setForm({ ...form, totalCostPen: parseFloat(e.target.value) || 0 })} className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm" placeholder="0.00" required />
-                </div>
-              </div>
-            )}
-            {currency === 'USD' && (
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Monto Total (USD)</label>
-                <div className="relative">
-                  <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input type="number" min="0.01" step="0.01" value={form.totalCostUsd || ''} onChange={(e) => setForm({ ...form, totalCostUsd: parseFloat(e.target.value) || 0 })} className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm" placeholder="0.00" required />
-                </div>
-              </div>
-            )}
-
-            <div className="bg-gray-50 rounded-lg p-3 space-y-1">
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>Subtotal por items (calculado)</span>
-                <span>S/ {itemsSubtotal.toFixed(2)}</span>
-              </div>
-              {currency === 'USD' && exchangeRate != null && form.totalCostUsd > 0 && (
-                <div className="flex items-center justify-between text-xs text-blue-600">
-                  <span>Total en Soles (×{exchangeRate.toFixed(4)})</span>
-                  <span className="font-semibold">S/ {totalSoles.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between pt-1 border-t border-gray-200">
-                <span className="text-sm font-medium text-gray-700">Total</span>
-                <span className="text-xl font-bold text-primary-700">
-                  {currency === 'USD' ? `$ ${(form.totalCostUsd || 0).toFixed(2)}` : `S/ ${(form.totalCostPen || 0).toFixed(2)}`}
-                </span>
-              </div>
-            </div>
-          </div>
-        </SectionCard>
-
-        {/* Pago */}
-        <SectionCard title="Condiciones de pago" icon={CreditCard}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => handleCurrencyChange('PEN')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'PEN' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>S/ Soles</button>
-                <button type="button" onClick={() => handleCurrencyChange('USD')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>$ Dólares</button>
-              </div>
-              {currency === 'USD' && (
-                <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-2.5 flex items-center justify-between">
-                  <span className="text-xs text-blue-700">Tipo de cambio (venta)</span>
-                  <div className="flex items-center gap-2">
-                    {tipoCambioMutation.isPending && <Loader2 size={14} className="animate-spin text-blue-500" />}
-                    {exchangeRate != null && !tipoCambioMutation.isPending && (
-                      <span className="text-sm font-medium text-blue-800">S/ {exchangeRate.toFixed(4)}</span>
-                    )}
-                    {!exchangeRate && !tipoCambioMutation.isPending && (
-                      <span className="text-xs text-gray-400">Sin datos</span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de Pago</label>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setForm({ ...form, paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [] })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CONTADO' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Contado</button>
-                <button type="button" onClick={() => setForm({ ...form, paymentType: 'CREDITO' })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CREDITO' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Crédito</button>
-              </div>
-            </div>
-          </div>
-
-          {form.paymentType === 'CREDITO' && (
-            <div className="mt-4 space-y-3 bg-orange-50 p-3 rounded-lg border border-orange-200">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Modalidad</label>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setForm({ ...form, paymentScheduleType: 'SINGLE_DATE', installments: [] })} className={`flex-1 py-1.5 rounded text-xs font-medium border ${form.paymentScheduleType === 'SINGLE_DATE' ? 'border-orange-400 bg-white text-orange-700' : 'border-gray-200 text-gray-500'}`}>Fecha única</button>
-                  <button type="button" onClick={() => setForm({ ...form, paymentScheduleType: 'INSTALLMENTS', dueDate: '' })} className={`flex-1 py-1.5 rounded text-xs font-medium border ${form.paymentScheduleType === 'INSTALLMENTS' ? 'border-orange-400 bg-white text-orange-700' : 'border-gray-200 text-gray-500'}`}>Cuotas</button>
-                </div>
-              </div>
-              {form.paymentScheduleType === 'SINGLE_DATE' && (
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Fecha de vencimiento</label>
-                  <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required />
-                </div>
-              )}
-              {form.paymentScheduleType === 'INSTALLMENTS' && (
-                <div>
-                  <div className="bg-white border border-orange-300 rounded-lg p-3 mb-3 space-y-2">
-                    <div className="flex items-center gap-1 text-xs font-semibold text-orange-700">
-                      <Wand2 size={13} /> Generar cuotas automáticamente
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="block text-[11px] text-gray-500 mb-1"># de cuotas</label>
-                        <input type="number" min="1" max="36" step="1" value={installmentGen.count || ''} onChange={(e) => setInstallmentGen({ ...installmentGen, count: parseInt(e.target.value) || 0 })} className="w-full px-2 py-1.5 border rounded text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-gray-500 mb-1">Cada (días)</label>
-                        <input type="number" min="1" step="1" value={installmentGen.intervalDays || ''} onChange={(e) => setInstallmentGen({ ...installmentGen, intervalDays: parseInt(e.target.value) || 0 })} className="w-full px-2 py-1.5 border rounded text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] text-gray-500 mb-1">1ra cuota (días)</label>
-                        <input type="number" min="0" step="1" value={installmentGen.firstDaysFromPurchase} onChange={(e) => setInstallmentGen({ ...installmentGen, firstDaysFromPurchase: parseInt(e.target.value) || 0 })} className="w-full px-2 py-1.5 border rounded text-sm" />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 pt-1">
-                      <div className="text-[11px] text-gray-500">
-                        {installmentGen.count > 0 && installmentGen.intervalDays > 0 && (
-                          <>Total {installmentGen.count * installmentGen.intervalDays + installmentGen.firstDaysFromPurchase - installmentGen.intervalDays} días (última cuota)</>
-                        )}
-                      </div>
-                      <button type="button" onClick={generateInstallments} className="px-3 py-1.5 bg-orange-600 text-white rounded text-xs font-medium hover:bg-orange-700 inline-flex items-center gap-1">
-                        <Wand2 size={12} /> Generar
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-1 text-[10px]">
-                      <button type="button" onClick={() => setInstallmentGen({ count: 3, intervalDays: 30, firstDaysFromPurchase: 30 })} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded hover:bg-orange-100">3 × 30 días</button>
-                      <button type="button" onClick={() => setInstallmentGen({ count: 6, intervalDays: 30, firstDaysFromPurchase: 30 })} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded hover:bg-orange-100">6 × 30 días</button>
-                      <button type="button" onClick={() => setInstallmentGen({ count: 4, intervalDays: 30, firstDaysFromPurchase: 30 })} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded hover:bg-orange-100">4 × 30 días</button>
-                      <button type="button" onClick={() => setInstallmentGen({ count: 5, intervalDays: 30, firstDaysFromPurchase: 30 })} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded hover:bg-orange-100">5 × 30 días</button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs text-gray-500">
-                      Cuotas {form.installments.length > 0 && (
-                        <span className="ml-1 text-[11px]">
-                          (Total: S/ {form.installments.reduce((s, i) => s + (i.amount || 0), 0).toFixed(2)}
-                          {creditTotal > 0 && Math.abs(form.installments.reduce((s, i) => s + (i.amount || 0), 0) - creditTotal) > 0.01 && (
-                            <span className="text-red-600"> · no coincide con {creditTotal.toFixed(2)}</span>
-                          )}
-                          )
-                        </span>
-                      )}
-                    </label>
-                    <button type="button" onClick={() => setForm({ ...form, installments: [...form.installments, { amount: 0, dueDate: '' }] })} className="text-xs text-orange-600 hover:text-orange-800 font-medium">+ Agregar cuota</button>
-                  </div>
-                  {form.installments.map((inst, idx) => (
-                    <div key={idx} className="flex gap-2 mb-2 items-end">
-                      <div className="w-10 pb-2 text-xs text-gray-400 font-medium text-right">#{idx + 1}</div>
-                      <div className="flex-1">
-                        <label className="block text-xs text-gray-500 mb-1">Monto</label>
-                        <input type="number" min="0.01" step="0.01" value={inst.amount || ''} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], amount: parseFloat(e.target.value) || 0 }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
-                      </div>
-                      <div className="flex-1">
-                        <label className="block text-xs text-gray-500 mb-1">Fecha</label>
-                        <input type="date" value={inst.dueDate} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], dueDate: e.target.value }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
-                      </div>
-                      <button type="button" onClick={() => setForm({ ...form, installments: form.installments.filter((_, i) => i !== idx) })} className="text-red-400 hover:text-red-600 pb-1"><Trash2 size={14} /></button>
-                    </div>
-                  ))}
-                  {form.installments.length === 0 && <p className="text-xs text-gray-400">Usa el generador arriba o agrega cuotas manualmente</p>}
-                </div>
-              )}
-            </div>
-          )}
-        </SectionCard>
 
         {/* Productos */}
         <SectionCard title={`Productos (${form.items.length})`} icon={Package}>
@@ -900,6 +734,155 @@ export function NewPurchasePage() {
           </div>
         </SectionCard>
 
+        {/* Totales */}
+        <SectionCard title="Total de la compra" icon={DollarSign}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => handleCurrencyChange('PEN')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'PEN' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>S/ Soles</button>
+                <button type="button" onClick={() => handleCurrencyChange('USD')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>$ Dólares</button>
+              </div>
+              {currency === 'USD' && (
+                <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-2.5 flex items-center justify-between">
+                  <span className="text-xs text-blue-700">Tipo de cambio (venta)</span>
+                  <div className="flex items-center gap-2">
+                    {tipoCambioMutation.isPending && <Loader2 size={14} className="animate-spin text-blue-500" />}
+                    {exchangeRate != null && !tipoCambioMutation.isPending && (
+                      <span className="text-sm font-medium text-blue-800">S/ {exchangeRate.toFixed(4)}</span>
+                    )}
+                    {!exchangeRate && !tipoCambioMutation.isPending && (
+                      <span className="text-xs text-gray-400">Sin datos</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Costo unitario × cantidad (con IGV)</span>
+                <span className="font-medium">{currency === 'USD' ? '$' : 'S/'} {documentTotal.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Subtotal con flete y otros (S/)</span>
+                <span>S/ {itemsSubtotal.toFixed(2)}</span>
+              </div>
+              {currency === 'USD' && exchangeRate != null && documentTotal > 0 && (
+                <div className="flex items-center justify-between text-xs text-blue-600">
+                  <span>Total en Soles (×{exchangeRate.toFixed(4)})</span>
+                  <span className="font-semibold">S/ {totalSoles.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between pt-1 border-t border-gray-200">
+                <span className="text-sm font-medium text-gray-700">Total de la compra</span>
+                <span className="text-xl font-bold text-primary-700">
+                  {currency === 'USD' ? `$ ${documentTotal.toFixed(2)}` : `S/ ${documentTotal.toFixed(2)}`}
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-400 pt-1">Calculado automáticamente desde los productos.</p>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* Pago */}
+        <SectionCard title="Condiciones de pago" icon={CreditCard}>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de Pago</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setForm({ ...form, paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [] })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CONTADO' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Contado</button>
+              <button type="button" onClick={() => setForm({ ...form, paymentType: 'CREDITO' })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CREDITO' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Crédito</button>
+            </div>
+          </div>
+
+          {form.paymentType === 'CREDITO' && (
+            <div className="mt-4 space-y-3 bg-orange-50 p-3 rounded-lg border border-orange-200">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Modalidad</label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setForm({ ...form, paymentScheduleType: 'SINGLE_DATE', installments: [] })} className={`flex-1 py-1.5 rounded text-xs font-medium border ${form.paymentScheduleType === 'SINGLE_DATE' ? 'border-orange-400 bg-white text-orange-700' : 'border-gray-200 text-gray-500'}`}>Fecha única</button>
+                  <button type="button" onClick={() => setForm({ ...form, paymentScheduleType: 'INSTALLMENTS', dueDate: '' })} className={`flex-1 py-1.5 rounded text-xs font-medium border ${form.paymentScheduleType === 'INSTALLMENTS' ? 'border-orange-400 bg-white text-orange-700' : 'border-gray-200 text-gray-500'}`}>Cuotas</button>
+                </div>
+              </div>
+              {form.paymentScheduleType === 'SINGLE_DATE' && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Fecha de vencimiento</label>
+                  <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required />
+                </div>
+              )}
+              {form.paymentScheduleType === 'INSTALLMENTS' && (
+                <div>
+                  <div className="bg-white border border-orange-300 rounded-lg p-3 mb-3 space-y-2">
+                    <div className="flex items-center gap-1 text-xs font-semibold text-orange-700">
+                      <Wand2 size={13} /> Generar cuotas automáticamente
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-1"># de cuotas</label>
+                        <input type="number" min="1" max="36" step="1" value={installmentGen.count || ''} onChange={(e) => setInstallmentGen({ ...installmentGen, count: parseInt(e.target.value) || 0 })} className="w-full px-2 py-1.5 border rounded text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-1">Cada (días)</label>
+                        <input type="number" min="1" step="1" value={installmentGen.intervalDays || ''} onChange={(e) => setInstallmentGen({ ...installmentGen, intervalDays: parseInt(e.target.value) || 0 })} className="w-full px-2 py-1.5 border rounded text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-500 mb-1">1ra cuota (días)</label>
+                        <input type="number" min="0" step="1" value={installmentGen.firstDaysFromPurchase} onChange={(e) => setInstallmentGen({ ...installmentGen, firstDaysFromPurchase: parseInt(e.target.value) || 0 })} className="w-full px-2 py-1.5 border rounded text-sm" />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <div className="text-[11px] text-gray-500">
+                        {installmentGen.count > 0 && installmentGen.intervalDays > 0 && (
+                          <>Total {installmentGen.count * installmentGen.intervalDays + installmentGen.firstDaysFromPurchase - installmentGen.intervalDays} días (última cuota)</>
+                        )}
+                      </div>
+                      <button type="button" onClick={generateInstallments} className="px-3 py-1.5 bg-orange-600 text-white rounded text-xs font-medium hover:bg-orange-700 inline-flex items-center gap-1">
+                        <Wand2 size={12} /> Generar
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1 text-[10px]">
+                      <button type="button" onClick={() => setInstallmentGen({ count: 3, intervalDays: 30, firstDaysFromPurchase: 30 })} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded hover:bg-orange-100">3 × 30 días</button>
+                      <button type="button" onClick={() => setInstallmentGen({ count: 6, intervalDays: 30, firstDaysFromPurchase: 30 })} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded hover:bg-orange-100">6 × 30 días</button>
+                      <button type="button" onClick={() => setInstallmentGen({ count: 4, intervalDays: 30, firstDaysFromPurchase: 30 })} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded hover:bg-orange-100">4 × 30 días</button>
+                      <button type="button" onClick={() => setInstallmentGen({ count: 5, intervalDays: 30, firstDaysFromPurchase: 30 })} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded hover:bg-orange-100">5 × 30 días</button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs text-gray-500">
+                      Cuotas {form.installments.length > 0 && (
+                        <span className="ml-1 text-[11px]">
+                          (Total: S/ {form.installments.reduce((s, i) => s + (i.amount || 0), 0).toFixed(2)}
+                          {creditTotal > 0 && Math.abs(form.installments.reduce((s, i) => s + (i.amount || 0), 0) - creditTotal) > 0.01 && (
+                            <span className="text-red-600"> · no coincide con {creditTotal.toFixed(2)}</span>
+                          )}
+                          )
+                        </span>
+                      )}
+                    </label>
+                    <button type="button" onClick={() => setForm({ ...form, installments: [...form.installments, { amount: 0, dueDate: '' }] })} className="text-xs text-orange-600 hover:text-orange-800 font-medium">+ Agregar cuota</button>
+                  </div>
+                  {form.installments.map((inst, idx) => (
+                    <div key={idx} className="flex gap-2 mb-2 items-end">
+                      <div className="w-10 pb-2 text-xs text-gray-400 font-medium text-right">#{idx + 1}</div>
+                      <div className="flex-1">
+                        <label className="block text-xs text-gray-500 mb-1">Monto</label>
+                        <input type="number" min="0.01" step="0.01" value={inst.amount || ''} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], amount: parseFloat(e.target.value) || 0 }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs text-gray-500 mb-1">Fecha</label>
+                        <input type="date" value={inst.dueDate} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], dueDate: e.target.value }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                      </div>
+                      <button type="button" onClick={() => setForm({ ...form, installments: form.installments.filter((_, i) => i !== idx) })} className="text-red-400 hover:text-red-600 pb-1"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                  {form.installments.length === 0 && <p className="text-xs text-gray-400">Usa el generador arriba o agrega cuotas manualmente</p>}
+                </div>
+              )}
+            </div>
+          )}
+        </SectionCard>
+
         {/* Barra de acciones sticky */}
         <div className="fixed bottom-0 left-0 right-0 lg:left-64 bg-white border-t border-gray-200 px-4 lg:px-8 py-3 z-10 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
           <div className="flex items-center justify-between gap-3 max-w-full">
@@ -909,7 +892,7 @@ export function NewPurchasePage() {
             </div>
             <div className="flex gap-2 ml-auto">
               <Link to="/purchases" className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">Cancelar</Link>
-              <button type="submit" disabled={(currency === 'USD' ? (!exchangeRate || !form.totalCostUsd) : !form.totalCostPen) || createPurchase.isPending} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+              <button type="submit" disabled={!documentTotal || (currency === 'USD' && !exchangeRate) || createPurchase.isPending} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm">
                 {createPurchase.isPending ? 'Registrando...' : 'Registrar Compra'}
               </button>
             </div>
