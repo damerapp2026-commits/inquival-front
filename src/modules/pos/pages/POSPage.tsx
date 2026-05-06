@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useCategories } from '../../categories/hooks/useCategories';
 import { useCompanies } from '../../companies/hooks/useCompanies';
@@ -87,7 +88,16 @@ export function POSPage() {
     return list.filter((u) => u.isActive !== false && (u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO'));
   }, [usersData]);
 
-  const { data: productsData } = useProducts({ limit: 10000 });
+  const [search, setSearch] = useState('');
+  const [ingredientFilter, setIngredientFilter] = useState('');
+  const debouncedSearch = useDebounce(search);
+  const debouncedIngredient = useDebounce(ingredientFilter);
+
+  const { data: productsData } = useProducts({
+    limit: 10000,
+    search: debouncedSearch || undefined,
+    activeIngredient: debouncedIngredient || undefined,
+  });
   const { data: categoriesData } = useCategories();
   const { data: companiesData } = useCompanies();
   const { data: clientsData } = useClients({ limit: 500 });
@@ -129,8 +139,6 @@ export function POSPage() {
   }, [paymentMethodsData]);
 
   const [categoryId, setCategoryId] = useState<string>(''); // '' = Todos
-  const [search, setSearch] = useState('');
-  const [ingredientFilter, setIngredientFilter] = useState('');
   const [onlyInStock, setOnlyInStock] = useState(true);
   const [companyId, setCompanyId] = useState<string>('');
   const [tierId, setTierId] = useState<string>('');
@@ -305,19 +313,12 @@ export function POSPage() {
   }, [tierId, companyId]);
 
   const filteredProducts = useMemo(() => {
-    const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const ing = ingredientFilter.trim().toLowerCase();
     return products.filter((p) => {
       if (categoryId && p.categoryId !== categoryId) return false;
-      if (tokens.length) {
-        const haystack = `${p.name || ''} ${p.activeIngredient || ''} ${p.description || ''}`.toLowerCase();
-        if (!tokens.every((t) => haystack.includes(t))) return false;
-      }
-      if (ing && !(p.activeIngredient || '').toLowerCase().includes(ing)) return false;
       if (onlyInStock && (stockByProduct[p.id] ?? 0) <= 0) return false;
       return true;
     });
-  }, [products, categoryId, search, ingredientFilter, onlyInStock, stockByProduct]);
+  }, [products, categoryId, onlyInStock, stockByProduct]);
 
   const cartQty = (productId: string) => cart.find((i) => i.productId === productId)?.quantity || 0;
 
