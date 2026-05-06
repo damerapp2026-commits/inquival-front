@@ -7,8 +7,9 @@ import { BatchPaymentModal } from '../components/BatchPaymentModal';
 import { EditCreditItemsModal } from '../components/EditCreditItemsModal';
 import { ExportClientStatementButton } from '../components/ExportClientStatementButton';
 import { downloadCreditsSummaryPdf, downloadCreditsDetailedPdf } from '../utils/creditsPdf';
-import { CreditCard, DollarSign, Edit2, Trash2, ChevronDown, ChevronRight, Search, User, Eye, ShoppingBag, FileDown, CalendarClock } from 'lucide-react';
+import { CreditCard, DollarSign, Edit2, Trash2, ChevronDown, ChevronRight, Search, User, Eye, ShoppingBag, FileDown, CalendarClock, History } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { RegisterHistoricalCreditModal } from '../components/RegisterHistoricalCreditModal';
 import type { CreditAccount, Client } from '../../../shared/types';
 
 type Status = 'PENDING' | 'PARTIAL' | 'PAID';
@@ -60,6 +61,7 @@ export function CreditsPage() {
   const [editDueDate, setEditDueDate] = useState('');
   const [selectedCredit, setSelectedCredit] = useState<CreditAccount | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showHistoricalModal, setShowHistoricalModal] = useState(false);
   const { data: detailCredit } = useCreditById(showDetailModal && selectedCredit ? selectedCredit.id : '');
   const fullCredit: CreditAccount | null = detailCredit || selectedCredit;
 
@@ -166,6 +168,15 @@ export function CreditsPage() {
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <CreditCard size={24} /> Créditos
         </h1>
+        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setShowHistoricalModal(true)}
+          className="inline-flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-700 shadow-sm"
+        >
+          <History size={16} />
+          Deuda histórica
+        </button>
         <div className="relative">
           <button
             type="button"
@@ -214,7 +225,13 @@ export function CreditsPage() {
             </>
           )}
         </div>
+        </div>
       </div>
+
+      <RegisterHistoricalCreditModal
+        isOpen={showHistoricalModal}
+        onClose={() => setShowHistoricalModal(false)}
+      />
 
       <div className="mb-4 flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[240px] max-w-md">

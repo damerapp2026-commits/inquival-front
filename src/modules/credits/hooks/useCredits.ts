@@ -14,6 +14,18 @@ export function useClientCredits(clientId: string, params?: any) {
 export function useOpenClientCredits(clientId: string) {
   return useQuery({ queryKey: ['credits', 'open', clientId], queryFn: () => creditService.getOpenByClient(clientId), enabled: !!clientId, staleTime: 10_000 });
 }
+export function useCreateHistoricalCredit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => creditService.createHistorical(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['credits'] });
+      qc.invalidateQueries({ queryKey: ['dashboard-credits-summary'] });
+      toast.success('Deuda histórica registrada');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al registrar deuda'),
+  });
+}
 export function useRegisterPayment() {
   const qc = useQueryClient();
   return useMutation({
