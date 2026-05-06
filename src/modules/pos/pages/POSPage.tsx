@@ -3,6 +3,8 @@ import { useProducts } from '../../products/hooks/useProducts';
 import { useCategories } from '../../categories/hooks/useCategories';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useClients } from '../../clients/hooks/useClients';
+import { QuickClientModal } from '../../clients/components/QuickClientModal';
+import { SmartSearchSelect } from '../../../shared/components/SmartSearchSelect';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useCreateSale } from '../../sales/hooks/useSales';
@@ -146,9 +148,19 @@ export function POSPage() {
   const [paymentMethodId, setPaymentMethodId] = useState<string>('');
   const [splitPayments, setSplitPayments] = useState<{ paymentMethodId: string; amount: number }[]>([]);
   const [isCredit, setIsCredit] = useState(false);
-  const [creditAccountId, setCreditAccountId] = useState<string>('new');
+  const [clientSearch, setClientSearch] = useState('');
+  const [showQuickClient, setShowQuickClient] = useState(false);
   const [creditName, setCreditName] = useState('');
-  const [creditDueDate, setCreditDueDate] = useState('');
+  const [creditDueDays, setCreditDueDays] = useState('');
+
+  const computedDueDate = (() => {
+    const days = parseInt(creditDueDays, 10);
+    if (!Number.isFinite(days) || days <= 0) return '';
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  })();
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [sellerId, setSellerId] = useState<string>('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -475,9 +487,8 @@ export function POSPage() {
       return;
     }
     setIsCredit(false);
-    setCreditAccountId('new');
     setCreditName('');
-    setCreditDueDate('');
+    setCreditDueDays('');
     setSplitPayments([{ paymentMethodId, amount: 0 }]);
     setCheckoutStep(1);
     setShowCheckout(true);
@@ -486,10 +497,21 @@ export function POSPage() {
   const splitTotal = splitPayments.reduce((s, p) => s + (p.amount || 0), 0);
   const splitRemaining = Math.round((total - splitTotal) * 100) / 100;
 
+  const selectedClient = clients.find((c) => c.id === clientId);
+  const creditLimit = typeof selectedClient?.creditLimit === 'number' ? selectedClient.creditLimit : 0;
+  const currentDebt = (openCredits as CreditAccount[] | undefined)?.reduce((s, acc) => s + acc.pendingAmount, 0) ?? 0;
+  const creditOverLimit = isCredit && creditLimit > 0 && currentDebt + total > creditLimit + 0.001;
+  const creditDelta = creditOverLimit
+    ? currentDebt + total - creditLimit
+    : Math.max(creditLimit - currentDebt - total, 0);
+
   const confirmSale = async () => {
     if (isCredit) {
       if (!clientId) { toast.error('Selecciona un cliente para la venta a crédito'); return; }
-      if (creditAccountId === 'new' && !creditName.trim()) { toast.error('Ingresa un nombre para la cuenta de crédito'); return; }
+      if (creditOverLimit) {
+        toast.error(`Esta venta supera el límite de crédito del cliente (S/ ${creditLimit.toFixed(2)})`);
+        return;
+      }
     } else {
       const validPayments = splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
       if (validPayments.length === 0) { toast.error('Ingresa al menos un método de pago con monto'); return; }
@@ -547,9 +569,8 @@ export function POSPage() {
           clientId: clientId || undefined,
           voucherType,
           isCredit,
-          creditAccountId: isCredit && creditAccountId !== 'new' ? creditAccountId : undefined,
-          creditName: isCredit && creditAccountId === 'new' ? creditName.trim() : undefined,
-          creditDueDate: isCredit && creditAccountId === 'new' && creditDueDate ? creditDueDate : undefined,
+          creditName: isCredit && creditName.trim() ? creditName.trim() : undefined,
+          creditDueDate: isCredit && computedDueDate ? computedDueDate : undefined,
           sellerId: effectiveSellerId,
           items: cart.map((i) => ({
             productId: i.productId,
@@ -566,9 +587,8 @@ export function POSPage() {
       setVoucherType('NONE');
       setSplitPayments([]);
       setIsCredit(false);
-      setCreditAccountId('new');
       setCreditName('');
-      setCreditDueDate('');
+      setCreditDueDays('');
       setShowCheckout(false);
       if (sourceQuoteId) {
         setSourceQuoteId('');
@@ -1029,7 +1049,7 @@ export function POSPage() {
                 className="flex-1 mt-2 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-semibold transition-colors shadow-sm flex items-center justify-center gap-2"
               >
                 <CreditCard size={18} />
-                Cobrar
+                Comprar
               </button>
             </div>
           </div>
@@ -1131,14 +1151,28 @@ export function POSPage() {
                       <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Cliente</span>
                       <span className="text-xs text-gray-400 font-normal normal-case">opcional</span>
                     </div>
-                    <select
+                    <SmartSearchSelect
+                      items={clients}
                       value={clientId}
-                      onChange={(e) => { setClientId(e.target.value); if (!e.target.value) setIsCredit(false); }}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
-                    >
-                      <option value="">— Consumidor final —</option>
-                      {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                      onChange={(id) => {
+                        setClientId(id);
+                        if (!id) setIsCredit(false);
+                        setClientSearch('');
+                      }}
+                      getId={(c) => c.id}
+                      getLabel={(c) => c.name}
+                      getSubLabel={(c) => (
+                        <span className="flex items-center gap-2">
+                          {c.documentNumber && <span className="font-mono">{c.documentNumber}</span>}
+                          {c.phone && <span>· {c.phone}</span>}
+                        </span>
+                      )}
+                      searchFields={(c) => [c.name, c.documentNumber, c.phone]}
+                      placeholder="Buscar por nombre, DNI/RUC o teléfono…"
+                      emptyText="No se encontraron clientes con esa búsqueda"
+                      onAddNew={(text) => { setClientSearch(text); setShowQuickClient(true); }}
+                      addNewLabel="Añadir nuevo cliente"
+                    />
                   </div>
 
                   <div className="border-t border-gray-100" />
@@ -1229,62 +1263,79 @@ export function POSPage() {
                     )}
                   </div>
 
-                  {/* Crédito — cuenta */}
+                  {/* Crédito — detalles */}
                   {isCredit && (
                     <>
                       <div className="border-t border-gray-100" />
                       <div>
                         <div className="flex items-center gap-2 mb-3">
                           <Landmark size={14} className="text-orange-500" />
-                          <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Cuenta de crédito</span>
+                          <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Detalles del crédito</span>
                         </div>
+                        {creditLimit > 0 && (
+                          <div className={`mb-3 p-3.5 rounded-xl border-2 text-sm ${
+                            creditOverLimit ? 'bg-red-50 border-red-200 text-red-700' : 'bg-orange-50 border-orange-200 text-orange-800'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs">Deuda actual</span>
+                              <span className="font-semibold tabular-nums">S/ {currentDebt.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-0.5">
+                              <span className="text-xs">+ Esta venta</span>
+                              <span className="font-semibold tabular-nums">S/ {total.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-1 pt-1 border-t border-current/20">
+                              <span className="text-xs font-semibold">= Deuda total</span>
+                              <span className="font-semibold tabular-nums">S/ {(currentDebt + total).toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-0.5">
+                              <span className="text-xs">− Límite del cliente</span>
+                              <span className="font-semibold tabular-nums">S/ {creditLimit.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-current/30">
+                              <span className="text-xs font-bold uppercase tracking-wide">{creditOverLimit ? 'Excede el límite por' : 'Disponible tras la venta'}</span>
+                              <span className="font-bold tabular-nums">S/ {creditDelta.toFixed(2)}</span>
+                            </div>
+                            {creditOverLimit && (
+                              <div className="mt-2 text-xs">Esta venta supera el límite de crédito del cliente.</div>
+                            )}
+                          </div>
+                        )}
                         <div className="space-y-2">
-                          <button
-                            type="button"
-                            onClick={() => { setCreditAccountId('new'); setCreditName(''); }}
-                            className={`w-full px-4 py-3 rounded-xl text-sm font-semibold border-2 text-left transition-colors ${
-                              creditAccountId === 'new' ? 'bg-orange-50 border-orange-400 text-orange-800' : 'bg-white border-gray-200 text-gray-500 hover:border-orange-300'
-                            }`}
-                          >
-                            + Nueva cuenta
-                          </button>
-                          {(openCredits as CreditAccount[] | undefined)?.map((acc) => (
-                            <button
-                              key={acc.id}
-                              type="button"
-                              onClick={() => setCreditAccountId(acc.id)}
-                              className={`w-full px-4 py-3 rounded-xl border-2 text-left transition-colors ${
-                                creditAccountId === acc.id ? 'bg-orange-50 border-orange-400' : 'bg-white border-gray-200 hover:border-orange-300'
-                              }`}
-                            >
-                              <div className="font-semibold text-gray-800">{acc.name || 'Sin nombre'}</div>
-                              <div className="text-sm text-red-500 mt-0.5">Deuda actual: S/ {acc.pendingAmount.toFixed(2)}</div>
-                            </button>
-                          ))}
-                        </div>
-                        {creditAccountId === 'new' && (
-                          <div className="mt-3 space-y-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              Plazo de pago <span className="text-gray-400 font-normal">(opcional)</span>
+                            </label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min={1}
+                                step={1}
+                                value={creditDueDays}
+                                onChange={(e) => setCreditDueDays(e.target.value.replace(/\D/g, ''))}
+                                placeholder="Ej: 30"
+                                className="w-full px-4 py-3 pr-16 border-2 border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                              />
+                              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-gray-500 font-medium pointer-events-none">días</span>
+                            </div>
+                            {computedDueDate && (
+                              <p className="mt-1.5 text-xs text-gray-500">
+                                Vence el <span className="font-semibold text-gray-700">{new Date(computedDueDate + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              Nota <span className="text-gray-400 font-normal">(opcional)</span>
+                            </label>
                             <input
                               value={creditName}
                               onChange={(e) => setCreditName(e.target.value)}
-                              placeholder="Nombre de la cuenta  (ej: Tomates, Maíz)"
+                              placeholder="Ej: Tomates, Maíz"
                               className="w-full px-4 py-3 border-2 border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-                              autoFocus
                             />
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">
-                                Fecha límite de pago <span className="text-gray-400 font-normal">(opcional)</span>
-                              </label>
-                              <input
-                                type="date"
-                                value={creditDueDate}
-                                onChange={(e) => setCreditDueDate(e.target.value)}
-                                min={new Date().toISOString().slice(0, 10)}
-                                className="w-full px-4 py-3 border-2 border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-                              />
-                            </div>
                           </div>
-                        )}
+                        </div>
                       </div>
                     </>
                   )}
@@ -1443,8 +1494,8 @@ export function POSPage() {
                   </button>
                   <button
                     onClick={confirmSale}
-                    disabled={createSale.isPending}
-                    className={`flex-1 py-3.5 text-white rounded-xl disabled:opacity-50 font-bold text-base transition-colors shadow-sm flex items-center justify-center gap-2 ${
+                    disabled={createSale.isPending || creditOverLimit}
+                    className={`flex-1 py-3.5 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed font-bold text-base transition-colors shadow-sm flex items-center justify-center gap-2 ${
                       isCredit ? 'bg-orange-500 hover:bg-orange-600' : 'bg-primary-600 hover:bg-primary-700'
                     }`}
                   >
@@ -1525,6 +1576,15 @@ export function POSPage() {
 
       {/* Voucher preview */}
       <VoucherPreviewModal sale={voucherPreview} onClose={() => setVoucherPreview(null)} />
+
+      {/* Quick client creation */}
+      <QuickClientModal
+        isOpen={showQuickClient}
+        onClose={() => setShowQuickClient(false)}
+        onCreated={(client) => { setClientId(client.id); setClientSearch(''); }}
+        prefillName={clientSearch.trim() && !/^\d+$/.test(clientSearch.trim()) ? clientSearch.trim() : undefined}
+        prefillDocument={clientSearch.trim() && /^\d+$/.test(clientSearch.trim()) ? clientSearch.trim() : undefined}
+      />
 
       {/* Mobile overlay */}
       {cartOpen && (
