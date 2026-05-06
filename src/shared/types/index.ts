@@ -2,7 +2,7 @@ export interface PaginatedResponse<T> { data: T[]; total: number; }
 export interface ApiResponse<T> { data: T; message: string; }
 
 export interface Category { id: string; name: string; description?: string; isActive: boolean; }
-export interface Laboratory { id: string; name: string; description?: string; isActive: boolean; createdAt?: string; updatedAt?: string; }
+export interface Laboratory { id: string; name: string; description?: string; ruc?: string; address?: string; phone?: string; email?: string; isActive: boolean; createdAt?: string; updatedAt?: string; }
 export interface Product { id: string; name: string; description?: string; categoryId: string; laboratoryId?: string; unit: string; activeIngredient?: string; taxType?: string; imageUrl?: string; prices: ProductPrice[]; commissions?: ProductCommission[]; tracksLot?: boolean; isActive: boolean; createdAt: string; }
 export interface ProductPrice { priceTierId: string; companyId?: string; price: number; }
 export interface ProductCommission { workerId: string; type: 'PERCENT' | 'AMOUNT'; value: number; }

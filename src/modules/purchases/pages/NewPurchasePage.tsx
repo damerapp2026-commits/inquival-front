@@ -7,17 +7,17 @@ import { useCategories } from '../../categories/hooks/useCategories';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { useUnits } from '../../units/hooks/useUnits';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
-import { useRucLookup, useTipoCambio } from '../../../shared/hooks/useLookup';
-import { useSupplierByRuc, useCreateSupplier, useSuppliers } from '../../suppliers/hooks/useSuppliers';
+import { useTipoCambio } from '../../../shared/hooks/useLookup';
+import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
 import { useCashRegisterToday } from '../../cash-register/hooks/useCashRegister';
 import { Modal } from '../../../shared/components/Modal';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { SmartSearchSelect } from '../../../shared/components/SmartSearchSelect';
 import {
-  ArrowLeft, ShoppingCart, Trash2, Search, Loader2, DollarSign, PackagePlus,
-  FileText, CopyIcon, Dices, Wand2, Building2, Users, CreditCard, Package, Plus, X,
+  ArrowLeft, ShoppingCart, Trash2, Loader2, DollarSign, PackagePlus,
+  FileText, CopyIcon, Dices, Wand2, Building2, CreditCard, Package, FlaskConical,
 } from 'lucide-react';
-import type { Company, Product, Category } from '../../../shared/types';
+import type { Company, Product, Category, Laboratory } from '../../../shared/types';
 import toast from 'react-hot-toast';
 
 const IGV_RATE = 0.18;
@@ -129,7 +129,6 @@ export function NewPurchasePage() {
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
   const createPurchase = useCreatePurchase();
-  const rucLookup = useRucLookup();
   const supplierByRuc = useSupplierByRuc();
   const createSupplier = useCreateSupplier();
   const tipoCambioMutation = useTipoCambio();
@@ -142,15 +141,14 @@ export function NewPurchasePage() {
   const allUnits: { value: string; label: string }[] = Array.isArray(unitsData)
     ? unitsData.filter((u: any) => u.isActive).map((u: any) => ({ value: u.name, label: u.abbreviation ? `${u.name} (${u.abbreviation})` : u.name }))
     : [];
-  const { data: suppliersData } = useSuppliers({ limit: 1000 });
-  const suppliers: any[] = Array.isArray(suppliersData) ? suppliersData : (suppliersData as any)?.data || [];
+  const labs: Laboratory[] = (Array.isArray(laboratoriesData) ? laboratoriesData : []).filter((l: Laboratory) => l.isActive !== false);
   const createProduct = useCreateProduct();
   const categories: Category[] = Array.isArray(categoriesData) ? categoriesData : (categoriesData as any)?.data || [];
 
   const today = new Date().toISOString().slice(0, 10);
   const [currency, setCurrency] = useState<'PEN' | 'USD'>('USD');
   const [form, setForm] = useState({
-    supplier: '', supplierRuc: '', supplierId: '',
+    supplier: '', supplierRuc: '', supplierId: '', laboratoryId: '',
     paymentType: 'CONTADO' as 'CONTADO' | 'CREDITO',
     paymentScheduleType: 'SINGLE_DATE' as 'SINGLE_DATE' | 'INSTALLMENTS', dueDate: '',
     installments: [] as { amount: number; dueDate: string }[],
@@ -163,9 +161,7 @@ export function NewPurchasePage() {
   });
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
   const [exchangeRateDate, setExchangeRateDate] = useState('');
-  const [supplierLocked, setSupplierLocked] = useState(false);
-  const [supplierLoading, setSupplierLoading] = useState(false);
-  const [showAddSupplier, setShowAddSupplier] = useState(false);
+  const [labResolving, setLabResolving] = useState(false);
   const [installmentGen, setInstallmentGen] = useState({ count: 6, intervalDays: 30, firstDaysFromPurchase: 30 });
   const [scrollToLast, setScrollToLast] = useState(false);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -367,53 +363,52 @@ export function NewPurchasePage() {
     } catch { /* error handled by hook */ }
   };
 
-  const handleSupplierLookup = async () => {
-    const ruc = form.supplierRuc.trim();
-    if (ruc.length !== 11) { toast.error('El RUC debe tener 11 dígitos'); return; }
+  const clearLaboratory = () => {
+    setForm(prev => ({ ...prev, supplier: '', supplierId: '', supplierRuc: '', laboratoryId: '' }));
+  };
 
-    setSupplierLoading(true);
+  const resolveSupplierIdByRuc = async (ruc: string, fallbackName: string, fallbackAddress?: string): Promise<string> => {
     try {
-      const localSupplier = await supplierByRuc.mutateAsync(ruc);
-      if (localSupplier) {
-        setForm(prev => ({ ...prev, supplier: localSupplier.businessName, supplierId: localSupplier.id }));
-        setSupplierLocked(true);
-        toast.success('Proveedor encontrado en el sistema');
-        setSupplierLoading(false);
-        return;
-      }
-    } catch { /* not found locally */ }
-
+      const existing = await supplierByRuc.mutateAsync(ruc);
+      if (existing?.id) return existing.id;
+    } catch { /* not found, will create */ }
     try {
-      const result = await rucLookup.mutateAsync(ruc);
-      if (result.razonSocial) {
-        const newSupplier = await createSupplier.mutateAsync({
-          ruc,
-          businessName: result.razonSocial,
-          address: result.direccion || '',
-        });
-        setForm(prev => ({ ...prev, supplier: result.razonSocial, supplierId: newSupplier?.id || '' }));
-        setSupplierLocked(true);
-        setShowAddSupplier(false);
-        toast.success('Proveedor encontrado en SUNAT y registrado');
-      }
-    } catch { /* toast handled by hook */ } finally {
-      setSupplierLoading(false);
+      const created = await createSupplier.mutateAsync({
+        ruc,
+        businessName: fallbackName,
+        address: fallbackAddress || '',
+      });
+      return created?.id || '';
+    } catch {
+      return '';
     }
   };
 
-  const clearSupplier = () => {
-    setForm(prev => ({ ...prev, supplier: '', supplierId: '', supplierRuc: '' }));
-    setSupplierLocked(false);
-    setShowAddSupplier(false);
-  };
+  const pickLaboratory = async (id: string) => {
+    if (!id) { clearLaboratory(); return; }
+    const lab = labs.find((l) => l.id === id);
+    if (!lab) return;
 
-  const pickSupplier = (id: string) => {
-    if (!id) { clearSupplier(); return; }
-    const s = suppliers.find((x) => x.id === id);
-    if (!s) return;
-    setForm(prev => ({ ...prev, supplierId: s.id, supplier: s.businessName || s.name || '', supplierRuc: s.ruc || '' }));
-    setSupplierLocked(true);
-    setShowAddSupplier(false);
+    setForm(prev => ({
+      ...prev,
+      laboratoryId: lab.id,
+      supplier: lab.name,
+      supplierRuc: lab.ruc || '',
+      supplierId: '',
+    }));
+
+    if (!lab.ruc) {
+      toast('Este laboratorio no tiene RUC. Edítalo en Laboratorios para vincularlo a Cuentas por Pagar.', { icon: '⚠️' });
+      return;
+    }
+
+    setLabResolving(true);
+    try {
+      const supplierId = await resolveSupplierIdByRuc(lab.ruc, lab.name, lab.address);
+      setForm(prev => ({ ...prev, supplierId }));
+    } finally {
+      setLabResolving(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -422,7 +417,7 @@ export function NewPurchasePage() {
       toast.error('La caja del día está cerrada. No se pueden registrar compras al contado.');
       return;
     }
-    if (!form.supplier.trim()) { toast.error('Selecciona un proveedor'); return; }
+    if (!form.supplier.trim()) { toast.error('Selecciona un laboratorio'); return; }
     if (!documentTotal) { toast.error('Agrega productos con cantidad y costo unitario'); return; }
     if (currency === 'USD' && !exchangeRate) { toast.error('Verifique el tipo de cambio'); return; }
     const missingCompany = form.items.find(i => !i.companyId);
@@ -489,75 +484,38 @@ export function NewPurchasePage() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Proveedor */}
-          <SectionCard title="Proveedor" icon={Users}>
-            <div className="space-y-4">
+          {/* Laboratorio */}
+          <SectionCard title="Laboratorio" icon={FlaskConical}>
+            <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
-                  <Users size={12} /> Proveedor
+                  <FlaskConical size={12} /> Laboratorio (proveedor)
                 </label>
-
                 <SmartSearchSelect
-                  items={suppliers}
-                  value={form.supplierId}
-                  onChange={(id) => { id ? pickSupplier(id) : clearSupplier(); }}
-                  getId={(s: any) => s.id}
-                  getLabel={(s: any) => s.businessName || s.name || '—'}
-                  getSubLabel={(s: any) => (s.ruc ? `RUC ${s.ruc}` : '')}
-                  searchFields={(s: any) => [s.businessName, s.name, s.ruc]}
-                  placeholder="Buscar proveedor por nombre o RUC…"
-                  emptyText="No se encontraron proveedores con esa búsqueda"
-                  onAddNew={(text) => {
-                    const digits = text.replace(/\D/g, '').slice(0, 11);
-                    setForm(prev => ({ ...prev, supplierRuc: digits }));
-                    setShowAddSupplier(true);
-                  }}
-                  addNewLabel="Agregar proveedor por RUC"
+                  items={labs}
+                  value={form.laboratoryId}
+                  onChange={(id) => { pickLaboratory(id); }}
+                  getId={(l: Laboratory) => l.id}
+                  getLabel={(l: Laboratory) => l.name}
+                  getSubLabel={(l: Laboratory) => (l.ruc ? `RUC ${l.ruc}` : 'Sin RUC')}
+                  searchFields={(l: Laboratory) => [l.name, l.ruc]}
+                  placeholder="Buscar laboratorio por nombre o RUC…"
+                  emptyText="No se encontraron laboratorios. Crea uno en Laboratorios."
                 />
-
-                {!form.supplierId && (
-                  <div className="mt-2">
-                    {!showAddSupplier ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowAddSupplier(true)}
-                        className="text-xs text-primary-700 hover:text-primary-800 inline-flex items-center gap-1 font-medium"
-                      >
-                        <Plus size={12} /> Agregar nuevo proveedor por RUC
-                      </button>
-                    ) : (
-                        <div className="mt-1 p-3 border border-dashed border-gray-300 rounded-lg bg-gray-50/60 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-gray-600">Nuevo proveedor (consulta SUNAT)</span>
-                            <button
-                              type="button"
-                              onClick={() => { setShowAddSupplier(false); setForm(prev => ({ ...prev, supplierRuc: '' })); }}
-                              className="text-xs text-gray-400 hover:text-gray-600"
-                            >Cancelar</button>
-                          </div>
-                          <div className="flex gap-2">
-                            <input
-                              value={form.supplierRuc}
-                              onChange={(e) => setForm({ ...form, supplierRuc: e.target.value.replace(/\D/g, '').slice(0, 11) })}
-                              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                              placeholder="RUC (11 dígitos)"
-                              maxLength={11}
-                              autoFocus
-                            />
-                            <button
-                              type="button"
-                              onClick={handleSupplierLookup}
-                              disabled={form.supplierRuc.length !== 11 || supplierLoading}
-                              className="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 text-sm font-semibold"
-                            >
-                              {supplierLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                              Buscar
-                            </button>
-                          </div>
-                        <p className="text-[11px] text-gray-500">Si el RUC existe en SUNAT, se registra automáticamente y queda disponible la próxima vez.</p>
-                      </div>
-                    )}
-                  </div>
+                {form.laboratoryId && labResolving && (
+                  <p className="mt-2 text-[11px] text-gray-500 inline-flex items-center gap-1">
+                    <Loader2 size={11} className="animate-spin" /> Vinculando con cuentas por pagar…
+                  </p>
+                )}
+                {form.laboratoryId && !form.supplierRuc && !labResolving && (
+                  <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                    Este laboratorio no tiene RUC. Para que la compra a crédito quede vinculada, agrégale el RUC en <Link to="/laboratories" className="underline font-medium">Laboratorios</Link>.
+                  </p>
+                )}
+                {!form.laboratoryId && labs.length === 0 && (
+                  <p className="mt-2 text-[11px] text-gray-500">
+                    Aún no tienes laboratorios. <Link to="/laboratories" className="text-primary-700 underline font-medium">Agrega uno</Link> antes de continuar.
+                  </p>
                 )}
               </div>
             </div>
