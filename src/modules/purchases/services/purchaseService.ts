@@ -8,4 +8,15 @@ export const purchaseService = {
     api.get('/purchases/last-price', { params: { productId, supplierId } }).then((r) => r.data.data),
   getPriceCatalog: (companyId?: string) =>
     api.get('/purchases/price-catalog', { params: companyId ? { companyId } : undefined }).then((r) => r.data.data),
+  updatePriceCatalog: (
+    productId: string,
+    data: {
+      unitPriceSinIgvUsd?: number;
+      unitPriceSinIgvPen?: number;
+      unitPriceConIgvUsd?: number;
+      unitPriceConIgvPen?: number;
+      precioMinorista?: number;
+      markupPercent?: number;
+    },
+  ) => api.patch(`/purchases/price-catalog/${productId}`, data).then((r) => r.data.data),
 };

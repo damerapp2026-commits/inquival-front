@@ -33,3 +33,15 @@ export function useCreatePurchase() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: purchaseService.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['purchases'] }); qc.invalidateQueries({ queryKey: ['stock'] }); qc.invalidateQueries({ queryKey: ['accounts-payable'] }); qc.invalidateQueries({ queryKey: ['cash-register-today'] }); qc.invalidateQueries({ queryKey: ['cash-registers'] }); toast.success('Compra registrada'); }, onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error') });
 }
+export function useUpdatePriceCatalog() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ productId, data }: { productId: string; data: Parameters<typeof purchaseService.updatePriceCatalog>[1] }) =>
+      purchaseService.updatePriceCatalog(productId, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['price-catalog'] }); },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg[0] : msg || 'Error al guardar');
+    },
+  });
+}
