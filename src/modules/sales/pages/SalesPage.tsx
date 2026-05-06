@@ -433,11 +433,6 @@ export function SalesPage() {
 
   const salesColumns = [
     { key: 'date', header: 'Fecha', render: (item: Sale) => new Date(item.date).toLocaleDateString('es-PE') },
-    { key: 'companyId', header: 'Almacén', render: (item: Sale) => {
-      const companyIds = [...new Set(item.items.map(i => i.companyId))];
-      if (companyIds.length === 1) return getCompanyName(companyIds[0]);
-      return <span className="text-purple-600 font-medium">Mixta</span>;
-    }},
     ...(!isSellerRole ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
       const name = getSellerName(item);
       return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
@@ -463,11 +458,6 @@ export function SalesPage() {
 
   const voucherColumns = [
     { key: 'date', header: 'Fecha', render: (item: Sale) => new Date(item.date).toLocaleDateString('es-PE') },
-    { key: 'companyId', header: 'Almacén', render: (item: Sale) => {
-      const companyIds = [...new Set(item.items.map(i => i.companyId))];
-      if (companyIds.length === 1) return getCompanyName(companyIds[0]);
-      return <span className="text-purple-600 font-medium">Mixta</span>;
-    }},
     ...(!isSellerRole ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
       const name = getSellerName(item);
       return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
