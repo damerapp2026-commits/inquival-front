@@ -17,3 +17,19 @@ export function useCancelSale() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: saleService.cancel, onSuccess: () => { qc.invalidateQueries({ queryKey: ['sales'] }); qc.invalidateQueries({ queryKey: ['stock'] }); qc.invalidateQueries({ queryKey: ['cash-register-today'] }); qc.invalidateQueries({ queryKey: ['credit-accounts'] }); toast.success('Venta anulada'); }, onError: (err: any) => toast.error(err.response?.data?.message || 'Error al anular') });
 }
+export function useUpdateSaleItems() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: saleService.updateItems,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['stock'] });
+      qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      toast.success('Venta actualizada');
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg[0] : msg || 'Error al editar la venta');
+    },
+  });
+}

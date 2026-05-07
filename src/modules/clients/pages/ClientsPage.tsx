@@ -9,7 +9,7 @@ import { Plus, Search, Edit2, Trash2, Users, Loader2, AlertTriangle, UserCheck, 
 import type { Client } from '../../../shared/types';
 import { clientService } from '../services/clientService';
 import { ExportClientStatementButton } from '../../credits/components/ExportClientStatementButton';
-import { PERU_DEPARTMENTS } from '../constants/peruRegions';
+import { LocationFields } from '../components/LocationFields';
 import toast from 'react-hot-toast';
 
 export function ClientsPage() {
@@ -29,13 +29,13 @@ export function ClientsPage() {
   const rucLookup = useRucLookup();
 
   const [docType, setDocType] = useState<'DNI' | 'RUC'>('DNI');
-  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', city: '', creditLimit: '' });
+  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '' });
   const [lookupLoading, setLookupLoading] = useState(false);
 
   const openCreate = () => {
     setEditing(null);
     setDocType('DNI');
-    setForm({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', city: '', creditLimit: '' });
+    setForm({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '' });
     setShowModal(true);
   };
 
@@ -50,7 +50,9 @@ export function ClientsPage() {
       email: client.email || '',
       address: client.address || '',
       department: client.department || '',
-      city: client.city || '',
+      province: client.province || '',
+      district: client.district || client.city || '',
+      hamlet: client.hamlet || '',
       creditLimit: typeof client.creditLimit === 'number' ? String(client.creditLimit) : '',
     });
     setShowModal(true);
@@ -78,7 +80,9 @@ export function ClientsPage() {
           email: localMatch.email || '',
           address: localMatch.address || '',
           department: localMatch.department || '',
-          city: localMatch.city || '',
+          province: localMatch.province || '',
+          district: localMatch.district || localMatch.city || '',
+          hamlet: localMatch.hamlet || '',
           creditLimit: typeof localMatch.creditLimit === 'number' ? String(localMatch.creditLimit) : '',
         });
         toast.success('Cliente encontrado en el sistema');
@@ -111,6 +115,7 @@ export function ClientsPage() {
       if (Number.isFinite(parsed) && parsed >= 0) cleanForm.creditLimit = parsed;
       else delete cleanForm.creditLimit;
     }
+    if (cleanForm.district) cleanForm.city = cleanForm.district;
     if (editing) await updateClient.mutateAsync({ id: editing.id, data: cleanForm });
     else await createClient.mutateAsync(cleanForm);
     setShowModal(false);
@@ -143,13 +148,16 @@ export function ClientsPage() {
     {
       key: 'zone', header: 'Zona',
       render: (item: Client) => {
-        if (!item.city && !item.department) return <span className="text-gray-300">—</span>;
+        const primary = item.district || item.city;
+        const secondary = [item.province, item.department].filter(Boolean).join(' · ');
+        if (!primary && !secondary && !item.hamlet) return <span className="text-gray-300">—</span>;
         return (
           <div className="flex items-center gap-1.5 text-sm text-gray-700">
             <MapPin size={13} className="text-gray-400 flex-shrink-0" />
             <div className="min-w-0">
-              {item.city && <div className="font-medium truncate">{item.city}</div>}
-              {item.department && <div className="text-xs text-gray-500 truncate">{item.department}</div>}
+              {primary && <div className="font-medium truncate">{primary}</div>}
+              {item.hamlet && <div className="text-xs text-gray-600 truncate">Caserío: {item.hamlet}</div>}
+              {secondary && <div className="text-xs text-gray-500 truncate">{secondary}</div>}
             </div>
           </div>
         );
@@ -303,36 +311,23 @@ export function ClientsPage() {
             </p>
           </div>
 
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <MapPin size={13} className="text-primary-600" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Zona</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-medium text-gray-400 mb-1">Departamento</label>
-                <select
-                  value={form.department}
-                  onChange={(e) => setForm({ ...form, department: e.target.value })}
-                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="">— Sin asignar —</option>
-                  {PERU_DEPARTMENTS.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-gray-400 mb-1">Ciudad / Distrito</label>
-                <input
-                  value={form.city}
-                  onChange={(e) => setForm({ ...form, city: e.target.value })}
-                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="Ej: Otuzco, Trujillo..."
-                />
-              </div>
-            </div>
-          </div>
+          <LocationFields
+            value={{
+              department: form.department || undefined,
+              province: form.province || undefined,
+              district: form.district || undefined,
+              hamlet: form.hamlet || undefined,
+            }}
+            onChange={(loc) =>
+              setForm({
+                ...form,
+                department: loc.department || '',
+                province: loc.province || '',
+                district: loc.district || '',
+                hamlet: loc.hamlet || '',
+              })
+            }
+          />
 
           <div className="flex gap-3 pt-2 border-t border-gray-100">
             <button type="button" onClick={() => setShowModal(false)} className="flex-1 sm:flex-none sm:px-6 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-medium">Cancelar</button>

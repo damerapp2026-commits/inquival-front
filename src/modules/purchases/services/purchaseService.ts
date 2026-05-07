@@ -1,4 +1,39 @@
 import { api } from '../../../shared/services/api';
+
+export interface UpdatePurchaseFullPayload {
+  reason: string;
+  updatedAt?: string;
+  supplier?: string;
+  supplierId?: string | null;
+  supplierRuc?: string | null;
+  documentType?: string | null;
+  documentSeries?: string | null;
+  documentNumber?: string | null;
+  issueDate?: string | null;
+  date?: string;
+  currency?: 'PEN' | 'USD';
+  exchangeRate?: number | null;
+  exchangeRateDate?: string;
+  totalCost?: number;
+  totalCostUsd?: number;
+  paymentType?: 'CONTADO' | 'CREDITO';
+  paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS';
+  dueDate?: string;
+  installments?: { amount: number; dueDate: string }[];
+  items?: Array<{
+    companyId: string;
+    productId: string;
+    quantity: number;
+    unitCost: number;
+    unitPriceSinIgv: number;
+    unitPriceConIgv: number;
+    precioVenta?: number;
+    markupPercent?: number;
+    lotNumber?: string;
+    expirationDate?: string;
+  }>;
+}
+
 export const purchaseService = {
   getAll: (params?: any) => api.get('/purchases', { params }).then((r) => r.data.data),
   create: (data: any) => api.post('/purchases', data).then((r) => r.data.data),
@@ -14,6 +49,8 @@ export const purchaseService = {
       issueDate?: string | null;
     },
   ) => api.patch(`/purchases/${id}`, data).then((r) => r.data.data),
+  updateFull: (id: string, data: UpdatePurchaseFullPayload) =>
+    api.patch(`/purchases/${id}/full`, data).then((r) => r.data.data),
   getProductSuppliers: (productId: string) =>
     api.get(`/purchases/by-product/${productId}/suppliers`).then((r) => r.data.data),
   getLastPrice: (productId: string, supplierId: string) =>

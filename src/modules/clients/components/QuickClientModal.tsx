@@ -3,8 +3,8 @@ import { Modal } from '../../../shared/components/Modal';
 import { useCreateClient } from '../hooks/useClients';
 import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
 import { clientService } from '../services/clientService';
-import { PERU_DEPARTMENTS } from '../constants/peruRegions';
-import { Search, Loader2, CreditCard, MapPin } from 'lucide-react';
+import { LocationFields } from './LocationFields';
+import { Search, Loader2, CreditCard } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { Client } from '../../../shared/types';
 
@@ -22,7 +22,7 @@ export function QuickClientModal({ isOpen, onClose, onCreated, prefillName, pref
   const rucLookup = useRucLookup();
 
   const [docType, setDocType] = useState<'DNI' | 'RUC'>('DNI');
-  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', city: '', creditLimit: '' });
+  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '' });
   const [lookupLoading, setLookupLoading] = useState(false);
 
   useEffect(() => {
@@ -37,7 +37,9 @@ export function QuickClientModal({ isOpen, onClose, onCreated, prefillName, pref
       email: '',
       address: '',
       department: '',
-      city: '',
+      province: '',
+      district: '',
+      hamlet: '',
       creditLimit: '',
     });
   }, [isOpen, prefillName, prefillDocument]);
@@ -84,6 +86,7 @@ export function QuickClientModal({ isOpen, onClose, onCreated, prefillName, pref
       if (Number.isFinite(parsed) && parsed >= 0) cleanForm.creditLimit = parsed;
       else delete cleanForm.creditLimit;
     }
+    if (cleanForm.district) cleanForm.city = cleanForm.district;
     try {
       const created: Client = await createClient.mutateAsync(cleanForm);
       onCreated(created);
@@ -182,36 +185,23 @@ export function QuickClientModal({ isOpen, onClose, onCreated, prefillName, pref
           </p>
         </div>
 
-        <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <MapPin size={13} className="text-primary-600" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Zona</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-medium text-gray-400 mb-1">Departamento</label>
-              <select
-                value={form.department}
-                onChange={(e) => setForm({ ...form, department: e.target.value })}
-                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-              >
-                <option value="">— Sin asignar —</option>
-                {PERU_DEPARTMENTS.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-gray-400 mb-1">Ciudad / Distrito</label>
-              <input
-                value={form.city}
-                onChange={(e) => setForm({ ...form, city: e.target.value })}
-                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                placeholder="Ej: Otuzco, Trujillo..."
-              />
-            </div>
-          </div>
-        </div>
+        <LocationFields
+          value={{
+            department: form.department || undefined,
+            province: form.province || undefined,
+            district: form.district || undefined,
+            hamlet: form.hamlet || undefined,
+          }}
+          onChange={(loc) =>
+            setForm({
+              ...form,
+              department: loc.department || '',
+              province: loc.province || '',
+              district: loc.district || '',
+              hamlet: loc.hamlet || '',
+            })
+          }
+        />
 
         <div className="flex gap-3 pt-2 border-t border-gray-100">
           <button type="button" onClick={onClose} className="flex-1 sm:flex-none sm:px-6 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-medium">Cancelar</button>

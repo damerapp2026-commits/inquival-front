@@ -48,6 +48,36 @@ export function useUpdatePurchase() {
     },
   });
 }
+export function useUpdatePurchaseFull() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof purchaseService.updateFull>[1] }) =>
+      purchaseService.updateFull(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['stock'] });
+      qc.invalidateQueries({ queryKey: ['accounts-payable'] });
+      qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      qc.invalidateQueries({ queryKey: ['kardex'] });
+      qc.invalidateQueries({ queryKey: ['price-catalog'] });
+      qc.invalidateQueries({ queryKey: ['last-price'] });
+      toast.success('Compra actualizada');
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message;
+      const code = err.response?.data?.code;
+      const codeMessages: Record<string, string> = {
+        PURCHASE_HAS_APPLIED_PAYMENTS: 'Esta compra ya tiene pagos aplicados. Anula los pagos en Cuentas por Pagar antes de editarla.',
+        PURCHASE_LOT_CONSUMED: 'El lote fue consumido en ventas posteriores. No se puede modificar.',
+        PURCHASE_PERIOD_LOCKED: 'El periodo contable está cerrado. Registra una nota crédito en su lugar.',
+        PURCHASE_VERSION_MISMATCH: 'La compra fue modificada por otro usuario. Recarga la página.',
+      };
+      const friendly = code && codeMessages[code];
+      toast.error(friendly || (Array.isArray(msg) ? msg[0] : msg) || 'Error al actualizar la compra');
+    },
+  });
+}
 export function useUpdatePriceCatalog() {
   const qc = useQueryClient();
   return useMutation({

@@ -19,6 +19,7 @@ import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download, FileText, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { VoucherPreviewModal, type VoucherSnapshot } from '../components/VoucherPreviewModal';
+import { EditSaleItemsModal } from '../components/EditSaleItemsModal';
 import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod, Stock } from '../../../shared/types';
 
 function getMonthStart() {
@@ -137,6 +138,18 @@ export function SalesPage() {
     return map;
   }, [activeCompanies, stockQueries]);
 
+  const stockQtyByCompany = useMemo(() => {
+    const map: Record<string, Map<string, number>> = {};
+    activeCompanies.forEach((c, i) => {
+      const raw = stockQueries[i]?.data;
+      const stocks: Stock[] = Array.isArray(raw) ? raw : (raw as any)?.data || [];
+      const inner = new Map<string, number>();
+      stocks.forEach((s) => inner.set(s.productId, s.quantity));
+      map[c.id] = inner;
+    });
+    return map;
+  }, [activeCompanies, stockQueries]);
+
   const getProductsForCompany = (companyId: string): Product[] => {
     if (!companyId) return products;
     const productIds = stockByCompany[companyId];
@@ -148,6 +161,7 @@ export function SalesPage() {
   const [cancellingsale, setCancellingSale] = useState<Sale | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [voucherPreview, setVoucherPreview] = useState<VoucherSnapshot | null>(null);
+  const [editingSale, setEditingSale] = useState<Sale | null>(null);
 
   const [form, setForm] = useState({
     clientId: '',
@@ -1089,6 +1103,15 @@ export function SalesPage() {
                 >
                   <FileText size={16} /> Ver comprobante
                 </button>
+                {!sale.isCancelled && user?.role === 'ADMIN' && (
+                  <button
+                    type="button"
+                    onClick={() => { setEditingSale(sale); setViewingSale(null); }}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors text-sm font-semibold"
+                  >
+                    Editar items
+                  </button>
+                )}
                 {!sale.isCancelled && (
                   <button
                     type="button"
@@ -1103,6 +1126,16 @@ export function SalesPage() {
           </div>
         );
       })()}
+
+      {/* Modal editar items (solo ADMIN, ventas NONE no anuladas) */}
+      <EditSaleItemsModal
+        sale={editingSale}
+        onClose={() => setEditingSale(null)}
+        products={products}
+        companies={activeCompanies}
+        priceTiers={Array.isArray(priceTiers) ? priceTiers : []}
+        stockByCompanyMap={stockQtyByCompany}
+      />
 
       {/* Modal vista previa del comprobante */}
       <VoucherPreviewModal sale={voucherPreview} onClose={() => setVoucherPreview(null)} />
