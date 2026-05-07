@@ -878,15 +878,21 @@ export function POSPage() {
           <div className="flex items-center gap-2">
             <Tag size={16} className="text-gray-400" />
             <span className="text-sm text-gray-500 shrink-0">Rango:</span>
-            <select
-              value={tierId}
-              onChange={(e) => setTierId(e.target.value)}
-              className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white"
-            >
-              {tiers.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+            {isSellerRole ? (
+              <span className="flex-1 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
+                {tiers.find((t) => t.id === tierId)?.name || '—'}
+              </span>
+            ) : (
+              <select
+                value={tierId}
+                onChange={(e) => setTierId(e.target.value)}
+                className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white"
+              >
+                {tiers.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
@@ -921,17 +927,27 @@ export function POSPage() {
                         <span className="text-sm text-gray-500">
                           S/ {item.unitPrice.toFixed(2)} · {item.unit}
                         </span>
-                        <button
-                          onClick={() => setEditingPriceFor(isEditing ? null : item.productId)}
-                          className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium transition-colors flex items-center gap-0.5 ${
-                            isOverridden
-                              ? 'bg-primary-100 text-primary-700 hover:bg-primary-200'
-                              : 'text-gray-400 hover:text-primary-600 hover:bg-gray-100'
-                          }`}
-                          title="Cambiar precio / rango"
-                        >
-                          <Pencil size={9} /> {effectiveTierName}
-                        </button>
+                        {isSellerRole ? (
+                          <span
+                            className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium ${
+                              isOverridden ? 'bg-primary-100 text-primary-700' : 'text-gray-400'
+                            }`}
+                          >
+                            {effectiveTierName}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setEditingPriceFor(isEditing ? null : item.productId)}
+                            className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium transition-colors flex items-center gap-0.5 ${
+                              isOverridden
+                                ? 'bg-primary-100 text-primary-700 hover:bg-primary-200'
+                                : 'text-gray-400 hover:text-primary-600 hover:bg-gray-100'
+                            }`}
+                            title="Cambiar precio / rango"
+                          >
+                            <Pencil size={9} /> {effectiveTierName}
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -963,7 +979,7 @@ export function POSPage() {
                       <Trash2 size={14} />
                     </button>
                   </div>
-                  {isEditing && (
+                  {isEditing && !isSellerRole && (
                     <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
                       <div className="text-[11px] text-gray-500 font-medium">Cambiar rango de precio</div>
                       <div className="flex flex-wrap gap-1">

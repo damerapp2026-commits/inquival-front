@@ -51,7 +51,7 @@ export function StockPage() {
   const [expandedStock, setExpandedStock] = useState<Record<string, boolean>>({});
 
   const { data: companies } = useCompanies();
-  const { data: productsData } = useProducts({ limit: 10000, activeIngredient: debouncedIngredient || undefined });
+  const { data: productsData } = useProducts({ limit: 10000, activeIngredient: debouncedIngredient || undefined, includeInactive: true });
   const { data, isLoading } = useStock(companyId, { page, limit: 20 });
   const { data: alerts } = useStockAlerts(companyId, 10);
   const transferStock = useTransferStock();
@@ -184,6 +184,7 @@ export function StockPage() {
   }, {});
 
   const getProductName = (id: string) => products.find((p: Product) => p.id === id)?.name || 'N/A';
+  const getStockProductName = (s: Stock) => s.productName || products.find((p: Product) => p.id === s.productId)?.name || (s.productMissing ? 'Producto eliminado' : 'N/A');
   const getCompanyName = (id: string) => companyList.find((c: Company) => c.id === id)?.name || 'N/A';
 
   const openTransfer = () => { setTransferForm({ fromCompanyId: companyId || '', toCompanyId: '', items: [{ productId: '', quantity: 0, lotAllocations: [] }] }); setShowTransfer(true); };
@@ -786,6 +787,8 @@ export function StockPage() {
                   const productLots = lotsByProduct[item.productId] || [];
                   const hasLots = product?.tracksLot && productLots.length > 0;
                   const isExpanded = expandedStock[item.id];
+                  const isOrphan = item.productMissing === true || (!product && !item.productName);
+                  const isInactive = item.productIsActive === false || product?.isActive === false;
                   return (
                     <React.Fragment key={item.id}>
                       <tr className="hover:bg-primary-50 transition-colors">
@@ -797,7 +800,9 @@ export function StockPage() {
                           )}
                         </td>
                         <td className="px-3 py-2">
-                          <span className="font-medium">{getProductName(item.productId)}</span>
+                          <span className={`font-medium ${isOrphan || isInactive ? 'text-gray-400 italic' : ''}`}>{getStockProductName(item)}</span>
+                          {isOrphan && <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] rounded bg-red-100 text-red-700 border border-red-300">HUÉRFANO</span>}
+                          {!isOrphan && isInactive && <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] rounded bg-gray-100 text-gray-600 border border-gray-300">INACTIVO</span>}
                           {product?.tracksLot && <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] rounded bg-blue-100 text-blue-700 border border-blue-200">LOTES</span>}
                         </td>
                         <td className={`px-3 py-2 ${item.quantity <= 10 ? 'text-red-600 font-bold' : ''}`}>{item.quantity}</td>

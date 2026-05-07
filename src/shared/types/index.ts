@@ -8,7 +8,7 @@ export interface ProductPrice { priceTierId: string; companyId?: string; price: 
 export interface ProductCommission { workerId: string; type: 'PERCENT' | 'AMOUNT'; value: number; }
 export interface Company { id: string; name: string; ruc?: string; address?: string; phone?: string; isActive: boolean; }
 export interface PriceTier { id: string; name: string; description?: string; priority: number; isActive: boolean; }
-export interface Stock { id: string; productId: string; companyId: string; quantity: number; lastUpdated: string; }
+export interface Stock { id: string; productId: string; companyId: string; quantity: number; lastUpdated: string; productName?: string; productIsActive?: boolean; productMissing?: boolean; }
 export interface Client { id: string; name: string; documentNumber?: string; phone?: string; email?: string; address?: string; department?: string; city?: string; creditLimit?: number; isActive: boolean; }
 
 export interface PaymentMethod { id: string; name: string; isActive: boolean; }
