@@ -1,0 +1,6 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  # Skip the build when nothing under the listed paths changed.
+  # Returns 0 (skip) when no diff is found, 1 (build) otherwise.
+  ignore = "git diff --quiet HEAD^ HEAD -- src/ public/ index.html package.json package-lock.json vite.config.ts tsconfig.json tailwind.config.js postcss.config.js"
