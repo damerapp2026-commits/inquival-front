@@ -193,8 +193,8 @@ export function Layout() {
 
         <div className={`flex items-center h-20 border-b border-gray-100 ${collapsed ? 'lg:justify-center lg:px-0 px-4 justify-between' : 'px-4 justify-between'}`}>
           <div className={`flex items-center gap-2 ${collapsed ? 'lg:hidden' : ''}`}>
-            <img src="/pwa-192x192.png" alt="Inquival" className="w-14 h-14 object-contain" />
-            <span className="text-xl font-bold text-green-800 tracking-wide">INQUIVAL</span>
+            <img src="/pwa-192x192.png" alt="Inquiven" className="w-14 h-14 object-contain" />
+            <span className="text-xl font-bold text-green-800 tracking-wide">INQUIVEN</span>
           </div>
           <img
             src="/pwa-192x192.png"
@@ -283,10 +283,10 @@ export function Layout() {
           <div className="flex items-center gap-2">
             <img
               src="/pwa-192x192.png"
-              alt="Inquival"
+              alt="Inquiven"
               className="lg:hidden w-12 h-12 object-contain bg-white rounded-lg p-1"
             />
-            <span className="lg:hidden text-white text-lg font-bold tracking-wide">INQUIVAL</span>
+            <span className="lg:hidden text-white text-lg font-bold tracking-wide">INQUIVEN</span>
           </div>
 
           <div className="flex items-center gap-3">

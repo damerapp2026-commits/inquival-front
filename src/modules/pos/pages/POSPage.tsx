@@ -534,12 +534,31 @@ export function POSPage() {
     } else {
       const validPayments = splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
       if (validPayments.length === 0) { toast.error('Ingresa al menos un método de pago con monto'); return; }
-      if (Math.abs(splitTotal - total) > 0.01) {
-        toast.error(`La suma de pagos (${splitTotal.toFixed(2)}) no coincide con el total (${total.toFixed(2)})`);
+      const overpay = Math.round((splitTotal - total) * 100) / 100;
+      if (overpay < -0.01) {
+        toast.error(`La suma de pagos (${splitTotal.toFixed(2)}) es menor al total (${total.toFixed(2)})`);
         return;
       }
+      if (overpay > 0.01) {
+        const cashIdx = validPayments.findIndex(p => (paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '').toLowerCase().includes('efectivo'));
+        if (cashIdx < 0 || validPayments[cashIdx].amount + 0.01 < overpay) {
+          toast.error(`La suma de pagos (${splitTotal.toFixed(2)}) supera el total (${total.toFixed(2)}). Solo Efectivo permite vuelto.`);
+          return;
+        }
+      }
     }
-    const validPayments = splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
+    let validPayments = splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
+    if (!isCredit) {
+      const overpay = Math.round((splitTotal - total) * 100) / 100;
+      if (overpay > 0.01) {
+        const cashIdx = validPayments.findIndex(p => (paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '').toLowerCase().includes('efectivo'));
+        if (cashIdx >= 0) {
+          validPayments = validPayments.map((p, i) =>
+            i === cashIdx ? { ...p, amount: Math.round((p.amount - overpay) * 100) / 100 } : p,
+          );
+        }
+      }
+    }
     const saleTotal = total;
     const saleVoucherType = voucherType;
     const snapshotSellerId = sellerId || (isSellerRole ? user?.id : '');
@@ -1593,7 +1612,7 @@ export function POSPage() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Green header */}
-            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 text-white px-8 pt-8 pb-7 text-center overflow-hidden">
+            <div className="relative bg-gradient-to-br from-primary-500 via-primary-600 to-primary-700 text-white px-8 pt-8 pb-7 text-center overflow-hidden">
               <div className="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full" />
               <div className="absolute -bottom-12 -left-8 w-28 h-28 bg-white/10 rounded-full" />
               <div className="relative">
@@ -1601,7 +1620,7 @@ export function POSPage() {
                   <CheckCircle2 size={36} strokeWidth={2.5} className="text-white" />
                 </div>
                 <h2 className="text-2xl font-bold">¡Venta registrada!</h2>
-                <p className="text-emerald-50 text-sm mt-1">
+                <p className="text-primary-50 text-sm mt-1">
                   {successSale.voucherType === 'BOLETA' ? 'Boleta emitida correctamente'
                     : successSale.voucherType === 'FACTURA' ? 'Factura emitida correctamente'
                     : 'Nota de venta generada'}
@@ -1637,11 +1656,11 @@ export function POSPage() {
                 <button
                   type="button"
                   onClick={() => { setSuccessSale(null); searchRef.current?.focus(); }}
-                  className="flex flex-col items-center gap-1 px-3 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm"
+                  className="flex flex-col items-center gap-1 px-3 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors shadow-sm"
                 >
                   <Plus size={18} />
                   <span className="text-sm font-semibold">Nueva venta</span>
-                  <span className="text-[10px] uppercase tracking-wider text-emerald-100 border border-emerald-400 rounded px-1.5 py-px">Enter ↵</span>
+                  <span className="text-[10px] uppercase tracking-wider text-primary-100 border border-primary-400 rounded px-1.5 py-px">Enter ↵</span>
                 </button>
               </div>
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, FileText, Smartphone, FileText as FileIcon, Printer, ExternalLink, MessageCircle, Download, Loader2 } from 'lucide-react';
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import { buildVoucherPdfBlob } from '../utils/voucherPdf';
+import { numberToWords } from '../../quotes/utils/numberToWords';
 
 export interface VoucherSnapshot {
   id: string;
@@ -127,93 +128,222 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
 function buildA4Html(sale: VoucherSnapshot): string {
   const number = displayVoucherNumber(sale);
   const title = voucherTitle(sale.voucherType).toUpperCase();
-  const company = COMPANY_INFO;
+  const c = COMPANY_INFO;
+  const headerName = c.legalName || 'INQUIVEN';
+  const headerRuc = c.ruc || '—';
+
+  const subtotal = typeof sale.baseImponible === 'number'
+    ? sale.baseImponible
+    : Math.round((sale.total / 1.18) * 100) / 100;
+  const igv = typeof sale.igv === 'number'
+    ? sale.igv
+    : Math.round((sale.total - subtotal) * 100) / 100;
+
+  const blankItemRows = Math.max(0, 8 - sale.items.length);
   const itemsRows = sale.items.map((i, idx) => `
     <tr>
-      <td class="num">${idx + 1}</td>
-      <td class="num">${i.quantity}</td>
-      <td>${escapeHtml(i.name)}</td>
-      <td class="right">S/ ${i.unitPrice.toFixed(2)}</td>
-      <td class="right">S/ ${i.subtotal.toFixed(2)}</td>
+      <td class="c">${idx + 1}</td>
+      <td class="l">${escapeHtml(i.name)}</td>
+      <td class="c">${i.quantity}</td>
+      <td class="r">${i.unitPrice.toFixed(2)}</td>
+      <td class="r">${i.subtotal.toFixed(2)}</td>
+    </tr>
+  `).join('') + Array.from({ length: blankItemRows }).map(() => `
+    <tr><td class="c">&nbsp;</td><td></td><td></td><td></td><td></td></tr>
+  `).join('');
+
+  const paymentsRows = sale.payments.map((p) => `
+    <tr><td class="kv-key">${escapeHtml(p.methodName)}</td><td class="kv-sep">:</td><td class="kv-val r">S/ ${p.amount.toFixed(2)}</td></tr>
+  `).join('');
+
+  const bankRows = (c.bankAccounts || []).map((acc) => `
+    <tr>
+      <td class="kv-key">${escapeHtml(acc.bank)} (${acc.currency})</td>
+      <td class="kv-mini">Cuenta</td>
+      <td>${escapeHtml(acc.accountNumber || '—')}</td>
+      <td class="kv-mini">CCI</td>
+      <td>${escapeHtml(acc.cci || '—')}</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td class="kv-mini">Titular</td>
+      <td colspan="3">${escapeHtml(acc.holder || '—')}</td>
     </tr>
   `).join('');
-  const paymentsRows = sale.payments.map((p) => `
-    <tr><td>${escapeHtml(p.methodName)}</td><td class="right">S/ ${p.amount.toFixed(2)}</td></tr>
-  `).join('');
+
+  const walletRows = [
+    c.yape ? `<tr><td class="wallet-yape">Yape</td><td>${escapeHtml(c.yape.number)}</td><td class="kv-mini">${escapeHtml(c.yape.holder)}</td></tr>` : '',
+    c.plin ? `<tr><td class="wallet-plin">Plin</td><td>${escapeHtml(c.plin.number)}</td><td class="kv-mini">${escapeHtml(c.plin.holder)}</td></tr>` : '',
+  ].join('');
 
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>${number}</title>
 <style>
-  @page { size: A4; margin: 18mm 16mm; }
+  @page { size: A4; margin: 0; }
   * { box-sizing: border-box; }
-  body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 12px; color: #1f2937; margin: 0; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; padding-bottom: 18px; border-bottom: 2px solid #16a34a; }
-  .brand { font-size: 22px; font-weight: 800; color: #15803d; margin: 0 0 4px; }
-  .muted { color: #6b7280; font-size: 11px; }
-  .voucher-box { border: 2px solid #16a34a; border-radius: 8px; padding: 12px 18px; text-align: center; min-width: 220px; }
-  .voucher-box .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #15803d; font-weight: 700; }
-  .voucher-box .num { font-size: 18px; font-weight: 800; color: #111827; margin-top: 4px; }
-  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin: 18px 0; font-size: 12px; }
-  .meta strong { color: #374151; font-weight: 700; }
-  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-  thead th { background: #f0fdf4; color: #15803d; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px; text-align: left; border-bottom: 2px solid #16a34a; }
-  tbody td { padding: 8px; border-bottom: 1px solid #e5e7eb; }
-  .right { text-align: right; }
-  .num { text-align: center; width: 48px; }
-  .totals { margin-top: 20px; margin-left: auto; width: 320px; }
-  .totals .row { display: flex; justify-content: space-between; padding: 6px 12px; }
-  .totals .total { background: #16a34a; color: #fff; font-size: 16px; font-weight: 800; border-radius: 6px; padding: 10px 12px; margin-top: 6px; }
-  .pay { margin-top: 24px; }
-  .pay h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #374151; margin: 0 0 6px; }
-  .pay table { font-size: 12px; }
-  .footer { margin-top: 36px; text-align: center; color: #6b7280; font-size: 11px; border-top: 1px dashed #d1d5db; padding-top: 14px; }
+  body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 9px; color: #111827; margin: 0; padding: 14mm 14mm; line-height: 1.35; }
+  h1, h2, h3 { margin: 0; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { vertical-align: top; }
+  .l { text-align: left; }
+  .c { text-align: center; }
+  .r { text-align: right; }
+
+  /* Header */
+  .header { display: flex; gap: 12px; align-items: flex-start; }
+  .header .info { flex: 1; padding-top: 4px; }
+  .header .brand { font-size: 16px; font-weight: 800; color: #15803d; margin-bottom: 4px; letter-spacing: 0.5px; }
+  .header .detail { font-size: 8px; color: #374151; margin-top: 1px; }
+  .header .docs { width: 200px; display: flex; flex-direction: column; gap: 4px; }
+  .doc-box { border: 1px solid #16a34a; padding: 4px 0; text-align: center; font-weight: 700; font-size: 10px; color: #111827; }
+  .doc-title { background: #16a34a; color: #fff; padding: 5px 0; text-align: center; font-weight: 700; font-size: 12px; letter-spacing: 0.4px; }
+  .doc-num { border: 1px solid #16a34a; padding: 4px 0; text-align: center; font-weight: 700; font-size: 11px; color: #15803d; }
+
+  /* Client/seller block */
+  .info-block { margin-top: 14px; border: 1px solid #94a3b8; }
+  .info-block table { font-size: 8.5px; }
+  .info-block td { padding: 4px 6px; }
+  .info-block .lbl { font-weight: 700; width: 70px; }
+  .info-block .sep { width: 6px; }
+  .info-block .lbl-r { font-weight: 700; width: 80px; }
+
+  /* Items table */
+  .items { margin-top: 14px; border: 1px solid #94a3b8; border-collapse: collapse; }
+  .items th { background: #16a34a; color: #fff; font-weight: 700; font-size: 9px; padding: 6px 6px; border-right: 1px solid #94a3b8; }
+  .items th:last-child { border-right: none; }
+  .items td { padding: 5px 8px; border-right: 1px solid #94a3b8; border-top: 0; font-size: 8.5px; }
+  .items td:last-child { border-right: none; }
+  .items tbody tr:first-child td { border-top: 1px solid #94a3b8; }
+  .col-num { width: 30px; }
+  .col-qty { width: 40px; }
+  .col-unit { width: 60px; }
+  .col-tot { width: 70px; }
+
+  .amount-words { padding: 6px 4px; font-size: 9px; margin-top: 6px; }
+  .amount-words .b { font-weight: 700; }
+
+  /* Conditions + totals */
+  .two-col { display: flex; gap: 12px; margin-top: 8px; }
+  .two-col .col-l { flex: 1; }
+  .two-col .col-r { width: 200px; }
+
+  .panel { border: 1px solid #94a3b8; }
+  .panel-title { background: #16a34a; color: #fff; padding: 5px 8px; font-weight: 700; font-size: 9px; letter-spacing: 0.4px; }
+  .panel table td { padding: 4px 8px; font-size: 8.5px; }
+  .panel .kv-key { font-weight: 700; }
+  .panel .kv-sep { width: 6px; }
+
+  .totals .totals-row { display: grid; grid-template-columns: 1fr 30px 70px; }
+  .totals .totals-row > div { padding: 5px 8px; background: #16a34a; color: #fff; font-weight: 700; }
+  .totals .totals-row > div.cur { background: #16a34a; text-align: center; }
+  .totals .totals-row > div.val { background: #fff; color: #111827; text-align: right; font-weight: 600; border: 1px solid #94a3b8; border-left: 0; border-bottom: 0; }
+  .totals .totals-row.first > div.lbl { border-top: 1px solid #94a3b8; }
+  .totals .totals-row.first > div.cur { border-top: 1px solid #94a3b8; }
+  .totals .totals-row.last > div.val { border-bottom: 1px solid #94a3b8; }
+  .totals .totals-row.last > div.lbl, .totals .totals-row.last > div.val { font-size: 10px; }
+
+  /* Payments + footer */
+  .pay-block { margin-top: 14px; }
+  .pay-rows td { padding: 4px 8px; font-size: 8.5px; }
+  .wallet-yape { background: #f3e8ff; font-weight: 700; padding: 4px 8px; }
+  .wallet-plin { background: #cffafe; font-weight: 700; padding: 4px 8px; }
+  .kv-mini { color: #6b7280; }
+
+  .footer { margin-top: 24px; text-align: center; color: #6b7280; font-size: 9px; border-top: 1px dashed #cbd5e1; padding-top: 12px; }
 </style></head>
 <body>
   <div class="header">
-    <div>
-      <h1 class="brand">${escapeHtml(company.legalName)}</h1>
-      ${company.ruc ? `<div class="muted">RUC ${escapeHtml(company.ruc)}</div>` : ''}
-      ${company.address ? `<div class="muted">${escapeHtml(company.address)}</div>` : ''}
-      ${company.phone ? `<div class="muted">Tel. ${escapeHtml(company.phone)}</div>` : ''}
-      ${company.email ? `<div class="muted">${escapeHtml(company.email)}</div>` : ''}
+    <img src="${escapeHtml(c.logoUrl)}" alt="" style="width: 70px; height: 70px; object-fit: contain;" onerror="this.style.display='none'" />
+    <div class="info">
+      <div class="brand">${escapeHtml(headerName)}</div>
+      ${c.address ? `<div class="detail">Dirección : ${escapeHtml(c.address)}</div>` : ''}
+      ${c.phone ? `<div class="detail">Teléfonos : ${escapeHtml(c.phone)}</div>` : ''}
+      ${c.email ? `<div class="detail">E-mail : ${escapeHtml(c.email)}</div>` : ''}
     </div>
-    <div class="voucher-box">
-      <div class="label">${title}</div>
-      <div class="num">N° ${number}</div>
-      <div class="muted" style="margin-top:6px">${formatDate(sale.date)}</div>
+    <div class="docs">
+      <div class="doc-box">R.U.C. ${escapeHtml(headerRuc)}</div>
+      <div class="doc-title">${title}</div>
+      <div class="doc-num">${escapeHtml(number)}</div>
     </div>
   </div>
 
-  <div class="meta">
-    <div><strong>Cliente:</strong> ${escapeHtml(sale.clientName) || 'Consumidor final'}</div>
-    ${sale.clientDocument ? `<div><strong>Documento:</strong> ${escapeHtml(sale.clientDocument)}</div>` : ''}
-    <div><strong>Vendedor:</strong> ${escapeHtml(sale.sellerName)}</div>
+  <div class="info-block">
+    <table>
+      <tr>
+        <td class="lbl">R.U.C. / D.N.I.</td><td class="sep">:</td>
+        <td colspan="4">${escapeHtml(sale.clientDocument || '—')}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Cliente</td><td class="sep">:</td>
+        <td colspan="4">${escapeHtml((sale.clientName || 'Consumidor final').toUpperCase())}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Teléfono</td><td class="sep">:</td>
+        <td>${escapeHtml(sale.clientPhone || ' ')}</td>
+        <td class="lbl-r">Vendedor</td><td class="sep">:</td>
+        <td>${escapeHtml((sale.sellerName || '—').toUpperCase())}</td>
+      </tr>
+      <tr>
+        <td class="lbl">Fecha Emisión</td><td class="sep">:</td>
+        <td colspan="4">${formatDate(sale.date)}</td>
+      </tr>
+    </table>
   </div>
 
-  <table>
+  <table class="items">
     <thead>
       <tr>
-        <th>#</th>
-        <th>Cant</th>
-        <th>Descripción</th>
-        <th class="right">P. Unit.</th>
-        <th class="right">Subtotal</th>
+        <th class="col-num">ÍTEM</th>
+        <th>DESCRIPCIÓN</th>
+        <th class="col-qty">CANT.</th>
+        <th class="col-unit">V. UNIT.</th>
+        <th class="col-tot">IMPORTE</th>
       </tr>
     </thead>
     <tbody>${itemsRows}</tbody>
   </table>
 
-  <div class="totals">
-    ${typeof sale.baseImponible === 'number' ? `<div class="row"><span>Subtotal</span><span>S/ ${sale.baseImponible.toFixed(2)}</span></div>` : ''}
-    ${typeof sale.igv === 'number' && sale.igv > 0 ? `<div class="row"><span>IGV (18%)</span><span>S/ ${sale.igv.toFixed(2)}</span></div>` : ''}
-    <div class="total"><span>TOTAL</span><span>S/ ${sale.total.toFixed(2)}</span></div>
+  <div class="amount-words"><span class="b">SON: </span>${escapeHtml(numberToWords(sale.total, 'PEN'))}</div>
+
+  <div class="two-col">
+    <div class="col-l">
+      ${paymentsRows ? `
+        <div class="panel">
+          <div class="panel-title">FORMA DE PAGO</div>
+          <table class="pay-rows"><tbody>${paymentsRows}</tbody></table>
+        </div>
+      ` : ''}
+    </div>
+    <div class="col-r totals">
+      <div class="totals-row first">
+        <div class="lbl r">OP. GRAVADAS</div>
+        <div class="cur">S/</div>
+        <div class="val">${subtotal.toFixed(2)}</div>
+      </div>
+      <div class="totals-row">
+        <div class="lbl r">I.G.V. 18%</div>
+        <div class="cur">S/</div>
+        <div class="val">${igv.toFixed(2)}</div>
+      </div>
+      <div class="totals-row last">
+        <div class="lbl r">IMPORTE TOTAL</div>
+        <div class="cur">S/</div>
+        <div class="val">${sale.total.toFixed(2)}</div>
+      </div>
+    </div>
   </div>
 
-  ${paymentsRows ? `<div class="pay"><h3>Forma de pago</h3><table><tbody>${paymentsRows}</tbody></table></div>` : ''}
+  ${(bankRows || walletRows) ? `
+    <div class="pay-block">
+      <div class="panel-title">FORMAS DE PAGO</div>
+      ${bankRows ? `<table class="panel" style="border:1px solid #94a3b8; border-top: 0;"><tbody>${bankRows}</tbody></table>` : ''}
+      ${walletRows ? `<table class="panel" style="border:1px solid #94a3b8; margin-top: 4px;"><tbody>${walletRows}</tbody></table>` : ''}
+    </div>
+  ` : ''}
 
   <div class="footer">
     ¡Gracias por su preferencia!
-    ${company.website ? `<div>${escapeHtml(company.website)}</div>` : ''}
+    ${c.website ? `<div>${escapeHtml(c.website)}</div>` : ''}
   </div>
 </body></html>`;
 }

@@ -13,13 +13,13 @@ export function RoleGate({ allowedRoles, children, redirectTo }: Props) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   if (!allowedRoles.includes(user.role)) {
-    const fallback = redirectTo || (user.role === 'VENDEDOR_CAMPO' ? '/pos' : '/dashboard');
+    const fallback = redirectTo || defaultHomeForRole(user.role);
     return <Navigate to={fallback} replace />;
   }
   return <>{children}</>;
 }
 
 export function defaultHomeForRole(role: UserRole): string {
-  if (role === 'VENDEDOR_CAMPO') return '/pos';
+  if (role === 'VENDEDOR' || role === 'VENDEDOR_CAMPO') return '/pos';
   return '/dashboard';
 }

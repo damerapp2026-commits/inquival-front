@@ -17,7 +17,7 @@ export function LoginPage() {
     setLoading(true);
     try {
       await login(username, password);
-      navigate('/dashboard');
+      navigate('/', { replace: true });
       toast.success('Bienvenido');
     } catch (err: any) {
       const msg = err.response?.data?.message;
