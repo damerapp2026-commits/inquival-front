@@ -13,7 +13,7 @@ export interface Client { id: string; name: string; documentNumber?: string; pho
 
 export interface PaymentMethod { id: string; name: string; isActive: boolean; }
 export interface SalePayment { paymentMethodId: string; paymentMethodName: string; amount: number; }
-export interface Sale { id: string; companyId?: string; clientId?: string; items: SaleItem[]; total: number; voucherType: string; isCredit: boolean; payments: SalePayment[]; sellerId?: string; sellerName?: string; isCancelled?: boolean; cancelledBy?: string; cancelledAt?: string; cancelReason?: string; date: string; createdAt: string; }
+export interface Sale { id: string; companyId?: string; clientId?: string; items: SaleItem[]; total: number; voucherType: string; isCredit: boolean; payments: SalePayment[]; sellerId?: string; sellerName?: string; isCancelled?: boolean; cancelledBy?: string; cancelledAt?: string; cancelReason?: string; date: string; series?: string; number?: number; saleNumber?: string; createdAt: string; }
 export interface SaleItem { productId: string; companyId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number; }
 export interface Supplier { id: string; ruc: string; businessName: string; address?: string; phone?: string; isActive: boolean; }
 export type PurchaseDocumentType = 'FACTURA' | 'BOLETA' | 'GUIA' | 'NOTA_CREDITO' | 'OTRO';

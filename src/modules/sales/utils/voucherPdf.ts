@@ -26,6 +26,10 @@ export function shortVoucherNumber(id: string): string {
   return `NV-${(id || '').slice(-8).toUpperCase().padStart(8, '0')}`;
 }
 
+export function displayVoucherNumber(sale: VoucherSnapshot): string {
+  return sale.voucherNumber || shortVoucherNumber(sale.id);
+}
+
 export function voucherTitle(type: string): string {
   if (type === 'BOLETA') return 'Boleta de venta';
   if (type === 'FACTURA') return 'Factura';
@@ -67,7 +71,7 @@ function buildTicketDocDef(sale: VoucherSnapshot): any {
 
   content.push(dashedLine());
   content.push({ text: voucherTitle(sale.voucherType).toUpperCase(), alignment: 'center', bold: true });
-  content.push({ text: `N° ${shortVoucherNumber(sale.id)}`, alignment: 'center', bold: true, fontSize: 11 });
+  content.push({ text: `N° ${displayVoucherNumber(sale)}`, alignment: 'center', bold: true, fontSize: 11 });
   content.push({ text: formatDate(sale.date), alignment: 'center', fontSize: 8, color: '#555' });
   content.push(dashedLine());
 

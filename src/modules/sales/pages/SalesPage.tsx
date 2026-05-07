@@ -432,6 +432,7 @@ export function SalesPage() {
   };
 
   const salesColumns = [
+    { key: 'saleNumber', header: 'N°', render: (item: Sale) => <span className="font-mono text-xs text-gray-700">{item.saleNumber || `NV-${item.id.slice(-8).toUpperCase()}`}</span> },
     { key: 'date', header: 'Fecha', render: (item: Sale) => new Date(item.date).toLocaleDateString('es-PE') },
     ...(!isSellerRole ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
       const name = getSellerName(item);
@@ -457,6 +458,7 @@ export function SalesPage() {
   ];
 
   const voucherColumns = [
+    { key: 'saleNumber', header: 'N°', render: (item: Sale) => <span className="font-mono text-xs text-gray-700">{item.saleNumber || `NV-${item.id.slice(-8).toUpperCase()}`}</span> },
     { key: 'date', header: 'Fecha', render: (item: Sale) => new Date(item.date).toLocaleDateString('es-PE') },
     ...(!isSellerRole ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
       const name = getSellerName(item);
@@ -889,6 +891,7 @@ export function SalesPage() {
             clientPhone: client?.phone,
             igv,
             baseImponible,
+            voucherNumber: sale.saleNumber,
           });
         };
         return (
@@ -903,7 +906,7 @@ export function SalesPage() {
                   </div>
                   <div>
                     <h2 className="text-base font-semibold text-gray-900">Detalle de venta</h2>
-                    <p className="text-xs text-gray-500">Información completa de la transacción</p>
+                    <p className="text-xs text-gray-500 font-mono">{sale.saleNumber || `NV-${sale.id.slice(-8).toUpperCase()}`}</p>
                   </div>
                 </div>
                 <button

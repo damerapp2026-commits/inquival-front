@@ -13,7 +13,7 @@ import { useQuote, useConvertQuote } from '../../quotes/hooks/useQuotes';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { stockService } from '../../stock/services/stockService';
-import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark, ChevronLeft, ChevronRight, Receipt, Building2, FileText, CheckCircle2, Eye, Banknote } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark, ChevronLeft, ChevronRight, Receipt, Building2, FileText, CheckCircle2, Eye, Banknote, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { Product, ProductPrice, Category, Company, Client, PriceTier, PaymentMethod, CreditAccount } from '../../../shared/types';
 import { useOpenClientCredits } from '../../credits/hooks/useCredits';
@@ -171,6 +171,12 @@ export function POSPage() {
   })();
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [sellerId, setSellerId] = useState<string>('');
+  const todayLocal = (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString().slice(0, 10);
+  })();
+  const [saleDate, setSaleDate] = useState<string>(todayLocal);
   const searchRef = useRef<HTMLInputElement>(null);
   const [successSale, setSuccessSale] = useState<VoucherSnapshot | null>(null);
   const [successCountdown, setSuccessCountdown] = useState(5);
@@ -541,10 +547,14 @@ export function POSPage() {
     const sellerName: string = snapshotSeller?.fullName || snapshotSeller?.username
       || (isSellerRole ? (user?.fullName || user?.username || '') : '')
       || 'Sin asignar';
+    // saleDate viene como YYYY-MM-DD; preservamos la hora actual al combinar.
+    const now = new Date();
+    const [yy, mm, dd] = saleDate.split('-').map(Number);
+    const saleDateObj = new Date(yy, (mm || 1) - 1, dd || 1, now.getHours(), now.getMinutes(), now.getSeconds());
     const saleSnapshotBase = {
       total: saleTotal,
       voucherType: saleVoucherType as VoucherSnapshot['voucherType'],
-      date: new Date(),
+      date: saleDateObj,
       items: cart.map((i) => ({
         name: i.name,
         quantity: i.quantity,
@@ -593,6 +603,7 @@ export function POSPage() {
             unitPrice: i.unitPrice,
           })),
           payments: validPayments,
+          date: saleDateObj.toISOString(),
         } as any);
       }
       setCart([]);
@@ -602,13 +613,15 @@ export function POSPage() {
       setIsCredit(false);
       setCreditName('');
       setCreditDueDays('');
+      setSaleDate(todayLocal);
       setShowCheckout(false);
       if (sourceQuoteId) {
         setSourceQuoteId('');
         setSearchParams({});
       }
       const saleId = saleResult?.id || saleResult?.sale?.id || '';
-      setSuccessSale({ id: saleId, ...saleSnapshotBase });
+      const saleNumber = saleResult?.saleNumber || saleResult?.sale?.saleNumber;
+      setSuccessSale({ id: saleId, voucherNumber: saleNumber, ...saleSnapshotBase });
       setSuccessCountdown(5);
     } catch {
       // errors handled by mutation onError
@@ -1076,14 +1089,29 @@ export function POSPage() {
 
             {/* Header */}
             <div className="bg-primary-600 rounded-t-2xl px-6 py-6 text-white shrink-0">
-              <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
                   <p className="text-white/70 text-sm mb-1">{cart.length} {cart.length === 1 ? 'producto' : 'productos'}</p>
                   <p className="text-4xl font-bold tracking-tight">S/ {total.toFixed(2)}</p>
                 </div>
-                <button onClick={() => setShowCheckout(false)} className="p-2 rounded-xl hover:bg-white/20 transition-colors mt-1">
-                  <X size={20} />
-                </button>
+                <div className="flex items-start gap-2">
+                  <label className="flex items-center gap-2 bg-white/15 hover:bg-white/25 transition-colors rounded-xl px-3 py-2 cursor-pointer" title="Fecha de la venta">
+                    <Calendar size={16} className="text-white/90 shrink-0" />
+                    <div className="flex flex-col">
+                      <span className="text-[10px] uppercase tracking-wider text-white/70 leading-none">Fecha</span>
+                      <input
+                        type="date"
+                        value={saleDate}
+                        max={todayLocal}
+                        onChange={(e) => setSaleDate(e.target.value || todayLocal)}
+                        className="bg-transparent border-0 text-white text-sm font-semibold focus:outline-none [color-scheme:dark] cursor-pointer p-0 mt-0.5"
+                      />
+                    </div>
+                  </label>
+                  <button onClick={() => setShowCheckout(false)} className="p-2 rounded-xl hover:bg-white/20 transition-colors">
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
               {/* Cart items summary */}
               <div className="bg-white/10 rounded-xl px-4 py-3 max-h-32 overflow-y-auto space-y-2">
@@ -1590,7 +1618,9 @@ export function POSPage() {
                 {successSale.voucherType === 'BOLETA' ? 'Boleta de venta'
                   : successSale.voucherType === 'FACTURA' ? 'Factura'
                   : 'Nota de venta'}
-                {successSale.id && <span className="text-gray-400 font-mono">· #{successSale.id.slice(-6).toUpperCase()}</span>}
+                {(successSale.voucherNumber || successSale.id) && (
+                  <span className="text-gray-400 font-mono">· {successSale.voucherNumber || `#${successSale.id.slice(-6).toUpperCase()}`}</span>
+                )}
               </div>
               <div className="text-3xl font-bold text-gray-900 tabular-nums">S/ {successSale.total.toFixed(2)}</div>
 
