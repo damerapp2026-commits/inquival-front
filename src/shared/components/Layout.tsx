@@ -12,6 +12,7 @@ import {
   FlaskConical, ArrowDownCircle,
 } from 'lucide-react';
 import type { AccountPayable, ProductLot } from '../types';
+import { UpdateBanner } from './UpdateBanner';
 
 type NavItem = { path: string; label: string; icon: any; roles?: string[] };
 type NavSection = { label: string; items: NavItem[] };
@@ -425,6 +426,8 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
+
+      <UpdateBanner />
 
       {/* Bottom nav (mobile only) */}
       <nav
