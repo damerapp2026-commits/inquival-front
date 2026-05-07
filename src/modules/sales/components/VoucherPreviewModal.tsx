@@ -16,6 +16,7 @@ export interface VoucherSnapshot {
   clientPhone?: string;
   igv?: number;
   baseImponible?: number;
+  voucherNumber?: string;
 }
 
 type Format = 'TICKET' | 'A4';
@@ -29,6 +30,10 @@ function shortVoucherNumber(id: string): string {
   return `NV-${(id || '').slice(-8).toUpperCase().padStart(8, '0')}`;
 }
 
+function displayVoucherNumber(sale: VoucherSnapshot): string {
+  return sale.voucherNumber || shortVoucherNumber(sale.id);
+}
+
 function voucherTitle(type: string): string {
   if (type === 'BOLETA') return 'Boleta de venta';
   if (type === 'FACTURA') return 'Factura';
@@ -40,7 +45,7 @@ function formatDate(d: Date): string {
 }
 
 function buildTicketHtml(sale: VoucherSnapshot): string {
-  const number = shortVoucherNumber(sale.id);
+  const number = displayVoucherNumber(sale);
   const title = voucherTitle(sale.voucherType).toUpperCase();
   const company = COMPANY_INFO;
   const itemsRows = sale.items.map((i) => `
@@ -120,7 +125,7 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
 }
 
 function buildA4Html(sale: VoucherSnapshot): string {
-  const number = shortVoucherNumber(sale.id);
+  const number = displayVoucherNumber(sale);
   const title = voucherTitle(sale.voucherType).toUpperCase();
   const company = COMPANY_INFO;
   const itemsRows = sale.items.map((i, idx) => `
@@ -215,7 +220,7 @@ function buildA4Html(sale: VoucherSnapshot): string {
 
 function buildWhatsappText(sale: VoucherSnapshot): string {
   const lines: string[] = [];
-  lines.push(`*${voucherTitle(sale.voucherType)}* — ${shortVoucherNumber(sale.id)}`);
+  lines.push(`*${voucherTitle(sale.voucherType)}* — ${displayVoucherNumber(sale)}`);
   lines.push(`${COMPANY_INFO.legalName}`);
   lines.push(`Fecha: ${formatDate(sale.date)}`);
   if (sale.clientName) lines.push(`Cliente: ${sale.clientName}`);
@@ -261,7 +266,7 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
 
   if (!sale) return null;
 
-  const number = shortVoucherNumber(sale.id);
+  const number = displayVoucherNumber(sale);
   const title = voucherTitle(sale.voucherType);
 
   const handlePrint = () => {
