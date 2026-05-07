@@ -31,7 +31,7 @@ const DEFAULT_COMPANY_INFO: CompanyInfo = {
   phone: '',
   email: '',
   website: '',
-  logoUrl: '/Icon/logosin.png',
+  logoUrl: '/pwa-192x192.png',
   bankAccounts: [],
   yape: undefined,
   plin: undefined,
