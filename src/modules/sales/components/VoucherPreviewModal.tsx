@@ -429,40 +429,57 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
   const handleWhatsapp = async () => {
     const text = buildWhatsappText(sale);
     const phone = (sale.clientPhone || '').replace(/\D/g, '');
-    const fallback = () => {
-      const encoded = encodeURIComponent(text);
-      const url = phone ? `https://wa.me/${phone}?text=${encoded}` : `https://wa.me/?text=${encoded}`;
-      window.open(url, '_blank');
-    };
+    const encodedText = encodeURIComponent(text);
+    const waUrl = phone ? `https://wa.me/${phone}?text=${encodedText}` : `https://wa.me/?text=${encodedText}`;
 
-    // Web Share API with files only works on most mobile browsers and a few desktops.
-    // If unsupported, fall back to wa.me with text only.
-    if (typeof navigator.canShare !== 'function') {
-      fallback();
+    // Probe whether this browser can share files (mobile yes; desktop almost never).
+    const probe = new File([new Blob(['x'])], 'probe.pdf', { type: 'application/pdf' });
+    const canShareFiles =
+      typeof navigator.canShare === 'function' &&
+      typeof navigator.share === 'function' &&
+      (() => { try { return navigator.canShare({ files: [probe] }); } catch { return false; } })();
+
+    if (!canShareFiles) {
+      // Desktop path: open WhatsApp Web immediately (preserves popup permission),
+      // then download the PDF so the user can drag it into the chat.
+      window.open(waUrl, '_blank');
+      setWhatsappLoading(true);
+      try {
+        const blob = await buildVoucherPdfBlob(sale);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${number}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch {
+        // PDF generation failed; WhatsApp tab is already open with the text.
+      } finally {
+        setWhatsappLoading(false);
+      }
       return;
     }
 
+    // Mobile path: native share sheet with PDF + text attached.
     setWhatsappLoading(true);
     try {
       const blob = await buildVoucherPdfBlob(sale);
       const file = new File([blob], `${number}.pdf`, { type: 'application/pdf' });
-      const data: ShareData = {
-        files: [file],
-        text,
-        title: `${title} ${number}`,
-      };
+      const data: ShareData = { files: [file], text, title: `${title} ${number}` };
       if (!navigator.canShare(data)) {
-        fallback();
+        window.open(waUrl, '_blank');
         return;
       }
       try {
         await navigator.share(data);
       } catch (err: any) {
         if (err?.name === 'AbortError') return; // user canceled the native share sheet
-        fallback();
+        window.open(waUrl, '_blank');
       }
     } catch {
-      fallback();
+      window.open(waUrl, '_blank');
     } finally {
       setWhatsappLoading(false);
     }
