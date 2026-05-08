@@ -78,6 +78,39 @@ export function useUpdatePurchaseFull() {
     },
   });
 }
+export function useCancelPurchase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      purchaseService.cancel(id, { reason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['stock'] });
+      qc.invalidateQueries({ queryKey: ['accounts-payable'] });
+      qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      qc.invalidateQueries({ queryKey: ['kardex'] });
+      qc.invalidateQueries({ queryKey: ['price-catalog'] });
+      qc.invalidateQueries({ queryKey: ['last-price'] });
+      qc.invalidateQueries({ queryKey: ['product-lots'] });
+      toast.success('Compra eliminada');
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message;
+      const code = err.response?.data?.code;
+      const codeMessages: Record<string, string> = {
+        PURCHASE_HAS_APPLIED_PAYMENTS: 'Esta compra ya tiene pagos aplicados en Cuentas por Pagar. Anula los pagos primero.',
+        PURCHASE_LOT_CONSUMED: 'Uno de los lotes de esta compra ya fue consumido en ventas posteriores.',
+        STOCK_WOULD_GO_NEGATIVE: 'El stock actual es insuficiente para revertir la compra. Las unidades ya fueron vendidas.',
+        CASH_REGISTER_CLOSED: 'La caja del día de la compra está cerrada. Reábrela para poder eliminar.',
+        PURCHASE_ALREADY_CANCELLED: 'La compra ya fue eliminada.',
+      };
+      const friendly = code && codeMessages[code];
+      toast.error(friendly || (Array.isArray(msg) ? msg[0] : msg) || 'Error al eliminar la compra');
+    },
+  });
+}
+
 export function useUpdatePriceCatalog() {
   const qc = useQueryClient();
   return useMutation({

@@ -1,9 +1,12 @@
-import { useParams, Link } from 'react-router-dom';
-import { usePurchases } from '../hooks/usePurchases';
+import { useState } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { usePurchases, useCancelPurchase } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
-import { ArrowLeft, ShoppingCart, Building2, FileText, CreditCard, Package, Pencil } from 'lucide-react';
+import { useAuth } from '../../../app/providers/AuthProvider';
+import { ArrowLeft, ShoppingCart, Building2, FileText, CreditCard, Package, Pencil, Trash2 } from 'lucide-react';
 import type { Purchase, Company, Product } from '../../../shared/types';
+import { CancelPurchaseDialog } from '../components/CancelPurchaseDialog';
 
 function InfoCell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -28,9 +31,14 @@ function SectionCard({ title, icon: Icon, children }: { title: string; icon: any
 
 export function PurchaseDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const { data, isLoading } = usePurchases({ limit: 500 });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
+  const cancelPurchase = useCancelPurchase();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const isAdmin = user?.role === 'ADMIN';
 
   const purchases: Purchase[] = data?.data || [];
   const purchase = purchases.find((p) => p.id === id);
@@ -84,7 +92,35 @@ export function PurchaseDetailPage() {
         >
           <Pencil size={14} /> Editar
         </Link>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 hover:border-red-300 text-sm font-semibold transition-colors"
+            title="Eliminar compra (revierte stock, lotes, AP/caja)"
+          >
+            <Trash2 size={14} /> Eliminar
+          </button>
+        )}
       </div>
+
+      <CancelPurchaseDialog
+        open={confirmOpen}
+        isCredit={purchase.paymentType === 'CREDITO'}
+        loading={cancelPurchase.isPending}
+        onClose={() => { if (!cancelPurchase.isPending) setConfirmOpen(false); }}
+        onConfirm={(reason) => {
+          cancelPurchase.mutate(
+            { id: purchase.id!, reason },
+            {
+              onSuccess: () => {
+                setConfirmOpen(false);
+                navigate('/purchases');
+              },
+            },
+          );
+        }}
+      />
 
       <div className="space-y-5">
         {/* Info general */}

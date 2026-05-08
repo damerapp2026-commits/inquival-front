@@ -51,6 +51,8 @@ export const purchaseService = {
   ) => api.patch(`/purchases/${id}`, data).then((r) => r.data.data),
   updateFull: (id: string, data: UpdatePurchaseFullPayload) =>
     api.patch(`/purchases/${id}/full`, data).then((r) => r.data.data),
+  cancel: (id: string, data: { reason: string }) =>
+    api.delete(`/purchases/${id}`, { data }).then((r) => r.data.data),
   getProductSuppliers: (productId: string) =>
     api.get(`/purchases/by-product/${productId}/suppliers`).then((r) => r.data.data),
   getLastPrice: (productId: string, supplierId: string) =>
