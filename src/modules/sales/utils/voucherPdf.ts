@@ -1,4 +1,5 @@
 import { COMPANY_INFO } from '../../../config/companyInfo';
+import { numberToWords } from '../../quotes/utils/numberToWords';
 import type { VoucherSnapshot } from '../components/VoucherPreviewModal';
 
 let pdfMakePromise: Promise<any> | null = null;
@@ -22,6 +23,24 @@ function loadPdfMake() {
   return pdfMakePromise;
 }
 
+let logoPromise: Promise<string | null> | null = null;
+function loadLogoDataUrl(): Promise<string | null> {
+  if (!logoPromise) {
+    logoPromise = fetch(COMPANY_INFO.logoUrl)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('logo not found'))))
+      .then((blob) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      }))
+      .catch(() => null);
+  }
+  return logoPromise;
+}
+
+export type VoucherFormat = 'TICKET' | 'A4';
+
 export function shortVoucherNumber(id: string): string {
   return `NV-${(id || '').slice(-8).toUpperCase().padStart(8, '0')}`;
 }
@@ -39,6 +58,10 @@ export function voucherTitle(type: string): string {
 function formatDate(d: Date): string {
   return d.toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
+
+const BRAND_GREEN = '#16a34a';
+const BRAND_GREEN_DARK = '#15803d';
+const BORDER_GRAY = '#94a3b8';
 
 function dashedLine(width = 206) {
   return { canvas: [{ type: 'line', x1: 0, y1: 0, x2: width, y2: 0, dash: { length: 2 }, lineWidth: 0.5, lineColor: '#000' }], margin: [0, 4, 0, 4] };
@@ -141,12 +164,309 @@ function buildTicketDocDef(sale: VoucherSnapshot): any {
   };
 }
 
-export async function buildVoucherPdfBlob(sale: VoucherSnapshot): Promise<Blob> {
+function buildBankAndWalletBlock(): any[] {
+  const { bankAccounts, yape, plin } = COMPANY_INFO;
+  const hasAny = (bankAccounts && bankAccounts.length > 0) || yape || plin;
+  if (!hasAny) return [];
+
+  const bankRows: any[] = [];
+  bankAccounts?.forEach((acc) => {
+    bankRows.push([
+      { text: `${acc.bank} (${acc.currency})`, bold: true, fontSize: 8 },
+      { text: 'Cuenta', fontSize: 8, color: '#6b7280' },
+      { text: acc.accountNumber || '—', fontSize: 8 },
+      { text: 'CCI', fontSize: 8, color: '#6b7280' },
+      { text: acc.cci || '—', fontSize: 8 },
+    ]);
+    bankRows.push([
+      { text: '', fontSize: 8 },
+      { text: 'Titular', fontSize: 8, color: '#6b7280' },
+      { text: acc.holder || '—', fontSize: 8, colSpan: 3 }, {}, {},
+    ]);
+  });
+
+  const walletRows: any[] = [];
+  if (yape) walletRows.push([
+    { text: 'Yape', bold: true, fontSize: 8, fillColor: '#f3e8ff' },
+    { text: yape.number, fontSize: 8 },
+    { text: yape.holder, fontSize: 8, color: '#6b7280' },
+  ]);
+  if (plin) walletRows.push([
+    { text: 'Plin', bold: true, fontSize: 8, fillColor: '#cffafe' },
+    { text: plin.number, fontSize: 8 },
+    { text: plin.holder, fontSize: 8, color: '#6b7280' },
+  ]);
+
+  return [
+    { text: '', margin: [0, 8] },
+    {
+      table: {
+        widths: ['*'],
+        body: [[{ text: 'FORMAS DE PAGO', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, margin: [4, 3] }]],
+      },
+      layout: 'noBorders',
+    },
+    ...(bankRows.length > 0 ? [{
+      table: { widths: ['auto', 'auto', '*', 'auto', '*'], body: bankRows },
+      layout: {
+        hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
+        hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 1 : 0),
+        vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1 : 0),
+        paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
+      },
+    }] : []),
+    ...(walletRows.length > 0 ? [
+      { text: '', margin: [0, 3] },
+      {
+        table: { widths: ['auto', 'auto', '*'], body: walletRows },
+        layout: {
+          hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
+          hLineWidth: () => 1, vLineWidth: () => 1,
+          paddingTop: () => 3, paddingBottom: () => 3, paddingLeft: () => 6, paddingRight: () => 6,
+        },
+      },
+    ] : []),
+  ];
+}
+
+function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
+  const c = COMPANY_INFO;
+  const headerName = c.legalName || 'EMPRESA';
+  const headerRuc = c.ruc || '—';
+  const title = voucherTitle(sale.voucherType).toUpperCase();
+  const number = displayVoucherNumber(sale);
+
+  const subtotal = typeof sale.baseImponible === 'number'
+    ? sale.baseImponible
+    : Math.round((sale.total / 1.18) * 100) / 100;
+  const igv = typeof sale.igv === 'number'
+    ? sale.igv
+    : Math.round((sale.total - subtotal) * 100) / 100;
+
+  const itemsRows = sale.items.map((it, idx) => [
+    { text: idx + 1, alignment: 'center', fontSize: 8 },
+    { text: it.name, alignment: 'left', fontSize: 8 },
+    { text: String(it.quantity), alignment: 'center', fontSize: 8 },
+    { text: it.unitPrice.toFixed(2), alignment: 'right', fontSize: 8 },
+    { text: it.subtotal.toFixed(2), alignment: 'right', fontSize: 8 },
+  ]);
+
+  while (itemsRows.length < 8) {
+    itemsRows.push([
+      { text: ' ', alignment: 'center', fontSize: 8 },
+      { text: ' ', alignment: 'left', fontSize: 8 },
+      { text: ' ', alignment: 'center', fontSize: 8 },
+      { text: ' ', alignment: 'right', fontSize: 8 },
+      { text: ' ', alignment: 'right', fontSize: 8 },
+    ]);
+  }
+
+  const paymentsBody: any[] = [
+    [{ text: 'FORMA DE PAGO', colSpan: 3, bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, margin: [4, 3] }, {}, {}],
+    ...sale.payments.map((p) => [
+      { text: p.methodName, bold: true, fontSize: 8 },
+      { text: ':', fontSize: 8 },
+      { text: `S/ ${p.amount.toFixed(2)}`, alignment: 'right', fontSize: 8 },
+    ]),
+  ];
+  if (sale.payments.length === 0) {
+    paymentsBody.push([{ text: ' ', fontSize: 8 }, { text: ' ', fontSize: 8 }, { text: ' ', fontSize: 8 }]);
+  }
+
+  return {
+    pageSize: 'A4',
+    pageMargins: [30, 30, 30, 30],
+    content: [
+      // Header
+      {
+        columns: [
+          ...(logoDataUrl
+            ? [{ image: logoDataUrl, width: 70, margin: [0, 4, 10, 0] } as any]
+            : []),
+          {
+            width: '*',
+            stack: [
+              { text: headerName, style: 'companyName' },
+              ...(c.address ? [{ text: `Dirección : ${c.address}`, style: 'companyDetail' }] : []),
+              ...(c.phone ? [{ text: `Teléfonos : ${c.phone}`, style: 'companyDetail' }] : []),
+              ...(c.email ? [{ text: `E-mail : ${c.email}`, style: 'companyDetail' }] : []),
+            ],
+            margin: [0, 10, 0, 0],
+          },
+          {
+            width: 200,
+            stack: [
+              {
+                table: { widths: ['*'], body: [[{ text: `R.U.C. ${headerRuc}`, alignment: 'center', bold: true, fontSize: 10, margin: [0, 4] }]] },
+                layout: { hLineColor: () => BRAND_GREEN, vLineColor: () => BRAND_GREEN, hLineWidth: () => 1, vLineWidth: () => 1 },
+              },
+              { text: '', margin: [0, 3] },
+              {
+                table: { widths: ['*'], body: [[{ text: title, alignment: 'center', bold: true, fontSize: 12, color: 'white', fillColor: BRAND_GREEN, margin: [0, 5] }]] },
+                layout: 'noBorders',
+              },
+              { text: '', margin: [0, 3] },
+              {
+                table: { widths: ['*'], body: [[{ text: number, alignment: 'center', bold: true, fontSize: 11, color: BRAND_GREEN_DARK, margin: [0, 4] }]] },
+                layout: { hLineColor: () => BRAND_GREEN, vLineColor: () => BRAND_GREEN, hLineWidth: () => 1, vLineWidth: () => 1 },
+              },
+            ],
+          },
+        ],
+      },
+
+      { text: '', margin: [0, 8] },
+
+      // Client / seller block
+      {
+        table: {
+          widths: ['auto', 5, '*', 'auto', 5, '*'],
+          body: [
+            [
+              { text: 'R.U.C. / D.N.I.', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: sale.clientDocument || '—', fontSize: 8, colSpan: 4 }, {}, {}, {},
+            ],
+            [
+              { text: 'Cliente', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: (sale.clientName || 'Consumidor final').toUpperCase(), fontSize: 8, colSpan: 4 }, {}, {}, {},
+            ],
+            [
+              { text: 'Teléfono', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: sale.clientPhone || ' ', fontSize: 8 },
+              { text: 'Vendedor', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: (sale.sellerName || '—').toUpperCase(), fontSize: 8 },
+            ],
+            [
+              { text: 'Fecha Emisión', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: formatDate(sale.date), fontSize: 8, colSpan: 4 }, {}, {}, {},
+            ],
+          ],
+        },
+        layout: {
+          hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
+          hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 1 : 0),
+          vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1 : 0),
+          paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
+        },
+      },
+
+      { text: '', margin: [0, 8] },
+
+      // Items table
+      {
+        table: {
+          headerRows: 1,
+          widths: [25, '*', 40, 60, 70],
+          body: [
+            [
+              { text: 'ÍTEM', style: 'thead' },
+              { text: 'DESCRIPCIÓN', style: 'thead' },
+              { text: 'CANT.', style: 'thead' },
+              { text: 'V. UNIT.', style: 'thead' },
+              { text: 'IMPORTE', style: 'thead' },
+            ],
+            ...itemsRows,
+          ],
+        },
+        layout: {
+          fillColor: (row: number) => (row === 0 ? BRAND_GREEN : null),
+          hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
+          hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0),
+          vLineWidth: () => 1,
+          paddingTop: () => 3, paddingBottom: () => 3,
+        },
+      },
+
+      { text: '', margin: [0, 4] },
+
+      // Amount in words
+      {
+        text: [
+          { text: 'SON: ', bold: true, fontSize: 8 },
+          { text: numberToWords(sale.total, 'PEN'), fontSize: 8 },
+        ],
+        margin: [2, 2, 2, 2],
+      },
+
+      { text: '', margin: [0, 6] },
+
+      // Payments + totals
+      {
+        columns: [
+          {
+            width: '*',
+            table: {
+              widths: ['auto', 5, '*'],
+              body: paymentsBody,
+            },
+            layout: {
+              hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
+              hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0),
+              vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1 : 0),
+              paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
+            },
+          },
+          { width: 10, text: '' },
+          {
+            width: 200,
+            table: {
+              widths: ['*', 30, 60],
+              body: [
+                [
+                  { text: 'OP. GRAVADAS', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
+                  { text: 'S/', fontSize: 9, alignment: 'center', margin: [0, 3] },
+                  { text: subtotal.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
+                ],
+                [
+                  { text: 'I.G.V. 18%', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
+                  { text: 'S/', fontSize: 9, alignment: 'center', margin: [0, 3] },
+                  { text: igv.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
+                ],
+                [
+                  { text: 'IMPORTE TOTAL', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 10, alignment: 'right', margin: [4, 3] },
+                  { text: 'S/', fontSize: 10, alignment: 'center', bold: true, margin: [0, 3] },
+                  { text: sale.total.toFixed(2), fontSize: 10, alignment: 'right', bold: true, margin: [0, 3] },
+                ],
+              ],
+            },
+            layout: {
+              hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
+              hLineWidth: () => 1, vLineWidth: () => 1,
+            },
+          },
+        ],
+      },
+
+      ...buildBankAndWalletBlock(),
+    ],
+    styles: {
+      companyName: { fontSize: 14, bold: true, color: '#111827' },
+      companyDetail: { fontSize: 8, color: '#374151', margin: [0, 1, 0, 0] },
+      thead: { bold: true, color: 'white', fontSize: 9, alignment: 'center' },
+    },
+    defaultStyle: { fontSize: 9 },
+  };
+}
+
+async function buildPdf(sale: VoucherSnapshot, format: VoucherFormat) {
+  if (format === 'A4') {
+    const [pdfMake, logoDataUrl] = await Promise.all([loadPdfMake(), loadLogoDataUrl()]);
+    return pdfMake.createPdf(buildA4DocDef(sale, logoDataUrl));
+  }
   const pdfMake = await loadPdfMake();
-  const docDef = buildTicketDocDef(sale);
+  return pdfMake.createPdf(buildTicketDocDef(sale));
+}
+
+export async function downloadVoucherPdf(sale: VoucherSnapshot, format: VoucherFormat = 'TICKET') {
+  const pdf = await buildPdf(sale, format);
+  pdf.download(`${displayVoucherNumber(sale)}.pdf`);
+}
+
+export async function openVoucherPdf(sale: VoucherSnapshot, format: VoucherFormat = 'TICKET') {
+  const pdf = await buildPdf(sale, format);
+  pdf.open();
+}
+
+export async function buildVoucherPdfBlob(sale: VoucherSnapshot, format: VoucherFormat = 'TICKET'): Promise<Blob> {
+  const pdf = await buildPdf(sale, format);
   return new Promise((resolve, reject) => {
     try {
-      pdfMake.createPdf(docDef).getBlob((blob: Blob) => {
+      pdf.getBlob((blob: Blob) => {
         if (blob) resolve(blob);
         else reject(new Error('PDF vacio'));
       });

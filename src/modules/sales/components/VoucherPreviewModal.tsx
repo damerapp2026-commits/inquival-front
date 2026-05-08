@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, FileText, Smartphone, FileText as FileIcon, Printer, ExternalLink, MessageCircle, Download, Loader2 } from 'lucide-react';
 import { COMPANY_INFO } from '../../../config/companyInfo';
-import { buildVoucherPdfBlob } from '../utils/voucherPdf';
+import { buildVoucherPdfBlob, downloadVoucherPdf, openVoucherPdf } from '../utils/voucherPdf';
 import { numberToWords } from '../../quotes/utils/numberToWords';
 
 export interface VoucherSnapshot {
@@ -380,6 +380,7 @@ interface Props {
 export function VoucherPreviewModal({ sale, onClose }: Props) {
   const [format, setFormat] = useState<Format>('TICKET');
   const [whatsappLoading, setWhatsappLoading] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState<null | 'download' | 'open'>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const html = useMemo(() => {
@@ -406,24 +407,26 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
     w.print();
   };
 
-  const handleOpenInNewTab = () => {
-    const win = window.open('', '_blank');
-    if (!win) return;
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
+  const handleOpenInNewTab = async () => {
+    setPdfBusy('open');
+    try {
+      await openVoucherPdf(sale, format);
+    } catch (err) {
+      console.error('No se pudo abrir el PDF', err);
+    } finally {
+      setPdfBusy(null);
+    }
   };
 
-  const handleDownload = () => {
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${number}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleDownload = async () => {
+    setPdfBusy('download');
+    try {
+      await downloadVoucherPdf(sale, format);
+    } catch (err) {
+      console.error('No se pudo descargar el PDF', err);
+    } finally {
+      setPdfBusy(null);
+    }
   };
 
   const handleWhatsapp = async () => {
@@ -445,7 +448,7 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
       window.open(waUrl, '_blank');
       setWhatsappLoading(true);
       try {
-        const blob = await buildVoucherPdfBlob(sale);
+        const blob = await buildVoucherPdfBlob(sale, format);
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -567,16 +570,20 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
           <button
             type="button"
             onClick={handleDownload}
-            className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 text-sm font-semibold transition-colors"
+            disabled={pdfBusy !== null}
+            className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 disabled:opacity-60 disabled:cursor-wait text-sm font-semibold transition-colors"
           >
-            <Download size={15} /> Descargar
+            {pdfBusy === 'download' ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+            {pdfBusy === 'download' ? 'Generando...' : 'Descargar'}
           </button>
           <button
             type="button"
             onClick={handleOpenInNewTab}
-            className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 text-sm font-semibold transition-colors"
+            disabled={pdfBusy !== null}
+            className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 disabled:opacity-60 disabled:cursor-wait text-sm font-semibold transition-colors"
           >
-            <ExternalLink size={15} /> Abrir PDF
+            {pdfBusy === 'open' ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+            {pdfBusy === 'open' ? 'Generando...' : 'Abrir PDF'}
           </button>
           <button
             type="button"
