@@ -1,15 +1,41 @@
-import { useMemo, useState } from 'react';
-import { Search, Loader2, FileSpreadsheet, X, Check, AlertTriangle, DollarSign } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Search, Loader2, FileSpreadsheet, X, Check, AlertTriangle, DollarSign, RotateCcw } from 'lucide-react';
 import { usePriceCatalog, useUpdatePriceCatalog } from '../../purchases/hooks/usePurchases';
 import { useProducts } from '../hooks/useProducts';
 import { useCategories } from '../../categories/hooks/useCategories';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
+import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import type { Product } from '../../../shared/types';
 
 const IGV_RATE = 0.18;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const appliesIgv = (taxType?: string) => !taxType || taxType === 'GRAVADO';
+
+const STORAGE_KEY = 'priceCatalog:globalRates:v1';
+const DEFAULT_MARGEN_DIST = 1.12;
+const DEFAULT_MARGEN_FINAL = 1.09;
+
+interface GlobalRates {
+  tcOverride: number | null;
+  margenDist: number;
+  margenFinal: number;
+}
+
+const loadRates = (): GlobalRates => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { tcOverride: null, margenDist: DEFAULT_MARGEN_DIST, margenFinal: DEFAULT_MARGEN_FINAL };
+    const parsed = JSON.parse(raw);
+    return {
+      tcOverride: typeof parsed.tcOverride === 'number' && parsed.tcOverride > 0 ? parsed.tcOverride : null,
+      margenDist: typeof parsed.margenDist === 'number' && parsed.margenDist > 0 ? parsed.margenDist : DEFAULT_MARGEN_DIST,
+      margenFinal: typeof parsed.margenFinal === 'number' && parsed.margenFinal > 0 ? parsed.margenFinal : DEFAULT_MARGEN_FINAL,
+    };
+  } catch {
+    return { tcOverride: null, margenDist: DEFAULT_MARGEN_DIST, margenFinal: DEFAULT_MARGEN_FINAL };
+  }
+};
 
 interface PriceCatalogRow {
   productId: string;
@@ -53,6 +79,9 @@ interface MergedRow {
   unitPriceConIgvUsd?: number;
   unitPriceConIgvPen?: number;
   precioMinorista?: number;
+  precioVenta?: number;
+  storedSellPrice?: number;
+  storedSellPriceTier?: string;
   markupPercent?: number;
   lastPurchaseDate?: string;
   documentSeries?: string;
@@ -69,8 +98,7 @@ type EditableField =
   | 'unitPriceSinIgvPen'
   | 'unitPriceConIgvUsd'
   | 'unitPriceConIgvPen'
-  | 'precioMinorista'
-  | 'markupPercent';
+  | 'precioMinorista';
 
 const fmt = (n?: number) => (n != null ? n.toFixed(2) : '');
 const fmtDate = (d?: string) => {
@@ -86,8 +114,9 @@ export function PriceCatalogView({ enabled }: Props) {
   );
   const { data: categoriesData } = useCategories();
   const { data: laboratoriesData } = useLaboratories();
+  const { data: priceTiersData } = usePriceTiers();
   const { data: tipoCambioData, isLoading: tcLoading } = useTodayTipoCambio(enabled);
-  const tc = tipoCambioData?.venta ?? null;
+  const tcDay = tipoCambioData?.venta ?? null;
   const updatePriceCatalog = useUpdatePriceCatalog();
 
   const [search, setSearch] = useState('');
@@ -98,10 +127,55 @@ export function PriceCatalogView({ enabled }: Props) {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [errorIds, setErrorIds] = useState<Set<string>>(new Set());
 
+  const [rates, setRates] = useState<GlobalRates>(() => loadRates());
+  const [tcInput, setTcInput] = useState<string>(() => {
+    const r = loadRates();
+    return r.tcOverride != null ? String(r.tcOverride) : '';
+  });
+  const [margenDistInput, setMargenDistInput] = useState<string>(() => String(loadRates().margenDist));
+  const [margenFinalInput, setMargenFinalInput] = useState<string>(() => String(loadRates().margenFinal));
+  const tc = rates.tcOverride ?? tcDay;
+  const margenDist = rates.margenDist;
+  const margenFinal = rates.margenFinal;
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(rates)); } catch { /* ignore */ }
+  }, [rates]);
+
   const categories: any[] = Array.isArray(categoriesData) ? categoriesData : (categoriesData as any)?.data || [];
   const laboratories: any[] = Array.isArray(laboratoriesData) ? laboratoriesData : [];
+  const priceTiers: any[] = Array.isArray(priceTiersData) ? priceTiersData : [];
   const products: Product[] = (productsData as any)?.data || (Array.isArray(productsData) ? productsData : []) || [];
   const catalogRows: PriceCatalogRow[] = Array.isArray(catalogData) ? catalogData : [];
+
+  const sortedTiers = useMemo(
+    () => priceTiers.slice().sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0)),
+    [priceTiers],
+  );
+
+  const tiersById = useMemo(
+    () => new Map(priceTiers.map((t: any) => [t.id, t])),
+    [priceTiers],
+  );
+
+  const lookupStoredPrice = (p: Product): { price?: number; tierName?: string } => {
+    if (!p.prices?.length) return {};
+    for (const t of sortedTiers) {
+      const found = p.prices.find((px: any) => px.priceTierId === t.id && !px.companyId && px.price > 0);
+      if (found) return { price: found.price, tierName: t.name };
+    }
+    const anyGlobal = p.prices.find((px: any) => !px.companyId && px.price > 0);
+    if (anyGlobal) {
+      const tier: any = tiersById.get(anyGlobal.priceTierId);
+      return { price: anyGlobal.price, tierName: tier?.name };
+    }
+    const anyPrice = p.prices.find((px: any) => px.price > 0);
+    if (anyPrice) {
+      const tier: any = tiersById.get(anyPrice.priceTierId);
+      return { price: anyPrice.price, tierName: tier?.name };
+    }
+    return {};
+  };
 
   const catalogByProduct = useMemo(() => {
     const map = new Map<string, PriceCatalogRow>();
@@ -127,6 +201,7 @@ export function PriceCatalogView({ enabled }: Props) {
     return products.map((p) => {
       const row = catalogByProduct.get(p.id);
       const labName = p.laboratoryId ? (labsById.get(p.laboratoryId) as any)?.name : undefined;
+      const { price: storedSellPrice, tierName: storedSellPriceTier } = lookupStoredPrice(p);
       return {
         productId: p.id,
         productName: p.name,
@@ -140,6 +215,9 @@ export function PriceCatalogView({ enabled }: Props) {
         unitPriceConIgvUsd: row?.unitPriceConIgvUsd,
         unitPriceConIgvPen: row?.unitPriceConIgvPen,
         precioMinorista: row?.precioMinorista,
+        precioVenta: row?.precioVenta,
+        storedSellPrice,
+        storedSellPriceTier,
         markupPercent: row?.markupPercent,
         lastPurchaseDate: row?.lastPurchaseDate,
         documentSeries: row?.documentSeries,
@@ -147,7 +225,8 @@ export function PriceCatalogView({ enabled }: Props) {
         hasPurchase: !!row,
       };
     });
-  }, [products, catalogByProduct, labsById]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, catalogByProduct, labsById, sortedTiers, tiersById]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -320,6 +399,97 @@ export function PriceCatalogView({ enabled }: Props) {
     );
   };
 
+  const precioTentativo = (row: MergedRow): number | undefined => {
+    const penConIgv = row.unitPriceConIgvPen;
+    if (penConIgv != null && Number.isFinite(penConIgv) && penConIgv > 0) {
+      return r2(penConIgv * margenDist);
+    }
+    return undefined;
+  };
+
+  const facturacionSinIgv = (row: MergedRow): number | undefined => {
+    const penSinIgv = row.unitPriceSinIgvPen;
+    if (penSinIgv != null && Number.isFinite(penSinIgv) && penSinIgv > 0) {
+      return r2(penSinIgv * margenFinal);
+    }
+    return undefined;
+  };
+
+  const renderPrecioFinalInput = (row: MergedRow) => {
+    const isSaving = savingIds.has(row.productId);
+    const editedRaw = edits[row.productId]?.precioMinorista;
+    const hasEdit = editedRaw !== undefined;
+    const hasSaved = row.precioMinorista != null;
+
+    const fallbackPrice = row.storedSellPrice ?? row.precioVenta;
+    const fallbackSource = row.storedSellPrice != null
+      ? `${row.storedSellPriceTier ?? 'precio guardado'}`
+      : row.precioVenta != null
+        ? 'última compra'
+        : null;
+
+    const value = hasEdit
+      ? editedRaw!
+      : hasSaved
+        ? fmt(row.precioMinorista)
+        : fallbackPrice != null ? fmt(fallbackPrice) : '';
+
+    const isFromFallback = !hasEdit && !hasSaved && fallbackPrice != null;
+    const bgClass = isFromFallback
+      ? 'bg-cyan-50/40 text-cyan-700 italic'
+      : 'bg-cyan-50 text-cyan-900';
+
+    return (
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        value={value}
+        placeholder={row.hasPurchase ? '0.00' : '—'}
+        onChange={(e) => handleChange(row.productId, 'precioMinorista', e.target.value)}
+        onBlur={() => handleBlur(row, 'precioMinorista')}
+        disabled={isSaving}
+        title={isFromFallback ? `Precio guardado (${fallbackSource}). Editá para sobreescribir solo en este catálogo.` : undefined}
+        className={`w-20 px-1.5 py-1 border border-transparent rounded text-right tabular-nums focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-200 disabled:opacity-50 ${bgClass}`}
+      />
+    );
+  };
+
+  const handleTcChange = (raw: string) => {
+    setTcInput(raw);
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      setRates((r) => ({ ...r, tcOverride: null }));
+      return;
+    }
+    const num = parseFloat(trimmed);
+    if (Number.isFinite(num) && num > 0) {
+      setRates((r) => ({ ...r, tcOverride: num }));
+    }
+  };
+
+  const handleMargenChange = (kind: 'dist' | 'final', raw: string) => {
+    if (kind === 'dist') setMargenDistInput(raw);
+    else setMargenFinalInput(raw);
+    const trimmed = raw.trim();
+    const fallback = kind === 'dist' ? DEFAULT_MARGEN_DIST : DEFAULT_MARGEN_FINAL;
+    if (trimmed === '') {
+      setRates((r) => ({ ...r, [kind === 'dist' ? 'margenDist' : 'margenFinal']: fallback }));
+      return;
+    }
+    const num = parseFloat(trimmed);
+    if (Number.isFinite(num) && num > 0) {
+      setRates((r) => ({ ...r, [kind === 'dist' ? 'margenDist' : 'margenFinal']: num }));
+    }
+  };
+
+  const resetRates = () => {
+    setRates({ tcOverride: null, margenDist: DEFAULT_MARGEN_DIST, margenFinal: DEFAULT_MARGEN_FINAL });
+    setTcInput('');
+    setMargenDistInput(String(DEFAULT_MARGEN_DIST));
+    setMargenFinalInput(String(DEFAULT_MARGEN_FINAL));
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
@@ -363,25 +533,74 @@ export function PriceCatalogView({ enabled }: Props) {
             <span>{filtered.length} de {merged.length} productos</span>
           </div>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 border border-blue-200 text-[11px] text-blue-800">
-            <DollarSign size={12} />
-            {tcLoading ? (
-              <span className="inline-flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Cargando TC…</span>
-            ) : tc ? (
-              <span>
-                <span className="font-medium">TC hoy: S/ {tc.toFixed(4)}</span>
-                {tipoCambioData?.fecha && (
-                  <span className="text-blue-600/70"> · {tipoCambioData.fecha}</span>
-                )}
-              </span>
-            ) : (
-              <span className="text-blue-700/80">TC no disponible — autollenado USD desactivado</span>
-            )}
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-[auto_auto_auto_auto_1fr] gap-2 md:gap-3 items-start">
+          <div className="flex flex-col">
+            <label className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">T.C. (S/ por USD)</label>
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-blue-50 border border-blue-200">
+              <DollarSign size={12} className="text-blue-700" />
+              {tcLoading && tcInput === '' ? (
+                <Loader2 size={10} className="animate-spin text-blue-700" />
+              ) : (
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={tcInput !== '' ? tcInput : (tcDay != null ? tcDay.toFixed(4) : '')}
+                  onChange={(e) => handleTcChange(e.target.value)}
+                  placeholder="3.50"
+                  className="w-20 bg-transparent text-sm font-semibold text-blue-900 tabular-nums focus:outline-none"
+                />
+              )}
+            </div>
+            <span className="text-[10px] text-gray-400 mt-0.5">
+              {rates.tcOverride != null ? 'Override manual' : tipoCambioData?.fecha ? `SBS ${tipoCambioData.fecha}` : tc ? 'Día actual' : 'No disponible'}
+            </span>
           </div>
-          <p className="text-[11px] text-gray-500">
-            Editá <span className="font-medium text-amber-700">USD s/IGV</span> y los otros 3 precios se autocompletan con el TC del día. Cualquier celda se puede editar manualmente.
-          </p>
+
+          <div className="flex flex-col">
+            <label className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">IGV</label>
+            <div className="px-2 py-1 rounded-md bg-stone-100 border border-stone-200 text-sm font-semibold text-stone-700 tabular-nums">
+              {(1 + IGV_RATE).toFixed(2)}
+            </div>
+            <span className="text-[10px] text-gray-400 mt-0.5">Fijo 18%</span>
+          </div>
+
+          <div className="flex flex-col">
+            <label className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">Margen Tentativo</label>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={margenDistInput}
+              onChange={(e) => handleMargenChange('dist', e.target.value)}
+              className="w-24 px-2 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-sm font-semibold text-emerald-800 tabular-nums focus:outline-none focus:border-emerald-400"
+            />
+            <span className="text-[10px] text-gray-400 mt-0.5">PEN c/IGV × este factor</span>
+          </div>
+
+          <div className="flex flex-col">
+            <label className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">Margen Facturación</label>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={margenFinalInput}
+              onChange={(e) => handleMargenChange('final', e.target.value)}
+              className="w-24 px-2 py-1 rounded-md bg-orange-50 border border-orange-200 text-sm font-semibold text-orange-800 tabular-nums focus:outline-none focus:border-orange-400"
+            />
+            <span className="text-[10px] text-gray-400 mt-0.5">PEN s/IGV × este factor</span>
+          </div>
+
+          <div className="flex flex-col items-start md:items-end gap-1">
+            <button
+              type="button"
+              onClick={resetRates}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-md"
+              title="Volver a valores por defecto (TC del día, 1.12, 1.09)"
+            >
+              <RotateCcw size={11} /> Restablecer
+            </button>
+            <p className="text-[11px] text-gray-500 max-w-md text-left md:text-right">
+              Editá <span className="font-medium text-amber-700">USD s/IGV</span> para autocompletar precios con el T.C. de arriba. Si no hay precio distribuidor guardado, se sugiere automáticamente.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -394,6 +613,25 @@ export function PriceCatalogView({ enabled }: Props) {
         <div className="overflow-x-auto">
           <table className="min-w-full text-xs">
             <thead>
+              <tr className="bg-gray-50 text-gray-500 border-b border-gray-100 text-[10px]">
+                <th colSpan={2}></th>
+                <th className="text-right px-2 py-1 font-medium tabular-nums" colSpan={2}>
+                  T.C. <span className="text-blue-700">{tc != null ? tc.toFixed(2) : '—'}</span>
+                </th>
+                <th className="text-right px-2 py-1 font-medium tabular-nums" colSpan={2}>
+                  IGV <span className="text-stone-700">{(1 + IGV_RATE).toFixed(2)}</span>
+                </th>
+                <th className="text-right px-2 py-1 font-medium tabular-nums bg-emerald-50">
+                  <span className="text-emerald-700">×{margenDist.toFixed(2)}</span>
+                </th>
+                <th className="text-right px-2 py-1 font-medium tabular-nums">
+                  <span className="text-gray-400">guardado</span>
+                </th>
+                <th className="text-right px-2 py-1 font-medium tabular-nums bg-orange-50">
+                  <span className="text-orange-700">×{margenFinal.toFixed(2)}</span>
+                </th>
+                <th colSpan={2}></th>
+              </tr>
               <tr className="bg-gray-50 text-gray-600 border-b border-gray-200">
                 <th className="text-left px-3 py-2 font-medium">Producto</th>
                 <th className="text-left px-3 py-2 font-medium">Laboratorio</th>
@@ -401,8 +639,9 @@ export function PriceCatalogView({ enabled }: Props) {
                 <th className="text-right px-2 py-2 font-medium bg-stone-100 text-stone-700">PEN s/IGV</th>
                 <th className="text-right px-2 py-2 font-medium bg-amber-100 text-amber-800">USD c/IGV</th>
                 <th className="text-right px-2 py-2 font-medium bg-stone-100 text-stone-700">PEN c/IGV</th>
-                <th className="text-right px-2 py-2 font-medium bg-cyan-100 text-cyan-800">P. Mayorista</th>
-                <th className="text-right px-2 py-2 font-medium bg-orange-100 text-orange-800">Margen %</th>
+                <th className="text-right px-2 py-2 font-medium bg-emerald-100 text-emerald-800">P. Tentativo</th>
+                <th className="text-right px-2 py-2 font-medium bg-cyan-100 text-cyan-800">P. Final</th>
+                <th className="text-right px-2 py-2 font-medium bg-orange-100 text-orange-800">Facturación s/IGV</th>
                 <th className="text-right px-3 py-2 font-medium">Última compra</th>
                 <th className="text-center px-2 py-2 font-medium">Estado</th>
               </tr>
@@ -410,14 +649,14 @@ export function PriceCatalogView({ enabled }: Props) {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
                     <Loader2 size={20} className="animate-spin inline" /> Cargando catálogo…
                   </td>
                 </tr>
               )}
               {!isLoading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
                     {merged.length === 0
                       ? 'No hay productos cargados.'
                       : 'Ningún producto coincide con los filtros.'}
@@ -452,11 +691,20 @@ export function PriceCatalogView({ enabled }: Props) {
                     <td className="px-1 py-1 text-right tabular-nums bg-stone-50">
                       {renderInput(r, 'unitPriceConIgvPen', 'bg-stone-50 text-stone-800')}
                     </td>
-                    <td className="px-1 py-1 text-right tabular-nums bg-cyan-50">
-                      {renderInput(r, 'precioMinorista', 'bg-cyan-50 text-cyan-900')}
+                    <td className="px-2 py-2 text-right tabular-nums bg-emerald-50 text-emerald-900 font-medium">
+                      {(() => {
+                        const tentativo = precioTentativo(r);
+                        return tentativo != null ? tentativo.toFixed(2) : <span className="text-gray-300 font-normal">—</span>;
+                      })()}
                     </td>
-                    <td className="px-1 py-1 text-right tabular-nums bg-orange-50">
-                      {renderInput(r, 'markupPercent', 'bg-orange-50 text-orange-900 font-medium')}
+                    <td className="px-1 py-1 text-right tabular-nums bg-cyan-50">
+                      {renderPrecioFinalInput(r)}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums bg-orange-50 text-orange-900 font-semibold">
+                      {(() => {
+                        const fact = facturacionSinIgv(r);
+                        return fact != null ? fact.toFixed(2) : <span className="text-gray-300 font-normal">—</span>;
+                      })()}
                     </td>
                     <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">
                       <div>{fmtDate(r.lastPurchaseDate)}</div>
@@ -485,8 +733,9 @@ export function PriceCatalogView({ enabled }: Props) {
         <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/50 flex flex-wrap gap-3 text-[11px] text-gray-500">
           <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-200" /> Precio USD</span>
           <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-stone-100 border border-stone-200" /> Precio PEN</span>
-          <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-cyan-100 border border-cyan-200" /> Precio mayorista</span>
-          <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-orange-100 border border-orange-200" /> Margen</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-emerald-100 border border-emerald-200" /> P. Tentativo (PEN c/IGV × {margenDist.toFixed(2)})</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-cyan-100 border border-cyan-200" /> P. Final (BD, editable)</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-orange-100 border border-orange-200" /> Facturación s/IGV (PEN s/IGV × {margenFinal.toFixed(2)})</span>
         </div>
       </div>
     </div>

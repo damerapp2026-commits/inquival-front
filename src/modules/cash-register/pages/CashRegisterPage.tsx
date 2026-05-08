@@ -204,14 +204,22 @@ export function CashRegisterPage() {
   const goToSale = (saleId: string) => navigate(`/sales?openSaleId=${saleId}`);
 
   const vendorsInDay = useMemo(() => {
-    const counts = new Map<string, number>();
+    const stats = new Map<string, { count: number; sales: number; income: number; expense: number }>();
     entries.forEach((e) => {
       if (!e.createdBy) return;
-      counts.set(e.createdBy, (counts.get(e.createdBy) || 0) + 1);
+      const cur = stats.get(e.createdBy) || { count: 0, sales: 0, income: 0, expense: 0 };
+      cur.count += 1;
+      if (e.type === 'INCOME') {
+        cur.income += e.amount;
+        if (e.category === 'SALE') cur.sales += e.amount;
+      } else if (e.type === 'EXPENSE') {
+        cur.expense += e.amount;
+      }
+      stats.set(e.createdBy, cur);
     });
-    return Array.from(counts.entries())
-      .map(([id, count]) => ({ id, name: userById[id] || 'Usuario', count }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(stats.entries())
+      .map(([id, s]) => ({ id, name: userById[id] || 'Usuario', ...s }))
+      .sort((a, b) => b.sales - a.sales || a.name.localeCompare(b.name));
   }, [entries, userById]);
 
   const filteredEntries = useMemo(() => {
@@ -390,20 +398,22 @@ export function CashRegisterPage() {
               · {filteredEntries.length}{vendorFilter ? ` de ${entries.length}` : ''} entrada{filteredEntries.length === 1 ? '' : 's'}
             </span>
           </div>
-          {vendorsInDay.length > 1 && (
+          {vendorsInDay.length >= 1 && (
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Vendedor:</span>
-              <button
-                type="button"
-                onClick={() => setVendorFilter(null)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                  !vendorFilter
-                    ? 'bg-primary-600 text-white border-primary-600'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'
-                }`}
-              >
-                Todos
-              </button>
+              {vendorsInDay.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setVendorFilter(null)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    !vendorFilter
+                      ? 'bg-primary-600 text-white border-primary-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'
+                  }`}
+                >
+                  Todos
+                </button>
+              )}
               {vendorsInDay.map((v) => {
                 const active = vendorFilter === v.id;
                 const color = vendorColor(v.name);
@@ -417,13 +427,15 @@ export function CashRegisterPage() {
                         ? 'bg-primary-600 text-white border-primary-600'
                         : 'bg-white text-gray-700 border-gray-200 hover:border-primary-300'
                     }`}
-                    title={`${v.name} · ${v.count} movimiento${v.count === 1 ? '' : 's'}`}
+                    title={`${v.name} · ${v.count} mov · S/ ${v.sales.toFixed(2)} en ventas · S/ ${v.income.toFixed(2)} ingresos totales`}
                   >
                     <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ${active ? 'bg-white/20 text-white' : color}`}>
                       {initialsFor(v.name)}
                     </span>
                     <span className="truncate max-w-[120px]">{v.name}</span>
-                    <span className={`text-[10px] ${active ? 'text-white/80' : 'text-gray-400'}`}>· {v.count}</span>
+                    <span className={`text-[10px] tabular-nums font-semibold ${active ? 'text-white' : v.sales > 0 ? 'text-emerald-700' : 'text-gray-400'}`}>
+                      · S/ {v.sales.toFixed(2)}
+                    </span>
                   </button>
                 );
               })}

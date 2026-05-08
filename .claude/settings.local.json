@@ -79,7 +79,8 @@
       "Bash(npx nest *)",
       "Bash(echo \"---FRONT EXIT: $?\")",
       "Bash(echo \"---BACK EXIT: $?\")",
-      "Bash(echo \"---EXIT: $?\")"
+      "Bash(echo \"---EXIT: $?\")",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }
