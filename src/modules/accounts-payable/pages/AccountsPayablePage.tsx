@@ -125,6 +125,47 @@ export function AccountsPayablePage() {
   const paymentsByDate = useMemo(() => groupPaymentsByDate(activeAccounts), [activeAccounts]);
   const selectedPayments = selectedDate ? (paymentsByDate[selectedDate] || []) : [];
 
+  // Flat list of every pending payment with its date and days-until-due
+  const allPending = useMemo(() => {
+    const todayMs = new Date().setHours(0, 0, 0, 0);
+    const list: (DayPayment & { dateStr: string; daysDiff: number })[] = [];
+    Object.entries(paymentsByDate).forEach(([dateStr, payments]) => {
+      const dueMs = new Date(dateStr + 'T00:00:00').getTime();
+      const daysDiff = Math.ceil((dueMs - todayMs) / 86400000);
+      payments.forEach(p => list.push({ ...p, dateStr, daysDiff }));
+    });
+    return list;
+  }, [paymentsByDate]);
+
+  const summary = useMemo(() => {
+    let overdue = 0, overdueCount = 0, next7 = 0, next7Count = 0, total = 0;
+    allPending.forEach(p => {
+      total += p.amount;
+      if (p.daysDiff < 0) { overdue += p.amount; overdueCount++; }
+      else if (p.daysDiff <= 7) { next7 += p.amount; next7Count++; }
+    });
+    return { overdue, overdueCount, next7, next7Count, total, totalCount: allPending.length };
+  }, [allPending]);
+
+  // Pending grouped by supplier — overdue suppliers first, then by earliest due date
+  const pendingBySupplier = useMemo(() => {
+    const map: Record<string, typeof allPending> = {};
+    allPending.forEach(p => { if (!map[p.supplier]) map[p.supplier] = []; map[p.supplier].push(p); });
+    Object.values(map).forEach(arr => arr.sort((a, b) => a.dateStr.localeCompare(b.dateStr)));
+    return Object.entries(map)
+      .map(([supplier, items]) => ({
+        supplier,
+        items,
+        earliestDate: items[0].dateStr,
+        hasOverdue: items.some(i => i.isOverdue),
+        total: items.reduce((s, p) => s + p.amount, 0),
+      }))
+      .sort((a, b) => {
+        if (a.hasOverdue !== b.hasOverdue) return a.hasOverdue ? -1 : 1;
+        return a.earliestDate.localeCompare(b.earliestDate);
+      });
+  }, [allPending]);
+
   // Suppliers with active (non-CONSOLIDATED, non-PAID) APs for the create modal
   const supplierOptions = useMemo(() => {
     const map: Record<string, AccountPayable[]> = {};
@@ -322,6 +363,42 @@ export function AccountsPayablePage() {
 
       {/* ── TAB: CALENDARIO ── */}
       {activeTab === 'calendar' && (
+        <>
+        {/* KPI summary */}
+        {!isLoading && summary.totalCount > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+            <div className={`bg-white rounded-xl border p-4 flex items-center gap-3 ${summary.overdueCount > 0 ? 'border-red-200' : 'border-gray-200'}`}>
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${summary.overdueCount > 0 ? 'bg-red-100' : 'bg-gray-100'}`}>
+                <AlertCircle size={20} className={summary.overdueCount > 0 ? 'text-red-600' : 'text-gray-400'} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={`text-[11px] uppercase tracking-wider font-semibold ${summary.overdueCount > 0 ? 'text-red-600' : 'text-gray-500'}`}>Vencido</div>
+                <div className="font-bold text-gray-800 text-lg leading-tight">S/ {summary.overdue.toFixed(2)}</div>
+                <div className="text-xs text-gray-500">{summary.overdueCount} pago{summary.overdueCount !== 1 ? 's' : ''}</div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-yellow-200 p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-yellow-100 flex items-center justify-center flex-shrink-0">
+                <Clock size={20} className="text-yellow-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] uppercase tracking-wider text-yellow-700 font-semibold">Próximos 7 días</div>
+                <div className="font-bold text-gray-800 text-lg leading-tight">S/ {summary.next7.toFixed(2)}</div>
+                <div className="text-xs text-gray-500">{summary.next7Count} pago{summary.next7Count !== 1 ? 's' : ''}</div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-primary-200 p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary-100 flex items-center justify-center flex-shrink-0">
+                <DollarSign size={20} className="text-primary-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] uppercase tracking-wider text-primary-700 font-semibold">Total pendiente</div>
+                <div className="font-bold text-gray-800 text-lg leading-tight">S/ {summary.total.toFixed(2)}</div>
+                <div className="text-xs text-gray-500">{summary.totalCount} pago{summary.totalCount !== 1 ? 's' : ''}</div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="flex flex-col lg:flex-row gap-6 items-start">
           {/* Calendar */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 w-full lg:w-auto lg:min-w-[360px]">
@@ -428,13 +505,75 @@ export function AccountsPayablePage() {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : allPending.length === 0 ? (
               <div className="hidden lg:flex h-full min-h-[300px] items-center justify-center text-gray-300 bg-white rounded-xl border border-dashed border-gray-200">
-                <div className="text-center"><CalendarDays size={40} className="mx-auto mb-2" /><div className="text-sm text-gray-400">Selecciona un día para ver los pagos</div></div>
+                <div className="text-center"><CalendarDays size={40} className="mx-auto mb-2" /><div className="text-sm text-gray-400">No hay pagos pendientes</div></div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+                <div className="flex items-start justify-between px-4 py-3 border-b border-gray-100">
+                  <div>
+                    <div className="font-semibold text-gray-800 text-sm flex items-center gap-2">
+                      <FileText size={14} /> Pendientes ({allPending.length})
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      Total: <span className="font-semibold text-gray-700">S/ {summary.total.toFixed(2)}</span>
+                      {summary.overdueCount > 0 && <span className="ml-2 text-red-600 font-medium">· {summary.overdueCount} vencido{summary.overdueCount > 1 ? 's' : ''}</span>}
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-gray-400 mt-1">Vencidos primero</div>
+                </div>
+                <div className="divide-y divide-gray-100 max-h-[640px] overflow-y-auto">
+                  {pendingBySupplier.map(({ supplier, items, hasOverdue, total }) => (
+                    <div key={supplier}>
+                      <div className={`flex items-center justify-between px-4 py-2 ${hasOverdue ? 'bg-red-50' : 'bg-gray-50'} border-b border-gray-100`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-semibold text-gray-800 text-sm truncate">{supplier}</span>
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600 flex-shrink-0">{items.length} pago{items.length > 1 ? 's' : ''}</span>
+                        </div>
+                        <span className={`text-sm font-bold flex-shrink-0 ${hasOverdue ? 'text-red-600' : 'text-gray-700'}`}>S/ {total.toFixed(2)}</span>
+                      </div>
+                      {items.map((p, idx) => {
+                        const daysLabel = p.daysDiff < 0
+                          ? `Vencido hace ${Math.abs(p.daysDiff)} día${Math.abs(p.daysDiff) > 1 ? 's' : ''}`
+                          : p.daysDiff === 0 ? 'Vence hoy'
+                          : `Vence en ${p.daysDiff} día${p.daysDiff > 1 ? 's' : ''}`;
+                        const dateCls = p.daysDiff < 0 ? 'text-red-600 font-medium' : p.daysDiff <= 3 ? 'text-yellow-600 font-medium' : 'text-gray-500';
+                        return (
+                          <div key={`${p.apId}-${p.installmentId || idx}`} className={`p-3 pl-6 ${p.isOverdue ? 'bg-red-50/40' : ''}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {p.purchaseRef && <span className="text-[11px] font-mono font-semibold text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{p.purchaseRef}</span>}
+                                  <span className="text-xs text-gray-500">{p.installmentIndex ? `Cuota ${p.installmentIndex}` : 'Pago único'}</span>
+                                  <button onClick={() => handleDayClick(p.dateStr)} className="text-[11px] text-primary-600 hover:underline">
+                                    {new Date(p.dateStr + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}
+                                  </button>
+                                  <span className={`text-xs ${dateCls} flex items-center gap-0.5`}>
+                                    {p.daysDiff < 0 && <AlertCircle size={10} />}
+                                    {daysLabel}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className={`font-bold text-sm flex-shrink-0 ${p.isOverdue ? 'text-red-600' : 'text-gray-800'}`}>S/ {p.amount.toFixed(2)}</div>
+                            </div>
+                            <div className="flex gap-2 mt-2">
+                              <button onClick={() => setViewingId(p.apId)} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 bg-blue-50 rounded hover:bg-blue-100 transition-colors"><Eye size={12} /> Ver detalle</button>
+                              {p.ap.status !== 'PAID' && (
+                                <button onClick={() => openAPPayment(p.ap)} className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-800 px-2 py-1 bg-primary-50 rounded hover:bg-primary-100 transition-colors"><DollarSign size={12} /> Registrar pago</button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         </div>
+        </>
       )}
 
       {/* ── TAB: ACUERDOS ── */}
