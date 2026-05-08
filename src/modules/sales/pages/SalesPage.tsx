@@ -77,6 +77,7 @@ export function SalesPage() {
   const { data, isLoading } = useSales({ page, limit: 10, companyId: companyFilter || undefined, startDate, endDate, sellerId: effectiveSellerId });
   const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 10, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'BOLETA', sellerId: effectiveSellerId });
   const { data: facturasData, isLoading: facturasLoading } = useSales({ page: facturaPage, limit: 10, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'FACTURA', sellerId: effectiveSellerId });
+  const { data: periodTotalsData } = useSales({ limit: 9999, companyId: companyFilter || undefined, startDate, endDate, sellerId: effectiveSellerId });
   const { data: loansData, isLoading: loansLoading } = useLoans({ page: loanPage, limit: 10, status: loanStatusFilter || undefined, startDate, endDate });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
@@ -334,19 +335,13 @@ export function SalesPage() {
   const clients = clientsData?.data || [];
   const tiers = Array.isArray(priceTiers) ? priceTiers : [];
   const paymentMethods: PaymentMethod[] = Array.isArray(paymentMethodsData) ? paymentMethodsData.filter((m: PaymentMethod) => m.isActive) : [];
-  const sales = data?.data || [];
-  const total = data?.total || 0;
-  const totalAmount = data?.totalAmount || 0;
-  const boletas = boletasData?.data || [];
-  const boletasTotal = boletasData?.total || 0;
-  const boletasTotalAmount = boletasData?.totalAmount || 0;
-  const boletasBaseAmount = boletasData?.totalBaseAmount || 0;
-  const boletasIgv = boletasData?.totalIgv || 0;
-  const facturas = facturasData?.data || [];
-  const facturasTotal = facturasData?.total || 0;
-  const facturasTotalAmount = facturasData?.totalAmount || 0;
-  const facturasBaseAmount = facturasData?.totalBaseAmount || 0;
-  const facturasIgv = facturasData?.totalIgv || 0;
+  const sales = (data?.data || []).filter((s: Sale) => !s.isCancelled);
+  const boletas = (boletasData?.data || []).filter((s: Sale) => !s.isCancelled);
+  const facturas = (facturasData?.data || []).filter((s: Sale) => !s.isCancelled);
+  const periodSales: Sale[] = useMemo(
+    () => (periodTotalsData?.data || []).filter((s: Sale) => !s.isCancelled),
+    [periodTotalsData],
+  );
   const loans = loansData?.data || [];
   const loansTotal = loansData?.total || 0;
 
@@ -393,6 +388,23 @@ export function SalesPage() {
     if (cached) return cached.igv;
     return Math.round((sale.total - getSaleBaseAmount(sale)) * 100) / 100;
   };
+
+  const periodBoletas = periodSales.filter((s) => s.voucherType === 'BOLETA');
+  const periodFacturas = periodSales.filter((s) => s.voucherType === 'FACTURA');
+  const sumTotal = (arr: Sale[]) => arr.reduce((s, sale) => s + sale.total, 0);
+  const sumBase = (arr: Sale[]) => Math.round(arr.reduce((s, sale) => s + getSaleBaseAmount(sale), 0) * 100) / 100;
+  const sumIgv = (arr: Sale[]) => Math.round(arr.reduce((s, sale) => s + getSaleIgv(sale), 0) * 100) / 100;
+
+  const total = periodSales.length;
+  const totalAmount = sumTotal(periodSales);
+  const boletasTotal = periodBoletas.length;
+  const boletasTotalAmount = sumTotal(periodBoletas);
+  const boletasBaseAmount = sumBase(periodBoletas);
+  const boletasIgv = sumIgv(periodBoletas);
+  const facturasTotal = periodFacturas.length;
+  const facturasTotalAmount = sumTotal(periodFacturas);
+  const facturasBaseAmount = sumBase(periodFacturas);
+  const facturasIgv = sumIgv(periodFacturas);
 
 
   const handleExportVouchers = async (voucherType: 'BOLETA' | 'FACTURA') => {
@@ -1134,6 +1146,7 @@ export function SalesPage() {
         products={products}
         companies={activeCompanies}
         priceTiers={Array.isArray(priceTiers) ? priceTiers : []}
+        paymentMethods={paymentMethods}
         stockByCompanyMap={stockQtyByCompany}
       />
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Modal } from '../../../shared/components/Modal';
 import { useUpdateSaleItems } from '../hooks/useSales';
-import type { Sale, Product, Company, PriceTier } from '../../../shared/types';
+import type { Sale, Product, Company, PriceTier, PaymentMethod } from '../../../shared/types';
 
 interface EditSaleItemsModalProps {
   sale: Sale | null;
@@ -11,6 +11,7 @@ interface EditSaleItemsModalProps {
   products: Product[];
   companies: Company[];
   priceTiers: PriceTier[];
+  paymentMethods: PaymentMethod[];
   stockByCompanyMap: Record<string, Map<string, number>>;
 }
 
@@ -22,6 +23,11 @@ interface DraftItem {
   unitPrice: number;
 }
 
+interface DraftPayment {
+  paymentMethodId: string;
+  amount: number;
+}
+
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function EditSaleItemsModal({
@@ -31,10 +37,12 @@ export function EditSaleItemsModal({
   products,
   companies,
   priceTiers,
+  paymentMethods,
   stockByCompanyMap,
 }: EditSaleItemsModalProps) {
   const [items, setItems] = useState<DraftItem[]>([]);
   const [reason, setReason] = useState('');
+  const [payments, setPayments] = useState<DraftPayment[]>([]);
   const updateMutation = useUpdateSaleItems();
 
   useEffect(() => {
@@ -45,6 +53,10 @@ export function EditSaleItemsModal({
         priceTier: i.priceTier,
         quantity: i.quantity,
         unitPrice: i.unitPrice,
+      })));
+      setPayments((sale.payments || []).map((p) => ({
+        paymentMethodId: p.paymentMethodId || '',
+        amount: p.amount,
       })));
       setReason('');
     }
@@ -68,11 +80,41 @@ export function EditSaleItemsModal({
     return map;
   }, [priceTiers]);
 
+  const activeMethods = useMemo(() => paymentMethods.filter((m) => m.isActive), [paymentMethods]);
+
+  const newTotal = useMemo(
+    () => round2(items.reduce((s, i) => s + i.quantity * i.unitPrice, 0)),
+    [items],
+  );
+
+  // Cuando hay un solo pago (no mixto), su monto debe seguir al total nuevo automáticamente.
+  useEffect(() => {
+    if (!sale || sale.isCredit) return;
+    setPayments((prev) => {
+      if (prev.length !== 1) return prev;
+      if (round2(prev[0].amount) === newTotal) return prev;
+      return [{ ...prev[0], amount: newTotal }];
+    });
+  }, [newTotal, sale?.id, sale?.isCredit]);
+
   if (!sale) return null;
 
   const previousTotal = sale.total;
-  const newTotal = round2(items.reduce((s, i) => s + i.quantity * i.unitPrice, 0));
   const diff = round2(newTotal - previousTotal);
+  const paymentsSum = round2(payments.reduce((s, p) => s + (p.amount || 0), 0));
+  const paymentsMatch = paymentsSum === newTotal;
+  const canEditPayments = !sale.isCredit;
+
+  const originalPayments = sale.payments || [];
+  const paymentsChanged = canEditPayments && (
+    payments.length !== originalPayments.length ||
+    payments.some((p, idx) => {
+      const orig = originalPayments[idx];
+      return !orig
+        || (p.paymentMethodId || '') !== (orig.paymentMethodId || '')
+        || round2(p.amount) !== round2(orig.amount);
+    })
+  );
 
   const updateItem = (idx: number, field: 'quantity' | 'unitPrice', value: number) => {
     setItems((prev) => {
@@ -80,6 +122,22 @@ export function EditSaleItemsModal({
       next[idx] = { ...next[idx], [field]: Number.isFinite(value) && value >= 0 ? value : 0 };
       return next;
     });
+  };
+
+  const updatePayment = (idx: number, field: 'paymentMethodId' | 'amount', value: string | number) => {
+    setPayments((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: field === 'amount' ? (Number.isFinite(value as number) && (value as number) >= 0 ? (value as number) : 0) : (value as string) };
+      return next;
+    });
+  };
+
+  const addPayment = () => {
+    setPayments((prev) => [...prev, { paymentMethodId: '', amount: round2(Math.max(0, newTotal - paymentsSum)) }]);
+  };
+
+  const removePayment = (idx: number) => {
+    setPayments((prev) => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev);
   };
 
   const stockAvailableFor = (item: DraftItem, originalQty: number): number | null => {
@@ -102,6 +160,15 @@ export function EditSaleItemsModal({
         return `${productName}: stock insuficiente (disponible ${available}, solicitado ${it.quantity})`;
       }
     }
+    if (canEditPayments) {
+      if (payments.length === 0) return 'Agrega al menos un pago';
+      for (let i = 0; i < payments.length; i++) {
+        const p = payments[i];
+        if (!p.paymentMethodId) return `Selecciona el método de pago en la fila ${i + 1}`;
+        if (!(p.amount > 0)) return `El monto del pago ${i + 1} debe ser mayor a 0`;
+      }
+      if (!paymentsMatch) return `La suma de pagos (S/ ${paymentsSum.toFixed(2)}) debe ser igual al total nuevo (S/ ${newTotal.toFixed(2)})`;
+    }
     return null;
   };
 
@@ -123,6 +190,7 @@ export function EditSaleItemsModal({
           quantity: round2(i.quantity),
           unitPrice: round2(i.unitPrice),
         })),
+        payments: paymentsChanged ? payments.map((p) => ({ paymentMethodId: p.paymentMethodId, amount: round2(p.amount) })) : undefined,
       });
       onUpdated?.(updated);
       onClose();
@@ -135,7 +203,7 @@ export function EditSaleItemsModal({
     <Modal isOpen={!!sale} onClose={onClose} title={`Editar venta ${sale.saleNumber || ''}`} size="xl">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-          Solo se permite ajustar precio y cantidad. El stock se ajusta automáticamente; la caja también, salvo en ventas a crédito (allí el entry corresponde al adelanto y no se modifica).
+          Ajusta precio, cantidad y opcionalmente la distribución de pagos. Stock y caja se actualizan automáticamente; en ventas a crédito el adelanto en caja no se modifica.
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-gray-200">
@@ -212,6 +280,77 @@ export function EditSaleItemsModal({
           </table>
         </div>
 
+        <div className="rounded-lg border border-gray-200 p-3">
+          <div className="mb-3">
+            <div className="text-sm font-semibold text-gray-800">Método de pago</div>
+            <div className="text-xs text-gray-500">
+              {sale.isCredit
+                ? 'Venta a crédito: el adelanto en caja no es editable desde aquí.'
+                : 'Cambia el método o divide el cobro entre Yape, Efectivo, Transferencia, etc.'}
+            </div>
+          </div>
+
+          {!canEditPayments && (
+            <ul className="text-sm text-gray-700 space-y-1">
+              {(sale.payments || []).length === 0 && <li className="text-gray-500 text-xs">Sin pagos registrados (venta a crédito sin adelanto).</li>}
+              {(sale.payments || []).map((p, idx) => (
+                <li key={`${p.paymentMethodId}-${idx}`} className="flex justify-between">
+                  <span>{p.paymentMethodName || 'Método'}</span>
+                  <span className="font-medium">S/ {p.amount.toFixed(2)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {canEditPayments && (
+            <div className="space-y-2">
+              {payments.map((p, idx) => {
+                const isSingle = payments.length === 1;
+                return (
+                  <div key={idx} className="flex items-center gap-2">
+                    <select
+                      value={p.paymentMethodId}
+                      onChange={(e) => updatePayment(idx, 'paymentMethodId', e.target.value)}
+                      className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                    >
+                      <option value="">— Método —</option>
+                      {activeMethods.map((m) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0.01}
+                      value={p.amount}
+                      readOnly={isSingle}
+                      title={isSingle ? 'En pago único el monto se ajusta al total automáticamente. Para repartir, usa "Agregar pago (mixto)".' : undefined}
+                      onChange={(e) => updatePayment(idx, 'amount', parseFloat(e.target.value))}
+                      className={`w-32 px-2 py-2 border rounded-lg text-right text-sm ${isSingle ? 'bg-gray-50 text-gray-600 cursor-not-allowed' : ''}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePayment(idx)}
+                      disabled={payments.length === 1}
+                      className="text-xs text-red-500 hover:text-red-700 disabled:text-gray-300 px-2"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                );
+              })}
+              <div className="flex items-center justify-between pt-1">
+                <button type="button" onClick={addPayment} className="text-xs text-primary-600 hover:text-primary-700 font-medium">
+                  + Agregar pago (mixto)
+                </button>
+                <div className={`text-xs font-semibold ${paymentsMatch ? 'text-green-700' : 'text-red-600'}`}>
+                  Suma: S/ {paymentsSum.toFixed(2)} {paymentsMatch ? '✓' : `(falta S/ ${(newTotal - paymentsSum).toFixed(2)})`}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Motivo de la edición</label>
           <textarea
@@ -219,7 +358,7 @@ export function EditSaleItemsModal({
             onChange={(e) => setReason(e.target.value)}
             rows={2}
             minLength={5}
-            placeholder="Ej: corrección de precio mal ingresado, cantidad ajustada por error de tipeo..."
+            placeholder="Ej: corrección de precio mal ingresado, método de pago corregido..."
             className="w-full px-3 py-2 border rounded-lg text-sm"
             required
           />

@@ -122,7 +122,7 @@ export function CashRegisterHistoryPage() {
   };
   const goToSale = (saleId: string) => navigate(`/sales?openSaleId=${saleId}`);
 
-  const detailEntries: CashRegisterEntry[] = detail?.entries || [];
+  const detailEntries: CashRegisterEntry[] = (detail?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted);
   const detailGroups = useMemo(() => groupEntries(detailEntries), [detailEntries]);
   const [expandedDetailGroups, setExpandedDetailGroups] = useState<Set<string>>(new Set());
   const toggleDetailGroup = (id: string) => setExpandedDetailGroups((prev) => {

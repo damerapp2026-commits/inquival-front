@@ -117,6 +117,7 @@ export function CashRegisterPage() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<CashRegisterEntry | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [vendorFilter, setVendorFilter] = useState<string | null>(null);
 
   const { data: paymentMethods = [] } = usePaymentMethods();
   const rucLookup = useRucLookup();
@@ -124,7 +125,7 @@ export function CashRegisterPage() {
   const createSupplier = useCreateSupplier();
 
   const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '' });
-  const [editForm, setEditForm] = useState({ amount: 0, reason: '', voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '' });
+  const [editForm, setEditForm] = useState({ amount: 0, reason: '', voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '' });
   const [deleteReason, setDeleteReason] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
   const [rucInput, setRucInput] = useState('');
@@ -132,15 +133,15 @@ export function CashRegisterPage() {
   const [rucLoading, setRucLoading] = useState(false);
 
   const isClosed = register?.status === 'CLOSED';
-  const entries: CashRegisterEntry[] = register?.entries || [];
-  const activeEntries = entries.filter((e) => !e.isDeleted);
+  const entries: CashRegisterEntry[] = (register?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted);
+  const activeEntries = entries;
   const totalIncome = activeEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
   const totalExpense = activeEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
   const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
 
   const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '' }); setShowAddModal(true); };
   const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo' }); setRucInput(''); setRucFound(''); setShowAddModal(true); };
-  const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', voucherType: entry.voucherType || 'NONE', voucherSeries: entry.voucherSeries || '', voucherNumber: entry.voucherNumber || '' }); setShowEditModal(true); };
+  const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', voucherType: entry.voucherType || 'NONE', voucherSeries: entry.voucherSeries || '', voucherNumber: entry.voucherNumber || '', paymentMethodName: methodFromDescription(entry.description) || '' }); setShowEditModal(true); };
 
   const handleRucLookup = async () => {
     const ruc = rucInput.trim();
@@ -181,7 +182,14 @@ export function CashRegisterPage() {
   };
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await editEntry.mutateAsync({ registerId: register.id, entryId: selectedEntry!.id, data: editForm });
+    const { paymentMethodName, ...rest } = editForm;
+    const originalMethod = methodFromDescription(selectedEntry!.description) || '';
+    const data: any = { ...rest };
+    if (paymentMethodName !== originalMethod) {
+      const baseDesc = stripMethod(selectedEntry!.description);
+      data.description = paymentMethodName ? `${baseDesc} [${paymentMethodName}]` : baseDesc;
+    }
+    await editEntry.mutateAsync({ registerId: register.id, entryId: selectedEntry!.id, data });
     setShowEditModal(false);
   };
   const handleDelete = async (e: React.FormEvent) => {
@@ -195,7 +203,26 @@ export function CashRegisterPage() {
   };
   const goToSale = (saleId: string) => navigate(`/sales?openSaleId=${saleId}`);
 
-  const groupedRows = useMemo(() => groupEntries([...entries].reverse()), [entries]);
+  const vendorsInDay = useMemo(() => {
+    const counts = new Map<string, number>();
+    entries.forEach((e) => {
+      if (!e.createdBy) return;
+      counts.set(e.createdBy, (counts.get(e.createdBy) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([id, count]) => ({ id, name: userById[id] || 'Usuario', count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [entries, userById]);
+
+  const filteredEntries = useMemo(() => {
+    if (!vendorFilter) return entries;
+    return entries.filter((e) => e.createdBy === vendorFilter);
+  }, [entries, vendorFilter]);
+
+  const filteredIncome = filteredEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
+  const filteredExpense = filteredEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
+
+  const groupedRows = useMemo(() => groupEntries([...filteredEntries].reverse()), [filteredEntries]);
 
   // --- Loading ------------------------------------------------------------
   if (isLoading) {
@@ -355,21 +382,90 @@ export function CashRegisterPage() {
 
       {/* Movements feed */}
       <div className="bg-white rounded-2xl shadow-card overflow-hidden">
-        <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Layers size={16} className="text-gray-400" />
             <h2 className="text-base font-semibold text-gray-800">Movimientos del día</h2>
-            <span className="text-xs text-gray-400">· {entries.length} entrada{entries.length === 1 ? '' : 's'}</span>
+            <span className="text-xs text-gray-400">
+              · {filteredEntries.length}{vendorFilter ? ` de ${entries.length}` : ''} entrada{filteredEntries.length === 1 ? '' : 's'}
+            </span>
           </div>
+          {vendorsInDay.length > 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Vendedor:</span>
+              <button
+                type="button"
+                onClick={() => setVendorFilter(null)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  !vendorFilter
+                    ? 'bg-primary-600 text-white border-primary-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'
+                }`}
+              >
+                Todos
+              </button>
+              {vendorsInDay.map((v) => {
+                const active = vendorFilter === v.id;
+                const color = vendorColor(v.name);
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => setVendorFilter(active ? null : v.id)}
+                    className={`flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                      active
+                        ? 'bg-primary-600 text-white border-primary-600'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-primary-300'
+                    }`}
+                    title={`${v.name} · ${v.count} movimiento${v.count === 1 ? '' : 's'}`}
+                  >
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ${active ? 'bg-white/20 text-white' : color}`}>
+                      {initialsFor(v.name)}
+                    </span>
+                    <span className="truncate max-w-[120px]">{v.name}</span>
+                    <span className={`text-[10px] ${active ? 'text-white/80' : 'text-gray-400'}`}>· {v.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {entries.length === 0 ? (
+        {vendorFilter && filteredEntries.length > 0 && (
+          <div className="px-5 sm:px-6 py-2.5 bg-gray-50/70 border-b border-gray-100 flex items-center justify-between text-xs">
+            <span className="text-gray-500">
+              Filtrado por <strong className="text-gray-700">{userById[vendorFilter] || 'vendedor'}</strong>
+            </span>
+            <span className="flex items-center gap-3 tabular-nums">
+              <span className="text-primary-700 font-semibold">+ S/ {filteredIncome.toFixed(2)}</span>
+              <span className="text-rose-600 font-semibold">− S/ {filteredExpense.toFixed(2)}</span>
+              <span className="text-gray-700 font-semibold">Neto S/ {(filteredIncome - filteredExpense).toFixed(2)}</span>
+            </span>
+          </div>
+        )}
+
+        {filteredEntries.length === 0 ? (
           <div className="px-6 py-16 flex flex-col items-center text-center">
             <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-3">
               <AlertCircle size={22} className="text-gray-400" />
             </div>
-            <p className="text-sm text-gray-500 font-medium">Aún no hay movimientos</p>
-            <p className="text-xs text-gray-400 mt-1">Las ventas, pagos de crédito y compras aparecerán aquí.</p>
+            {vendorFilter ? (
+              <>
+                <p className="text-sm text-gray-500 font-medium">Sin movimientos para este vendedor</p>
+                <button
+                  type="button"
+                  onClick={() => setVendorFilter(null)}
+                  className="text-xs text-primary-600 hover:text-primary-700 font-medium mt-2"
+                >
+                  Ver todos los movimientos
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-500 font-medium">Aún no hay movimientos</p>
+                <p className="text-xs text-gray-400 mt-1">Las ventas, pagos de crédito y compras aparecerán aquí.</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -602,6 +698,35 @@ export function CashRegisterPage() {
               <input type="number" min="0.01" step="0.01" value={editForm.amount || ''} onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })} className="w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500" required />
             </div>
           </div>
+          {selectedEntry && selectedEntry.referenceType === 'SALE' ? (
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">
+              Este movimiento corresponde a una venta. Para cambiar el método de pago (Yape, Efectivo, Transferencia, Mixto), edita la venta desde <strong>/sales</strong>.
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Método de pago</label>
+              {paymentMethods.length === 0 ? (
+                <p className="text-sm text-gray-400">Cargando métodos de pago...</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {paymentMethods.map((pm: { id: string; name: string }) => (
+                    <button
+                      key={pm.id}
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, paymentMethodName: pm.name })}
+                      className={`px-3.5 py-2 rounded-xl text-sm font-medium border-2 transition-colors ${
+                        editForm.paymentMethodName === pm.name
+                          ? 'bg-primary-600 text-white border-primary-600'
+                          : 'bg-white text-gray-700 border-gray-200 hover:border-primary-300'
+                      }`}
+                    >
+                      {pm.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Comprobante</label>
             <VoucherSelector value={editForm.voucherType} onChange={(v) => setEditForm({ ...editForm, voucherType: v, voucherSeries: v === 'NONE' ? '' : editForm.voucherSeries, voucherNumber: v === 'NONE' ? '' : editForm.voucherNumber })} />
