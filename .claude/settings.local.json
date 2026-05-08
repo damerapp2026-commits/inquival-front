@@ -80,7 +80,14 @@
       "Bash(echo \"---FRONT EXIT: $?\")",
       "Bash(echo \"---BACK EXIT: $?\")",
       "Bash(echo \"---EXIT: $?\")",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(npx --prefix /home/ricardo/dev/Damer/inquival-back tsc --noEmit -p /home/ricardo/dev/Damer/inquival-back/tsconfig.json)",
+      "Bash(command -v convert)",
+      "Bash(command -v magick)",
+      "Bash(command -v ffmpeg)",
+      "Bash(command -v vipsthumbnail)",
+      "Bash(command -v sips)",
+      "Bash(python3 *)"
     ]
   }
 }
