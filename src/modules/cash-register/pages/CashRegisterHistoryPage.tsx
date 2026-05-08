@@ -135,7 +135,7 @@ export function CashRegisterHistoryPage() {
     const description = stripMethod(e.description);
     const method = methodFromDescription(e.description);
     const vendor = e.createdBy ? (userById[e.createdBy] || 'Usuario') : '';
-    const isSale = e.referenceType === 'SALE' && !!e.referenceId;
+    const isSale = e.referenceType === 'Sale' && !!e.referenceId;
     return (
       <tr key={key} className={`${e.isDeleted ? 'opacity-50' : ''} ${nested ? 'bg-gray-50/50' : ''}`}>
         <td className={`px-3 py-2.5 ${nested ? 'pl-9' : ''}`}>

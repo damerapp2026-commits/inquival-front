@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCashRegisterToday, useOpenCashRegister, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
+import { useSaleById, useUpdateSaleItems } from '../../sales/hooks/useSales';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useUsers } from '../../users/hooks/useUsers';
 import { useRucLookup } from '../../../shared/hooks/useLookup';
@@ -8,9 +9,10 @@ import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSu
 import { Modal } from '../../../shared/components/Modal';
 import {
   Wallet, TrendingUp, TrendingDown, Edit2, Trash2, Lock, History, ChevronDown, ChevronRight,
-  Layers, Clock, ExternalLink, ArrowDownCircle, ArrowUpCircle, Scale, CheckCircle2, AlertCircle,
+  Layers, Clock, Eye, ArrowDownCircle, ArrowUpCircle, Scale, CheckCircle2, AlertCircle,
   ReceiptText, FileText, CircleDashed, Search, Loader2,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import type { CashRegisterEntry } from '../../../shared/types';
 import { groupEntries } from '../utils/groupEntries';
 import { EXPENSE_CATEGORIES } from '../utils/expenseCategories';
@@ -91,6 +93,16 @@ function stripMethod(desc: string) {
   return desc.replace(/\s*\[.*?\]\s*$/, '');
 }
 
+function clientFromSaleDescription(desc: string): string {
+  const stripped = stripMethod(desc);
+  if (/^venta\s+sin\s+cliente/i.test(stripped)) return 'Sin cliente';
+  const m = stripped.match(/^Venta\s+a\s+(.+)$/i);
+  if (!m) return stripped;
+  const name = m[1].trim();
+  if (!name || /^sin\s*cliente$/i.test(name)) return 'Sin cliente';
+  return name;
+}
+
 // --- Component ------------------------------------------------------------
 
 export function CashRegisterPage() {
@@ -100,6 +112,7 @@ export function CashRegisterPage() {
   const addEntry = useAddCashEntry();
   const editEntry = useEditCashEntry();
   const deleteEntryMutation = useDeleteCashEntry();
+  const updateSaleItems = useUpdateSaleItems();
   const closeRegister = useCloseCashRegister();
   const { data: usersData } = useUsers({ limit: 200 });
 
@@ -118,6 +131,9 @@ export function CashRegisterPage() {
   const [selectedEntry, setSelectedEntry] = useState<CashRegisterEntry | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [vendorFilter, setVendorFilter] = useState<string | null>(null);
+
+  const editingIsSale = !!(selectedEntry?.referenceType === 'Sale' && selectedEntry?.referenceId);
+  const { data: editingSale } = useSaleById(showEditModal && editingIsSale ? selectedEntry!.referenceId! : null);
 
   const { data: paymentMethods = [] } = usePaymentMethods();
   const rucLookup = useRucLookup();
@@ -182,14 +198,55 @@ export function CashRegisterPage() {
   };
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedEntry || !register) return;
     const { paymentMethodName, ...rest } = editForm;
-    const originalMethod = methodFromDescription(selectedEntry!.description) || '';
+    const originalMethod = methodFromDescription(selectedEntry.description) || '';
+    const methodChanged = paymentMethodName !== originalMethod;
+    const isSaleEntry = selectedEntry.referenceType === 'Sale' && !!selectedEntry.referenceId;
+
+    // Para entradas de venta, el método de pago vive en sale.payments. Si cambió,
+    // ruteamos por el endpoint de la venta (que reconstruye la entrada de caja).
+    if (isSaleEntry && methodChanged) {
+      if (!editingSale) {
+        toast.error('Cargando datos de la venta, intenta de nuevo');
+        return;
+      }
+      if (editingSale.isCredit) {
+        toast.error('No se puede cambiar el método en ventas a crédito');
+        return;
+      }
+      if ((editingSale.payments?.length ?? 0) > 1) {
+        toast.error('Esta venta tiene varios pagos. Edítala desde /sales');
+        return;
+      }
+      const method = paymentMethods.find((m: any) => m.name === paymentMethodName);
+      if (!method) {
+        toast.error('Método de pago no encontrado');
+        return;
+      }
+      await updateSaleItems.mutateAsync({
+        id: editingSale.id,
+        reason: editForm.reason,
+        items: editingSale.items.map((i: any) => ({
+          productId: i.productId,
+          companyId: i.companyId,
+          priceTier: i.priceTier,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+        })),
+        payments: [{ paymentMethodId: method.id, amount: editingSale.total }],
+      });
+      setShowEditModal(false);
+      return;
+    }
+
+    // Resto: caja maneja directamente (gastos/ingresos manuales, o ventas sin cambio de método)
     const data: any = { ...rest };
-    if (paymentMethodName !== originalMethod) {
-      const baseDesc = stripMethod(selectedEntry!.description);
+    if (methodChanged) {
+      const baseDesc = stripMethod(selectedEntry.description);
       data.description = paymentMethodName ? `${baseDesc} [${paymentMethodName}]` : baseDesc;
     }
-    await editEntry.mutateAsync({ registerId: register.id, entryId: selectedEntry!.id, data });
+    await editEntry.mutateAsync({ registerId: register.id, entryId: selectedEntry.id, data });
     setShowEditModal(false);
   };
   const handleDelete = async (e: React.FormEvent) => {
@@ -487,7 +544,7 @@ export function CashRegisterPage() {
                   <th className="px-4 sm:px-6 py-3 text-left">Hora</th>
                   <th className="px-4 py-3 text-left">Tipo</th>
                   <th className="px-4 py-3 text-left">Categoría</th>
-                  <th className="px-4 py-3 text-left">Descripción</th>
+                  <th className="px-4 py-3 text-left">Cliente</th>
                   <th className="px-4 py-3 text-left">Vendedor</th>
                   <th className="px-4 py-3 text-left">Método</th>
                   <th className="px-4 py-3 text-right">Monto</th>
@@ -506,7 +563,9 @@ export function CashRegisterPage() {
                   const isOpen = expandedGroups.has(group.groupId!);
                   const first = group.entries[0];
                   const total = group.total ?? group.entries.reduce((s, e) => s + e.amount, 0);
-                  const baseDesc = stripMethod(first.description.replace(/\s*\(\d+ de \d+\)\s*$/, ''));
+                  const isSaleGroup = first.referenceType === 'Sale' && !!first.referenceId;
+                  const baseRaw = first.description.replace(/\s*\(\d+ de \d+\)\s*$/, '');
+                  const baseDesc = isSaleGroup ? clientFromSaleDescription(baseRaw) : stripMethod(baseRaw);
                   const method = methodFromDescription(first.description);
                   const vendor = first.createdBy ? (userById[first.createdBy] || 'Usuario') : '';
                   return (
@@ -710,13 +769,16 @@ export function CashRegisterPage() {
               <input type="number" min="0.01" step="0.01" value={editForm.amount || ''} onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })} className="w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500" required />
             </div>
           </div>
-          {selectedEntry && selectedEntry.referenceType === 'SALE' ? (
+          {editingIsSale && editingSale && (editingSale.isCredit || (editingSale.payments?.length ?? 0) > 1) ? (
             <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">
-              Este movimiento corresponde a una venta. Para cambiar el método de pago (Yape, Efectivo, Transferencia, Mixto), edita la venta desde <strong>/sales</strong>.
+              Esta venta es a crédito o tiene varios pagos. Para cambiar el método edítala desde <strong>/sales</strong>.
             </div>
           ) : (
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Método de pago</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                Método de pago
+                {editingIsSale && <span className="ml-2 text-[10px] font-normal text-blue-600 normal-case">(actualiza la venta)</span>}
+              </label>
               {paymentMethods.length === 0 ? (
                 <p className="text-sm text-gray-400">Cargando métodos de pago...</p>
               ) : (
@@ -786,7 +848,7 @@ export function CashRegisterPage() {
           <div className="flex gap-3 p-4 bg-red-50 border border-red-100 rounded-xl">
             <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={20} />
             <div className="text-sm text-red-700">
-              Esta acción es <strong>permanente</strong>. {selectedEntry?.referenceType === 'SALE' && (
+              Esta acción es <strong>permanente</strong>. {selectedEntry?.referenceType === 'Sale' && (
                 <>Si la entrada corresponde a una venta, también <strong>se cancelará la venta</strong> y se devolverá el stock.</>
               )}
             </div>
@@ -999,10 +1061,10 @@ interface RowCtx {
 
 function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Key, ctx: RowCtx) {
   const { isClosed, userById, openEdit, openDelete, goToSale } = ctx;
-  const description = stripMethod(entry.description);
+  const isSale = entry.referenceType === 'Sale' && !!entry.referenceId;
+  const description = isSale ? clientFromSaleDescription(entry.description) : stripMethod(entry.description);
   const method = methodFromDescription(entry.description);
   const vendor = entry.createdBy ? (userById[entry.createdBy] || 'Usuario') : '';
-  const isSale = entry.referenceType === 'SALE' && !!entry.referenceId;
 
   return (
     <tr
@@ -1019,7 +1081,7 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
       <td className="px-4 py-3.5"><CategoryBadge category={entry.category} /></td>
       <td className="px-4 py-3.5 text-gray-800">
         <div className="flex flex-col">
-          <span className={entry.isDeleted ? 'line-through text-gray-400' : ''}>{description}</span>
+          <span className={entry.isDeleted ? 'line-through text-gray-400' : isSale && description === 'Sin cliente' ? 'text-gray-400 italic' : ''}>{description}</span>
           {entry.isDeleted && entry.deleteReason && (
             <span className="text-[11px] text-red-500 mt-0.5">Eliminado · {entry.deleteReason}</span>
           )}
@@ -1041,9 +1103,9 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
               {isSale && (
                 <button
                   onClick={() => goToSale(entry.referenceId!)}
-                  className="p-2 rounded-lg text-emerald-600 hover:bg-emerald-50"
+                  className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg hover:bg-primary-50"
                   title="Ver venta"
-                ><ExternalLink size={15} /></button>
+                ><Eye size={15} /> Ver</button>
               )}
               <button onClick={() => openEdit(entry)} className="p-2 rounded-lg text-blue-600 hover:bg-blue-50" title="Editar"><Edit2 size={15} /></button>
               <button onClick={() => openDelete(entry)} className="p-2 rounded-lg text-red-600 hover:bg-red-50" title="Eliminar"><Trash2 size={15} /></button>

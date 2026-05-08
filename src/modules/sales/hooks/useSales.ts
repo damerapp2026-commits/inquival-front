@@ -5,6 +5,9 @@ import toast from 'react-hot-toast';
 export function useSales(params?: any) {
   return useQuery({ queryKey: ['sales', params], queryFn: () => saleService.getAll(params) });
 }
+export function useSaleById(id: string | null | undefined) {
+  return useQuery({ queryKey: ['sale', id], queryFn: () => saleService.getById(id!), enabled: !!id });
+}
 export function useCreateSale() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: saleService.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['sales'] }); qc.invalidateQueries({ queryKey: ['stock'] }); qc.invalidateQueries({ queryKey: ['cash-register-today'] }); toast.success('Venta registrada'); }, onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error') });
