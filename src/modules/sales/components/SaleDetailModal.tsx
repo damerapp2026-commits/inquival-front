@@ -13,7 +13,7 @@ import { stockService } from '../../stock/services/stockService';
 import { Modal } from '../../../shared/components/Modal';
 import { VoucherPreviewModal, type VoucherSnapshot } from './VoucherPreviewModal';
 import { EditSaleItemsModal } from './EditSaleItemsModal';
-import type { Sale, Company, Product, Client, PriceTier, Stock } from '../../../shared/types';
+import type { Sale, SalePayment, Company, Product, Client, PriceTier, Stock } from '../../../shared/types';
 
 interface SaleDetailModalProps {
   saleId: string | null;
@@ -113,7 +113,7 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
   const paymentLabel = sale.isCredit
     ? 'Crédito'
     : sale.payments && sale.payments.length > 0
-      ? sale.payments.map((p) => p.paymentMethodName).join(' + ')
+      ? sale.payments.map((p: SalePayment) => p.paymentMethodName).join(' + ')
       : 'Efectivo';
   const voucherLabel = sale.voucherType === 'BOLETA' ? 'Boleta' : sale.voucherType === 'FACTURA' ? 'Factura' : 'Nota de venta';
   const client = sale.clientId ? clientMap.get(sale.clientId) : undefined;
@@ -131,7 +131,7 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
         unitPrice: it.unitPrice,
         subtotal: it.subtotal,
       })),
-      payments: (sale.payments || []).map((p) => ({ methodName: p.paymentMethodName, amount: p.amount })),
+      payments: (sale.payments || []).map((p: SalePayment) => ({ methodName: p.paymentMethodName, amount: p.amount })),
       sellerName,
       clientName: client?.name || sale.clientName,
       clientDocument: client?.documentNumber,
@@ -247,7 +247,7 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
                 </div>
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-gray-100">
-                    {sale.payments.map((payment, idx) => (
+                    {sale.payments.map((payment: SalePayment, idx: number) => (
                       <tr key={idx}>
                         <td className="px-4 py-2 font-medium text-gray-700">{payment.paymentMethodName}</td>
                         <td className="px-4 py-2 text-right text-primary-600 font-medium">S/ {payment.amount.toFixed(2)}</td>
