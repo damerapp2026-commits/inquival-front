@@ -1,29 +1,34 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { usePurchases } from '../hooks/usePurchases';
-import { useCompanies } from '../../companies/hooks/useCompanies';
+import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
-import { Plus, ShoppingCart, Eye } from 'lucide-react';
-import type { Purchase, Company } from '../../../shared/types';
+import { Plus, ShoppingCart, Eye, Search } from 'lucide-react';
+import type { Purchase } from '../../../shared/types';
 
 export function PurchasesPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
-  const [companyFilter, setCompanyFilter] = useState('');
+  const [laboratoryFilter, setLaboratoryFilter] = useState('');
+  const [labSearch, setLabSearch] = useState('');
 
-  const { data, isLoading } = usePurchases({ page, limit: 20, companyId: companyFilter || undefined });
-  const { data: companies } = useCompanies();
+  const { data, isLoading } = usePurchases({ page, limit: 20, laboratoryId: laboratoryFilter || undefined });
+  const { data: laboratories } = useLaboratories();
 
-  const companyList = Array.isArray(companies) ? companies : [];
+  const labList = Array.isArray(laboratories) ? laboratories : [];
   const purchases = data?.data || [];
   const total = data?.total || 0;
 
-  const getCompanyName = (id: string) => companyList.find((c: Company) => c.id === id)?.name || 'N/A';
+  const filteredLabs = useMemo(() => {
+    const term = labSearch.trim().toLowerCase();
+    const active = labList.filter((l: any) => l.isActive !== false);
+    if (!term) return active;
+    return active.filter((l: any) => l.name?.toLowerCase().includes(term));
+  }, [labList, labSearch]);
 
   const columns = [
     { key: 'date', header: 'Fecha', render: (item: Purchase) => new Date(item.date).toLocaleDateString('es-PE') },
-    { key: 'companyId', header: 'Almacén', render: (item: Purchase) => getCompanyName(item.companyId) },
     { key: 'supplier', header: 'Proveedor' },
     { key: 'items', header: 'Items', render: (item: Purchase) => `${item.items.length} producto(s)` },
     { key: 'totalCost', header: 'Total', render: (item: Purchase) => (
@@ -48,10 +53,24 @@ export function PurchasesPage() {
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><ShoppingCart size={24} /> Compras / Ingresos</h1>
         <Link to="/purchases/new" className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus size={18} /> Nueva Compra</Link>
       </div>
-      <div className="mb-4">
-        <select value={companyFilter} onChange={(e) => { setCompanyFilter(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg">
-          <option value="">Todos los almacenes</option>
-          {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}{c.ruc ? ` — ${c.ruc}` : ''}</option>)}
+      <div className="mb-4 flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1 max-w-md">
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Buscar laboratorio..."
+            value={labSearch}
+            onChange={(e) => setLabSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+          />
+        </div>
+        <select
+          value={laboratoryFilter}
+          onChange={(e) => { setLaboratoryFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 border rounded-lg bg-white"
+        >
+          <option value="">Todos los laboratorios</option>
+          {filteredLabs.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
       </div>
       <DataTable columns={columns} data={purchases} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
