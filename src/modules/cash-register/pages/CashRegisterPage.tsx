@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCashRegisterToday, useOpenCashRegister, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
 import { useSales, useSaleById, useUpdateSaleItems } from '../../sales/hooks/useSales';
-import { useClients } from '../../clients/hooks/useClients';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useUsers } from '../../users/hooks/useUsers';
 import { useAuth } from '../../../app/providers/AuthProvider';
@@ -152,17 +151,6 @@ export function CashRegisterPage() {
     (cajaSalesData?.data || []).forEach((s: Sale) => map.set(s.id, s));
     return map;
   }, [cajaSalesData]);
-
-  // Lookup directo de clientes para resolver el nombre por id, incluso cuando
-  // la entry/venta legada no trae clientName populado.
-  const { data: clientsData } = useClients({ limit: 1000 });
-  const clientNameById = useMemo(() => {
-    const raw: any = clientsData;
-    const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
-    const map: Record<string, string> = {};
-    list.forEach((c: any) => { if (c?.id) map[c.id] = c.name || ''; });
-    return map;
-  }, [clientsData]);
 
   const { data: paymentMethods = [] } = usePaymentMethods();
   const rucLookup = useRucLookup();
@@ -589,7 +577,7 @@ export function CashRegisterPage() {
                   const isGroup = !!group.groupId && group.entries.length > 1;
                   if (!isGroup) {
                     return renderEntryRow(group.entries[0], false, gi, {
-                      isClosed, userById, salesByRefId, clientNameById, openEdit, openDelete, viewSale,
+                      isClosed, userById, salesByRefId, openEdit, openDelete, viewSale,
                     });
                   }
                   const isOpen = expandedGroups.has(group.groupId!);
@@ -640,7 +628,7 @@ export function CashRegisterPage() {
                         {!isClosed && <td className="px-4 sm:px-6 py-3.5" />}
                       </tr>
                       {isOpen && group.entries.map((e) => renderEntryRow(e, true, `${group.groupId}-${e.id}`, {
-                        isClosed, userById, salesByRefId, clientNameById, openEdit, openDelete, viewSale,
+                        isClosed, userById, salesByRefId, openEdit, openDelete, viewSale,
                       }))}
                     </React.Fragment>
                   );
@@ -1201,28 +1189,25 @@ interface RowCtx {
   isClosed: boolean;
   userById: Record<string, string>;
   salesByRefId: Map<string, Sale>;
-  clientNameById: Record<string, string>;
   openEdit: (e: CashRegisterEntry) => void;
   openDelete: (e: CashRegisterEntry) => void;
   viewSale: (saleId: string) => void;
 }
 
 function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Key, ctx: RowCtx) {
-  const { isClosed, userById, salesByRefId, clientNameById, openEdit, openDelete, viewSale } = ctx;
+  const { isClosed, userById, salesByRefId, openEdit, openDelete, viewSale } = ctx;
   const isSale = entry.referenceType === 'Sale' && !!entry.referenceId;
   const sale = isSale ? salesByRefId.get(entry.referenceId!) : undefined;
-  // Resolver clientName con varios fallbacks. Prioriza entry.clientName (persistido
-  // por el backend nuevo), luego un lookup directo por id en /clients (cubre el
-  // caso de entries/ventas legadas sin populate), luego sale.clientName, y como
-  // último recurso intenta parsear la descripción.
-  const resolvedClientId = entry.clientId || sale?.clientId;
-  const hasClient = !!resolvedClientId;
+  // Para ventas: el clientName se persiste en la entrada (entry.clientName).
+  // Si la entry es legacy (no tiene clientName), caemos a la venta cargada,
+  // y como último recurso parseamos la descripción.
+  const hasClient = !!(entry.clientId || sale?.clientId);
   const resolvedClientName = entry.clientName
-    || (resolvedClientId ? clientNameById[resolvedClientId] : '')
     || sale?.clientName
+    || (sale?.clientId ? 'Sin cliente' : '')
     || clientFromSaleDescription(entry.description);
   const description = isSale
-    ? (hasClient ? (resolvedClientName || 'Cliente') : 'Sin cliente')
+    ? (hasClient ? resolvedClientName : 'Sin cliente')
     : stripMethod(entry.description);
   const method = methodFromDescription(entry.description);
   const vendor = entry.createdBy ? (userById[entry.createdBy] || 'Usuario') : '';
