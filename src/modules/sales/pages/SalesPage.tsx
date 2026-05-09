@@ -64,6 +64,17 @@ export function SalesPage() {
     sellers.forEach((s: any) => { map[s.id] = s.fullName || s.username; });
     return map;
   }, [sellers]);
+  // Lookup amplio (todos los roles) para resolver el nombre del operador
+  // (createdBy) cuando una venta no tiene vendedor asignado — típico cuando un
+  // admin registra la venta sin elegir trabajador en el POS.
+  const userNameById = useMemo(() => {
+    const raw: any = sellersData;
+    const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
+    const map: Record<string, string> = {};
+    list.forEach((u: any) => { map[u.id] = u.fullName || u.username || ''; });
+    if (user?.id && !map[user.id]) map[user.id] = user.fullName || user.username || '';
+    return map;
+  }, [sellersData, user]);
 
   const effectiveSellerId = isSellerRole ? user?.id : (sellerFilter || undefined);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -352,7 +363,10 @@ export function SalesPage() {
   const getCompanyName = (id?: string) => id ? companyMap.get(id)?.name || 'N/A' : 'Mixta';
   const getClientName = (id?: string) => id ? clientMap.get(id)?.name || 'N/A' : 'Sin cliente';
   const getProductName = (id: string) => productMap.get(id)?.name || id;
-  const getSellerName = (sale: Sale) => sale.sellerName || (sale.sellerId ? sellerNameById[sale.sellerId] : '') || '—';
+  const getSellerName = (sale: Sale) => sale.sellerName
+    || (sale.sellerId ? sellerNameById[sale.sellerId] : '')
+    || (sale.createdBy ? userNameById[sale.createdBy] : '')
+    || '—';
 
   const saleBaseById = useMemo(() => {
     const allSales: Sale[] = [...sales, ...boletas, ...facturas];
@@ -897,7 +911,10 @@ export function SalesPage() {
             : 'Efectivo';
         const voucherLabel = sale.voucherType === 'BOLETA' ? 'Boleta' : sale.voucherType === 'FACTURA' ? 'Factura' : 'Nota de venta';
         const client = sale.clientId ? clientMap.get(sale.clientId) : undefined;
-        const sellerName = sale.sellerName || (sale.sellerId ? sellerNameById[sale.sellerId] : '') || 'Sin asignar';
+        const sellerName = sale.sellerName
+          || (sale.sellerId ? sellerNameById[sale.sellerId] : '')
+          || (sale.createdBy ? userNameById[sale.createdBy] : '')
+          || 'Sin asignar';
         const openVoucherPreview = () => {
           setVoucherPreview({
             id: sale.id,

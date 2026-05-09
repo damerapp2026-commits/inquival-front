@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCashRegisterToday, useOpenCashRegister, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
-import { useSaleById, useUpdateSaleItems } from '../../sales/hooks/useSales';
+import { useSales, useSaleById, useUpdateSaleItems } from '../../sales/hooks/useSales';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useUsers } from '../../users/hooks/useUsers';
+import { useAuth } from '../../../app/providers/AuthProvider';
 import { useRucLookup } from '../../../shared/hooks/useLookup';
 import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
 import { Modal } from '../../../shared/components/Modal';
@@ -13,7 +14,7 @@ import {
   ReceiptText, FileText, CircleDashed, Search, Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import type { CashRegisterEntry } from '../../../shared/types';
+import type { CashRegisterEntry, Sale } from '../../../shared/types';
 import { groupEntries } from '../utils/groupEntries';
 import { EXPENSE_CATEGORIES } from '../utils/expenseCategories';
 
@@ -115,13 +116,19 @@ export function CashRegisterPage() {
   const updateSaleItems = useUpdateSaleItems();
   const closeRegister = useCloseCashRegister();
   const { data: usersData } = useUsers({ limit: 200 });
+  const { user: currentUser } = useAuth();
 
   const userById = useMemo(() => {
     const list: any[] = Array.isArray(usersData) ? usersData : (usersData as any)?.data || [];
     const map: Record<string, string> = {};
     list.forEach((u) => { map[u.id] = u.fullName || u.username || ''; });
+    // Garantiza que el usuario actual aparezca con nombre en los chips, incluso
+    // si /users no lo devuelve (rol no-ADMIN no puede listar, paginación, caché stale).
+    if (currentUser?.id && !map[currentUser.id]) {
+      map[currentUser.id] = currentUser.fullName || currentUser.username || '';
+    }
     return map;
-  }, [usersData]);
+  }, [usersData, currentUser]);
 
   const [openingAmount, setOpeningAmount] = useState(0);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -134,6 +141,16 @@ export function CashRegisterPage() {
 
   const editingIsSale = !!(selectedEntry?.referenceType === 'Sale' && selectedEntry?.referenceId);
   const { data: editingSale } = useSaleById(showEditModal && editingIsSale ? selectedEntry!.referenceId! : null);
+
+  // Bulk-fetch ventas del día abierto en caja, para mostrar nombre del cliente
+  // en la columna y para abrir el detalle inline sin saltar a /sales.
+  const cajaDateStr = register?.date ? register.date.slice(0, 10) : undefined;
+  const { data: cajaSalesData } = useSales(cajaDateStr ? { startDate: cajaDateStr, endDate: cajaDateStr, limit: 500 } : undefined);
+  const salesByRefId = useMemo(() => {
+    const map = new Map<string, Sale>();
+    (cajaSalesData?.data || []).forEach((s: Sale) => map.set(s.id, s));
+    return map;
+  }, [cajaSalesData]);
 
   const { data: paymentMethods = [] } = usePaymentMethods();
   const rucLookup = useRucLookup();
@@ -258,7 +275,10 @@ export function CashRegisterPage() {
     await closeRegister.mutateAsync({ registerId: register.id, data: { notes: closeNotes } });
     setShowCloseModal(false);
   };
+  const [viewingSaleId, setViewingSaleId] = useState<string | null>(null);
+  const viewSale = (saleId: string) => setViewingSaleId(saleId);
   const goToSale = (saleId: string) => navigate(`/sales?openSaleId=${saleId}`);
+  const { data: viewingSale } = useSaleById(viewingSaleId);
 
   const vendorsInDay = useMemo(() => {
     const stats = new Map<string, { count: number; sales: number; income: number; expense: number }>();
@@ -557,7 +577,7 @@ export function CashRegisterPage() {
                   const isGroup = !!group.groupId && group.entries.length > 1;
                   if (!isGroup) {
                     return renderEntryRow(group.entries[0], false, gi, {
-                      isClosed, userById, openEdit, openDelete, goToSale,
+                      isClosed, userById, salesByRefId, openEdit, openDelete, viewSale,
                     });
                   }
                   const isOpen = expandedGroups.has(group.groupId!);
@@ -608,7 +628,7 @@ export function CashRegisterPage() {
                         {!isClosed && <td className="px-4 sm:px-6 py-3.5" />}
                       </tr>
                       {isOpen && group.entries.map((e) => renderEntryRow(e, true, `${group.groupId}-${e.id}`, {
-                        isClosed, userById, openEdit, openDelete, goToSale,
+                        isClosed, userById, salesByRefId, openEdit, openDelete, viewSale,
                       }))}
                     </React.Fragment>
                   );
@@ -934,6 +954,120 @@ export function CashRegisterPage() {
           );
         })()}
       </Modal>
+
+      {/* --- View Sale modal --- */}
+      <Modal isOpen={!!viewingSaleId} onClose={() => setViewingSaleId(null)} title="Detalle de venta" size="lg">
+        {!viewingSale ? (
+          <div className="py-12 flex items-center justify-center text-gray-400">
+            <Loader2 size={20} className="animate-spin mr-2" /> Cargando venta...
+          </div>
+        ) : (() => {
+          const sale = viewingSale;
+          const paymentLabel = sale.isCredit
+            ? 'Crédito'
+            : sale.payments && sale.payments.length > 0
+              ? sale.payments.map((p: any) => p.paymentMethodName).join(' + ')
+              : 'Efectivo';
+          const voucherLabel = sale.voucherType === 'BOLETA' ? 'Boleta' : sale.voucherType === 'FACTURA' ? 'Factura' : 'Nota de venta';
+          const sellerName = sale.sellerName || (sale.sellerId ? userById[sale.sellerId] : '') || 'Sin asignar';
+          return (
+            <div className="space-y-4">
+              <div className={`rounded-xl p-4 border ${sale.isCancelled ? 'bg-red-50 border-red-100' : 'bg-primary-50/60 border-primary-100'}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <span className={`text-xs font-semibold uppercase tracking-wide ${sale.isCancelled ? 'text-red-600' : 'text-primary-700'}`}>Total cobrado</span>
+                    <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>S/ {sale.total.toFixed(2)}</div>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                    {sale.isCancelled ? 'Anulada' : 'Completada'}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-500 mt-2 font-mono">
+                  {sale.saleNumber || `NV-${sale.id.slice(-8).toUpperCase()}`}
+                  {' · '}
+                  {new Date(sale.date).toLocaleDateString('es-PE')}
+                  {' '}
+                  {new Date(sale.date).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+                {sale.isCancelled && sale.cancelReason && (
+                  <p className="text-xs text-red-600 mt-2">Razón: {sale.cancelReason}</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="border border-gray-200 rounded-xl p-3">
+                  <span className="block text-xs text-gray-500 mb-1.5">Comprobante</span>
+                  <div className="text-sm font-medium text-gray-900">{voucherLabel}</div>
+                </div>
+                <div className="border border-gray-200 rounded-xl p-3">
+                  <span className="block text-xs text-gray-500 mb-1.5">Método de pago</span>
+                  <div className={`text-sm font-medium ${sale.isCredit ? 'text-orange-600' : 'text-gray-900'}`}>{paymentLabel}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="border border-gray-200 rounded-xl p-3">
+                  <span className="block text-xs text-gray-500 mb-0.5">Cliente</span>
+                  <div className={`text-sm font-medium truncate ${sale.clientId ? 'text-gray-900' : 'text-gray-400 italic'}`}>{sale.clientName || 'Sin cliente'}</div>
+                </div>
+                <div className="border border-gray-200 rounded-xl p-3">
+                  <span className="block text-xs text-gray-500 mb-0.5">Vendedor</span>
+                  <div className="text-sm font-medium text-gray-900 truncate">{sellerName}</div>
+                </div>
+              </div>
+
+              {!sale.isCredit && sale.payments && sale.payments.length > 1 && (
+                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                  <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Desglose de pagos</span>
+                  </div>
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y divide-gray-100">
+                      {sale.payments.map((p: any, idx: number) => (
+                        <tr key={idx}>
+                          <td className="px-4 py-2 font-medium text-gray-700">{p.paymentMethodName}</td>
+                          <td className="px-4 py-2 text-right text-primary-600 font-medium">S/ {p.amount.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Productos ({sale.items.length})</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50/50 text-[11px] text-gray-500 uppercase tracking-wider">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-medium">Producto</th>
+                      <th className="px-3 py-2 text-right font-medium">Cant.</th>
+                      <th className="px-3 py-2 text-right font-medium">Precio</th>
+                      <th className="px-4 py-2 text-right font-medium">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {sale.items.map((it: any, idx: number) => (
+                      <tr key={idx}>
+                        <td className="px-4 py-2 text-gray-800 truncate max-w-[220px]" title={it.productName}>{it.productName || it.productId}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">{it.quantity}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">S/ {it.unitPrice.toFixed(2)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums font-medium text-gray-800">S/ {it.subtotal.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex gap-3 pt-2 border-t border-gray-100">
+                <button type="button" onClick={() => setViewingSaleId(null)} className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-medium">Cerrar</button>
+                <button type="button" onClick={() => { goToSale(sale.id); setViewingSaleId(null); }} className="flex-1 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-semibold shadow-sm">Ir a la venta</button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
     </div>
   );
 }
@@ -1054,15 +1188,21 @@ function Bullet({ text }: { text: string }) {
 interface RowCtx {
   isClosed: boolean;
   userById: Record<string, string>;
+  salesByRefId: Map<string, Sale>;
   openEdit: (e: CashRegisterEntry) => void;
   openDelete: (e: CashRegisterEntry) => void;
-  goToSale: (saleId: string) => void;
+  viewSale: (saleId: string) => void;
 }
 
 function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Key, ctx: RowCtx) {
-  const { isClosed, userById, openEdit, openDelete, goToSale } = ctx;
+  const { isClosed, userById, salesByRefId, openEdit, openDelete, viewSale } = ctx;
   const isSale = entry.referenceType === 'Sale' && !!entry.referenceId;
-  const description = isSale ? clientFromSaleDescription(entry.description) : stripMethod(entry.description);
+  const sale = isSale ? salesByRefId.get(entry.referenceId!) : undefined;
+  // Para ventas mostramos el nombre del cliente (poblado desde la venta).
+  // Cuando la venta aún no cargó, fallback a parsear la descripción.
+  const description = isSale
+    ? (sale?.clientName || sale?.clientId ? sale!.clientName || 'Sin cliente' : clientFromSaleDescription(entry.description))
+    : stripMethod(entry.description);
   const method = methodFromDescription(entry.description);
   const vendor = entry.createdBy ? (userById[entry.createdBy] || 'Usuario') : '';
 
@@ -1081,7 +1221,7 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
       <td className="px-4 py-3.5"><CategoryBadge category={entry.category} /></td>
       <td className="px-4 py-3.5 text-gray-800">
         <div className="flex flex-col">
-          <span className={entry.isDeleted ? 'line-through text-gray-400' : isSale && description === 'Sin cliente' ? 'text-gray-400 italic' : ''}>{description}</span>
+          <span className={entry.isDeleted ? 'line-through text-gray-400' : isSale && (description === 'Sin cliente' || !sale?.clientId) ? 'text-gray-400 italic' : ''}>{isSale && !sale?.clientId ? 'Sin cliente' : description}</span>
           {entry.isDeleted && entry.deleteReason && (
             <span className="text-[11px] text-red-500 mt-0.5">Eliminado · {entry.deleteReason}</span>
           )}
@@ -1102,7 +1242,7 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
             <div className="flex items-center justify-center gap-1">
               {isSale && (
                 <button
-                  onClick={() => goToSale(entry.referenceId!)}
+                  onClick={() => viewSale(entry.referenceId!)}
                   className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg hover:bg-primary-50"
                   title="Ver venta"
                 ><Eye size={15} /> Ver</button>

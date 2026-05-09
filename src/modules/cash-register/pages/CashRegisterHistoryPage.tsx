@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCashRegisters, useCashRegisterById, useCloseCashRegister } from '../hooks/useCashRegister';
 import { useUsers } from '../../users/hooks/useUsers';
+import { useAuth } from '../../../app/providers/AuthProvider';
 import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
 import {
@@ -88,13 +89,17 @@ export function CashRegisterHistoryPage() {
   const { data: detail } = useCashRegisterById(selectedId);
   const closeRegister = useCloseCashRegister();
   const { data: usersData } = useUsers({ limit: 200 });
+  const { user: currentUser } = useAuth();
 
   const userById = useMemo(() => {
     const list: any[] = Array.isArray(usersData) ? usersData : (usersData as any)?.data || [];
     const map: Record<string, string> = {};
     list.forEach((u) => { map[u.id] = u.fullName || u.username || ''; });
+    if (currentUser?.id && !map[currentUser.id]) {
+      map[currentUser.id] = currentUser.fullName || currentUser.username || '';
+    }
     return map;
-  }, [usersData]);
+  }, [usersData, currentUser]);
 
   const registers: CashRegister[] = data?.data || [];
   const total = data?.total || 0;
