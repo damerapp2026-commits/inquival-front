@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQueries } from '@tanstack/react-query';
 import { useCashRegisterToday, useOpenCashRegister, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
-import { useSales, useSaleById, useUpdateSaleItems } from '../../sales/hooks/useSales';
+import { useSaleById, useUpdateSaleItems } from '../../sales/hooks/useSales';
+import { saleService } from '../../sales/services/saleService';
 import { useClients } from '../../clients/hooks/useClients';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useUsers } from '../../users/hooks/useUsers';
@@ -143,15 +145,31 @@ export function CashRegisterPage() {
   const editingIsSale = !!(selectedEntry?.referenceType === 'Sale' && selectedEntry?.referenceId);
   const { data: editingSale } = useSaleById(showEditModal && editingIsSale ? selectedEntry!.referenceId! : null);
 
-  // Bulk-fetch ventas del día abierto en caja, para mostrar nombre del cliente
-  // en la columna y para abrir el detalle inline sin saltar a /sales.
-  const cajaDateStr = register?.date ? register.date.slice(0, 10) : undefined;
-  const { data: cajaSalesData } = useSales(cajaDateStr ? { startDate: cajaDateStr, endDate: cajaDateStr, limit: 500 } : undefined);
+  // Fetch individual de cada venta referenciada por las entries (incluso ventas
+  // antiguas), igual que el detalle. Evita depender de un bulk filtrado por la
+  // fecha de caja, que se queda corto cuando la entry apunta a una venta vieja.
+  const referencedSaleIds = useMemo(() => {
+    const ids = new Set<string>();
+    (register?.entries || []).forEach((e: CashRegisterEntry) => {
+      if (e.referenceType === 'Sale' && e.referenceId) ids.add(e.referenceId);
+    });
+    return Array.from(ids);
+  }, [register]);
+  const saleQueries = useQueries({
+    queries: referencedSaleIds.map((id) => ({
+      queryKey: ['sale', id],
+      queryFn: () => saleService.getById(id),
+      staleTime: 60_000,
+    })),
+  });
   const salesByRefId = useMemo(() => {
     const map = new Map<string, Sale>();
-    (cajaSalesData?.data || []).forEach((s: Sale) => map.set(s.id, s));
+    saleQueries.forEach((q, idx) => {
+      const data = q.data as Sale | undefined;
+      if (data) map.set(referencedSaleIds[idx], data);
+    });
     return map;
-  }, [cajaSalesData]);
+  }, [saleQueries, referencedSaleIds]);
 
   // Mismo patrón que /sales: clientMap.get(id)?.name → 'N/A', sin id → 'Sin cliente'.
   const { data: clientsData } = useClients({ limit: 200 });
