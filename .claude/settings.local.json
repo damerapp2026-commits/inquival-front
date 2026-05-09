@@ -87,7 +87,17 @@
       "Bash(command -v ffmpeg)",
       "Bash(command -v vipsthumbnail)",
       "Bash(command -v sips)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(grep -rn \"@Get\\\\|sales/:id\\\\|sales/\\\\${\\\\|path.*sales\" /home/ricardo/dev/Damer/inquival-back/src/presentation/controllers/sale.controller.ts)",
+      "Bash(grep -n \"description.*Venta\\\\|description.*sale\\\\|description:.*\\\\\\\\\\\\`\\\\|description:.*p\\\\\\\\.\\\\\\\\|paymentMethodName\\\\\\\\b\" /home/ricardo/dev/Damer/inquival-back/src/application/use-cases/sale/create-sale.use-case.ts)",
+      "Bash(grep -n \"goToSale\\\\|navigate\\(\\\\\\\\\\\\`/sales\\\\|viewingSaleId\\\\|isClosed, userById\" /home/ricardo/dev/Damer/inquival-front/src/modules/cash-register/pages/CashRegisterPage.tsx)",
+      "Bash(grep -n \"Modal isOpen\\\\|^  \\);$\\\\|^}$\" /home/ricardo/dev/Damer/inquival-front/src/modules/cash-register/pages/CashRegisterPage.tsx)",
+      "Read(//home/ricardo/dev/Damer/**)",
+      "Bash(git -C /home/ricardo/dev/Damer/inquival-back diff src/domain/entities/sale.entity.ts)",
+      "Bash(git -C /home/ricardo/dev/Damer/inquival-back diff src/infrastructure/database/mongodb/repositories/mongo-sale.repository.ts)",
+      "Bash(git -C /home/ricardo/dev/Damer/inquival-front diff src/shared/types/index.ts)",
+      "Bash(git -C /home/ricardo/dev/Damer/inquival-front diff .claude/settings.local.json)",
+      "Bash(git *)"
     ]
   }
 }
