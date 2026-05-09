@@ -1198,10 +1198,16 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
   const { isClosed, userById, salesByRefId, openEdit, openDelete, viewSale } = ctx;
   const isSale = entry.referenceType === 'Sale' && !!entry.referenceId;
   const sale = isSale ? salesByRefId.get(entry.referenceId!) : undefined;
-  // Para ventas mostramos el nombre del cliente (poblado desde la venta).
-  // Cuando la venta aún no cargó, fallback a parsear la descripción.
+  // Para ventas: el clientName se persiste en la entrada (entry.clientName).
+  // Si la entry es legacy (no tiene clientName), caemos a la venta cargada,
+  // y como último recurso parseamos la descripción.
+  const hasClient = !!(entry.clientId || sale?.clientId);
+  const resolvedClientName = entry.clientName
+    || sale?.clientName
+    || (sale?.clientId ? 'Sin cliente' : '')
+    || clientFromSaleDescription(entry.description);
   const description = isSale
-    ? (sale?.clientName || sale?.clientId ? sale!.clientName || 'Sin cliente' : clientFromSaleDescription(entry.description))
+    ? (hasClient ? resolvedClientName : 'Sin cliente')
     : stripMethod(entry.description);
   const method = methodFromDescription(entry.description);
   const vendor = entry.createdBy ? (userById[entry.createdBy] || 'Usuario') : '';
@@ -1221,7 +1227,7 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
       <td className="px-4 py-3.5"><CategoryBadge category={entry.category} /></td>
       <td className="px-4 py-3.5 text-gray-800">
         <div className="flex flex-col">
-          <span className={entry.isDeleted ? 'line-through text-gray-400' : isSale && (description === 'Sin cliente' || !sale?.clientId) ? 'text-gray-400 italic' : ''}>{isSale && !sale?.clientId ? 'Sin cliente' : description}</span>
+          <span className={entry.isDeleted ? 'line-through text-gray-400' : isSale && !hasClient ? 'text-gray-400 italic' : ''}>{description}</span>
           {entry.isDeleted && entry.deleteReason && (
             <span className="text-[11px] text-red-500 mt-0.5">Eliminado · {entry.deleteReason}</span>
           )}
