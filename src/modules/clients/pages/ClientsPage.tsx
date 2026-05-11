@@ -109,6 +109,14 @@ export function ClientsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isValidDoc) {
+      toast.error(docType === 'DNI' ? 'El DNI debe tener 8 dígitos' : 'El RUC debe tener 11 dígitos');
+      return;
+    }
+    if (!form.department || !form.province || !form.district) {
+      toast.error('Selecciona departamento, provincia y distrito');
+      return;
+    }
     const cleanForm: Record<string, any> = Object.fromEntries(Object.entries(form).filter(([, v]) => v !== ''));
     if (cleanForm.creditLimit !== undefined) {
       const parsed = Number(cleanForm.creditLimit);
@@ -237,7 +245,7 @@ export function ClientsPage() {
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar cliente' : 'Nuevo cliente'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Tipo de documento</label>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Tipo de documento <span className="text-red-500 normal-case">*</span></label>
             <div className="flex gap-2 mb-2">
               <button type="button" onClick={() => { setDocType('DNI'); setForm(prev => ({ ...prev, documentNumber: '' })); }}
                 className={`flex-1 py-2 rounded-xl text-sm font-semibold border-2 transition ${docType === 'DNI' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
@@ -254,7 +262,9 @@ export function ClientsPage() {
                 onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); setForm({ ...form, documentNumber: v.slice(0, docType === 'DNI' ? 8 : 11) }); }}
                 className="flex-1 px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                 placeholder={docType === 'DNI' ? '8 dígitos' : '11 dígitos'}
+                minLength={docType === 'DNI' ? 8 : 11}
                 maxLength={docType === 'DNI' ? 8 : 11}
+                required
               />
               <button
                 type="button"
@@ -275,8 +285,8 @@ export function ClientsPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Teléfono</label>
-              <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Teléfono <span className="text-red-500 normal-case">*</span></label>
+              <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" required />
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Email</label>
@@ -291,8 +301,8 @@ export function ClientsPage() {
           <div>
             <div className="flex items-center gap-2 mb-1.5">
               <CreditCard size={13} className="text-primary-600" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Límite de crédito</span>
-              <span className="text-[11px] text-gray-400 normal-case font-normal">— opcional, en S/</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Límite de crédito <span className="text-red-500 normal-case">*</span></span>
+              <span className="text-[11px] text-gray-400 normal-case font-normal">— en S/</span>
             </div>
             <div className="relative">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">S/</span>
@@ -303,15 +313,17 @@ export function ClientsPage() {
                 value={form.creditLimit}
                 onChange={(e) => setForm({ ...form, creditLimit: e.target.value })}
                 className="w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500"
-                placeholder="Sin límite"
+                placeholder="0.00"
+                required
               />
             </div>
             <p className="mt-1.5 text-[11px] text-gray-400">
-              Si se define, las nuevas ventas a crédito que excedan este monto serán rechazadas.
+              Las nuevas ventas a crédito que excedan este monto serán rechazadas. Usa 0 si el cliente no debe tener crédito.
             </p>
           </div>
 
           <LocationFields
+            required
             value={{
               department: form.department || undefined,
               province: form.province || undefined,
@@ -345,7 +357,7 @@ export function ClientsPage() {
             <AlertTriangle className="text-red-500 flex-shrink-0 mt-0.5" size={20} />
             <div className="text-sm text-red-700">
               Esta acción es <strong>permanente</strong>. Se eliminará a <strong>{deleteTarget?.name}</strong>
-              {deleteTarget?.documentNumber && <> ({deleteTarget.documentNumber})</>}. Si tiene ventas, créditos o cotizaciones registradas, el sistema podría rechazar la operación.
+              {deleteTarget?.documentNumber && <> ({deleteTarget.documentNumber})</>}. Si el cliente tiene <strong>deudas pendientes</strong> el sistema rechazará la operación. Sus cuentas a crédito ya pagadas se eliminarán en cascada; las ventas y cotizaciones quedan registradas como "Sin cliente".
             </div>
           </div>
           <div>

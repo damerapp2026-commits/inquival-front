@@ -97,7 +97,8 @@
       "Bash(git -C /home/ricardo/dev/Damer/inquival-back diff src/infrastructure/database/mongodb/repositories/mongo-sale.repository.ts)",
       "Bash(git -C /home/ricardo/dev/Damer/inquival-front diff src/shared/types/index.ts)",
       "Bash(git -C /home/ricardo/dev/Damer/inquival-front diff .claude/settings.local.json)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(npx ts-node *)"
     ]
   }
 }

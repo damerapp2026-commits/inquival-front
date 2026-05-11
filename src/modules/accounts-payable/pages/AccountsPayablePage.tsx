@@ -5,7 +5,7 @@ import { usePaymentAgreements, useCreatePaymentAgreement, useRegisterAgreementPa
 import { Modal } from '../../../shared/components/Modal';
 import {
   FileText, DollarSign, AlertCircle, Eye, Clock, CheckCircle, Hash, Save,
-  ChevronLeft, ChevronRight, CalendarDays, X, Plus, Trash2, Ban, ClipboardList, Wand2,
+  ChevronLeft, ChevronRight, CalendarDays, X, Plus, Trash2, Ban, ClipboardList, Wand2, Search,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { AccountPayable, AccountPayableInstallment, AccountPayablePayment, PaymentAgreement, AgreementInstallment, AgreementPayment } from '../../../shared/types';
@@ -78,10 +78,25 @@ const agStatusLabels: Record<string, { label: string; cls: string }> = {
   CANCELLED: { label: 'Anulado',    cls: 'bg-gray-100 text-gray-500' },
 };
 
+// ─── Currency helpers ────────────────────────────────────────────────────────
+const symFor = (ap?: { currency?: 'PEN' | 'USD' } | null): string => (ap?.currency === 'USD' ? '$' : 'S/');
+type Buckets = { pen: number; usd: number };
+const emptyBuckets = (): Buckets => ({ pen: 0, usd: 0 });
+const addToBucket = (b: Buckets, amount: number, currency?: 'PEN' | 'USD') => {
+  if (currency === 'USD') b.usd += amount; else b.pen += amount;
+};
+const fmtBuckets = (b: Buckets): string => {
+  const parts: string[] = [];
+  if (b.pen > 0) parts.push(`S/ ${b.pen.toFixed(2)}`);
+  if (b.usd > 0) parts.push(`$ ${b.usd.toFixed(2)}`);
+  return parts.length ? parts.join(' + ') : 'S/ 0.00';
+};
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 export function AccountsPayablePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<'calendar' | 'agreements'>('calendar');
+  const [supplierSearch, setSupplierSearch] = useState('');
 
   // ── Calendar state ──
   const [selectedDate, setSelectedDate] = useState<string | null>(() => searchParams.get('date'));
@@ -121,9 +136,19 @@ export function AccountsPayablePage() {
   const cancelAgreement = useCancelPaymentAgreement();
 
   const allAccounts: AccountPayable[] = data?.data || [];
-  const activeAccounts = useMemo(() => allAccounts.filter(ap => ap.status !== 'PAID' && ap.status !== 'CONSOLIDATED'), [allAccounts]);
+  const normalizedSearch = supplierSearch.trim().toLowerCase();
+  const activeAccounts = useMemo(() => {
+    const base = allAccounts.filter(ap => ap.status !== 'PAID' && ap.status !== 'CONSOLIDATED');
+    if (!normalizedSearch) return base;
+    return base.filter(ap => (ap.supplier || '').toLowerCase().includes(normalizedSearch));
+  }, [allAccounts, normalizedSearch]);
   const paymentsByDate = useMemo(() => groupPaymentsByDate(activeAccounts), [activeAccounts]);
   const selectedPayments = selectedDate ? (paymentsByDate[selectedDate] || []) : [];
+
+  const filteredAgreements = useMemo(() => {
+    if (!normalizedSearch) return agreements;
+    return (agreements as PaymentAgreement[]).filter(ag => (ag.supplier || '').toLowerCase().includes(normalizedSearch));
+  }, [agreements, normalizedSearch]);
 
   // Flat list of every pending payment with its date and days-until-due
   const allPending = useMemo(() => {
@@ -138,11 +163,12 @@ export function AccountsPayablePage() {
   }, [paymentsByDate]);
 
   const summary = useMemo(() => {
-    let overdue = 0, overdueCount = 0, next7 = 0, next7Count = 0, total = 0;
+    const overdue = emptyBuckets(), next7 = emptyBuckets(), total = emptyBuckets();
+    let overdueCount = 0, next7Count = 0;
     allPending.forEach(p => {
-      total += p.amount;
-      if (p.daysDiff < 0) { overdue += p.amount; overdueCount++; }
-      else if (p.daysDiff <= 7) { next7 += p.amount; next7Count++; }
+      addToBucket(total, p.amount, p.ap.currency);
+      if (p.daysDiff < 0) { addToBucket(overdue, p.amount, p.ap.currency); overdueCount++; }
+      else if (p.daysDiff <= 7) { addToBucket(next7, p.amount, p.ap.currency); next7Count++; }
     });
     return { overdue, overdueCount, next7, next7Count, total, totalCount: allPending.length };
   }, [allPending]);
@@ -158,7 +184,7 @@ export function AccountsPayablePage() {
         items,
         earliestDate: items[0].dateStr,
         hasOverdue: items.some(i => i.isOverdue),
-        total: items.reduce((s, p) => s + p.amount, 0),
+        total: items.reduce((acc, p) => { addToBucket(acc, p.amount, p.ap.currency); return acc; }, emptyBuckets()),
       }))
       .sort((a, b) => {
         if (a.hasOverdue !== b.hasOverdue) return a.hasOverdue ? -1 : 1;
@@ -179,6 +205,10 @@ export function AccountsPayablePage() {
   const supplierAPs = createSupplier ? (supplierOptions[createSupplier] || []) : [];
   const createTotal = useMemo(() =>
     supplierAPs.filter(ap => createSelectedIds.has(ap.id)).reduce((s, ap) => s + ap.pendingAmount, 0),
+    [supplierAPs, createSelectedIds]
+  );
+  const createTotalBuckets = useMemo(() =>
+    supplierAPs.filter(ap => createSelectedIds.has(ap.id)).reduce((acc, ap) => { addToBucket(acc, ap.pendingAmount, ap.currency); return acc; }, emptyBuckets()),
     [supplierAPs, createSelectedIds]
   );
 
@@ -361,6 +391,30 @@ export function AccountsPayablePage() {
         </button>
       </div>
 
+      {/* Buscador de proveedor / laboratorio */}
+      <div className="mb-4 max-w-md">
+        <div className="relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Buscar proveedor / laboratorio..."
+            value={supplierSearch}
+            onChange={(e) => setSupplierSearch(e.target.value)}
+            className="w-full pl-9 pr-9 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary-400 transition-colors"
+          />
+          {supplierSearch && (
+            <button
+              type="button"
+              onClick={() => setSupplierSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+              aria-label="Limpiar"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* ── TAB: CALENDARIO ── */}
       {activeTab === 'calendar' && (
         <>
@@ -373,7 +427,7 @@ export function AccountsPayablePage() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className={`text-[11px] uppercase tracking-wider font-semibold ${summary.overdueCount > 0 ? 'text-red-600' : 'text-gray-500'}`}>Vencido</div>
-                <div className="font-bold text-gray-800 text-lg leading-tight">S/ {summary.overdue.toFixed(2)}</div>
+                <div className="font-bold text-gray-800 text-lg leading-tight">{fmtBuckets(summary.overdue)}</div>
                 <div className="text-xs text-gray-500">{summary.overdueCount} pago{summary.overdueCount !== 1 ? 's' : ''}</div>
               </div>
             </div>
@@ -383,7 +437,7 @@ export function AccountsPayablePage() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[11px] uppercase tracking-wider text-yellow-700 font-semibold">Próximos 7 días</div>
-                <div className="font-bold text-gray-800 text-lg leading-tight">S/ {summary.next7.toFixed(2)}</div>
+                <div className="font-bold text-gray-800 text-lg leading-tight">{fmtBuckets(summary.next7)}</div>
                 <div className="text-xs text-gray-500">{summary.next7Count} pago{summary.next7Count !== 1 ? 's' : ''}</div>
               </div>
             </div>
@@ -393,7 +447,7 @@ export function AccountsPayablePage() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[11px] uppercase tracking-wider text-primary-700 font-semibold">Total pendiente</div>
-                <div className="font-bold text-gray-800 text-lg leading-tight">S/ {summary.total.toFixed(2)}</div>
+                <div className="font-bold text-gray-800 text-lg leading-tight">{fmtBuckets(summary.total)}</div>
                 <div className="text-xs text-gray-500">{summary.totalCount} pago{summary.totalCount !== 1 ? 's' : ''}</div>
               </div>
             </div>
@@ -449,7 +503,7 @@ export function AccountsPayablePage() {
                     <div className="font-semibold text-gray-800 capitalize text-sm">{formatSelectedDate(selectedDate)}</div>
                     {selectedPayments.length > 0 && (
                       <div className="text-xs text-gray-500 mt-0.5">
-                        {selectedPayments.length} pago{selectedPayments.length > 1 ? 's' : ''} · Total: <span className="font-semibold text-gray-700">S/ {selectedPayments.reduce((s,p)=>s+p.amount,0).toFixed(2)}</span>
+                        {selectedPayments.length} pago{selectedPayments.length > 1 ? 's' : ''} · Total: <span className="font-semibold text-gray-700">{fmtBuckets(selectedPayments.reduce((acc,p)=>{ addToBucket(acc,p.amount,p.ap.currency); return acc; }, emptyBuckets()))}</span>
                       </div>
                     )}
                   </div>
@@ -464,7 +518,7 @@ export function AccountsPayablePage() {
                       selectedPayments.forEach(p => { if (!grouped[p.supplier]) grouped[p.supplier]=[]; grouped[p.supplier].push(p); });
                       return Object.entries(grouped).map(([supplier, payments]) => {
                         const hasMany = payments.length > 1;
-                        const supplierTotal = payments.reduce((s,p)=>s+p.amount,0);
+                        const supplierTotal = payments.reduce((acc,p)=>{ addToBucket(acc,p.amount,p.ap.currency); return acc; }, emptyBuckets());
                         const supplierOverdue = payments.some(p=>p.isOverdue);
                         return (
                           <div key={supplier}>
@@ -474,7 +528,7 @@ export function AccountsPayablePage() {
                                   <span className="font-semibold text-gray-800 text-sm">{supplier}</span>
                                   <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600">{payments.length} facturas</span>
                                 </div>
-                                <span className={`text-sm font-bold ${supplierOverdue?'text-red-600':'text-gray-700'}`}>S/ {supplierTotal.toFixed(2)}</span>
+                                <span className={`text-sm font-bold ${supplierOverdue?'text-red-600':'text-gray-700'}`}>{fmtBuckets(supplierTotal)}</span>
                               </div>
                             )}
                             {payments.map((payment, idx) => (
@@ -488,7 +542,7 @@ export function AccountsPayablePage() {
                                       {payment.isOverdue && <span className="text-red-600 font-medium text-xs flex items-center gap-0.5"><AlertCircle size={10} /> Vencido</span>}
                                     </div>
                                   </div>
-                                  <div className={`font-bold text-sm flex-shrink-0 ${payment.isOverdue?'text-red-600':'text-gray-800'}`}>S/ {payment.amount.toFixed(2)}</div>
+                                  <div className={`font-bold text-sm flex-shrink-0 ${payment.isOverdue?'text-red-600':'text-gray-800'}`}>{symFor(payment.ap)} {payment.amount.toFixed(2)}</div>
                                 </div>
                                 <div className="flex gap-2 mt-2">
                                   <button onClick={() => setViewingId(payment.apId)} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 bg-blue-50 rounded hover:bg-blue-100 transition-colors"><Eye size={12} /> Ver detalle</button>
@@ -517,7 +571,7 @@ export function AccountsPayablePage() {
                       <FileText size={14} /> Pendientes ({allPending.length})
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">
-                      Total: <span className="font-semibold text-gray-700">S/ {summary.total.toFixed(2)}</span>
+                      Total: <span className="font-semibold text-gray-700">{fmtBuckets(summary.total)}</span>
                       {summary.overdueCount > 0 && <span className="ml-2 text-red-600 font-medium">· {summary.overdueCount} vencido{summary.overdueCount > 1 ? 's' : ''}</span>}
                     </div>
                   </div>
@@ -531,7 +585,7 @@ export function AccountsPayablePage() {
                           <span className="font-semibold text-gray-800 text-sm truncate">{supplier}</span>
                           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600 flex-shrink-0">{items.length} pago{items.length > 1 ? 's' : ''}</span>
                         </div>
-                        <span className={`text-sm font-bold flex-shrink-0 ${hasOverdue ? 'text-red-600' : 'text-gray-700'}`}>S/ {total.toFixed(2)}</span>
+                        <span className={`text-sm font-bold flex-shrink-0 ${hasOverdue ? 'text-red-600' : 'text-gray-700'}`}>{fmtBuckets(total)}</span>
                       </div>
                       {items.map((p, idx) => {
                         const daysLabel = p.daysDiff < 0
@@ -555,7 +609,7 @@ export function AccountsPayablePage() {
                                   </span>
                                 </div>
                               </div>
-                              <div className={`font-bold text-sm flex-shrink-0 ${p.isOverdue ? 'text-red-600' : 'text-gray-800'}`}>S/ {p.amount.toFixed(2)}</div>
+                              <div className={`font-bold text-sm flex-shrink-0 ${p.isOverdue ? 'text-red-600' : 'text-gray-800'}`}>{symFor(p.ap)} {p.amount.toFixed(2)}</div>
                             </div>
                             <div className="flex gap-2 mt-2">
                               <button onClick={() => setViewingId(p.apId)} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 bg-blue-50 rounded hover:bg-blue-100 transition-colors"><Eye size={12} /> Ver detalle</button>
@@ -595,9 +649,14 @@ export function AccountsPayablePage() {
               <div className="text-sm text-gray-400">No hay acuerdos de pago registrados</div>
               <button onClick={() => { resetCreateForm(); setShowCreateModal(true); }} className="mt-3 text-sm text-primary-600 hover:underline">Crear el primero</button>
             </div>
+          ) : filteredAgreements.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-200">
+              <Search size={32} className="mx-auto mb-2 text-gray-300" />
+              <div className="text-sm text-gray-400">Sin acuerdos para "{supplierSearch}"</div>
+            </div>
           ) : (
             <div className="space-y-4">
-              {agreements.map((ag: PaymentAgreement) => {
+              {filteredAgreements.map((ag: PaymentAgreement) => {
                 const st = agStatusLabels[ag.status] || { label: ag.status, cls: '' };
                 const isCancelled = ag.status === 'CANCELLED';
                 const isPaid = ag.status === 'PAID';
@@ -763,25 +822,25 @@ export function AccountsPayablePage() {
             {selectedAP && <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${(apStatusLabels[selectedAP.status]||{cls:''}).cls}`}>{(apStatusLabels[selectedAP.status]||{label:selectedAP.status}).label}</span>}
           </div>
           <div className="grid grid-cols-3 gap-2">
-            <div className="bg-gray-50 rounded-lg px-3 py-2 text-center border border-gray-100"><div className="text-[10px] text-gray-400 uppercase">Total</div><div className="font-bold text-gray-700 text-xs mt-0.5">S/ {selectedAP?.totalAmount.toFixed(2)}</div></div>
-            <div className="bg-green-50 rounded-lg px-3 py-2 text-center border border-green-100"><div className="text-[10px] text-green-500 uppercase">Pagado</div><div className="font-bold text-green-700 text-xs mt-0.5">S/ {selectedAP?.paidAmount.toFixed(2)}</div></div>
-            <div className="bg-red-50 rounded-lg px-3 py-2 text-center border border-red-100"><div className="text-[10px] text-red-400 uppercase">Pendiente</div><div className="font-bold text-red-600 text-xs mt-0.5">S/ {selectedAP?.pendingAmount.toFixed(2)}</div></div>
+            <div className="bg-gray-50 rounded-lg px-3 py-2 text-center border border-gray-100"><div className="text-[10px] text-gray-400 uppercase">Total</div><div className="font-bold text-gray-700 text-xs mt-0.5">{symFor(selectedAP)} {selectedAP?.totalAmount.toFixed(2)}</div></div>
+            <div className="bg-green-50 rounded-lg px-3 py-2 text-center border border-green-100"><div className="text-[10px] text-green-500 uppercase">Pagado</div><div className="font-bold text-green-700 text-xs mt-0.5">{symFor(selectedAP)} {selectedAP?.paidAmount.toFixed(2)}</div></div>
+            <div className="bg-red-50 rounded-lg px-3 py-2 text-center border border-red-100"><div className="text-[10px] text-red-400 uppercase">Pendiente</div><div className="font-bold text-red-600 text-xs mt-0.5">{symFor(selectedAP)} {selectedAP?.pendingAmount.toFixed(2)}</div></div>
           </div>
           {nextInstallment && (
             <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
               <div><div className="text-[11px] text-blue-500 uppercase font-semibold">Próxima cuota</div><div className="text-xs text-blue-500 mt-0.5">Vence: {new Date(nextInstallment.dueDate).toLocaleDateString('es-PE')}</div></div>
-              <div className="font-bold text-blue-700 text-sm">S/ {nextInstallment.amount.toFixed(2)}</div>
+              <div className="font-bold text-blue-700 text-sm">{symFor(selectedAP)} {nextInstallment.amount.toFixed(2)}</div>
             </div>
           )}
           <div className="border-t border-gray-100" />
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Monto a pagar</label>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-sm select-none">S/</span>
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-sm select-none">{symFor(selectedAP)}</span>
               <input type="number" min="0.01" step="0.01" max={selectedAP?.pendingAmount} value={payForm.amount||''} onChange={e=>setPayForm({...payForm,amount:parseFloat(e.target.value)||0})}
                 className={`w-full pl-10 pr-4 py-2.5 border rounded-xl text-sm font-medium outline-none transition-colors ${exceedsPending?'border-red-400 bg-red-50':'border-gray-200 focus:border-primary-400'}`} required />
             </div>
-            {exceedsPending && <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1"><AlertCircle size={12} /> Excede el pendiente (S/ {selectedAP?.pendingAmount.toFixed(2)})</p>}
+            {exceedsPending && <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1"><AlertCircle size={12} /> Excede el pendiente ({symFor(selectedAP)} {selectedAP?.pendingAmount.toFixed(2)})</p>}
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Código Único / Código Transferencia <span className="text-red-500">*</span></label>
@@ -807,13 +866,13 @@ export function AccountsPayablePage() {
         {detailAP && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              {[['Proveedor', detailAP.supplier], ['Estado', null], ['Total', `S/ ${detailAP.totalAmount.toFixed(2)}`], ['Pendiente', null]].map(([label], i) => (
+              {[['Proveedor', detailAP.supplier], ['Estado', null], ['Total', `${symFor(detailAP)} ${detailAP.totalAmount.toFixed(2)}`], ['Pendiente', null]].map(([label], i) => (
                 <div key={i} className="bg-gray-50 rounded-lg p-3">
                   <span className="block text-xs text-gray-500">{label}</span>
                   {i===1 ? <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${(apStatusLabels[detailAP.status]||{cls:''}).cls}`}>{(apStatusLabels[detailAP.status]||{label:detailAP.status}).label}</span>
-                  : i===3 ? <span className="text-sm font-bold text-red-600">S/ {detailAP.pendingAmount.toFixed(2)}</span>
+                  : i===3 ? <span className="text-sm font-bold text-red-600">{symFor(detailAP)} {detailAP.pendingAmount.toFixed(2)}</span>
                   : i===0 ? <span className="text-sm font-medium">{detailAP.supplier}</span>
-                  : <span className="text-sm font-bold">S/ {detailAP.totalAmount.toFixed(2)}</span>}
+                  : <span className="text-sm font-bold">{symFor(detailAP)} {detailAP.totalAmount.toFixed(2)}</span>}
                 </div>
               ))}
             </div>
@@ -830,7 +889,7 @@ export function AccountsPayablePage() {
                           {!inst.numeroUnico && inst.status==='PENDING' && <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-medium">Sin N° único</span>}
                         </div>
                         <div className="text-right">
-                          <div className="text-sm font-medium">S/ {inst.amount.toFixed(2)}</div>
+                          <div className="text-sm font-medium">{symFor(detailAP)} {inst.amount.toFixed(2)}</div>
                           <div className={`text-xs ${inst.status==='PAID'?'text-primary-600':'text-gray-500'}`}>
                             {inst.status==='PAID' ? `Pagada ${inst.paidDate?new Date(inst.paidDate).toLocaleDateString('es-PE'):''}` : `Vence: ${new Date(inst.dueDate).toLocaleDateString('es-PE')}`}
                           </div>
@@ -857,7 +916,7 @@ export function AccountsPayablePage() {
                 <div className="space-y-2">
                   {detailAP.payments.map((p: AccountPayablePayment, idx: number) => (
                     <div key={p.id||idx} className="p-2 bg-primary-50 rounded-lg border border-primary-200">
-                      <div className="flex items-center justify-between"><div className="text-sm font-medium text-primary-700">S/ {p.amount.toFixed(2)}</div><div className="text-xs text-gray-500">{new Date(p.paymentDate).toLocaleDateString('es-PE')}{p.registeredByName?` - ${p.registeredByName}`:''}</div></div>
+                      <div className="flex items-center justify-between"><div className="text-sm font-medium text-primary-700">{symFor(detailAP)} {p.amount.toFixed(2)}</div><div className="text-xs text-gray-500">{new Date(p.paymentDate).toLocaleDateString('es-PE')}{p.registeredByName?` - ${p.registeredByName}`:''}</div></div>
                       <div className="text-xs text-gray-600 mt-0.5 font-mono">Cód: {p.codigoTransferencia}</div>
                       {p.notes && <div className="text-xs text-gray-400 mt-0.5">{p.notes}</div>}
                     </div>
@@ -877,25 +936,25 @@ export function AccountsPayablePage() {
             {selectedAgreement && <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${(agStatusLabels[selectedAgreement.status]||{cls:''}).cls}`}>{(agStatusLabels[selectedAgreement.status]||{label:selectedAgreement.status}).label}</span>}
           </div>
           <div className="grid grid-cols-3 gap-2">
-            <div className="bg-gray-50 rounded-lg px-3 py-2 text-center border border-gray-100"><div className="text-[10px] text-gray-400 uppercase">Total</div><div className="font-bold text-gray-700 text-xs mt-0.5">S/ {selectedAgreement?.totalAmount.toFixed(2)}</div></div>
-            <div className="bg-green-50 rounded-lg px-3 py-2 text-center border border-green-100"><div className="text-[10px] text-green-500 uppercase">Pagado</div><div className="font-bold text-green-700 text-xs mt-0.5">S/ {selectedAgreement?.paidAmount.toFixed(2)}</div></div>
-            <div className="bg-red-50 rounded-lg px-3 py-2 text-center border border-red-100"><div className="text-[10px] text-red-400 uppercase">Pendiente</div><div className="font-bold text-red-600 text-xs mt-0.5">S/ {selectedAgreement?.pendingAmount.toFixed(2)}</div></div>
+            <div className="bg-gray-50 rounded-lg px-3 py-2 text-center border border-gray-100"><div className="text-[10px] text-gray-400 uppercase">Total</div><div className="font-bold text-gray-700 text-xs mt-0.5">{symFor(selectedAgreement)} {selectedAgreement?.totalAmount.toFixed(2)}</div></div>
+            <div className="bg-green-50 rounded-lg px-3 py-2 text-center border border-green-100"><div className="text-[10px] text-green-500 uppercase">Pagado</div><div className="font-bold text-green-700 text-xs mt-0.5">{symFor(selectedAgreement)} {selectedAgreement?.paidAmount.toFixed(2)}</div></div>
+            <div className="bg-red-50 rounded-lg px-3 py-2 text-center border border-red-100"><div className="text-[10px] text-red-400 uppercase">Pendiente</div><div className="font-bold text-red-600 text-xs mt-0.5">{symFor(selectedAgreement)} {selectedAgreement?.pendingAmount.toFixed(2)}</div></div>
           </div>
           {selectedAgreement?.paymentScheduleType === 'INSTALLMENTS' && (() => { const ni = selectedAgreement.installments.find(i=>i.status==='PENDING'); return ni ? (
             <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
               <div><div className="text-[11px] text-blue-500 uppercase font-semibold">Próxima cuota</div><div className="text-xs text-blue-500 mt-0.5">Vence: {new Date(ni.dueDate).toLocaleDateString('es-PE')}</div></div>
-              <div className="font-bold text-blue-700 text-sm">S/ {ni.amount.toFixed(2)}</div>
+              <div className="font-bold text-blue-700 text-sm">{symFor(selectedAgreement)} {ni.amount.toFixed(2)}</div>
             </div>
           ) : null; })()}
           <div className="border-t border-gray-100" />
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Monto a pagar</label>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-sm select-none">S/</span>
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-sm select-none">{symFor(selectedAgreement)}</span>
               <input type="number" min="0.01" step="0.01" max={selectedAgreement?.pendingAmount} value={agPayForm.amount||''} onChange={e=>setAgPayForm({...agPayForm,amount:parseFloat(e.target.value)||0})}
                 className={`w-full pl-10 pr-4 py-2.5 border rounded-xl text-sm font-medium outline-none transition-colors ${agExceedsPending?'border-red-400 bg-red-50':'border-gray-200 focus:border-primary-400'}`} required />
             </div>
-            {agExceedsPending && <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1"><AlertCircle size={12} /> Excede el pendiente (S/ {selectedAgreement?.pendingAmount.toFixed(2)})</p>}
+            {agExceedsPending && <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1"><AlertCircle size={12} /> Excede el pendiente ({symFor(selectedAgreement)} {selectedAgreement?.pendingAmount.toFixed(2)})</p>}
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Código Único / Código Transferencia <span className="text-red-500">*</span></label>
@@ -970,14 +1029,14 @@ export function AccountsPayablePage() {
                       {ap.purchaseRef && <span className="text-xs font-mono font-semibold text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded mr-2">{ap.purchaseRef}</span>}
                       <span className="text-xs text-gray-500">{ap.paymentScheduleType === 'INSTALLMENTS' ? `${ap.installments.filter(i=>i.status==='PENDING').length} cuotas pendientes` : 'Pago único'}</span>
                     </div>
-                    <span className="text-sm font-semibold text-gray-800">S/ {ap.pendingAmount.toFixed(2)}</span>
+                    <span className="text-sm font-semibold text-gray-800">{symFor(ap)} {ap.pendingAmount.toFixed(2)}</span>
                   </label>
                 ))}
               </div>
               {createSelectedIds.size > 0 && (
                 <div className="mt-2 flex items-center justify-between px-2">
                   <span className="text-xs text-gray-500">{createSelectedIds.size} factura{createSelectedIds.size>1?'s':''} seleccionada{createSelectedIds.size>1?'s':''}</span>
-                  <span className="text-sm font-bold text-gray-800">Total: S/ {createTotal.toFixed(2)}</span>
+                  <span className="text-sm font-bold text-gray-800">Total: {fmtBuckets(createTotalBuckets)}</span>
                 </div>
               )}
             </div>

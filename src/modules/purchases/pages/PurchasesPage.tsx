@@ -31,12 +31,21 @@ export function PurchasesPage() {
     { key: 'date', header: 'Fecha', render: (item: Purchase) => new Date(item.date).toLocaleDateString('es-PE') },
     { key: 'supplier', header: 'Proveedor' },
     { key: 'items', header: 'Items', render: (item: Purchase) => `${item.items.length} producto(s)` },
-    { key: 'totalCost', header: 'Total', render: (item: Purchase) => (
-      <div>
-        <span>S/ {item.totalCost.toFixed(2)}</span>
-        {item.totalCostUsd && <span className="block text-xs text-primary-600">$ {item.totalCostUsd.toFixed(2)} USD</span>}
-      </div>
-    )},
+    { key: 'totalCost', header: 'Total', render: (item: Purchase) => {
+      const isUsd = !!item.totalCostUsd;
+      return (
+        <div>
+          {isUsd ? (
+            <>
+              <span className="font-medium">$ {item.totalCostUsd!.toFixed(2)} USD</span>
+              <span className="block text-xs text-gray-500">≈ S/ {item.totalCost.toFixed(2)}{item.exchangeRate ? ` · TC ${item.exchangeRate.toFixed(4)}` : ''}</span>
+            </>
+          ) : (
+            <span className="font-medium">S/ {item.totalCost.toFixed(2)} PEN</span>
+          )}
+        </div>
+      );
+    }},
     { key: 'paymentType', header: 'Tipo', render: (item: Purchase) => (
       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${item.paymentType === 'CREDITO' ? 'bg-orange-100 text-orange-700' : 'bg-primary-100 text-primary-700'}`}>
         {item.paymentType === 'CREDITO' ? 'Crédito' : 'Contado'}

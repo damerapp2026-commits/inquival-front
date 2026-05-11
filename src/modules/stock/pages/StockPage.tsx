@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { useStock, useStockAlerts, useTransferStock } from '../hooks/useStock';
+import { useStock, useStockAlerts, useTransferStock, useStockByProductSummary } from '../hooks/useStock';
 import { useStockAdjustments } from '../hooks/useStockAdjustments';
 import { useProductLots, useExpiringLots } from '../hooks/useProductLots';
 import { useCompanies } from '../../companies/hooks/useCompanies';
@@ -32,6 +32,7 @@ export function StockPage() {
   const [activeTab, setActiveTab] = useState<'inventory' | 'lots' | 'adjustments' | 'transfers'>(initialTab);
   const [page, setPage] = useState(1);
   const [companyId, setCompanyId] = useState('');
+  const [allWarehouses, setAllWarehouses] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
   const [showAdjustment, setShowAdjustment] = useState(false);
   const [adjPage, setAdjPage] = useState(1);
@@ -58,6 +59,7 @@ export function StockPage() {
   const { data: adjustmentsData, isLoading: adjLoading } = useStockAdjustments({ page: adjPage, limit: 20, companyId: companyId || undefined });
   const { data: lotsData, isLoading: lotsLoading } = useProductLots(companyId);
   const { data: expiringData } = useExpiringLots(companyId, 30);
+  const { data: allWarehousesSummary, isLoading: allWarehousesLoading } = useStockByProductSummary();
 
   const [transferForm, setTransferForm] = useState({ fromCompanyId: '', toCompanyId: '', items: [{ productId: '', quantity: 0, lotAllocations: [] as { lotId: string; quantity: number }[] }] });
   const { data: transferSourceLotsData } = useProductLots(transferForm.fromCompanyId);
@@ -606,7 +608,7 @@ export function StockPage() {
         ); })}
       </div>
 
-      {alertList.length > 0 && activeTab === 'inventory' && (() => {
+      {alertList.length > 0 && activeTab === 'inventory' && !allWarehouses && (() => {
         // Clasificar alertas en 3 grupos: agotados, críticos, sin referencia
         type AlertItem = Stock & { _name: string };
         const enriched: AlertItem[] = alertList.map((a: Stock) => ({ ...a, _name: getProductName(a.productId) }));
@@ -704,7 +706,7 @@ export function StockPage() {
         );
       })()}
 
-      {expiringLots.length > 0 && (activeTab === 'inventory' || activeTab === 'lots') && (() => {
+      {expiringLots.length > 0 && (activeTab === 'inventory' || activeTab === 'lots') && !(activeTab === 'inventory' && allWarehouses) && (() => {
         const expired = expiringLots.filter(l => daysUntil(l.expirationDate) < 0);
         const sevenDays = expiringLots.filter(l => { const d = daysUntil(l.expirationDate); return d >= 0 && d <= 7; });
         const thirtyDays = expiringLots.filter(l => { const d = daysUntil(l.expirationDate); return d > 7 && d <= 30; });
@@ -752,16 +754,106 @@ export function StockPage() {
       })()}
 
       {(activeTab === 'inventory' || activeTab === 'adjustments' || activeTab === 'lots') && (
-        <div className="mb-4 flex gap-2">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {activeTab === 'inventory' && (
+            <button
+              onClick={() => { setAllWarehouses(true); setPage(1); }}
+              className={`px-4 py-2 rounded-lg font-medium flex items-center gap-1.5 ${allWarehouses ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              title="Ver el stock consolidado de todos los almacenes"
+            >
+              <Boxes size={16} /> Todos los almacenes
+            </button>
+          )}
           {companyList.map((c: Company) => (
-            <button key={c.id} onClick={() => { setCompanyId(c.id); setPage(1); setAdjPage(1); }} className={`px-4 py-2 rounded-lg font-medium ${companyId === c.id ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+            <button key={c.id} onClick={() => { setCompanyId(c.id); setAllWarehouses(false); setPage(1); setAdjPage(1); }} className={`px-4 py-2 rounded-lg font-medium ${!allWarehouses && companyId === c.id ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
               {c.name}
             </button>
           ))}
         </div>
       )}
 
-      {activeTab === 'inventory' && (
+      {activeTab === 'inventory' && allWarehouses && (() => {
+        const summary = Array.isArray(allWarehousesSummary) ? allWarehousesSummary : [];
+        const ingredientActive = !!debouncedIngredient;
+        const rows = summary
+          .filter(s => !ingredientActive || productIdSet.has(s.productId))
+          .map(s => ({ ...s, _name: getProductName(s.productId) }))
+          .sort((a, b) => a._name.localeCompare(b._name));
+        return (
+          <>
+            <div className="mb-3 relative max-w-sm">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input type="text" placeholder="Filtrar por ingrediente activo..." value={ingredientFilter} onChange={(e) => setIngredientFilter(e.target.value)} className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+            </div>
+            <div className="bg-white rounded-xl shadow-card overflow-hidden border border-gray-100">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="w-8"></th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock total</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Almacenes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {allWarehousesLoading ? (
+                    <tr><td colSpan={4} className="text-center py-6 text-gray-400">Cargando...</td></tr>
+                  ) : rows.length === 0 ? (
+                    <tr><td colSpan={4} className="text-center py-6 text-gray-400">Sin registros</td></tr>
+                  ) : rows.map(item => {
+                    const product = products.find((p: Product) => p.id === item.productId);
+                    const name = product?.name || 'Producto eliminado';
+                    const isOrphan = !product;
+                    const isInactive = product?.isActive === false;
+                    const isExpanded = expandedStock[item.productId];
+                    const breakdown = (item.byCompany || []).slice().sort((a, b) => b.quantity - a.quantity);
+                    const warehouseCount = breakdown.filter(b => b.quantity > 0).length;
+                    return (
+                      <React.Fragment key={item.productId}>
+                        <tr className="hover:bg-primary-50 transition-colors">
+                          <td className="px-2">
+                            {breakdown.length > 0 && (
+                              <button onClick={() => setExpandedStock(s => ({ ...s, [item.productId]: !s[item.productId] }))} className="p-1 text-gray-400 hover:text-primary-600">
+                                {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              </button>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`font-medium ${isOrphan || isInactive ? 'text-gray-400 italic' : ''}`}>{name}</span>
+                            {isOrphan && <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] rounded bg-red-100 text-red-700 border border-red-300">HUÉRFANO</span>}
+                            {!isOrphan && isInactive && <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] rounded bg-gray-100 text-gray-600 border border-gray-300">INACTIVO</span>}
+                            {product?.tracksLot && <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] rounded bg-blue-100 text-blue-700 border border-blue-200">LOTES</span>}
+                          </td>
+                          <td className={`px-3 py-2 ${item.totalQuantity <= 10 ? 'text-red-600 font-bold' : 'font-medium'}`}>{item.totalQuantity}</td>
+                          <td className="px-3 py-2 text-gray-500 text-xs">{warehouseCount} con stock</td>
+                        </tr>
+                        {isExpanded && breakdown.length > 0 && (
+                          <tr className="bg-gray-50/70">
+                            <td></td>
+                            <td colSpan={3} className="px-3 py-2">
+                              <div className="text-xs text-gray-500 mb-1">Desglose por almacén</div>
+                              <div className="space-y-1">
+                                {breakdown.map(b => (
+                                  <div key={b.companyId} className="flex items-center gap-2 text-xs bg-white border border-gray-200 rounded px-2 py-1">
+                                    <span className="font-medium text-gray-700">{getCompanyName(b.companyId)}</span>
+                                    <span className={`ml-auto ${b.quantity === 0 ? 'text-gray-400' : b.quantity <= 10 ? 'text-red-600 font-semibold' : 'text-gray-700 font-medium'}`}>{b.quantity}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        );
+      })()}
+
+      {activeTab === 'inventory' && !allWarehouses && (
         <>
           <div className="mb-3 relative max-w-sm">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

@@ -57,7 +57,7 @@ export function SalesPage() {
   const sellers: any[] = useMemo(() => {
     const raw: any = sellersData;
     const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
-    return list.filter((u: any) => u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO');
+    return list.filter((u: any) => u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO' || u.role === 'ADMIN');
   }, [sellersData]);
   const sellerNameById = useMemo(() => {
     const map: Record<string, string> = {};
@@ -85,10 +85,10 @@ export function SalesPage() {
   const [returningLoan, setReturningLoan] = useState<Loan | null>(null);
   const [loanStatusFilter, setLoanStatusFilter] = useState('');
 
-  const { data, isLoading } = useSales({ page, limit: 10, companyId: companyFilter || undefined, startDate, endDate, sellerId: effectiveSellerId });
-  const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 10, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'BOLETA', sellerId: effectiveSellerId });
-  const { data: facturasData, isLoading: facturasLoading } = useSales({ page: facturaPage, limit: 10, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'FACTURA', sellerId: effectiveSellerId });
-  const { data: periodTotalsData } = useSales({ limit: 9999, companyId: companyFilter || undefined, startDate, endDate, sellerId: effectiveSellerId });
+  const { data, isLoading } = useSales({ page, limit: 50, companyId: companyFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
+  const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 50, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'BOLETA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
+  const { data: facturasData, isLoading: facturasLoading } = useSales({ page: facturaPage, limit: 50, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'FACTURA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
+  const { data: periodTotalsData } = useSales({ limit: 9999, companyId: companyFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
   const { data: loansData, isLoading: loansLoading } = useLoans({ page: loanPage, limit: 10, status: loanStatusFilter || undefined, startDate, endDate });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
@@ -346,13 +346,13 @@ export function SalesPage() {
   const clients = clientsData?.data || [];
   const tiers = Array.isArray(priceTiers) ? priceTiers : [];
   const paymentMethods: PaymentMethod[] = Array.isArray(paymentMethodsData) ? paymentMethodsData.filter((m: PaymentMethod) => m.isActive) : [];
-  const sales = (data?.data || []).filter((s: Sale) => !s.isCancelled);
-  const boletas = (boletasData?.data || []).filter((s: Sale) => !s.isCancelled);
-  const facturas = (facturasData?.data || []).filter((s: Sale) => !s.isCancelled);
-  const periodSales: Sale[] = useMemo(
-    () => (periodTotalsData?.data || []).filter((s: Sale) => !s.isCancelled),
-    [periodTotalsData],
-  );
+  const sales: Sale[] = data?.data || [];
+  const boletas: Sale[] = boletasData?.data || [];
+  const facturas: Sale[] = facturasData?.data || [];
+  const salesPaginationTotal = data?.total || 0;
+  const boletasPaginationTotal = boletasData?.total || 0;
+  const facturasPaginationTotal = facturasData?.total || 0;
+  const periodSales: Sale[] = useMemo(() => periodTotalsData?.data || [], [periodTotalsData]);
   const loans = loansData?.data || [];
   const loansTotal = loansData?.total || 0;
 
@@ -605,8 +605,8 @@ export function SalesPage() {
         )}
         {!isSellerRole && (activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && sellers.length > 0 && (
           <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }} className="px-3 py-2 border rounded-lg">
-            <option value="">Todos los vendedores</option>
-            {sellers.map((s: any) => <option key={s.id} value={s.id}>{s.fullName || s.username}</option>)}
+            <option value="">Todos los responsables</option>
+            {sellers.map((s: any) => <option key={s.id} value={s.id}>{(s.fullName || s.username) + (s.role === 'ADMIN' ? ' (Admin)' : '')}</option>)}
           </select>
         )}
         {activeTab === 'loans' && (
@@ -635,37 +635,19 @@ export function SalesPage() {
         </div>
       )}
       {activeTab === 'boletas' && (
-        <div className="mb-4 bg-primary-50 border border-primary-200 rounded-lg px-4 py-3">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-primary-700">{boletasTotal} boleta(s) en el período</span>
-            <div className="flex items-center gap-3">
-              <span className="text-lg font-bold text-primary-700">Valor Venta: S/ {boletasBaseAmount.toFixed(2)}</span>
-              <button onClick={() => handleExportVouchers('BOLETA')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary-700 bg-primary-100 border border-primary-300 rounded hover:bg-primary-200 transition-colors">
-                <Download size={14} /> Excel
-              </button>
-            </div>
-          </div>
-          <div className="flex items-center justify-end gap-4 text-xs text-primary-600">
-            <span>Total: S/ {boletasTotalAmount.toFixed(2)}</span>
-            <span>IGV: S/ {boletasIgv.toFixed(2)}</span>
-          </div>
+        <div className="mb-4 bg-primary-50 border border-primary-200 rounded-lg px-4 py-2 flex items-center justify-between">
+          <span className="text-sm text-primary-700">{boletasTotal} boleta(s) en el período</span>
+          <button onClick={() => handleExportVouchers('BOLETA')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary-700 bg-primary-100 border border-primary-300 rounded hover:bg-primary-200 transition-colors">
+            <Download size={14} /> Excel
+          </button>
         </div>
       )}
       {activeTab === 'facturas' && (
-        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-blue-700">{facturasTotal} factura(s) en el período</span>
-            <div className="flex items-center gap-3">
-              <span className="text-lg font-bold text-blue-700">Valor Venta: S/ {facturasBaseAmount.toFixed(2)}</span>
-              <button onClick={() => handleExportVouchers('FACTURA')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded hover:bg-blue-200 transition-colors">
-                <Download size={14} /> Excel
-              </button>
-            </div>
-          </div>
-          <div className="flex items-center justify-end gap-4 text-xs text-blue-600">
-            <span>Total: S/ {facturasTotalAmount.toFixed(2)}</span>
-            <span>IGV: S/ {facturasIgv.toFixed(2)}</span>
-          </div>
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 flex items-center justify-between">
+          <span className="text-sm text-blue-700">{facturasTotal} factura(s) en el período</span>
+          <button onClick={() => handleExportVouchers('FACTURA')} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded hover:bg-blue-200 transition-colors">
+            <Download size={14} /> Excel
+          </button>
         </div>
       )}
 
@@ -701,7 +683,7 @@ export function SalesPage() {
       {activeTab === 'sales' && (
         <>
           <DataTable columns={salesColumns} data={sales} isLoading={isLoading} rowClassName={(sale: Sale) => sale?.isCancelled ? 'bg-red-50 opacity-60' : sale?.isCredit ? 'hover:bg-yellow-50' : 'hover:bg-primary-50'} />
-          <Pagination page={page} totalPages={Math.ceil(total / 10)} onPageChange={setPage} />
+          <Pagination page={page} totalPages={Math.ceil(salesPaginationTotal / 50)} onPageChange={setPage} />
         </>
       )}
 
@@ -709,7 +691,7 @@ export function SalesPage() {
       {activeTab === 'boletas' && (
         <>
           <DataTable columns={voucherColumns} data={boletas} isLoading={boletasLoading} rowClassName={(sale: Sale) => sale?.isCancelled ? 'bg-red-50 opacity-60' : sale?.isCredit ? 'hover:bg-yellow-50' : 'hover:bg-primary-50'} />
-          <Pagination page={boletaPage} totalPages={Math.ceil(boletasTotal / 10)} onPageChange={setBoletaPage} />
+          <Pagination page={boletaPage} totalPages={Math.ceil(boletasPaginationTotal / 50)} onPageChange={setBoletaPage} />
         </>
       )}
 
@@ -717,7 +699,7 @@ export function SalesPage() {
       {activeTab === 'facturas' && (
         <>
           <DataTable columns={voucherColumns} data={facturas} isLoading={facturasLoading} rowClassName={(sale: Sale) => sale?.isCancelled ? 'bg-red-50 opacity-60' : sale?.isCredit ? 'hover:bg-yellow-50' : 'hover:bg-blue-50'} />
-          <Pagination page={facturaPage} totalPages={Math.ceil(facturasTotal / 10)} onPageChange={setFacturaPage} />
+          <Pagination page={facturaPage} totalPages={Math.ceil(facturasPaginationTotal / 50)} onPageChange={setFacturaPage} />
         </>
       )}
 

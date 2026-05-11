@@ -11,6 +11,7 @@ export interface LocationValue {
 interface LocationFieldsProps {
   value: LocationValue;
   onChange: (next: LocationValue) => void;
+  required?: boolean;
 }
 
 const SELECT_CLASS =
@@ -19,7 +20,7 @@ const INPUT_CLASS =
   'w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500';
 const LABEL_CLASS = 'block text-[11px] font-medium text-gray-400 mb-1';
 
-export function LocationFields({ value, onChange }: LocationFieldsProps) {
+export function LocationFields({ value, onChange, required }: LocationFieldsProps) {
   const dept = PERU_UBIGEO.find((d) => d.name === value.department);
   const prov = dept?.provinces.find((p) => p.name === value.province);
 
@@ -27,7 +28,9 @@ export function LocationFields({ value, onChange }: LocationFieldsProps) {
     <div>
       <div className="flex items-center gap-2 mb-1.5">
         <MapPin size={13} className="text-primary-600" />
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Ubicación</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+          Ubicación{required && <span className="text-red-500 normal-case ml-1">*</span>}
+        </span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
@@ -43,6 +46,7 @@ export function LocationFields({ value, onChange }: LocationFieldsProps) {
               })
             }
             className={SELECT_CLASS}
+            required={required}
           >
             <option value="">— Sin asignar —</option>
             {PERU_UBIGEO.map((d) => (
@@ -64,6 +68,7 @@ export function LocationFields({ value, onChange }: LocationFieldsProps) {
               })
             }
             className={SELECT_CLASS}
+            required={required}
           >
             <option value="">{dept ? '— Sin asignar —' : 'Selecciona departamento'}</option>
             {dept?.provinces.map((p) => (
@@ -79,6 +84,7 @@ export function LocationFields({ value, onChange }: LocationFieldsProps) {
             disabled={!prov}
             onChange={(e) => onChange({ ...value, district: e.target.value || undefined })}
             className={SELECT_CLASS}
+            required={required}
           >
             <option value="">{prov ? '— Sin asignar —' : 'Selecciona provincia'}</option>
             {prov?.districts.map((di) => (
