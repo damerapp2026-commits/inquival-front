@@ -144,12 +144,52 @@ function buildTicketDocDef(sale: VoucherSnapshot): any {
     margin: [0, 4, 0, 4],
   });
 
-  if (sale.payments.length) {
+  const anticipoSum = sale.payments.reduce((s, p) => s + p.amount, 0);
+  const paidSoFar = sale.creditPaidAmount ?? anticipoSum;
+  const pendingAmount = Math.max(0, sale.total - paidSoFar);
+
+  if (sale.isCredit) {
+    content.push(dashedLine());
+    content.push({ text: 'VENTA A CRÉDITO', alignment: 'center', bold: true, color: '#b91c1c' });
+    if (anticipoSum > 0) {
+      content.push({ text: 'Abonado a la fecha', bold: true, margin: [0, 3, 0, 0] });
+      sale.payments.forEach((p) => {
+        content.push({ columns: [{ text: p.methodName }, { text: `S/ ${p.amount.toFixed(2)}`, alignment: 'right' }] });
+      });
+      const posteriores = paidSoFar - anticipoSum;
+      if (posteriores > 0.001) {
+        content.push({ columns: [{ text: 'Abonos posteriores' }, { text: `S/ ${posteriores.toFixed(2)}`, alignment: 'right' }] });
+      }
+      content.push({ columns: [{ text: 'Total abonado', bold: true }, { text: `S/ ${paidSoFar.toFixed(2)}`, bold: true, alignment: 'right' }] });
+    } else {
+      content.push({ text: 'Sin abono inicial', color: '#555', italics: true, margin: [0, 2, 0, 2] });
+    }
+    content.push({
+      columns: [
+        { text: 'SALDO PENDIENTE', bold: true, fontSize: 11, color: '#b91c1c' },
+        { text: `S/ ${pendingAmount.toFixed(2)}`, bold: true, fontSize: 11, color: '#b91c1c', alignment: 'right' },
+      ],
+      margin: [0, 4, 0, 2],
+    });
+    if (sale.creditDueDate) {
+      const due = new Date(sale.creditDueDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      content.push({ columns: [{ text: 'Vence el', bold: true }, { text: due, alignment: 'right' }] });
+    }
+  } else if (sale.payments.length) {
     content.push(dashedLine());
     content.push({ text: 'Forma de pago', bold: true });
     sale.payments.forEach((p) => {
       content.push({ columns: [{ text: p.methodName }, { text: `S/ ${p.amount.toFixed(2)}`, alignment: 'right' }] });
     });
+    if (sale.payments.length > 1) {
+      content.push({
+        columns: [
+          { text: 'Total pagado', bold: true },
+          { text: `S/ ${anticipoSum.toFixed(2)}`, bold: true, alignment: 'right' },
+        ],
+        margin: [0, 2, 0, 0],
+      });
+    }
   }
 
   content.push(dashedLine());
@@ -261,15 +301,60 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
     ]);
   }
 
+  const anticipoSumA4 = sale.payments.reduce((s, p) => s + p.amount, 0);
+  const paidSoFarA4 = sale.creditPaidAmount ?? anticipoSumA4;
+  const pendingAmountA4 = Math.max(0, sale.total - paidSoFarA4);
+
   const paymentsBody: any[] = [
-    [{ text: 'FORMA DE PAGO', colSpan: 3, bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, margin: [4, 3] }, {}, {}],
+    [{
+      text: sale.isCredit ? 'FORMA DE PAGO · CRÉDITO' : 'FORMA DE PAGO',
+      colSpan: 3, bold: true, color: 'white',
+      fillColor: sale.isCredit ? '#b91c1c' : BRAND_GREEN,
+      fontSize: 9, margin: [4, 3],
+    }, {}, {}],
     ...sale.payments.map((p) => [
       { text: p.methodName, bold: true, fontSize: 8 },
       { text: ':', fontSize: 8 },
       { text: `S/ ${p.amount.toFixed(2)}`, alignment: 'right', fontSize: 8 },
     ]),
   ];
-  if (sale.payments.length === 0) {
+  if (sale.isCredit) {
+    const posteriores = paidSoFarA4 - anticipoSumA4;
+    if (posteriores > 0.001) {
+      paymentsBody.push([
+        { text: 'Abonos posteriores', bold: true, fontSize: 8 },
+        { text: ':', fontSize: 8 },
+        { text: `S/ ${posteriores.toFixed(2)}`, alignment: 'right', fontSize: 8 },
+      ]);
+    }
+    if (paidSoFarA4 > 0) {
+      paymentsBody.push([
+        { text: 'Total abonado', bold: true, fontSize: 8 },
+        { text: ':', fontSize: 8 },
+        { text: `S/ ${paidSoFarA4.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 8 },
+      ]);
+    }
+    paymentsBody.push([
+      { text: 'SALDO PENDIENTE', bold: true, fontSize: 9, color: '#b91c1c' },
+      { text: ':', fontSize: 9, color: '#b91c1c' },
+      { text: `S/ ${pendingAmountA4.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 9, color: '#b91c1c' },
+    ]);
+    if (sale.creditDueDate) {
+      const due = new Date(sale.creditDueDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      paymentsBody.push([
+        { text: 'Vence el', bold: true, fontSize: 8 },
+        { text: ':', fontSize: 8 },
+        { text: due, alignment: 'right', fontSize: 8 },
+      ]);
+    }
+  } else if (sale.payments.length > 1) {
+    paymentsBody.push([
+      { text: 'Total pagado', bold: true, fontSize: 8 },
+      { text: ':', fontSize: 8 },
+      { text: `S/ ${anticipoSumA4.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 8 },
+    ]);
+  }
+  if (paymentsBody.length === 1) {
     paymentsBody.push([{ text: ' ', fontSize: 8 }, { text: ' ', fontSize: 8 }, { text: ' ', fontSize: 8 }]);
   }
 

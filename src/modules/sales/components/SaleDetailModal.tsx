@@ -132,6 +132,7 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
         subtotal: it.subtotal,
       })),
       payments: (sale.payments || []).map((p: SalePayment) => ({ methodName: p.paymentMethodName, amount: p.amount })),
+      isCredit: sale.isCredit,
       sellerName,
       clientName: client?.name || sale.clientName,
       clientDocument: client?.documentNumber,

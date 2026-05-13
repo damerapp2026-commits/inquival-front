@@ -588,6 +588,8 @@ export function POSPage() {
         methodName: paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '',
         amount: p.amount,
       })),
+      isCredit,
+      creditDueDate: isCredit && computedDueDate ? computedDueDate : undefined,
       sellerName,
       clientName: clients.find((c) => c.id === clientId)?.name,
       clientDocument: clients.find((c) => c.id === clientId)?.documentNumber,

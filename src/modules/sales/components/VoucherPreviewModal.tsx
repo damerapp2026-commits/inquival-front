@@ -18,6 +18,13 @@ export interface VoucherSnapshot {
   igv?: number;
   baseImponible?: number;
   voucherNumber?: string;
+  /** Marca venta a crédito — el comprobante muestra el saldo pendiente. */
+  isCredit?: boolean;
+  /** Total ya abonado al crédito (anticipo inicial + pagos posteriores). Si no se
+   *  pasa, se usa la suma de `payments` como aproximación. */
+  creditPaidAmount?: number;
+  /** Fecha de vencimiento del crédito (ISO o Date). Opcional. */
+  creditDueDate?: string | Date;
 }
 
 type Format = 'TICKET' | 'A4';
@@ -65,6 +72,37 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
     <div class="kv"><span>${escapeHtml(p.methodName)}</span><span>S/ ${p.amount.toFixed(2)}</span></div>
   `).join('');
 
+  const paidSoFar = sale.creditPaidAmount ?? sale.payments.reduce((s, p) => s + p.amount, 0);
+  const pendingAmount = Math.max(0, sale.total - paidSoFar);
+  const dueDateFmt = sale.creditDueDate
+    ? new Date(sale.creditDueDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : '';
+  const creditBlock = sale.isCredit ? `
+    <div class="hr"></div>
+    <div class="center bold credit-banner">VENTA A CRÉDITO</div>
+    ${paidSoFar > 0 ? `
+      <div class="bold" style="margin-top: 4px;">Abonado a la fecha</div>
+      ${sale.payments.map((p) => `
+        <div class="kv"><span>${escapeHtml(p.methodName)}</span><span>S/ ${p.amount.toFixed(2)}</span></div>
+      `).join('')}
+      ${sale.creditPaidAmount !== undefined && sale.creditPaidAmount > sale.payments.reduce((s, p) => s + p.amount, 0) ? `
+        <div class="kv"><span>Abonos posteriores</span><span>S/ ${(sale.creditPaidAmount - sale.payments.reduce((s, p) => s + p.amount, 0)).toFixed(2)}</span></div>
+      ` : ''}
+      <div class="kv bold"><span>Total abonado</span><span>S/ ${paidSoFar.toFixed(2)}</span></div>
+    ` : `
+      <div class="muted" style="margin-top:2px;">Sin abono inicial</div>
+    `}
+    <div class="kv bold lg" style="margin-top: 4px; color: #b91c1c;"><span>SALDO PENDIENTE</span><span>S/ ${pendingAmount.toFixed(2)}</span></div>
+    ${dueDateFmt ? `<div class="kv"><span class="bold">Vence el</span><span>${dueDateFmt}</span></div>` : ''}
+  ` : '';
+
+  const cashPaymentBlock = !sale.isCredit && paymentsRows ? `
+    <div class="hr"></div>
+    <div class="bold">Forma de pago</div>
+    ${paymentsRows}
+    ${sale.payments.length > 1 ? `<div class="kv bold" style="margin-top:2px;"><span>Total pagado</span><span>S/ ${sale.payments.reduce((s, p) => s + p.amount, 0).toFixed(2)}</span></div>` : ''}
+  ` : '';
+
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>${number}</title>
 <style>
@@ -88,6 +126,7 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   table.items td.desc { word-break: break-word; }
   table.items tr.item-prices td { padding-bottom: 5px; }
   .total { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0; border-top: 1px solid #000; border-bottom: 1px solid #000; margin-top: 6px; }
+  .credit-banner { letter-spacing: 1px; padding: 4px; border: 1px dashed #b91c1c; color: #b91c1c; }
 </style></head>
 <body>
   <div class="center bold lg">${escapeHtml(company.legalName)}</div>
@@ -118,7 +157,8 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   ${typeof sale.baseImponible === 'number' ? `<div class="kv"><span>Subtotal</span><span>S/ ${sale.baseImponible.toFixed(2)}</span></div>` : ''}
   ${typeof sale.igv === 'number' && sale.igv > 0 ? `<div class="kv"><span>IGV (18%)</span><span>S/ ${sale.igv.toFixed(2)}</span></div>` : ''}
   <div class="total bold xl"><span>TOTAL</span><span>S/ ${sale.total.toFixed(2)}</span></div>
-  ${paymentsRows ? `<div class="hr"></div><div class="bold">Forma de pago</div>${paymentsRows}` : ''}
+  ${creditBlock}
+  ${cashPaymentBlock}
   <div class="hr"></div>
   <div class="center muted">¡Gracias por su preferencia!</div>
   ${company.website ? `<div class="center muted">${escapeHtml(company.website)}</div>` : ''}
@@ -155,6 +195,21 @@ function buildA4Html(sale: VoucherSnapshot): string {
   const paymentsRows = sale.payments.map((p) => `
     <tr><td class="kv-key">${escapeHtml(p.methodName)}</td><td class="kv-sep">:</td><td class="kv-val r">S/ ${p.amount.toFixed(2)}</td></tr>
   `).join('');
+
+  const paidSoFarA4 = sale.creditPaidAmount ?? sale.payments.reduce((s, p) => s + p.amount, 0);
+  const pendingAmountA4 = Math.max(0, sale.total - paidSoFarA4);
+  const dueDateFmtA4 = sale.creditDueDate
+    ? new Date(sale.creditDueDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : '';
+  const creditExtraA4 = sale.isCredit ? `
+    <tr><td colspan="3" class="credit-banner-a4">VENTA A CRÉDITO</td></tr>
+    ${paidSoFarA4 > 0 && sale.creditPaidAmount !== undefined && sale.creditPaidAmount > sale.payments.reduce((s, p) => s + p.amount, 0) ? `
+      <tr><td class="kv-key">Abonos posteriores</td><td class="kv-sep">:</td><td class="kv-val r">S/ ${(sale.creditPaidAmount - sale.payments.reduce((s, p) => s + p.amount, 0)).toFixed(2)}</td></tr>
+    ` : ''}
+    <tr><td class="kv-key">Total abonado</td><td class="kv-sep">:</td><td class="kv-val r"><b>S/ ${paidSoFarA4.toFixed(2)}</b></td></tr>
+    <tr><td class="kv-key" style="color:#b91c1c;"><b>SALDO PENDIENTE</b></td><td class="kv-sep">:</td><td class="kv-val r" style="color:#b91c1c;"><b>S/ ${pendingAmountA4.toFixed(2)}</b></td></tr>
+    ${dueDateFmtA4 ? `<tr><td class="kv-key">Vence el</td><td class="kv-sep">:</td><td class="kv-val r">${dueDateFmtA4}</td></tr>` : ''}
+  ` : '';
 
   const bankRows = (c.bankAccounts || []).map((acc) => `
     <tr>
@@ -250,6 +305,7 @@ function buildA4Html(sale: VoucherSnapshot): string {
   .kv-mini { color: #6b7280; }
 
   .footer { margin-top: 24px; text-align: center; color: #6b7280; font-size: 9px; border-top: 1px dashed #cbd5e1; padding-top: 12px; }
+  .credit-banner-a4 { background: #fef2f2; color: #b91c1c; font-weight: 700; text-align: center; letter-spacing: 1px; padding: 5px; border-top: 1px dashed #b91c1c; border-bottom: 1px dashed #b91c1c; }
 </style></head>
 <body>
   <div class="header">
@@ -307,10 +363,14 @@ function buildA4Html(sale: VoucherSnapshot): string {
 
   <div class="two-col">
     <div class="col-l">
-      ${paymentsRows ? `
+      ${(paymentsRows || sale.isCredit) ? `
         <div class="panel">
-          <div class="panel-title">FORMA DE PAGO</div>
-          <table class="pay-rows"><tbody>${paymentsRows}</tbody></table>
+          <div class="panel-title">${sale.isCredit ? 'FORMA DE PAGO · CRÉDITO' : 'FORMA DE PAGO'}</div>
+          <table class="pay-rows"><tbody>
+            ${paymentsRows}
+            ${sale.payments.length > 1 && !sale.isCredit ? `<tr><td class="kv-key"><b>Total pagado</b></td><td class="kv-sep">:</td><td class="kv-val r"><b>S/ ${sale.payments.reduce((s, p) => s + p.amount, 0).toFixed(2)}</b></td></tr>` : ''}
+            ${creditExtraA4}
+          </tbody></table>
         </div>
       ` : ''}
     </div>

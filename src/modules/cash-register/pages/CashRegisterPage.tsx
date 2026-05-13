@@ -134,6 +134,11 @@ export function CashRegisterPage() {
     return map;
   }, [usersData, currentUser]);
 
+  const sellers = useMemo(() => {
+    const list: any[] = Array.isArray(usersData) ? usersData : (usersData as any)?.data || [];
+    return list.filter((u: any) => u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO' || u.role === 'ADMIN');
+  }, [usersData]);
+
   const [openingAmount, setOpeningAmount] = useState(0);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -142,6 +147,7 @@ export function CashRegisterPage() {
   const [selectedEntry, setSelectedEntry] = useState<CashRegisterEntry | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [vendorFilter, setVendorFilter] = useState<string | null>(null);
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('');
 
   const editingIsSale = !!(selectedEntry?.referenceType === 'Sale' && selectedEntry?.referenceId);
   const { data: editingSale } = useSaleById(showEditModal && editingIsSale ? selectedEntry!.referenceId! : null);
@@ -334,29 +340,14 @@ export function CashRegisterPage() {
   const goToSale = (saleId: string) => navigate(`/sales?openSaleId=${saleId}`);
   const { data: viewingSale } = useSaleById(viewingSaleId);
 
-  const vendorsInDay = useMemo(() => {
-    const stats = new Map<string, { count: number; sales: number; income: number; expense: number }>();
-    entries.forEach((e) => {
-      if (!e.createdBy) return;
-      const cur = stats.get(e.createdBy) || { count: 0, sales: 0, income: 0, expense: 0 };
-      cur.count += 1;
-      if (e.type === 'INCOME') {
-        cur.income += e.amount;
-        if (e.category === 'SALE') cur.sales += e.amount;
-      } else if (e.type === 'EXPENSE') {
-        cur.expense += e.amount;
-      }
-      stats.set(e.createdBy, cur);
-    });
-    return Array.from(stats.entries())
-      .map(([id, s]) => ({ id, name: userById[id] || 'Usuario', ...s }))
-      .sort((a, b) => b.sales - a.sales || a.name.localeCompare(b.name));
-  }, [entries, userById]);
-
   const filteredEntries = useMemo(() => {
-    if (!vendorFilter) return entries;
-    return entries.filter((e) => e.createdBy === vendorFilter);
-  }, [entries, vendorFilter]);
+    let result = entries;
+    if (vendorFilter) result = result.filter((e) => e.createdBy === vendorFilter);
+    if (paymentMethodFilter) {
+      result = result.filter((e) => methodFromDescription(e.description) === paymentMethodFilter);
+    }
+    return result;
+  }, [entries, vendorFilter, paymentMethodFilter]);
 
   const filteredIncome = filteredEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
   const filteredExpense = filteredEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
@@ -529,49 +520,34 @@ export function CashRegisterPage() {
               · {filteredEntries.length}{vendorFilter ? ` de ${entries.length}` : ''} entrada{filteredEntries.length === 1 ? '' : 's'}
             </span>
           </div>
-          {vendorsInDay.length >= 1 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Vendedor:</span>
-              {vendorsInDay.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setVendorFilter(null)}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                    !vendorFilter
-                      ? 'bg-primary-600 text-white border-primary-600'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'
-                  }`}
-                >
-                  Todos
-                </button>
-              )}
-              {vendorsInDay.map((v) => {
-                const active = vendorFilter === v.id;
-                const color = vendorColor(v.name);
-                return (
-                  <button
-                    key={v.id}
-                    type="button"
-                    onClick={() => setVendorFilter(active ? null : v.id)}
-                    className={`flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                      active
-                        ? 'bg-primary-600 text-white border-primary-600'
-                        : 'bg-white text-gray-700 border-gray-200 hover:border-primary-300'
-                    }`}
-                    title={`${v.name} · ${v.count} mov · S/ ${v.sales.toFixed(2)} en ventas · S/ ${v.income.toFixed(2)} ingresos totales`}
-                  >
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ${active ? 'bg-white/20 text-white' : color}`}>
-                      {initialsFor(v.name)}
-                    </span>
-                    <span className="truncate max-w-[120px]">{v.name}</span>
-                    <span className={`text-[10px] tabular-nums font-semibold ${active ? 'text-white' : v.sales > 0 ? 'text-emerald-700' : 'text-gray-400'}`}>
-                      · S/ {v.sales.toFixed(2)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {sellers.length > 0 && (
+              <select
+                value={vendorFilter || ''}
+                onChange={(e) => setVendorFilter(e.target.value || null)}
+                className="px-3 py-2 border rounded-lg text-sm"
+              >
+                <option value="">Todos los responsables</option>
+                {sellers.map((s: any) => (
+                  <option key={s.id} value={s.id}>
+                    {(s.fullName || s.username) + (s.role === 'ADMIN' ? ' (Admin)' : '')}
+                  </option>
+                ))}
+              </select>
+            )}
+            {paymentMethods.some((m: any) => m.isActive) && (
+              <select
+                value={paymentMethodFilter}
+                onChange={(e) => setPaymentMethodFilter(e.target.value)}
+                className="px-3 py-2 border rounded-lg text-sm"
+              >
+                <option value="">Todos los métodos de pago</option>
+                {paymentMethods.filter((m: any) => m.isActive).map((m: any) => (
+                  <option key={m.id} value={m.name}>{m.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
 
         {vendorFilter && filteredEntries.length > 0 && (

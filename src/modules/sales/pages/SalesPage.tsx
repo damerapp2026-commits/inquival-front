@@ -50,9 +50,9 @@ export function SalesPage() {
   const [boletaPage, setBoletaPage] = useState(1);
   const [facturaPage, setFacturaPage] = useState(1);
   const [loanPage, setLoanPage] = useState(1);
-  const [companyFilter, setCompanyFilter] = useState('');
   const [sellerFilter, setSellerFilter] = useState('');
   const [clientFilter, setClientFilter] = useState('');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('');
   const [startDate, setStartDate] = useState(getMonthStart);
   const [endDate, setEndDate] = useState(getToday);
   // When set, opens a modal listing every sale for that client (ignores date range)
@@ -90,10 +90,10 @@ export function SalesPage() {
   const [returningLoan, setReturningLoan] = useState<Loan | null>(null);
   const [loanStatusFilter, setLoanStatusFilter] = useState('');
 
-  const { data, isLoading } = useSales({ page, limit: 50, companyId: companyFilter || undefined, clientId: clientFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
-  const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 50, companyId: companyFilter || undefined, clientId: clientFilter || undefined, startDate, endDate, voucherType: 'BOLETA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
-  const { data: facturasData, isLoading: facturasLoading } = useSales({ page: facturaPage, limit: 50, companyId: companyFilter || undefined, clientId: clientFilter || undefined, startDate, endDate, voucherType: 'FACTURA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
-  const { data: periodTotalsData } = useSales({ limit: 9999, companyId: companyFilter || undefined, clientId: clientFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
+  const { data, isLoading } = useSales({ page, limit: 50, clientId: clientFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
+  const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 50, clientId: clientFilter || undefined, startDate, endDate, voucherType: 'BOLETA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
+  const { data: facturasData, isLoading: facturasLoading } = useSales({ page: facturaPage, limit: 50, clientId: clientFilter || undefined, startDate, endDate, voucherType: 'FACTURA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
+  const { data: periodTotalsData } = useSales({ limit: 9999, clientId: clientFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
   const { data: loansData, isLoading: loansLoading } = useLoans({ page: loanPage, limit: 10, status: loanStatusFilter || undefined, startDate, endDate });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
@@ -351,13 +351,36 @@ export function SalesPage() {
   const clients = clientsData?.data || [];
   const tiers = Array.isArray(priceTiers) ? priceTiers : [];
   const paymentMethods: PaymentMethod[] = Array.isArray(paymentMethodsData) ? paymentMethodsData.filter((m: PaymentMethod) => m.isActive) : [];
-  const sales: Sale[] = data?.data || [];
-  const boletas: Sale[] = boletasData?.data || [];
-  const facturas: Sale[] = facturasData?.data || [];
-  const salesPaginationTotal = data?.total || 0;
-  const boletasPaginationTotal = boletasData?.total || 0;
-  const facturasPaginationTotal = facturasData?.total || 0;
-  const periodSales: Sale[] = useMemo(() => periodTotalsData?.data || [], [periodTotalsData]);
+
+  // Client-side payment-method filter. When active, paginate locally on the
+  // already-fetched periodTotalsData (limit 9999) instead of the per-page
+  // server response, so the visible count and pagination match the filter.
+  const matchesPaymentMethod = useMemo(() => (sale: Sale): boolean => {
+    if (!paymentMethodFilter) return true;
+    if (paymentMethodFilter === '__CREDIT__') return !!sale.isCredit;
+    if (sale.isCredit) return false;
+    return (sale.payments || []).some((p) => p.paymentMethodId === paymentMethodFilter);
+  }, [paymentMethodFilter]);
+  const isPaymentFilterActive = !!paymentMethodFilter;
+  const PAGE_SIZE = 50;
+  const periodSales: Sale[] = useMemo(
+    () => (periodTotalsData?.data || []).filter(matchesPaymentMethod),
+    [periodTotalsData, matchesPaymentMethod]
+  );
+  const periodSalesBoletas = useMemo(() => periodSales.filter((s) => s.voucherType === 'BOLETA'), [periodSales]);
+  const periodSalesFacturas = useMemo(() => periodSales.filter((s) => s.voucherType === 'FACTURA'), [periodSales]);
+  const sales: Sale[] = isPaymentFilterActive
+    ? periodSales.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+    : (data?.data || []);
+  const boletas: Sale[] = isPaymentFilterActive
+    ? periodSalesBoletas.slice((boletaPage - 1) * PAGE_SIZE, boletaPage * PAGE_SIZE)
+    : (boletasData?.data || []);
+  const facturas: Sale[] = isPaymentFilterActive
+    ? periodSalesFacturas.slice((facturaPage - 1) * PAGE_SIZE, facturaPage * PAGE_SIZE)
+    : (facturasData?.data || []);
+  const salesPaginationTotal = isPaymentFilterActive ? periodSales.length : (data?.total || 0);
+  const boletasPaginationTotal = isPaymentFilterActive ? periodSalesBoletas.length : (boletasData?.total || 0);
+  const facturasPaginationTotal = isPaymentFilterActive ? periodSalesFacturas.length : (facturasData?.total || 0);
   const loans = loansData?.data || [];
   const loansTotal = loansData?.total || 0;
 
@@ -429,8 +452,8 @@ export function SalesPage() {
   const handleExportVouchers = async (voucherType: 'BOLETA' | 'FACTURA') => {
     try {
       const XLSX = await import('xlsx');
-      const result = await saleService.getAll({ limit: 9999, companyId: companyFilter || undefined, startDate, endDate, voucherType });
-      const allSales: Sale[] = result?.data || [];
+      const result = await saleService.getAll({ limit: 9999, startDate, endDate, voucherType });
+      const allSales: Sale[] = (result?.data || []).filter(matchesPaymentMethod);
       if (allSales.length === 0) { toast.error('No hay datos para exportar'); return; }
 
       const rows = allSales.filter(s => !s.isCancelled).map(sale => {
@@ -620,12 +643,6 @@ export function SalesPage() {
 
       {/* Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        {(activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && (
-          <select value={companyFilter} onChange={(e) => { setCompanyFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }} className="px-3 py-2 border rounded-lg">
-            <option value="">Todos los almacenes</option>
-            {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name} - {c.ruc}</option>)}
-          </select>
-        )}
         {!isSellerRole && (activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && sellers.length > 0 && (
           <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }} className="px-3 py-2 border rounded-lg">
             <option value="">Todos los responsables</option>
@@ -653,6 +670,19 @@ export function SalesPage() {
               </button>
             )}
           </div>
+        )}
+        {(activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && paymentMethods.length > 0 && (
+          <select
+            value={paymentMethodFilter}
+            onChange={(e) => { setPaymentMethodFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }}
+            className="px-3 py-2 border rounded-lg"
+          >
+            <option value="">Todos los métodos de pago</option>
+            <option value="__CREDIT__">Crédito</option>
+            {paymentMethods.map((m: PaymentMethod) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
         )}
         {activeTab === 'loans' && (
           <select value={loanStatusFilter} onChange={(e) => { setLoanStatusFilter(e.target.value); setLoanPage(1); }} className="px-3 py-2 border rounded-lg">
@@ -955,6 +985,7 @@ export function SalesPage() {
               subtotal: it.subtotal,
             })),
             payments: (sale.payments || []).map((p) => ({ methodName: p.paymentMethodName, amount: p.amount })),
+            isCredit: sale.isCredit,
             sellerName,
             clientName: client?.name,
             clientDocument: client?.documentNumber,
