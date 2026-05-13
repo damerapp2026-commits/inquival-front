@@ -20,7 +20,9 @@ import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCi
 import toast from 'react-hot-toast';
 import { VoucherPreviewModal, type VoucherSnapshot } from '../components/VoucherPreviewModal';
 import { EditSaleItemsModal } from '../components/EditSaleItemsModal';
+import { ClientSalesHistoryModal } from '../components/ClientSalesHistoryModal';
 import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod, Stock } from '../../../shared/types';
+import { formatDateEs } from '../../../shared/utils/date.util';
 
 function getMonthStart() {
   const now = new Date();
@@ -50,8 +52,11 @@ export function SalesPage() {
   const [loanPage, setLoanPage] = useState(1);
   const [companyFilter, setCompanyFilter] = useState('');
   const [sellerFilter, setSellerFilter] = useState('');
+  const [clientFilter, setClientFilter] = useState('');
   const [startDate, setStartDate] = useState(getMonthStart);
   const [endDate, setEndDate] = useState(getToday);
+  // When set, opens a modal listing every sale for that client (ignores date range)
+  const [clientHistoryId, setClientHistoryId] = useState<string | null>(null);
 
   const { data: sellersData } = useUsers({ limit: 200 });
   const sellers: any[] = useMemo(() => {
@@ -85,10 +90,10 @@ export function SalesPage() {
   const [returningLoan, setReturningLoan] = useState<Loan | null>(null);
   const [loanStatusFilter, setLoanStatusFilter] = useState('');
 
-  const { data, isLoading } = useSales({ page, limit: 50, companyId: companyFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
-  const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 50, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'BOLETA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
-  const { data: facturasData, isLoading: facturasLoading } = useSales({ page: facturaPage, limit: 50, companyId: companyFilter || undefined, startDate, endDate, voucherType: 'FACTURA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
-  const { data: periodTotalsData } = useSales({ limit: 9999, companyId: companyFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
+  const { data, isLoading } = useSales({ page, limit: 50, companyId: companyFilter || undefined, clientId: clientFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
+  const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 50, companyId: companyFilter || undefined, clientId: clientFilter || undefined, startDate, endDate, voucherType: 'BOLETA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
+  const { data: facturasData, isLoading: facturasLoading } = useSales({ page: facturaPage, limit: 50, companyId: companyFilter || undefined, clientId: clientFilter || undefined, startDate, endDate, voucherType: 'FACTURA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
+  const { data: periodTotalsData } = useSales({ limit: 9999, companyId: companyFilter || undefined, clientId: clientFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
   const { data: loansData, isLoading: loansLoading } = useLoans({ page: loanPage, limit: 10, status: loanStatusFilter || undefined, startDate, endDate });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
@@ -437,7 +442,7 @@ export function SalesPage() {
         const paymentLabel = sale.isCredit ? 'Crédito' : sale.payments?.map(p => p.paymentMethodName).join(' + ') || 'Efectivo';
 
         return {
-          'Fecha': new Date(sale.date).toLocaleDateString('es-PE'),
+          'Fecha': formatDateEs(sale.date),
           'Cliente': getClientName(sale.clientId),
           'Almacén': almacen,
           'Productos': productosStr,
@@ -473,12 +478,21 @@ export function SalesPage() {
 
   const salesColumns = [
     { key: 'saleNumber', header: 'N°', render: (item: Sale) => <span className="font-mono text-xs text-gray-700">{item.saleNumber || `NV-${item.id.slice(-8).toUpperCase()}`}</span> },
-    { key: 'date', header: 'Fecha', render: (item: Sale) => new Date(item.date).toLocaleDateString('es-PE') },
+    { key: 'date', header: 'Fecha', render: (item: Sale) => formatDateEs(item.date) },
     ...(!isSellerRole ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
       const name = getSellerName(item);
       return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
     }}] : []),
-    { key: 'clientId', header: 'Cliente', render: (item: Sale) => getClientName(item.clientId) },
+    { key: 'clientId', header: 'Cliente', render: (item: Sale) => item.clientId ? (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setClientHistoryId(item.clientId!); }}
+        className="text-primary-700 hover:text-primary-900 hover:underline text-left"
+        title="Ver todas las ventas de este cliente"
+      >
+        {getClientName(item.clientId)}
+      </button>
+    ) : <span className="text-gray-400">Sin cliente</span> },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'total', header: 'Total', render: (item: Sale) => item.isCancelled ? <span className="line-through text-gray-400">S/ {item.total.toFixed(2)}</span> : `S/ ${item.total.toFixed(2)}` },
     { key: 'voucherType', header: 'Comprobante', render: (item: Sale) => {
@@ -499,12 +513,21 @@ export function SalesPage() {
 
   const voucherColumns = [
     { key: 'saleNumber', header: 'N°', render: (item: Sale) => <span className="font-mono text-xs text-gray-700">{item.saleNumber || `NV-${item.id.slice(-8).toUpperCase()}`}</span> },
-    { key: 'date', header: 'Fecha', render: (item: Sale) => new Date(item.date).toLocaleDateString('es-PE') },
+    { key: 'date', header: 'Fecha', render: (item: Sale) => formatDateEs(item.date) },
     ...(!isSellerRole ? [{ key: 'sellerId', header: 'Vendedor', render: (item: Sale) => {
       const name = getSellerName(item);
       return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
     }}] : []),
-    { key: 'clientId', header: 'Cliente', render: (item: Sale) => getClientName(item.clientId) },
+    { key: 'clientId', header: 'Cliente', render: (item: Sale) => item.clientId ? (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setClientHistoryId(item.clientId!); }}
+        className="text-primary-700 hover:text-primary-900 hover:underline text-left"
+        title="Ver todas las ventas de este cliente"
+      >
+        {getClientName(item.clientId)}
+      </button>
+    ) : <span className="text-gray-400">Sin cliente</span> },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'baseAmount', header: 'Valor Venta', render: (item: Sale) => {
       const base = getSaleBaseAmount(item);
@@ -537,7 +560,7 @@ export function SalesPage() {
   };
 
   const loanColumns = [
-    { key: 'date', header: 'Fecha', render: (item: Loan) => new Date(item.date).toLocaleDateString('es-PE') },
+    { key: 'date', header: 'Fecha', render: (item: Loan) => formatDateEs(item.date) },
     { key: 'borrowerName', header: 'Prestatario', render: (item: Loan) => item.borrowerName },
     { key: 'items', header: 'Productos', render: (item: Loan) => item.items.map(i => `${getProductName(i.productId)} x${i.quantity}`).join(', ') },
     { key: 'status', header: 'Estado', render: (item: Loan) => loanStatusBadge(item.status) },
@@ -608,6 +631,28 @@ export function SalesPage() {
             <option value="">Todos los responsables</option>
             {sellers.map((s: any) => <option key={s.id} value={s.id}>{(s.fullName || s.username) + (s.role === 'ADMIN' ? ' (Admin)' : '')}</option>)}
           </select>
+        )}
+        {(activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && (
+          <div className="min-w-[220px] flex items-center gap-1">
+            <div className="flex-1">
+              <SearchableSelect
+                options={clients.map((c: Client) => ({ value: c.id, label: c.name, sublabel: c.documentNumber }))}
+                value={clientFilter}
+                onChange={(v) => { setClientFilter(v); setPage(1); setBoletaPage(1); setFacturaPage(1); }}
+                placeholder="Buscar cliente..."
+              />
+            </div>
+            {clientFilter && (
+              <button
+                type="button"
+                onClick={() => { setClientFilter(''); setPage(1); setBoletaPage(1); setFacturaPage(1); }}
+                title="Limpiar cliente"
+                className="px-2 py-2 text-gray-500 hover:text-gray-800"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
         )}
         {activeTab === 'loans' && (
           <select value={loanStatusFilter} onChange={(e) => { setLoanStatusFilter(e.target.value); setLoanPage(1); }} className="px-3 py-2 border rounded-lg">
@@ -944,30 +989,50 @@ export function SalesPage() {
 
               {/* Body */}
               <div className="px-6 py-5 overflow-y-auto flex-1 space-y-4">
-                {/* Total cobrado */}
-                <div className={`rounded-xl p-4 border ${sale.isCancelled ? 'bg-red-50 border-red-100' : 'bg-primary-50/60 border-primary-100'}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <span className={`text-xs font-semibold uppercase tracking-wide ${sale.isCancelled ? 'text-red-600' : 'text-primary-700'}`}>
-                        Total cobrado
-                      </span>
-                      <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
-                        S/ {sale.total.toFixed(2)}
+                {/* Total + desglose para venta a crédito */}
+                {(() => {
+                  const anticipo = sale.isCredit
+                    ? (sale.payments || []).reduce((s: number, p: any) => s + (p.amount || 0), 0)
+                    : sale.total;
+                  const pendienteCredito = sale.isCredit ? Math.max(0, sale.total - anticipo) : 0;
+                  return (
+                    <div className={`rounded-xl p-4 border ${sale.isCancelled ? 'bg-red-50 border-red-100' : sale.isCredit ? 'bg-orange-50/60 border-orange-100' : 'bg-primary-50/60 border-primary-100'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <span className={`text-xs font-semibold uppercase tracking-wide ${sale.isCancelled ? 'text-red-600' : sale.isCredit ? 'text-orange-700' : 'text-primary-700'}`}>
+                            {sale.isCredit ? 'Total de la venta' : 'Total cobrado'}
+                          </span>
+                          <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                            S/ {sale.total.toFixed(2)}
+                          </div>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : sale.isCredit ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                          {sale.isCancelled ? 'Anulada' : sale.isCredit ? 'A crédito' : 'Completada'}
+                        </span>
                       </div>
+                      <div className="text-xs text-gray-500 mt-2">
+                        {formatDateEs(sale.date, { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                        {' · '}
+                        {new Date(sale.date).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima' })}
+                      </div>
+                      {sale.isCancelled && sale.cancelReason && (
+                        <p className="text-xs text-red-600 mt-2">Razón: {sale.cancelReason}</p>
+                      )}
+                      {sale.isCredit && !sale.isCancelled && (
+                        <div className="mt-3 pt-3 border-t border-orange-200/70 grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <span className="block text-[10px] uppercase tracking-wider text-orange-700/80 font-semibold">Cobrado en caja</span>
+                            <div className="font-bold text-primary-700 tabular-nums">S/ {anticipo.toFixed(2)}</div>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] uppercase tracking-wider text-orange-700/80 font-semibold">Saldo a crédito</span>
+                            <div className="font-bold text-red-600 tabular-nums">S/ {pendienteCredito.toFixed(2)}</div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                      {sale.isCancelled ? 'Anulada' : 'Completada'}
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-500 mt-2">
-                    {new Date(sale.date).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                    {' · '}
-                    {new Date(sale.date).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                  {sale.isCancelled && sale.cancelReason && (
-                    <p className="text-xs text-red-600 mt-2">Razón: {sale.cancelReason}</p>
-                  )}
-                </div>
+                  );
+                })()}
 
                 {/* Comprobante + Método de pago */}
                 <div className="grid grid-cols-2 gap-3">
@@ -1221,7 +1286,7 @@ export function SalesPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Fecha</span>
-                <span className="text-sm font-medium">{new Date(viewingLoan.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+                <span className="text-sm font-medium">{formatDateEs(viewingLoan.date, { day: '2-digit', month: 'long', year: 'numeric' })}</span>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Prestatario</span>
@@ -1277,7 +1342,7 @@ export function SalesPage() {
                     <div key={idx} className="bg-primary-50 rounded-lg p-3">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-xs font-medium text-primary-700">Devolución #{idx + 1}</span>
-                        <span className="text-xs text-gray-500">{new Date(ret.date).toLocaleDateString('es-PE')}</span>
+                        <span className="text-xs text-gray-500">{formatDateEs(ret.date)}</span>
                       </div>
                       <div className="text-sm text-gray-700">
                         {ret.items.map((ri, ridx) => (
@@ -1350,6 +1415,16 @@ export function SalesPage() {
           </form>
         )}
       </Modal>
+
+      {/* Modal: historial de ventas por cliente */}
+      {clientHistoryId && (
+        <ClientSalesHistoryModal
+          clientId={clientHistoryId}
+          client={clientMap.get(clientHistoryId)}
+          onClose={() => setClientHistoryId(null)}
+          onViewSale={(s) => { setClientHistoryId(null); setViewingSale(s); }}
+        />
+      )}
 
       {/* Modal anular venta */}
       <Modal isOpen={!!cancellingsale} onClose={() => setCancellingSale(null)} title="Anular Venta">

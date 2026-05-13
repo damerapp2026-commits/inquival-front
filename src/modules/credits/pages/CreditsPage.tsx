@@ -7,8 +7,8 @@ import { BatchPaymentModal } from '../components/BatchPaymentModal';
 import { EditCreditItemsModal } from '../components/EditCreditItemsModal';
 import { ExportClientStatementButton } from '../components/ExportClientStatementButton';
 import { downloadCreditsSummaryPdf, downloadCreditsDetailedPdf } from '../utils/creditsPdf';
-import { CreditCard, DollarSign, Edit2, Trash2, ChevronDown, ChevronRight, Search, User, Eye, ShoppingBag, FileDown, CalendarClock, History } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { CreditCard, DollarSign, Edit2, Trash2, ChevronDown, ChevronRight, Search, User, Eye, ShoppingBag, FileDown, CalendarClock, History, Wrench } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
 import { RegisterHistoricalCreditModal } from '../components/RegisterHistoricalCreditModal';
 import type { CreditAccount, Client } from '../../../shared/types';
 
@@ -93,6 +93,10 @@ export function CreditsPage() {
         (worst, c) => (STATUS_RANK[c.status as Status] > STATUS_RANK[worst] ? (c.status as Status) : worst),
         'PAID',
       );
+      // Ocultamos grupos huérfanos sin valor: cliente eliminado + total en cero.
+      // No se pierde nada útil — son créditos basura (probablemente pruebas o datos legacy).
+      const isOrphanGarbage = !clientMap.has(clientId) && totalAmount === 0;
+      if (isOrphanGarbage) continue;
       result.push({
         clientId,
         clientName: clientMap.get(clientId)?.name || 'N/A',
@@ -169,6 +173,14 @@ export function CreditsPage() {
           <CreditCard size={24} /> Créditos
         </h1>
         <div className="flex items-center gap-2">
+        <Link
+          to="/credits/migrate"
+          className="inline-flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-sm font-medium hover:bg-amber-100"
+          title="Reasignar fecha de créditos mal-fechados"
+        >
+          <Wrench size={14} />
+          Migrar fechas
+        </Link>
         <button
           type="button"
           onClick={() => setShowHistoricalModal(true)}

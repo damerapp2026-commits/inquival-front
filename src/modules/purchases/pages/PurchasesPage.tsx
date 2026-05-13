@@ -6,6 +6,7 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { Plus, ShoppingCart, Eye, Search } from 'lucide-react';
 import type { Purchase } from '../../../shared/types';
+import { formatDateEs } from '../../../shared/utils/date.util';
 
 export function PurchasesPage() {
   const navigate = useNavigate();
@@ -28,7 +29,7 @@ export function PurchasesPage() {
   }, [labList, labSearch]);
 
   const columns = [
-    { key: 'date', header: 'Fecha', render: (item: Purchase) => new Date(item.date).toLocaleDateString('es-PE') },
+    { key: 'date', header: 'Fecha', render: (item: Purchase) => formatDateEs(item.date) },
     { key: 'supplier', header: 'Proveedor' },
     { key: 'items', header: 'Items', render: (item: Purchase) => `${item.items.length} producto(s)` },
     { key: 'totalCost', header: 'Total', render: (item: Purchase) => {

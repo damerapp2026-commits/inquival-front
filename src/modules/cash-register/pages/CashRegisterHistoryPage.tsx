@@ -7,7 +7,7 @@ import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
 import {
   History, Wallet, Lock, ChevronDown, ChevronRight, Layers, Clock, ExternalLink,
-  Eye, AlertCircle, ArrowUpCircle, ArrowDownCircle, ReceiptText, FileText, Calendar,
+  Eye, AlertCircle, ArrowUpCircle, ArrowDownCircle, ReceiptText, FileText, Calendar, Wrench,
 } from 'lucide-react';
 import type { CashRegister, CashRegisterEntry } from '../../../shared/types';
 import { getTodayDateString, getMonthRange } from '../../../shared/utils/date.util';
@@ -198,13 +198,16 @@ export function CashRegisterHistoryPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Link to="/cash-register" className="flex items-center gap-2 px-4 py-2 bg-white text-gray-600 border border-gray-200 rounded-xl text-sm font-medium hover:border-primary-300 hover:text-primary-700 transition-colors">
           <Wallet size={15} /> Hoy
         </Link>
         <span className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-semibold shadow-sm">
           <History size={15} /> Historial
         </span>
+        <Link to="/cash-register/migrate" className="ml-auto inline-flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-sm font-medium hover:bg-amber-100 transition-colors" title="Reasignar ventas a su caja correcta">
+          <Wrench size={14} /> Migrar ventas mal-asignadas
+        </Link>
       </div>
 
       {/* Filter card */}

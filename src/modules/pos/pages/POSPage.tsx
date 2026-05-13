@@ -161,14 +161,6 @@ export function POSPage() {
   const [creditName, setCreditName] = useState('');
   const [creditDueDays, setCreditDueDays] = useState('');
 
-  const computedDueDate = (() => {
-    const days = parseInt(creditDueDays, 10);
-    if (!Number.isFinite(days) || days <= 0) return '';
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
-  })();
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [sellerId, setSellerId] = useState<string>('');
   const todayLocal = (() => {
@@ -177,6 +169,18 @@ export function POSPage() {
     return d.toISOString().slice(0, 10);
   })();
   const [saleDate, setSaleDate] = useState<string>(todayLocal);
+
+  const computedDueDate = (() => {
+    const days = parseInt(creditDueDays, 10);
+    if (!Number.isFinite(days) || days <= 0) return '';
+    const [yy, mm, dd] = saleDate.split('-').map(Number);
+    const d = new Date(yy, (mm || 1) - 1, dd || 1);
+    d.setDate(d.getDate() + days);
+    const yyyy = d.getFullYear();
+    const mmStr = String(d.getMonth() + 1).padStart(2, '0');
+    const ddStr = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mmStr}-${ddStr}`;
+  })();
   const searchRef = useRef<HTMLInputElement>(null);
   const [successSale, setSuccessSale] = useState<VoucherSnapshot | null>(null);
   const [successCountdown, setSuccessCountdown] = useState(5);

@@ -7,6 +7,7 @@ import { useAuth } from '../../../app/providers/AuthProvider';
 import { ArrowLeft, ShoppingCart, Building2, FileText, CreditCard, Package, Pencil, Trash2 } from 'lucide-react';
 import type { Purchase, Company, Product } from '../../../shared/types';
 import { CancelPurchaseDialog } from '../components/CancelPurchaseDialog';
+import { formatDateEs } from '../../../shared/utils/date.util';
 
 function InfoCell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -127,7 +128,7 @@ export function PurchaseDetailPage() {
         <SectionCard title="Información general" icon={Building2}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <InfoCell label="Fecha">
-              {new Date(purchase.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}
+              {formatDateEs(purchase.date, { day: '2-digit', month: 'long', year: 'numeric' })}
             </InfoCell>
             <InfoCell label="Almacén">{getCompanyName(purchase.companyId)}</InfoCell>
             <InfoCell label="Proveedor">
@@ -140,7 +141,7 @@ export function PurchaseDetailPage() {
                 {purchase.documentNumber ? `-${purchase.documentNumber}` : ''}
                 {purchase.issueDate && (
                   <span className="block text-xs text-gray-500 mt-0.5">
-                    Emisión: {new Date(purchase.issueDate).toLocaleDateString('es-PE')}
+                    Emisión: {formatDateEs(purchase.issueDate)}
                   </span>
                 )}
               </InfoCell>
@@ -152,7 +153,7 @@ export function PurchaseDetailPage() {
             </InfoCell>
             {purchase.paymentType === 'CREDITO' && purchase.paymentScheduleType === 'SINGLE_DATE' && purchase.dueDate && (
               <InfoCell label="Vencimiento">
-                {new Date(purchase.dueDate).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}
+                {formatDateEs(purchase.dueDate, { day: '2-digit', month: 'long', year: 'numeric' })}
               </InfoCell>
             )}
           </div>
@@ -185,7 +186,7 @@ export function PurchaseDetailPage() {
                       <td className="px-3 py-2 font-medium">{product?.name || item.productId}</td>
                       <td className="px-3 py-2 text-right">{item.quantity}</td>
                       <td className="px-3 py-2 text-gray-600">{item.lotNumber || '—'}</td>
-                      <td className="px-3 py-2 text-gray-600">{item.expirationDate ? new Date(item.expirationDate).toLocaleDateString('es-PE') : '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{item.expirationDate ? formatDateEs(item.expirationDate) : '—'}</td>
                       <td className="px-3 py-2 text-right">{item.unitPriceSinIgv ? `${sym} ${item.unitPriceSinIgv.toFixed(2)}` : '—'}</td>
                       <td className="px-3 py-2 text-right">{item.unitPriceConIgv ? `${sym} ${item.unitPriceConIgv.toFixed(2)}` : '—'}</td>
                       <td className="px-3 py-2 text-right">{item.flete ? `${sym} ${item.flete.toFixed(2)}` : '—'}</td>
@@ -218,7 +219,7 @@ export function PurchaseDetailPage() {
                   {installments.map((inst, idx) => (
                     <tr key={idx}>
                       <td className="px-3 py-2 text-gray-500">#{idx + 1}</td>
-                      <td className="px-3 py-2">{inst.dueDate ? new Date(inst.dueDate).toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}</td>
+                      <td className="px-3 py-2">{inst.dueDate ? formatDateEs(inst.dueDate, { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}</td>
                       <td className="px-3 py-2 text-right font-medium">{sym} {inst.amount.toFixed(2)}</td>
                       <td className="px-3 py-2">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${inst.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>

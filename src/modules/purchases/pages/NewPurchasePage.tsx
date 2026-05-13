@@ -3,11 +3,12 @@ import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { useCreatePurchase } from '../hooks/usePurchases';
 import { PurchaseFormBody, type PurchaseSubmitPayload } from '../components/PurchaseFormBody';
 import { buildInitialCreate } from '../utils/purchaseForm';
+import { getTodayDateString } from '../../../shared/utils/date.util';
 
 export function NewPurchasePage() {
   const navigate = useNavigate();
   const createPurchase = useCreatePurchase();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayDateString();
   const initial = buildInitialCreate(today);
 
   const handleSubmit = async (payload: PurchaseSubmitPayload) => {

@@ -10,4 +10,24 @@ export const creditService = {
   edit: (id: string, data: any) => api.patch(`/credits/${id}`, data).then((r) => r.data.data),
   editItems: (id: string, data: any) => api.patch(`/credits/${id}/items`, data).then((r) => r.data.data),
   delete: (id: string) => api.delete(`/credits/${id}`).then((r) => r.data.data),
+  migrateMisdated: (data: { dryRun: boolean; from?: string; to?: string }) =>
+    api.post('/credits/admin/migrate-misdated', data).then((r) => r.data.data),
 };
+
+export interface MisdatedCreditRow {
+  creditId: string;
+  clientName?: string;
+  currentDate: string;
+  targetDate: string;
+  saleId: string;
+  saleNumber?: string;
+  totalAmount: number;
+}
+
+export interface MigrateMisdatedCreditsResult {
+  dryRun: boolean;
+  scanned: number;
+  misdated: MisdatedCreditRow[];
+  migrated: number;
+  errors: { creditId: string; reason: string }[];
+}

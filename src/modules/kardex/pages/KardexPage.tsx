@@ -141,14 +141,20 @@ function KardexTab({ products, companyList }: SubProps) {
     .slice()
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' }));
 
-  const params: Record<string, any> = { page, limit: 25 };
+  // Para la vista del Kardex del producto subimos el límite a 500 (el típico producto
+  // tiene <200 movimientos) y luego ordenamos client-side ASC para imitar el formato
+  // Excel del cliente (más viejo arriba).
+  const params: Record<string, any> = { page, limit: 500 };
   if (productIdParam) params.productId = productIdParam;
   if (companyId) params.companyId = companyId;
   if (startDate) params.startDate = startDate;
   if (endDate) params.endDate = endDate;
 
   const { data, isLoading } = useKardex(productIdParam ? params : undefined);
-  const movements: StockMovement[] = productIdParam ? data?.data || [] : [];
+  const movementsRaw: StockMovement[] = productIdParam ? data?.data || [] : [];
+  const movements: StockMovement[] = productIdParam
+    ? [...movementsRaw].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    : movementsRaw;
   const total: number = productIdParam ? data?.total || 0 : 0;
 
   const selectedProduct = products.find((p) => p.id === productIdParam);
@@ -410,7 +416,7 @@ function KardexTab({ products, companyList }: SubProps) {
               </table>
             </div>
           </div>
-          <Pagination page={page} totalPages={Math.ceil(total / 25)} onPageChange={setPage} />
+          <Pagination page={page} totalPages={Math.ceil(total / 500)} onPageChange={setPage} />
         </>
       )}
     </div>

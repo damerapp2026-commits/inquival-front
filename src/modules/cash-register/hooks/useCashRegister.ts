@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { cashRegisterService } from '../services/cashRegisterService';
+import { cashRegisterService, MigrateMisplacedSalesResult } from '../services/cashRegisterService';
 import toast from 'react-hot-toast';
 
 export function useCashRegisterToday() {
@@ -68,6 +68,22 @@ export function useCloseCashRegister() {
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error'),
   });
 }
+export function useMigrateMisplacedSales() {
+  const qc = useQueryClient();
+  return useMutation<MigrateMisplacedSalesResult, any, { dryRun: boolean; from?: string; to?: string }>({
+    mutationFn: (data) => cashRegisterService.migrateMisplacedSales(data),
+    onSuccess: (result) => {
+      if (!result.dryRun) {
+        qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+        qc.invalidateQueries({ queryKey: ['cash-registers'] });
+        qc.invalidateQueries({ queryKey: ['cash-register'] });
+        toast.success(`Migración completada: ${result.migrated} venta(s) movidas`);
+      }
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error en la migración'),
+  });
+}
+
 export function useAdjustOpeningBalance() {
   const qc = useQueryClient();
   return useMutation({

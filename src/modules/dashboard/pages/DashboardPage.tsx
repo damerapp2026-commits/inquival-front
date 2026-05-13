@@ -228,7 +228,7 @@ export function DashboardPage() {
               <div className="text-xl font-semibold">S/ {(summary?.totalExpense || 0).toFixed(2)}</div>
             </div>
             <div>
-              <div className="text-xs text-primary-100">Créditos pendientes</div>
+              <div className="text-xs text-primary-100">Deudas por cobrar</div>
               <div className="text-xl font-semibold">S/ {(creditsSummary?.totalPending || 0).toFixed(2)}</div>
             </div>
           </div>
@@ -251,14 +251,14 @@ export function DashboardPage() {
         />
         <KpiCard
           icon={CreditCard}
-          label="Créditos pendientes"
+          label="Deudas por cobrar"
           value={`S/ ${(creditsSummary?.totalPending || 0).toFixed(2)}`}
           sublabel={`${creditsSummary?.activeCredits || 0} créditos activos`}
           accent="bg-orange-100 text-orange-600"
         />
         <KpiCard
           icon={FileText}
-          label="Deuda proveedores"
+          label="Deudas por pagar"
           value={`S/ ${(apAlerts?.summary?.totalPending || 0).toFixed(2)}`}
           sublabel={`${apAlerts?.summary?.count || 0} cuentas activas`}
           accent="bg-purple-100 text-purple-600"

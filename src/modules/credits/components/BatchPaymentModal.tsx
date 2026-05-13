@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../shared/components/Modal';
-import { AlertCircle, DollarSign, Layers } from 'lucide-react';
+import { AlertCircle, CalendarDays, DollarSign, History, Layers } from 'lucide-react';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useBatchPayment } from '../hooks/useCredits';
 import type { CreditAccount, PaymentMethod } from '../../../shared/types';
@@ -31,11 +31,19 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
 
   const batchPayment = useBatchPayment();
 
+  const todayLocal = useMemo(
+    () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' }),
+    [],
+  );
+
   const [mode, setMode] = useState<Mode>('EXPLICIT');
   const [paymentMethodId, setPaymentMethodId] = useState('');
   const [notes, setNotes] = useState('');
+  const [paymentDate, setPaymentDate] = useState<string>(todayLocal);
   const [rows, setRows] = useState<ExplicitRow[]>([]);
   const [fifoAmount, setFifoAmount] = useState<number>(0);
+
+  const isHistorical = !!paymentDate && paymentDate !== todayLocal;
 
   const totalPending = useMemo(
     () => round2(openCredits.reduce((s, c) => s + c.pendingAmount, 0)),
@@ -54,6 +62,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
       setMode('EXPLICIT');
       setPaymentMethodId(paymentMethods[0]?.id || '');
       setNotes('');
+      setPaymentDate(todayLocal);
       setFifoAmount(0);
       setRows(openCredits.map((c) => ({ creditId: c.id, selected: false, amount: 0 })));
     }
@@ -142,6 +151,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
         mode: 'EXPLICIT',
         allocations,
         notes: notes || undefined,
+        paymentDate: paymentDate || undefined,
       });
     } else {
       await batchPayment.mutateAsync({
@@ -150,6 +160,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
         mode: 'FIFO',
         totalAmount: round2(fifoAmount),
         notes: notes || undefined,
+        paymentDate: paymentDate || undefined,
       });
     }
     onClose();
@@ -310,7 +321,27 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+              <CalendarDays size={13} /> Fecha del pago
+            </label>
+            <input
+              type="date"
+              value={paymentDate}
+              max={todayLocal}
+              onChange={(e) => setPaymentDate(e.target.value)}
+              className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                isHistorical ? 'border-amber-300 focus:ring-amber-400 bg-amber-50/40' : 'border-gray-200 focus:ring-primary-500'
+              }`}
+            />
+            {isHistorical && (
+              <div className="mt-1.5 text-[11px] text-amber-700 flex items-start gap-1">
+                <History size={11} className="mt-0.5 flex-shrink-0" />
+                <span>Pago retro-fechado. Se registrará en la caja de ese día (se crea si no existe).</span>
+              </div>
+            )}
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Método de pago</label>
             <select
@@ -332,7 +363,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-              placeholder="Comentario común a la transacción"
+              placeholder="Comentario común"
             />
           </div>
         </div>

@@ -32,14 +32,14 @@ export function StockPage() {
   const [activeTab, setActiveTab] = useState<'inventory' | 'lots' | 'adjustments' | 'transfers'>(initialTab);
   const [page, setPage] = useState(1);
   const [companyId, setCompanyId] = useState('');
-  const [allWarehouses, setAllWarehouses] = useState(false);
+  const [allWarehouses, setAllWarehouses] = useState(true);
   const [showTransfer, setShowTransfer] = useState(false);
   const [showAdjustment, setShowAdjustment] = useState(false);
   const [adjPage, setAdjPage] = useState(1);
   const [showLowStockDetail, setShowLowStockDetail] = useState(false);
   const [showAllLowStock, setShowAllLowStock] = useState(false);
-  const [ingredientFilter, setIngredientFilter] = useState('');
-  const debouncedIngredient = useDebounce(ingredientFilter);
+  const [searchFilter, setSearchFilter] = useState('');
+  const debouncedSearch = useDebounce(searchFilter);
   const [showExpiringDetail, setShowExpiringDetail] = useState(false);
   const initialLotFilter = (searchParams.get('filter') as 'all' | 'active' | 'expiring' | 'expired' | null) || 'all';
   const [lotFilter, setLotFilter] = useState<'all' | 'active' | 'expiring' | 'expired'>(initialLotFilter);
@@ -52,7 +52,7 @@ export function StockPage() {
   const [expandedStock, setExpandedStock] = useState<Record<string, boolean>>({});
 
   const { data: companies } = useCompanies();
-  const { data: productsData } = useProducts({ limit: 10000, activeIngredient: debouncedIngredient || undefined, includeInactive: true });
+  const { data: productsData } = useProducts({ limit: 10000, includeInactive: true });
   const { data, isLoading } = useStock(companyId, { page, limit: 20 });
   const { data: alerts } = useStockAlerts(companyId, 10);
   const transferStock = useTransferStock();
@@ -147,8 +147,20 @@ export function StockPage() {
 
   const companyList = Array.isArray(companies) ? companies : [];
   const products = productsData?.data || [];
-  const productIdSet = new Set(products.map((p: Product) => p.id));
-  const stockItems = (data?.data || []).filter((s: Stock) => !debouncedIngredient || productIdSet.has(s.productId));
+  const searchActive = !!debouncedSearch.trim();
+  const filteredProductIds = useMemo(() => {
+    if (!searchActive) return null;
+    const q = debouncedSearch.trim().toLowerCase();
+    return new Set<string>(
+      products
+        .filter((p: Product) =>
+          p.name.toLowerCase().includes(q) ||
+          (p.activeIngredient || '').toLowerCase().includes(q)
+        )
+        .map((p: Product) => p.id)
+    );
+  }, [products, debouncedSearch, searchActive]);
+  const stockItems = (data?.data || []).filter((s: Stock) => !filteredProductIds || filteredProductIds.has(s.productId) || (s.productName || '').toLowerCase().includes(debouncedSearch.trim().toLowerCase()));
   const total = stockItems.length;
   const alertList = Array.isArray(alerts) ? alerts : [];
   const adjustments = adjustmentsData?.data || [];
@@ -774,16 +786,15 @@ export function StockPage() {
 
       {activeTab === 'inventory' && allWarehouses && (() => {
         const summary = Array.isArray(allWarehousesSummary) ? allWarehousesSummary : [];
-        const ingredientActive = !!debouncedIngredient;
         const rows = summary
-          .filter(s => !ingredientActive || productIdSet.has(s.productId))
+          .filter(s => !filteredProductIds || filteredProductIds.has(s.productId))
           .map(s => ({ ...s, _name: getProductName(s.productId) }))
           .sort((a, b) => a._name.localeCompare(b._name));
         return (
           <>
             <div className="mb-3 relative max-w-sm">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input type="text" placeholder="Filtrar por ingrediente activo..." value={ingredientFilter} onChange={(e) => setIngredientFilter(e.target.value)} className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+              <input type="text" placeholder="Buscar por producto o ingrediente activo..." value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
             </div>
             <div className="bg-white rounded-xl shadow-card overflow-hidden border border-gray-100">
               <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -857,7 +868,7 @@ export function StockPage() {
         <>
           <div className="mb-3 relative max-w-sm">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input type="text" placeholder="Filtrar por ingrediente activo..." value={ingredientFilter} onChange={(e) => { setIngredientFilter(e.target.value); setPage(1); }} className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+            <input type="text" placeholder="Buscar por producto o ingrediente activo..." value={searchFilter} onChange={(e) => { setSearchFilter(e.target.value); setPage(1); }} className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
           </div>
           <div className="bg-white rounded-xl shadow-card overflow-hidden border border-gray-100">
             <table className="min-w-full divide-y divide-gray-200 text-sm">

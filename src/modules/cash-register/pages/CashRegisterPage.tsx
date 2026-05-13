@@ -4,6 +4,7 @@ import { useQueries } from '@tanstack/react-query';
 import { useCashRegisterToday, useOpenCashRegister, useAddCashEntry, useEditCashEntry, useDeleteCashEntry, useCloseCashRegister } from '../hooks/useCashRegister';
 import { useSaleById, useUpdateSaleItems } from '../../sales/hooks/useSales';
 import { saleService } from '../../sales/services/saleService';
+import { creditService } from '../../credits/services/creditService';
 import { useClients } from '../../clients/hooks/useClients';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useUsers } from '../../users/hooks/useUsers';
@@ -17,7 +18,7 @@ import {
   ReceiptText, FileText, CircleDashed, Search, Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import type { CashRegisterEntry, Sale, Client } from '../../../shared/types';
+import type { CashRegisterEntry, Sale, Client, CreditAccount } from '../../../shared/types';
 import { groupEntries } from '../utils/groupEntries';
 import { EXPENSE_CATEGORIES } from '../utils/expenseCategories';
 
@@ -170,6 +171,31 @@ export function CashRegisterPage() {
     });
     return map;
   }, [saleQueries, referencedSaleIds]);
+
+  // Mismo patrón para los CreditAccount referenciados por entries CREDIT_PAYMENT.
+  // Lo usamos en la columna MONTO para mostrar el desglose C: total / P: abono.
+  const referencedCreditIds = useMemo(() => {
+    const ids = new Set<string>();
+    (register?.entries || []).forEach((e: CashRegisterEntry) => {
+      if (e.referenceType === 'CreditAccount' && e.referenceId) ids.add(e.referenceId);
+    });
+    return Array.from(ids);
+  }, [register]);
+  const creditQueries = useQueries({
+    queries: referencedCreditIds.map((id) => ({
+      queryKey: ['credit', id],
+      queryFn: () => creditService.getById(id),
+      staleTime: 60_000,
+    })),
+  });
+  const creditsByRefId = useMemo(() => {
+    const map = new Map<string, CreditAccount>();
+    creditQueries.forEach((q, idx) => {
+      const data = q.data as CreditAccount | undefined;
+      if (data) map.set(referencedCreditIds[idx], data);
+    });
+    return map;
+  }, [creditQueries, referencedCreditIds]);
 
   // Mismo patrón que /sales: clientMap.get(id)?.name → 'N/A', sin id → 'Sin cliente'.
   const { data: clientsData } = useClients({ limit: 200 });
@@ -605,7 +631,7 @@ export function CashRegisterPage() {
                   const isGroup = !!group.groupId && group.entries.length > 1;
                   if (!isGroup) {
                     return renderEntryRow(group.entries[0], false, gi, {
-                      isClosed, userById, salesByRefId, getClientName, openEdit, openDelete, viewSale,
+                      isClosed, userById, salesByRefId, creditsByRefId, getClientName, openEdit, openDelete, viewSale,
                     });
                   }
                   const isOpen = expandedGroups.has(group.groupId!);
@@ -650,13 +676,48 @@ export function CashRegisterPage() {
                         <td className="px-4 py-3.5"><VendorChip name={vendor} /></td>
                         <td className="px-4 py-3.5">{method ? <MethodPill name={method} /> : <span className="text-gray-300">—</span>}</td>
                         <td className={`px-4 py-3.5 text-right font-bold tabular-nums ${first.type === 'INCOME' ? 'text-primary-700' : 'text-rose-600'}`}>
-                          {first.type === 'INCOME' ? '+' : '−'} S/ {total.toFixed(2)}
+                          {(() => {
+                            const groupSale = isSaleGroup ? salesByRefId.get(first.referenceId!) : undefined;
+                            const isCreditPaymentGroup = first.referenceType === 'CreditAccount' && !!first.referenceId;
+                            const groupCredit = isCreditPaymentGroup ? creditsByRefId.get(first.referenceId!) : undefined;
+                            if (groupSale?.isCredit) {
+                              return (
+                                <div className="flex flex-col items-end leading-tight">
+                                  <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
+                                    C: S/ {groupSale.total.toFixed(2)}
+                                  </span>
+                                  <span className="text-primary-700">
+                                    P: + S/ {total.toFixed(2)}
+                                  </span>
+                                </div>
+                              );
+                            }
+                            if (groupCredit) {
+                              const cleared = isPaymentThatClears(groupCredit, group.entries.map((e) => e.id!));
+                              return (
+                                <div className="flex flex-col items-end leading-tight">
+                                  <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
+                                    C: S/ {groupCredit.totalAmount.toFixed(2)}
+                                  </span>
+                                  <span className="text-primary-700">
+                                    P: + S/ {total.toFixed(2)}
+                                  </span>
+                                  {cleared && (
+                                    <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                                      <CheckCircle2 size={10} /> Cancelado
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return <span>{first.type === 'INCOME' ? '+' : '−'} S/ {total.toFixed(2)}</span>;
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 text-center"><span className="text-gray-300">—</span></td>
                         {!isClosed && <td className="px-4 sm:px-6 py-3.5" />}
                       </tr>
                       {isOpen && group.entries.map((e) => renderEntryRow(e, true, `${group.groupId}-${e.id}`, {
-                        isClosed, userById, salesByRefId, getClientName, openEdit, openDelete, viewSale,
+                        isClosed, userById, salesByRefId, creditsByRefId, getClientName, openEdit, openDelete, viewSale,
                       }))}
                     </React.Fragment>
                   );
@@ -998,16 +1059,24 @@ export function CashRegisterPage() {
               : 'Efectivo';
           const voucherLabel = sale.voucherType === 'BOLETA' ? 'Boleta' : sale.voucherType === 'FACTURA' ? 'Factura' : 'Nota de venta';
           const sellerName = sale.sellerName || (sale.sellerId ? userById[sale.sellerId] : '') || 'Sin asignar';
+          // En venta a crédito, "sale.total" es el total de la venta pero la caja
+          // solo recibió la suma de sale.payments (anticipo). El saldo queda como deuda.
+          const anticipo = sale.isCredit
+            ? (sale.payments || []).reduce((s: number, p: any) => s + (p.amount || 0), 0)
+            : sale.total;
+          const pendienteCredito = sale.isCredit ? Math.max(0, sale.total - anticipo) : 0;
           return (
             <div className="space-y-4">
-              <div className={`rounded-xl p-4 border ${sale.isCancelled ? 'bg-red-50 border-red-100' : 'bg-primary-50/60 border-primary-100'}`}>
+              <div className={`rounded-xl p-4 border ${sale.isCancelled ? 'bg-red-50 border-red-100' : sale.isCredit ? 'bg-orange-50/60 border-orange-100' : 'bg-primary-50/60 border-primary-100'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <span className={`text-xs font-semibold uppercase tracking-wide ${sale.isCancelled ? 'text-red-600' : 'text-primary-700'}`}>Total cobrado</span>
+                    <span className={`text-xs font-semibold uppercase tracking-wide ${sale.isCancelled ? 'text-red-600' : sale.isCredit ? 'text-orange-700' : 'text-primary-700'}`}>
+                      {sale.isCredit ? 'Total de la venta' : 'Total cobrado'}
+                    </span>
                     <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>S/ {sale.total.toFixed(2)}</div>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                    {sale.isCancelled ? 'Anulada' : 'Completada'}
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : sale.isCredit ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                    {sale.isCancelled ? 'Anulada' : sale.isCredit ? 'A crédito' : 'Completada'}
                   </span>
                 </div>
                 <div className="text-xs text-gray-500 mt-2 font-mono">
@@ -1019,6 +1088,18 @@ export function CashRegisterPage() {
                 </div>
                 {sale.isCancelled && sale.cancelReason && (
                   <p className="text-xs text-red-600 mt-2">Razón: {sale.cancelReason}</p>
+                )}
+                {sale.isCredit && !sale.isCancelled && (
+                  <div className="mt-3 pt-3 border-t border-orange-200/70 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="block text-[10px] uppercase tracking-wider text-orange-700/80 font-semibold">Cobrado en caja</span>
+                      <div className="font-bold text-primary-700 tabular-nums">S/ {anticipo.toFixed(2)}</div>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] uppercase tracking-wider text-orange-700/80 font-semibold">Saldo a crédito</span>
+                      <div className="font-bold text-red-600 tabular-nums">S/ {pendienteCredito.toFixed(2)}</div>
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -1217,16 +1298,40 @@ interface RowCtx {
   isClosed: boolean;
   userById: Record<string, string>;
   salesByRefId: Map<string, Sale>;
+  creditsByRefId: Map<string, CreditAccount>;
   getClientName: (id?: string) => string;
   openEdit: (e: CashRegisterEntry) => void;
   openDelete: (e: CashRegisterEntry) => void;
   viewSale: (saleId: string) => void;
 }
 
+/**
+ * ¿Este pago (representado por una o más cash-register-entries) llevó la cuenta a 0?
+ * Buscamos los CreditPayment que apuntan a esas entries y sumamos lo pagado HASTA
+ * incluir esos. Si el acumulado >= totalAmount → este pago cerró la deuda.
+ */
+function isPaymentThatClears(credit: CreditAccount, entryIds: string[]): boolean {
+  if (!credit.payments?.length || !entryIds.length) return false;
+  const targetSet = new Set(entryIds);
+  const ordered = [...credit.payments].sort(
+    (a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime(),
+  );
+  let cumulative = 0;
+  for (const p of ordered) {
+    cumulative += p.amount;
+    if (p.cashRegisterEntryId && targetSet.has(p.cashRegisterEntryId)) {
+      return Math.round(cumulative * 100) / 100 >= Math.round(credit.totalAmount * 100) / 100;
+    }
+  }
+  return false;
+}
+
 function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Key, ctx: RowCtx) {
-  const { isClosed, userById, salesByRefId, getClientName, openEdit, openDelete, viewSale } = ctx;
+  const { isClosed, userById, salesByRefId, creditsByRefId, getClientName, openEdit, openDelete, viewSale } = ctx;
   const isSale = entry.referenceType === 'Sale' && !!entry.referenceId;
   const sale = isSale ? salesByRefId.get(entry.referenceId!) : undefined;
+  const isCreditPayment = entry.referenceType === 'CreditAccount' && !!entry.referenceId;
+  const credit = isCreditPayment ? creditsByRefId.get(entry.referenceId!) : undefined;
   const clientId = sale?.clientId || entry.clientId;
   const hasClient = !!clientId;
   const description = isSale ? getClientName(clientId) : stripMethod(entry.description);
@@ -1260,7 +1365,42 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
       <td className="px-4 py-3.5"><VendorChip name={vendor} /></td>
       <td className="px-4 py-3.5">{method ? <MethodPill name={method} /> : <span className="text-gray-300">—</span>}</td>
       <td className={`px-4 py-3.5 text-right font-semibold tabular-nums ${entry.type === 'INCOME' ? 'text-primary-700' : 'text-rose-600'}`}>
-        {entry.type === 'INCOME' ? '+' : '−'} S/ {entry.amount.toFixed(2)}
+        {(() => {
+          const isCreditSale = isSale && !!sale?.isCredit;
+          if (isCreditSale) {
+            // Venta a crédito: la entry refleja solo el anticipo cobrado en este registro.
+            return (
+              <div className="flex flex-col items-end leading-tight">
+                <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
+                  C: S/ {sale!.total.toFixed(2)}
+                </span>
+                <span className="text-primary-700">
+                  P: + S/ {entry.amount.toFixed(2)}
+                </span>
+              </div>
+            );
+          }
+          if (credit) {
+            // Pago de crédito (abono parcial o final). Mostramos el crédito total y este abono.
+            const cleared = isPaymentThatClears(credit, [entry.id!]);
+            return (
+              <div className="flex flex-col items-end leading-tight">
+                <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
+                  C: S/ {credit.totalAmount.toFixed(2)}
+                </span>
+                <span className="text-primary-700">
+                  P: + S/ {entry.amount.toFixed(2)}
+                </span>
+                {cleared && (
+                  <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                    <CheckCircle2 size={10} /> Cancelado
+                  </span>
+                )}
+              </div>
+            );
+          }
+          return <span>{entry.type === 'INCOME' ? '+' : '−'} S/ {entry.amount.toFixed(2)}</span>;
+        })()}
       </td>
       <td className="px-4 py-3.5 text-center"><VoucherPill type={entry.voucherType} series={entry.voucherSeries} number={entry.voucherNumber} /></td>
       {!isClosed && (

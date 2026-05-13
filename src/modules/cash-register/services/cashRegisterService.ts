@@ -11,4 +11,27 @@ export const cashRegisterService = {
   close: (id: string, data?: any) => api.post(`/cash-registers/${id}/close`, data || {}).then((r) => r.data.data),
   adjustOpening: (id: string, data: { openingBalance: number; reason: string }) =>
     api.patch(`/cash-registers/${id}/opening-balance`, data).then((r) => r.data.data),
+  migrateMisplacedSales: (data: { dryRun: boolean; from?: string; to?: string }) =>
+    api.post('/cash-registers/admin/migrate-misplaced-sales', data).then((r) => r.data.data),
 };
+
+export interface MisplacedSaleRow {
+  saleId: string;
+  saleNumber?: string;
+  saleDate: string;
+  currentRegisterDate: string;
+  targetRegisterDate: string;
+  entryId: string;
+  amount: number;
+  paymentMethodLabel?: string;
+  clientName?: string;
+}
+
+export interface MigrateMisplacedSalesResult {
+  dryRun: boolean;
+  scanned: number;
+  misplaced: MisplacedSaleRow[];
+  migrated: number;
+  registersAffected: string[];
+  errors: { saleId: string; reason: string }[];
+}

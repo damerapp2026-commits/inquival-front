@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { creditService } from '../services/creditService';
+import { creditService, MigrateMisdatedCreditsResult } from '../services/creditService';
 import toast from 'react-hot-toast';
 
 export function useCredits(params?: any) {
@@ -30,7 +30,13 @@ export function useRegisterPayment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ creditId, data }: { creditId: string; data: any }) => creditService.registerPayment(creditId, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['credits'] }); qc.invalidateQueries({ queryKey: ['cash-register-today'] }); toast.success('Pago registrado'); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['credits'] });
+      qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      qc.invalidateQueries({ queryKey: ['cash-register'] });
+      toast.success('Pago registrado');
+    },
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error al registrar pago'),
   });
 }
@@ -42,6 +48,7 @@ export function useBatchPayment() {
       qc.invalidateQueries({ queryKey: ['credits'] });
       qc.invalidateQueries({ queryKey: ['cash-register-today'] });
       qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      qc.invalidateQueries({ queryKey: ['cash-register'] });
       if (vars?.clientId) qc.invalidateQueries({ queryKey: ['credits', 'open', vars.clientId] });
       toast.success('Pago registrado');
     },
@@ -73,6 +80,22 @@ export function useEditCreditItems() {
     },
   });
 }
+export function useMigrateMisdatedCredits() {
+  const qc = useQueryClient();
+  return useMutation<MigrateMisdatedCreditsResult, any, { dryRun: boolean; from?: string; to?: string }>({
+    mutationFn: (data) => creditService.migrateMisdated(data),
+    onSuccess: (result) => {
+      if (!result.dryRun) {
+        qc.invalidateQueries({ queryKey: ['credits'] });
+        qc.invalidateQueries({ queryKey: ['credit'] });
+        qc.invalidateQueries({ queryKey: ['dashboard-credits-summary'] });
+        toast.success(`Migración completada: ${result.migrated} crédito(s) actualizados`);
+      }
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error en la migración'),
+  });
+}
+
 export function useDeleteCredit() {
   const qc = useQueryClient();
   return useMutation({
