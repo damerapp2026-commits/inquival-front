@@ -43,7 +43,7 @@ export interface CashRegisterEntry { id: string; type: 'INCOME' | 'EXPENSE'; cat
 export interface CashRegister { id: string; date: string; openingBalance: number; status: 'OPEN' | 'CLOSED'; entries: CashRegisterEntry[]; closingBalance?: number; closedBy?: string; closedAt?: string; notes?: string; createdBy?: string; }
 
 export interface CreditPayment { id: string; amount: number; paymentDate: string; paymentMethodId?: string; paymentMethodName?: string; cashRegisterEntryId?: string; notes?: string; receivedBy?: string; receivedByName?: string; paymentGroupId?: string; }
-export interface CreditSaleDetail { saleId: string; date: string; total: number; items: { productId: string; productName: string; companyId: string; companyName: string; priceTier?: string; quantity: number; unitPrice: number; subtotal: number; }[]; }
+export interface CreditSaleDetail { saleId: string; saleNumber?: string; date: string; total: number; items: { productId: string; productName: string; companyId: string; companyName: string; priceTier?: string; quantity: number; unitPrice: number; subtotal: number; }[]; }
 export interface CreditAccount { id: string; clientId: string; name?: string; saleIds: string[]; saleDetails?: CreditSaleDetail[]; totalAmount: number; paidAmount: number; pendingAmount: number; status: 'PENDING' | 'PARTIAL' | 'PAID'; payments: CreditPayment[]; dueDate?: string; createdBy?: string; createdAt: string; }
 
 export interface LoanItem { productId: string; companyId: string; quantity: number; returnedQuantity: number; }

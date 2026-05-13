@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { cashRegisterService, MigrateMisplacedSalesResult } from '../services/cashRegisterService';
+import { cashRegisterService, MigrateMisplacedSalesResult, MigrateMisplacedPurchasesResult } from '../services/cashRegisterService';
 import toast from 'react-hot-toast';
 
 export function useCashRegisterToday() {
@@ -78,6 +78,22 @@ export function useMigrateMisplacedSales() {
         qc.invalidateQueries({ queryKey: ['cash-registers'] });
         qc.invalidateQueries({ queryKey: ['cash-register'] });
         toast.success(`Migración completada: ${result.migrated} venta(s) movidas`);
+      }
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error en la migración'),
+  });
+}
+
+export function useMigrateMisplacedPurchases() {
+  const qc = useQueryClient();
+  return useMutation<MigrateMisplacedPurchasesResult, any, { dryRun: boolean; from?: string; to?: string }>({
+    mutationFn: (data) => cashRegisterService.migrateMisplacedPurchases(data),
+    onSuccess: (result) => {
+      if (!result.dryRun) {
+        qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+        qc.invalidateQueries({ queryKey: ['cash-registers'] });
+        qc.invalidateQueries({ queryKey: ['cash-register'] });
+        toast.success(`Migración completada: ${result.migrated} compra(s) movidas`);
       }
     },
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error en la migración'),

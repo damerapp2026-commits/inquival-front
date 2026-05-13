@@ -27,7 +27,7 @@ const CompaniesPage = lazy(() => import('../../modules/companies/pages/Companies
 const PriceTiersPage = lazy(() => import('../../modules/price-tiers/pages/PriceTiersPage').then(m => ({ default: m.PriceTiersPage })));
 const CashRegisterPage = lazy(() => import('../../modules/cash-register/pages/CashRegisterPage').then(m => ({ default: m.CashRegisterPage })));
 const CashRegisterHistoryPage = lazy(() => import('../../modules/cash-register/pages/CashRegisterHistoryPage').then(m => ({ default: m.CashRegisterHistoryPage })));
-const MigrateMisplacedSalesPage = lazy(() => import('../../modules/cash-register/pages/MigrateMisplacedSalesPage').then(m => ({ default: m.MigrateMisplacedSalesPage })));
+const MigrateMisplacedPage = lazy(() => import('../../modules/cash-register/pages/MigrateMisplacedPage').then(m => ({ default: m.MigrateMisplacedPage })));
 const ExpensesLayout = lazy(() => import('../../modules/expenses/components/ExpensesLayout').then(m => ({ default: m.ExpensesLayout })));
 const CashExpensesPage = lazy(() => import('../../modules/expenses/pages/CashExpensesPage').then(m => ({ default: m.CashExpensesPage })));
 const WorkerExpensesPage = lazy(() => import('../../modules/expenses/pages/WorkerExpensesPage').then(m => ({ default: m.WorkerExpensesPage })));
@@ -71,7 +71,7 @@ export function AppRoutes() {
         <Route path="stock" element={<AdminOnly><Suspense fallback={<Loading />}><StockPage /></Suspense></AdminOnly>} />
         <Route path="cash-register" element={<AdminOnly><Suspense fallback={<Loading />}><CashRegisterPage /></Suspense></AdminOnly>} />
         <Route path="cash-register/history" element={<AdminOnly><Suspense fallback={<Loading />}><CashRegisterHistoryPage /></Suspense></AdminOnly>} />
-        <Route path="cash-register/migrate" element={<AdminOnly><Suspense fallback={<Loading />}><MigrateMisplacedSalesPage /></Suspense></AdminOnly>} />
+        <Route path="cash-register/migrate" element={<AdminOnly><Suspense fallback={<Loading />}><MigrateMisplacedPage /></Suspense></AdminOnly>} />
         <Route path="expenses" element={<AdminOnly><Suspense fallback={<Loading />}><ExpensesLayout /></Suspense></AdminOnly>}>
           <Route index element={<Navigate to="cash" replace />} />
           <Route path="cash" element={<Suspense fallback={<Loading />}><CashExpensesPage /></Suspense>} />

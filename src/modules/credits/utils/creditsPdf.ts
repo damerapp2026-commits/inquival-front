@@ -40,6 +40,25 @@ const statusLabel = (s: string) =>
 const statusColor = (s: string) =>
   s === 'PAID' ? '#059669' : s === 'PARTIAL' ? '#2563eb' : '#d97706';
 
+const saleNoteLabel = (saleId: string, saleNumber?: string) =>
+  saleNumber || `NV-${(saleId || '').slice(-8).toUpperCase()}`;
+
+const creditHeaderLabel = (credit: CreditAccount): { text: string; derived: boolean } => {
+  if (credit.name) return { text: credit.name, derived: false };
+  const details = credit.saleDetails || [];
+  if (details.length === 0) {
+    const ids = credit.saleIds || [];
+    if (ids.length === 0) return { text: 'Sin nombre', derived: false };
+    if (ids.length === 1) return { text: saleNoteLabel(ids[0]), derived: true };
+    return { text: `${saleNoteLabel(ids[0])} +${ids.length - 1} más`, derived: true };
+  }
+  if (details.length === 1) return { text: saleNoteLabel(details[0].saleId, details[0].saleNumber), derived: true };
+  const first = saleNoteLabel(details[0].saleId, details[0].saleNumber);
+  const second = saleNoteLabel(details[1].saleId, details[1].saleNumber);
+  if (details.length === 2) return { text: `${first}, ${second}`, derived: true };
+  return { text: `${first}, ${second} +${details.length - 2} más`, derived: true };
+};
+
 interface ExportParams {
   credits: CreditAccount[];
   clients: Client[];
@@ -300,7 +319,10 @@ function buildDetailed({ credits, clients, filters, title, subtitle }: ExportPar
         table: {
           widths: ['*', 'auto', 'auto', 'auto', 'auto'],
           body: [[
-            { text: credit.name || 'Sin nombre', fontSize: 9, bold: true, italics: !credit.name, color: credit.name ? '#111827' : GRAY },
+            (() => {
+              const label = creditHeaderLabel(credit);
+              return { text: label.text, fontSize: 9, bold: true, color: label.text === 'Sin nombre' ? GRAY : '#111827', italics: label.text === 'Sin nombre' };
+            })(),
             { text: `Creado: ${formatDate(credit.createdAt)}`, fontSize: 8, color: GRAY, alignment: 'right' },
             { text: `Total: ${money(credit.totalAmount)}`, fontSize: 8, alignment: 'right' },
             { text: `Pend: ${money(credit.pendingAmount)}`, fontSize: 8, alignment: 'right', color: '#dc2626', bold: true },
