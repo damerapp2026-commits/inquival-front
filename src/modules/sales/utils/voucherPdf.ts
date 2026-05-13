@@ -67,7 +67,7 @@ function dashedLine(width = 206) {
   return { canvas: [{ type: 'line', x1: 0, y1: 0, x2: width, y2: 0, dash: { length: 2 }, lineWidth: 0.5, lineColor: '#000' }], margin: [0, 4, 0, 4] };
 }
 
-function buildTicketDocDef(sale: VoucherSnapshot): any {
+function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
   const c = COMPANY_INFO;
   const itemRows: any[] = [];
   sale.items.forEach((i) => {
@@ -85,9 +85,11 @@ function buildTicketDocDef(sale: VoucherSnapshot): any {
     ]);
   });
 
-  const content: any[] = [
-    { text: c.legalName, alignment: 'center', bold: true, fontSize: 11 },
-  ];
+  const content: any[] = [];
+  if (logoDataUrl) {
+    content.push({ image: logoDataUrl, width: 90, alignment: 'center', margin: [0, 0, 0, 4] });
+  }
+  content.push({ text: c.legalName, alignment: 'center', bold: true, fontSize: 11 });
   if (c.ruc) content.push({ text: `RUC ${c.ruc}`, alignment: 'center', fontSize: 8, color: '#555' });
   if (c.address) content.push({ text: c.address, alignment: 'center', fontSize: 8, color: '#555' });
   if (c.phone) content.push({ text: `Tel. ${c.phone}`, alignment: 'center', fontSize: 8, color: '#555' });
@@ -529,12 +531,11 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
 }
 
 async function buildPdf(sale: VoucherSnapshot, format: VoucherFormat) {
+  const [pdfMake, logoDataUrl] = await Promise.all([loadPdfMake(), loadLogoDataUrl()]);
   if (format === 'A4') {
-    const [pdfMake, logoDataUrl] = await Promise.all([loadPdfMake(), loadLogoDataUrl()]);
     return pdfMake.createPdf(buildA4DocDef(sale, logoDataUrl));
   }
-  const pdfMake = await loadPdfMake();
-  return pdfMake.createPdf(buildTicketDocDef(sale));
+  return pdfMake.createPdf(buildTicketDocDef(sale, logoDataUrl));
 }
 
 export async function downloadVoucherPdf(sale: VoucherSnapshot, format: VoucherFormat = 'TICKET') {

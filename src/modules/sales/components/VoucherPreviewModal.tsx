@@ -127,8 +127,11 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   table.items tr.item-prices td { padding-bottom: 5px; }
   .total { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0; border-top: 1px solid #000; border-bottom: 1px solid #000; margin-top: 6px; }
   .credit-banner { letter-spacing: 1px; padding: 4px; border: 1px dashed #b91c1c; color: #b91c1c; }
+  .logo-wrap { text-align: center; margin-bottom: 6px; }
+  .logo-wrap img { max-width: 56mm; max-height: 22mm; object-fit: contain; }
 </style></head>
 <body>
+  ${company.logoUrl ? `<div class="logo-wrap"><img src="${escapeHtml(company.logoUrl)}" alt="" onerror="this.parentNode.style.display='none'" /></div>` : ''}
   <div class="center bold lg">${escapeHtml(company.legalName)}</div>
   ${company.ruc ? `<div class="center muted">RUC ${escapeHtml(company.ruc)}</div>` : ''}
   ${company.address ? `<div class="center muted">${escapeHtml(company.address)}</div>` : ''}
