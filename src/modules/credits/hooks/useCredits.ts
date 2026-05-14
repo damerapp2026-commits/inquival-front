@@ -40,6 +40,23 @@ export function useRegisterPayment() {
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error al registrar pago'),
   });
 }
+export function useEditCreditPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ creditId, paymentId, data }: { creditId: string; paymentId: string; data: any }) =>
+      creditService.editPayment(creditId, paymentId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['credits'] });
+      qc.invalidateQueries({ queryKey: ['credit'] });
+      qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      qc.invalidateQueries({ queryKey: ['cash-register'] });
+      qc.invalidateQueries({ queryKey: ['dashboard-credits-summary'] });
+      toast.success('Abono actualizado');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al editar abono'),
+  });
+}
 export function useBatchPayment() {
   const qc = useQueryClient();
   return useMutation({

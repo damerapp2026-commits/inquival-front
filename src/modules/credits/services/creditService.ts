@@ -7,6 +7,8 @@ export const creditService = {
   createHistorical: (data: any) => api.post('/credits/historical', data).then((r) => r.data.data),
   registerPayment: (id: string, data: any) => api.post(`/credits/${id}/payments`, data).then((r) => r.data.data),
   registerBatchPayment: (data: any) => api.post('/credits/payments/batch', data).then((r) => r.data.data),
+  editPayment: (creditId: string, paymentId: string, data: any) =>
+    api.patch(`/credits/${creditId}/payments/${paymentId}`, data).then((r) => r.data.data),
   edit: (id: string, data: any) => api.patch(`/credits/${id}`, data).then((r) => r.data.data),
   editItems: (id: string, data: any) => api.patch(`/credits/${id}/items`, data).then((r) => r.data.data),
   delete: (id: string) => api.delete(`/credits/${id}`).then((r) => r.data.data),

@@ -5,12 +5,13 @@ import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { BatchPaymentModal } from '../components/BatchPaymentModal';
 import { EditCreditItemsModal } from '../components/EditCreditItemsModal';
+import { EditCreditPaymentModal } from '../components/EditCreditPaymentModal';
 import { ExportClientStatementButton } from '../components/ExportClientStatementButton';
 import { downloadCreditsSummaryPdf, downloadCreditsDetailedPdf } from '../utils/creditsPdf';
 import { CreditCard, DollarSign, Edit2, Trash2, ChevronDown, ChevronRight, Search, User, Eye, ShoppingBag, FileDown, CalendarClock, History, Wrench } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { RegisterHistoricalCreditModal } from '../components/RegisterHistoricalCreditModal';
-import type { CreditAccount, Client } from '../../../shared/types';
+import type { CreditAccount, Client, CreditPayment } from '../../../shared/types';
 
 type Status = 'PENDING' | 'PARTIAL' | 'PAID';
 const STATUS_RANK: Record<Status, number> = { PENDING: 3, PARTIAL: 2, PAID: 1 };
@@ -60,6 +61,7 @@ export function CreditsPage() {
   const [editDueCredit, setEditDueCredit] = useState<CreditAccount | null>(null);
   const [editDueDate, setEditDueDate] = useState('');
   const [selectedCredit, setSelectedCredit] = useState<CreditAccount | null>(null);
+  const [editPayment, setEditPayment] = useState<CreditPayment | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showHistoricalModal, setShowHistoricalModal] = useState(false);
   const { data: detailCredit } = useCreditById(showDetailModal && selectedCredit ? selectedCredit.id : '');
@@ -554,14 +556,25 @@ export function CreditsPage() {
                 <div className="space-y-1.5">
                   {fullCredit.payments.map((p, idx) => (
                     <div key={idx} className="flex items-center justify-between bg-primary-50/60 rounded px-3 py-1.5 text-sm">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         <span className="text-gray-500">{new Date(p.paymentDate).toLocaleDateString('es-PE')}</span>
                         <span className="font-medium text-primary-700">S/ {p.amount.toFixed(2)}</span>
                         {p.paymentMethodName && (
                           <span className="text-xs bg-white border rounded px-1.5 py-0.5 text-gray-600">{p.paymentMethodName}</span>
                         )}
                       </div>
-                      {p.receivedByName && <span className="text-xs text-gray-400">por {p.receivedByName}</span>}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {p.receivedByName && <span className="text-xs text-gray-400">por {p.receivedByName}</span>}
+                        <button
+                          type="button"
+                          onClick={() => setEditPayment(p)}
+                          disabled={!!p.paymentGroupId}
+                          title={p.paymentGroupId ? 'Pago agrupado: edita desde el grupo' : 'Editar abono'}
+                          className="p-1 rounded hover:bg-white text-gray-500 hover:text-primary-600 disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -574,6 +587,13 @@ export function CreditsPage() {
       <EditCreditItemsModal
         credit={showEditModal ? selectedCredit : null}
         onClose={() => setShowEditModal(false)}
+      />
+
+      <EditCreditPaymentModal
+        isOpen={!!editPayment}
+        onClose={() => setEditPayment(null)}
+        credit={fullCredit}
+        payment={editPayment}
       />
 
 
