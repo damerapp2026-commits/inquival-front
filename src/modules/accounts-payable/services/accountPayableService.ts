@@ -6,4 +6,25 @@ export const accountPayableService = {
   getAlerts: (days?: number) => api.get('/accounts-payable/alerts', { params: { days } }).then((r) => r.data.data),
   registerPayment: (id: string, data: { amount: number; codigoTransferencia?: string; notes?: string }) => api.post(`/accounts-payable/${id}/payments`, data).then((r) => r.data.data),
   updateNumeroUnico: (id: string, data: { numeroUnico: string; installmentId?: string }) => api.patch(`/accounts-payable/${id}/numero-unico`, data).then((r) => r.data.data),
+  migrateMisdated: (data: { dryRun: boolean; from?: string; to?: string }) =>
+    api.post('/accounts-payable/admin/migrate-misdated', data).then((r) => r.data.data),
 };
+
+export interface MisdatedAccountPayableRow {
+  accountPayableId: string;
+  purchaseId: string;
+  supplier: string;
+  currentDate: string;
+  targetDate: string;
+  totalAmount: number;
+  currency?: string;
+  documentLabel?: string;
+}
+
+export interface MigrateMisdatedAccountPayablesResult {
+  dryRun: boolean;
+  scanned: number;
+  misdated: MisdatedAccountPayableRow[];
+  migrated: number;
+  errors: { accountPayableId: string; reason: string }[];
+}

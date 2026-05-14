@@ -1,19 +1,24 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMigrateMisplacedSales, useMigrateMisplacedPurchases } from '../hooks/useCashRegister';
+import { useMigrateMisdatedAP } from '../../accounts-payable/hooks/useAccountsPayable';
 import type {
   MigrateMisplacedSalesResult,
   MisplacedSaleRow,
   MigrateMisplacedPurchasesResult,
   MisplacedPurchaseRow,
 } from '../services/cashRegisterService';
+import type {
+  MigrateMisdatedAccountPayablesResult,
+  MisdatedAccountPayableRow,
+} from '../../accounts-payable/services/accountPayableService';
 import { Modal } from '../../../shared/components/Modal';
 import {
   Wrench, AlertTriangle, CalendarRange, History, Wallet, ArrowRight, ChevronLeft,
-  PlayCircle, Search, CheckCircle2, Inbox, TriangleAlert, ShoppingCart, Receipt,
+  PlayCircle, Search, CheckCircle2, Inbox, TriangleAlert, ShoppingCart, Receipt, FileText,
 } from 'lucide-react';
 
-type Tab = 'sales' | 'purchases';
+type Tab = 'sales' | 'purchases' | 'ap';
 
 function formatDate(d: string) {
   if (!d) return '—';
@@ -24,7 +29,12 @@ function formatDate(d: string) {
 
 export function MigrateMisplacedPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab: Tab = searchParams.get('tab') === 'purchases' ? 'purchases' : 'sales';
+  const initialTab: Tab = (() => {
+    const t = searchParams.get('tab');
+    if (t === 'purchases') return 'purchases';
+    if (t === 'ap') return 'ap';
+    return 'sales';
+  })();
   const [tab, setTabState] = useState<Tab>(initialTab);
   const setTab = (t: Tab) => {
     setTabState(t);
@@ -61,9 +71,14 @@ export function MigrateMisplacedPage() {
         <TabBtn active={tab === 'purchases'} onClick={() => setTab('purchases')} icon={<ShoppingCart size={15} />}>
           Compras
         </TabBtn>
+        <TabBtn active={tab === 'ap'} onClick={() => setTab('ap')} icon={<FileText size={15} />}>
+          Cuentas por Pagar
+        </TabBtn>
       </div>
 
-      {tab === 'sales' ? <SalesTab /> : <PurchasesTab />}
+      {tab === 'sales' && <SalesTab />}
+      {tab === 'purchases' && <PurchasesTab />}
+      {tab === 'ap' && <APTab />}
     </div>
   );
 }
@@ -318,6 +333,145 @@ function PurchasesTab() {
 }
 
 // ============================================================================
+// Tab Cuentas por Pagar
+// ============================================================================
+
+function APTab() {
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [report, setReport] = useState<MigrateMisdatedAccountPayablesResult | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const migrate = useMigrateMisdatedAP();
+
+  const handleScan = async () => {
+    setReport(null);
+    const res = await migrate.mutateAsync({ dryRun: true, from: from || undefined, to: to || undefined });
+    setReport(res);
+  };
+
+  const handleApply = async () => {
+    const res = await migrate.mutateAsync({ dryRun: false, from: from || undefined, to: to || undefined });
+    setReport(res);
+    setConfirmOpen(false);
+  };
+
+  const groupedByPair = useMemo(() => {
+    if (!report) return [] as { key: string; from: string; to: string; rows: MisdatedAccountPayableRow[] }[];
+    const map = new Map<string, MisdatedAccountPayableRow[]>();
+    for (const row of report.misdated) {
+      const key = `${row.currentDate}->${row.targetDate}`;
+      const arr = map.get(key) || [];
+      arr.push(row);
+      map.set(key, arr);
+    }
+    return Array.from(map.entries())
+      .map(([key, rows]) => ({ key, from: rows[0].currentDate, to: rows[0].targetDate, rows }))
+      .sort((a, b) => a.from.localeCompare(b.from));
+  }, [report]);
+
+  const totalAmount = useMemo(() => report?.misdated.reduce((s, r) => s + r.totalAmount, 0) || 0, [report]);
+
+  // Adaptamos el report al shape genérico (misdated → misplaced).
+  const reportLike = report
+    ? { dryRun: report.dryRun, scanned: report.scanned, misplaced: report.misdated, migrated: report.migrated }
+    : null;
+
+  return (
+    <>
+      <APIntro />
+      <Filters from={from} to={to} setFrom={setFrom} setTo={setTo} onScan={handleScan} isPending={migrate.isPending && report === null} filterLabel="Filtro por fecha actual del AP" />
+
+      {reportLike && (
+        <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+          <Header
+            report={reportLike}
+            entitySingular="cuenta por pagar"
+            entityPlural="cuentas por pagar"
+            onApplyClick={() => setConfirmOpen(true)}
+            isPending={migrate.isPending}
+          />
+          <Kpis report={reportLike} totalAmount={totalAmount} />
+
+          {reportLike.misplaced.length === 0 && (
+            <EmptyState entityLabel="cuentas por pagar" />
+          )}
+
+          {reportLike.misplaced.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50/60">
+                  <tr className="text-[10px] uppercase tracking-wider text-gray-500 border-b border-gray-100">
+                    <th className="px-4 py-2.5 text-left">Fecha actual → Fecha correcta</th>
+                    <th className="px-4 py-2.5 text-left">CxP</th>
+                    <th className="px-4 py-2.5 text-left">Proveedor</th>
+                    <th className="px-4 py-2.5 text-left">Documento</th>
+                    <th className="px-4 py-2.5 text-right">Monto</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {groupedByPair.map((group) => (
+                    <React.Fragment key={group.key}>
+                      <GroupHeader from={group.from} to={group.to} count={group.rows.length} entitySingular="CxP" entityPlural="CxP" colSpan={5} />
+                      {group.rows.map((r) => (
+                        <tr key={r.accountPayableId} className="hover:bg-gray-50/60">
+                          <td className="px-4 py-2.5 text-xs text-gray-400">↳</td>
+                          <td className="px-4 py-2.5">
+                            <div className="text-xs font-mono text-gray-700">{r.accountPayableId.slice(-8)}</div>
+                            <div className="text-[10px] text-gray-400">Compra: {r.purchaseId.slice(-8)}</div>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-gray-700">{r.supplier}</td>
+                          <td className="px-4 py-2.5 text-xs">
+                            {r.documentLabel ? (
+                              <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-medium font-mono">{r.documentLabel}</span>
+                            ) : <span className="text-gray-400">—</span>}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-gray-800">{r.currency || 'PEN'} {r.totalAmount.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <Errors errors={report!.errors.map((e) => ({ id: e.accountPayableId, reason: e.reason }))} />
+        </div>
+      )}
+
+      <ConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={handleApply}
+        count={report?.misdated.length || 0}
+        totalAmount={totalAmount}
+        isPending={migrate.isPending}
+        entitySingular="cuenta por pagar"
+        entityPlural="cuentas por pagar"
+      />
+    </>
+  );
+}
+
+function APIntro() {
+  return (
+    <div className="flex gap-3 p-4 bg-amber-50 border border-amber-100 rounded-2xl">
+      <AlertTriangle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+      <div className="text-sm text-amber-900 space-y-1">
+        <p>
+          <strong>Cómo funciona:</strong> alinea la fecha de creación de las cuentas por pagar a la fecha de su compra
+          asociada. Solo afecta CxP que vienen de una compra (las creadas manualmente sin compra no se tocan).
+        </p>
+        <p>
+          La operación es <strong>idempotente</strong>: se puede re-correr sin duplicar. Las cuotas (installments) y sus
+          vencimientos no se modifican.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Sub-componentes compartidos
 // ============================================================================
 
@@ -340,16 +494,17 @@ function Intro({ entityLabel }: { entityLabel: string }) {
 }
 
 function Filters({
-  from, to, setFrom, setTo, onScan, isPending,
+  from, to, setFrom, setTo, onScan, isPending, filterLabel,
 }: {
   from: string; to: string;
   setFrom: (v: string) => void; setTo: (v: string) => void;
   onScan: () => void; isPending: boolean;
+  filterLabel?: string;
 }) {
   return (
     <div className="bg-white rounded-2xl shadow-card p-5">
       <div className="flex items-center gap-2 mb-3 text-xs uppercase tracking-wider font-semibold text-gray-500">
-        <CalendarRange size={13} /> Filtro por fecha de caja origen
+        <CalendarRange size={13} /> {filterLabel || 'Filtro por fecha de caja origen'}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>

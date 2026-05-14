@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { useAccountsPayable, useAccountPayableById, useRegisterAPPayment, useUpdateNumeroUnico } from '../hooks/useAccountsPayable';
 import { usePaymentAgreements, useCreatePaymentAgreement, useRegisterAgreementPayment, useCancelPaymentAgreement } from '../hooks/usePaymentAgreements';
 import { Modal } from '../../../shared/components/Modal';
 import {
   FileText, DollarSign, AlertCircle, Eye, Clock, CheckCircle, Hash, Save,
-  ChevronLeft, ChevronRight, CalendarDays, X, Plus, Trash2, Ban, ClipboardList, Wand2, Search,
+  ChevronLeft, ChevronRight, CalendarDays, X, Plus, Trash2, Ban, ClipboardList, Wand2, Search, Wrench,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { AccountPayable, AccountPayableInstallment, AccountPayablePayment, PaymentAgreement, AgreementInstallment, AgreementPayment } from '../../../shared/types';
@@ -372,6 +372,13 @@ export function AccountsPayablePage() {
     <div>
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><FileText size={24} /> Cuentas por Pagar</h1>
+        <Link
+          to="/cash-register/migrate?tab=ap"
+          className="inline-flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-sm font-medium hover:bg-amber-100"
+          title="Alinear fecha de las CxP a la fecha de su compra"
+        >
+          <Wrench size={14} /> Migrar fechas
+        </Link>
       </div>
 
       {/* Tabs */}

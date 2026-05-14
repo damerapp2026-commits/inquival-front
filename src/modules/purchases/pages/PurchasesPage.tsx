@@ -4,7 +4,8 @@ import { usePurchases } from '../hooks/usePurchases';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
-import { Plus, ShoppingCart, Eye, Search, Wrench } from 'lucide-react';
+import { SearchableSelect } from '../../../shared/components/SearchableSelect';
+import { Plus, ShoppingCart, Eye, Wrench } from 'lucide-react';
 import type { Purchase } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
 
@@ -12,7 +13,6 @@ export function PurchasesPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [laboratoryFilter, setLaboratoryFilter] = useState('');
-  const [labSearch, setLabSearch] = useState('');
 
   const { data, isLoading } = usePurchases({ page, limit: 20, laboratoryId: laboratoryFilter || undefined });
   const { data: laboratories } = useLaboratories();
@@ -21,12 +21,12 @@ export function PurchasesPage() {
   const purchases = data?.data || [];
   const total = data?.total || 0;
 
-  const filteredLabs = useMemo(() => {
-    const term = labSearch.trim().toLowerCase();
-    const active = labList.filter((l: any) => l.isActive !== false);
-    if (!term) return active;
-    return active.filter((l: any) => l.name?.toLowerCase().includes(term));
-  }, [labList, labSearch]);
+  const labOptions = useMemo(
+    () => labList
+      .filter((l: any) => l.isActive !== false)
+      .map((l: any) => ({ value: l.id, label: l.name })),
+    [labList],
+  );
 
   const columns = [
     { key: 'date', header: 'Fecha', render: (item: Purchase) => formatDateEs(item.date) },
@@ -73,24 +73,16 @@ export function PurchasesPage() {
         </div>
       </div>
       <div className="mb-4 flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1 max-w-md">
-          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Buscar laboratorio..."
-            value={labSearch}
-            onChange={(e) => setLabSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+        <div className="flex-1 max-w-md">
+          <SearchableSelect
+            options={labOptions}
+            value={laboratoryFilter}
+            onChange={(v) => { setLaboratoryFilter(v); setPage(1); }}
+            placeholder="Buscar laboratorio... (todos)"
+            minChars={1}
+            className="py-2"
           />
         </div>
-        <select
-          value={laboratoryFilter}
-          onChange={(e) => { setLaboratoryFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 border rounded-lg bg-white"
-        >
-          <option value="">Todos los laboratorios</option>
-          {filteredLabs.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
       </div>
       <DataTable columns={columns} data={purchases} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />

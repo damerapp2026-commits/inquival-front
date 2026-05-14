@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { accountPayableService } from '../services/accountPayableService';
+import { accountPayableService, MigrateMisdatedAccountPayablesResult } from '../services/accountPayableService';
 import toast from 'react-hot-toast';
 
 export function useAccountsPayable(params?: any) {
@@ -20,6 +20,21 @@ export function useRegisterAPPayment() {
     mutationFn: ({ apId, data }: { apId: string; data: { amount: number; codigoTransferencia?: string; notes?: string } }) => accountPayableService.registerPayment(apId, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['accounts-payable'] }); qc.invalidateQueries({ queryKey: ['accounts-payable-alerts'] }); toast.success('Pago registrado'); },
     onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'Error'),
+  });
+}
+
+export function useMigrateMisdatedAP() {
+  const qc = useQueryClient();
+  return useMutation<MigrateMisdatedAccountPayablesResult, any, { dryRun: boolean; from?: string; to?: string }>({
+    mutationFn: (data) => accountPayableService.migrateMisdated(data),
+    onSuccess: (result) => {
+      if (!result.dryRun) {
+        qc.invalidateQueries({ queryKey: ['accounts-payable'] });
+        qc.invalidateQueries({ queryKey: ['accounts-payable-alerts'] });
+        toast.success(`Migración completada: ${result.migrated} cuenta(s) actualizadas`);
+      }
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error en la migración'),
   });
 }
 
