@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
-import { Receipt, X, FileText, XCircle, Loader2 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Receipt, X, FileText, XCircle, Loader2, MessageCircle, Download } from 'lucide-react';
 import { useSaleById, useCancelSale, useUpdateVoucher } from '../hooks/useSales';
+import { saleService } from '../services/saleService';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useClients } from '../../clients/hooks/useClients';
@@ -37,6 +39,7 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [voucherPreview, setVoucherPreview] = useState<VoucherSnapshot | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   const products: Product[] = Array.isArray(productsData) ? productsData : (productsData?.data || []);
   const clients: Client[] = Array.isArray(clientsData) ? clientsData : (clientsData?.data || []);
@@ -118,6 +121,37 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
   const voucherLabel = sale.voucherType === 'BOLETA' ? 'Boleta' : sale.voucherType === 'FACTURA' ? 'Factura' : 'Nota de venta';
   const client = sale.clientId ? clientMap.get(sale.clientId) : undefined;
   const sellerName = getSellerName(sale);
+
+  const handleShareWhatsapp = async () => {
+    if (!sale) return;
+    setSharing(true);
+    try {
+      const res = await saleService.getVoucherPdf(sale.id);
+      if (res.whatsappUrl) {
+        window.open(res.whatsappUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        await navigator.clipboard.writeText(res.pdfUrl).catch(() => undefined);
+        toast(`El cliente no tiene teléfono registrado. Link copiado al portapapeles.`, { icon: '📋', duration: 4000 });
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'No se pudo generar el PDF');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!sale) return;
+    setSharing(true);
+    try {
+      const res = await saleService.getVoucherPdf(sale.id);
+      window.open(res.pdfUrl, '_blank', 'noopener,noreferrer');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'No se pudo generar el PDF');
+    } finally {
+      setSharing(false);
+    }
+  };
 
   const openVoucherPreview = () => {
     setVoucherPreview({
@@ -334,7 +368,30 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
           </div>
 
           {/* Footer */}
-          <div className="flex items-center gap-3 px-6 py-4 border-t border-gray-100 flex-shrink-0">
+          <div className="flex flex-col gap-2 px-6 py-4 border-t border-gray-100 flex-shrink-0">
+            {!sale.isCancelled && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleShareWhatsapp}
+                  disabled={sharing}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition-colors text-sm font-semibold disabled:opacity-50"
+                >
+                  {sharing ? <Loader2 size={16} className="animate-spin" /> : <MessageCircle size={16} />}
+                  {sharing ? 'Generando...' : 'Compartir por WhatsApp'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={sharing}
+                  title="Descargar PDF"
+                  className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50"
+                >
+                  <Download size={16} />
+                </button>
+              </div>
+            )}
+            <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={openVoucherPreview}
@@ -360,6 +417,7 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
                 <XCircle size={16} /> Anular
               </button>
             )}
+            </div>
           </div>
         </div>
       </div>

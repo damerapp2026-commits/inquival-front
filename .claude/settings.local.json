@@ -98,7 +98,16 @@
       "Bash(git -C /home/ricardo/dev/Damer/inquival-front diff src/shared/types/index.ts)",
       "Bash(git -C /home/ricardo/dev/Damer/inquival-front diff .claude/settings.local.json)",
       "Bash(git *)",
-      "Bash(npx ts-node *)"
+      "Bash(npx ts-node *)",
+      "Bash(xargs basename -a)",
+      "Bash(bash *)",
+      "Bash(echo \"exit-back=$?\")",
+      "Bash(echo \"exit-front=$?\")",
+      "Bash(echo \"exit=$?\")",
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "Bash(echo \"frontend exit: $?\")",
+      "Bash(echo \"backend exit: $?\")"
     ]
   }
 }
