@@ -17,8 +17,15 @@ export function useAPAlerts(days?: number) {
 export function useRegisterAPPayment() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ apId, data }: { apId: string; data: { amount: number; codigoTransferencia?: string; notes?: string } }) => accountPayableService.registerPayment(apId, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['accounts-payable'] }); qc.invalidateQueries({ queryKey: ['accounts-payable-alerts'] }); toast.success('Pago registrado'); },
+    mutationFn: ({ apId, data }: { apId: string; data: { amount: number; codigoTransferencia?: string; notes?: string; paymentDate?: string; paymentMethodId?: string } }) => accountPayableService.registerPayment(apId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['accounts-payable'] });
+      qc.invalidateQueries({ queryKey: ['accounts-payable-alerts'] });
+      qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      qc.invalidateQueries({ queryKey: ['cash-register'] });
+      toast.success('Pago registrado');
+    },
     onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'Error'),
   });
 }

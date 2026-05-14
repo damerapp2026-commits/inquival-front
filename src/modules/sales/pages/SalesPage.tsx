@@ -433,7 +433,20 @@ export function SalesPage() {
 
   const periodBoletas = periodSales.filter((s) => s.voucherType === 'BOLETA');
   const periodFacturas = periodSales.filter((s) => s.voucherType === 'FACTURA');
-  const sumTotal = (arr: Sale[]) => arr.reduce((s, sale) => s + sale.total, 0);
+  // Cuando se filtra por un método de pago concreto, el "total" relevante es
+  // sólo la porción de la venta cobrada con ese método (no el total de la
+  // venta). Para crédito o sin filtro, vale el total completo.
+  const isMethodPortionFilter = isPaymentFilterActive && paymentMethodFilter !== '__CREDIT__';
+  const portionInFilter = (sale: Sale): number => {
+    if (!isMethodPortionFilter) return sale.total;
+    if (sale.isCredit) return 0;
+    return Math.round(
+      (sale.payments || [])
+        .filter((p) => p.paymentMethodId === paymentMethodFilter)
+        .reduce((s, p) => s + (p.amount || 0), 0) * 100,
+    ) / 100;
+  };
+  const sumTotal = (arr: Sale[]) => Math.round(arr.reduce((s, sale) => s + portionInFilter(sale), 0) * 100) / 100;
   const sumBase = (arr: Sale[]) => Math.round(arr.reduce((s, sale) => s + getSaleBaseAmount(sale), 0) * 100) / 100;
   const sumIgv = (arr: Sale[]) => Math.round(arr.reduce((s, sale) => s + getSaleIgv(sale), 0) * 100) / 100;
 
@@ -517,7 +530,17 @@ export function SalesPage() {
       </button>
     ) : <span className="text-gray-400">Sin cliente</span> },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
-    { key: 'total', header: 'Total', render: (item: Sale) => item.isCancelled ? <span className="line-through text-gray-400">S/ {item.total.toFixed(2)}</span> : `S/ ${item.total.toFixed(2)}` },
+    { key: 'total', header: isMethodPortionFilter ? 'Cobrado' : 'Total', render: (item: Sale) => {
+      if (item.isCancelled) return <span className="line-through text-gray-400">S/ {item.total.toFixed(2)}</span>;
+      const portion = portionInFilter(item);
+      const isPartial = isMethodPortionFilter && Math.abs(portion - item.total) > 0.005;
+      return isPartial ? (
+        <div className="leading-tight">
+          <div className="font-medium">S/ {portion.toFixed(2)}</div>
+          <div className="text-[10px] text-gray-400">de S/ {item.total.toFixed(2)}</div>
+        </div>
+      ) : `S/ ${item.total.toFixed(2)}`;
+    }},
     { key: 'voucherType', header: 'Comprobante', render: (item: Sale) => {
       if (item.voucherType === 'BOLETA') return <span className="text-primary-600 font-medium">Boleta</span>;
       if (item.voucherType === 'FACTURA') return <span className="text-blue-600 font-medium">Factura</span>;
@@ -560,7 +583,17 @@ export function SalesPage() {
       const igv = getSaleIgv(item);
       return item.isCancelled ? <span className="line-through text-gray-400">S/ {igv.toFixed(2)}</span> : igv > 0 ? <span className="text-orange-600">S/ {igv.toFixed(2)}</span> : <span className="text-gray-400">S/ 0.00</span>;
     }},
-    { key: 'total', header: 'Total', render: (item: Sale) => item.isCancelled ? <span className="line-through text-gray-400">S/ {item.total.toFixed(2)}</span> : <span className="font-medium">S/ {item.total.toFixed(2)}</span> },
+    { key: 'total', header: isMethodPortionFilter ? 'Cobrado' : 'Total', render: (item: Sale) => {
+      if (item.isCancelled) return <span className="line-through text-gray-400">S/ {item.total.toFixed(2)}</span>;
+      const portion = portionInFilter(item);
+      const isPartial = isMethodPortionFilter && Math.abs(portion - item.total) > 0.005;
+      return isPartial ? (
+        <div className="leading-tight">
+          <div className="font-medium">S/ {portion.toFixed(2)}</div>
+          <div className="text-[10px] text-gray-400">de S/ {item.total.toFixed(2)}</div>
+        </div>
+      ) : <span className="font-medium">S/ {item.total.toFixed(2)}</span>;
+    }},
     { key: 'payment', header: 'Pago', render: (item: Sale) => item.isCancelled ? <span className="text-red-600 font-medium">Anulada</span> : getPaymentLabel(item) },
     { key: 'actions', header: '', render: (item: Sale) => (
       <div className="flex items-center gap-2">
@@ -703,12 +736,27 @@ export function SalesPage() {
       </div>
 
       {/* Total del período */}
-      {activeTab === 'sales' && (
-        <div className="mb-4 bg-primary-50 border border-primary-200 rounded-lg px-4 py-2 flex items-center justify-between">
-          <span className="text-sm text-primary-700">{total} venta(s) en el período</span>
-          <span className="text-lg font-bold text-primary-700">Total: S/ {totalAmount.toFixed(2)}</span>
-        </div>
-      )}
+      {activeTab === 'sales' && (() => {
+        const filterMethodName = isMethodPortionFilter
+          ? (paymentMethods.find((m) => m.id === paymentMethodFilter)?.name || '')
+          : '';
+        const fullPeriodTotal = periodSales.reduce((s, sale) => s + sale.total, 0);
+        const showSplit = isMethodPortionFilter && Math.abs(fullPeriodTotal - totalAmount) > 0.005;
+        return (
+          <div className="mb-4 bg-primary-50 border border-primary-200 rounded-lg px-4 py-2 flex items-center justify-between">
+            <span className="text-sm text-primary-700">{total} venta(s) en el período</span>
+            <span className="text-lg font-bold text-primary-700">
+              {filterMethodName ? `Cobrado en ${filterMethodName}: ` : 'Total: '}
+              S/ {totalAmount.toFixed(2)}
+              {showSplit && (
+                <span className="ml-2 text-xs font-medium text-primary-600/70">
+                  (de S/ {fullPeriodTotal.toFixed(2)} en ventas)
+                </span>
+              )}
+            </span>
+          </div>
+        );
+      })()}
       {activeTab === 'boletas' && (
         <div className="mb-4 bg-primary-50 border border-primary-200 rounded-lg px-4 py-2 flex items-center justify-between">
           <span className="text-sm text-primary-700">{boletasTotal} boleta(s) en el período</span>

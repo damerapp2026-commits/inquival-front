@@ -69,10 +69,15 @@ export function StockPage() {
     acc[l.productId].push(l);
     return acc;
   }, {});
+  const companyList = Array.isArray(companies) ? companies : [];
+
   // Bulk adjustment modal state
   const [adjCompanyId, setAdjCompanyId] = useState('');
+  const [adjAllWarehouses, setAdjAllWarehouses] = useState(true);
   const [adjSearch, setAdjSearch] = useState('');
   const debouncedAdjSearch = useDebounce(adjSearch);
+  // Selection keyed by `${productId}__${companyId}` so the same product can be
+  // adjusted independently in several warehouses when the "Todos" view is active.
   const [adjSelected, setAdjSelected] = useState<Record<string, boolean>>({});
   const [adjNewQty, setAdjNewQty] = useState<Record<string, string>>({});
   const [adjReason, setAdjReason] = useState<string>('Conteo físico');
@@ -80,14 +85,20 @@ export function StockPage() {
   const [adjProgress, setAdjProgress] = useState({ done: 0, total: 0, errors: 0 });
   const [adjFlashProductId, setAdjFlashProductId] = useState<string | null>(null);
 
+  const makeRowKey = (productId: string, companyId: string) => `${productId}__${companyId}`;
+  const parseRowKey = (key: string): { productId: string; companyId: string } => {
+    const idx = key.indexOf('__');
+    return { productId: key.slice(0, idx), companyId: key.slice(idx + 2) };
+  };
+
   // Fetch every product (no ingredient filter) and every stock row for the chosen warehouse
-  // when the bulk modal is open. Both queries are gated on showAdjustment so we don't pay
-  // the cost while the modal is closed.
+  // when the bulk modal is open. The per-warehouse query is gated on showAdjustment AND a
+  // specific warehouse being selected (i.e. not in "Todos" mode).
   const { data: adjProductsData } = useProducts(showAdjustment ? { limit: 10000 } : undefined);
   const { data: adjStockResponse } = useQuery({
     queryKey: ['stock', adjCompanyId, 'bulk-adjust'],
     queryFn: () => stockService.getByCompany(adjCompanyId, { limit: 9999 }),
-    enabled: !!adjCompanyId && showAdjustment,
+    enabled: !!adjCompanyId && !adjAllWarehouses && showAdjustment,
   });
 
   const adjAllProducts: Product[] = useMemo(() => {
@@ -104,37 +115,85 @@ export function StockPage() {
     return map;
   }, [adjStockResponse]);
 
-  const adjVisibleProducts = useMemo(() => {
+  type AdjRow = { key: string; productId: string; productName: string; productUnit?: string; companyId: string; companyName: string; currentQty: number };
+
+  const adjRows: AdjRow[] = useMemo(() => {
+    if (adjAllWarehouses) {
+      const summary = Array.isArray(allWarehousesSummary) ? allWarehousesSummary : [];
+      const productsById = new Map<string, Product>(adjAllProducts.map(p => [p.id, p]));
+      const companiesById = new Map<string, Company>(companyList.map((c: Company) => [c.id, c]));
+      const rows: AdjRow[] = [];
+      summary.forEach(s => {
+        const p = productsById.get(s.productId);
+        if (!p) return;
+        (s.byCompany || []).forEach(b => {
+          if (!(b.quantity > 0)) return;
+          const c = companiesById.get(b.companyId);
+          if (!c) return;
+          rows.push({
+            key: makeRowKey(p.id, b.companyId),
+            productId: p.id,
+            productName: p.name,
+            productUnit: p.unit,
+            companyId: b.companyId,
+            companyName: c.name,
+            currentQty: b.quantity,
+          });
+        });
+      });
+      return rows.sort((a, b) => a.productName.localeCompare(b.productName) || a.companyName.localeCompare(b.companyName));
+    }
+    const c = companyList.find((c: Company) => c.id === adjCompanyId);
+    return adjAllProducts.map(p => ({
+      key: makeRowKey(p.id, adjCompanyId),
+      productId: p.id,
+      productName: p.name,
+      productUnit: p.unit,
+      companyId: adjCompanyId,
+      companyName: c?.name || '',
+      currentQty: adjStockByProductId[p.id] ?? 0,
+    }));
+  }, [adjAllWarehouses, allWarehousesSummary, adjAllProducts, companyList, adjCompanyId, adjStockByProductId]);
+
+  const adjRowsByKey = useMemo(() => {
+    const map = new Map<string, AdjRow>();
+    adjRows.forEach(r => map.set(r.key, r));
+    return map;
+  }, [adjRows]);
+
+  const adjVisibleRows = useMemo(() => {
     const q = debouncedAdjSearch.trim().toLowerCase();
-    if (!q) return adjAllProducts;
-    return adjAllProducts.filter(p => p.name.toLowerCase().includes(q));
-  }, [adjAllProducts, debouncedAdjSearch]);
+    if (!q) return adjRows;
+    return adjRows.filter(r => r.productName.toLowerCase().includes(q));
+  }, [adjRows, debouncedAdjSearch]);
 
   const adjSelectedCount = Object.values(adjSelected).filter(Boolean).length;
   const adjPendingChanges = useMemo(() => {
     return Object.entries(adjSelected)
       .filter(([, sel]) => sel)
-      .map(([pid]) => {
-        const current = adjStockByProductId[pid] ?? 0;
-        const raw = adjNewQty[pid];
+      .map(([key]) => {
+        const row = adjRowsByKey.get(key);
+        const { productId, companyId } = parseRowKey(key);
+        const current = row?.currentQty ?? 0;
+        const raw = adjNewQty[key];
         const parsed = raw === undefined || raw === '' ? current : Number(raw);
         const next = isNaN(parsed) ? current : parsed;
         const delta = Math.round((next - current) * 100) / 100;
-        return { productId: pid, current, next, delta };
+        return { key, productId, companyId, current, next, delta };
       })
-      .filter(c => Math.abs(c.delta) > 0.0001 && c.next >= 0);
-  }, [adjSelected, adjNewQty, adjStockByProductId]);
+      .filter(c => Math.abs(c.delta) > 0.0001 && c.next >= 0 && !!c.companyId);
+  }, [adjSelected, adjNewQty, adjRowsByKey]);
   const adjHasInvalid = useMemo(() => {
     return Object.entries(adjSelected)
       .filter(([, sel]) => sel)
-      .some(([pid]) => {
-        const raw = adjNewQty[pid];
+      .some(([key]) => {
+        const raw = adjNewQty[key];
         if (raw === undefined || raw === '') return false;
         const parsed = Number(raw);
         return isNaN(parsed) || parsed < 0;
       });
   }, [adjSelected, adjNewQty]);
-  const adjCanApply = !adjApplying && !!adjCompanyId && !!adjReason && adjPendingChanges.length > 0 && !adjHasInvalid;
+  const adjCanApply = !adjApplying && (adjAllWarehouses || !!adjCompanyId) && !!adjReason && adjPendingChanges.length > 0 && !adjHasInvalid;
 
   // Bulk import state
   const [showImportPreview, setShowImportPreview] = useState(false);
@@ -145,7 +204,6 @@ export function StockPage() {
   const importFileRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
-  const companyList = Array.isArray(companies) ? companies : [];
   const products = productsData?.data || [];
   const searchActive = !!debouncedSearch.trim();
   const filteredProductIds = useMemo(() => {
@@ -203,10 +261,19 @@ export function StockPage() {
 
   const openTransfer = () => { setTransferForm({ fromCompanyId: companyId || '', toCompanyId: '', items: [{ productId: '', quantity: 0, lotAllocations: [] }] }); setShowTransfer(true); };
   const openAdjustment = (preset?: { productId?: string; companyId?: string }) => {
-    const targetCompanyId = preset?.companyId || companyId || (companyList[0]?.id || '');
-    setAdjCompanyId(targetCompanyId);
+    // If a specific warehouse is supplied (e.g. editing a past adjustment) we land on that
+    // warehouse tab; otherwise default to the cross-warehouse "Todos" view so a product that
+    // only exists in another warehouse isn't hidden behind a misleading "stock 0".
+    if (preset?.companyId) {
+      setAdjAllWarehouses(false);
+      setAdjCompanyId(preset.companyId);
+      setAdjSelected(preset.productId ? { [makeRowKey(preset.productId, preset.companyId)]: true } : {});
+    } else {
+      setAdjAllWarehouses(true);
+      setAdjCompanyId('');
+      setAdjSelected({});
+    }
     setAdjSearch('');
-    setAdjSelected(preset?.productId ? { [preset.productId]: true } : {});
     setAdjNewQty({});
     setAdjReason('Conteo físico');
     setAdjProgress({ done: 0, total: 0, errors: 0 });
@@ -221,14 +288,14 @@ export function StockPage() {
     setAdjSearch('');
     setAdjFlashProductId(null);
   };
-  const toggleAdjProduct = (productId: string) => {
+  const toggleAdjRow = (key: string) => {
     setAdjSelected(prev => {
       const next = { ...prev };
-      const wasSelected = !!next[productId];
-      if (wasSelected) delete next[productId]; else next[productId] = true;
+      const wasSelected = !!next[key];
+      if (wasSelected) delete next[key]; else next[key] = true;
       // Toggling off discards the typed value so re-toggling shows the live current stock
       if (wasSelected) {
-        setAdjNewQty(qty => { const n = { ...qty }; delete n[productId]; return n; });
+        setAdjNewQty(qty => { const n = { ...qty }; delete n[key]; return n; });
       }
       return next;
     });
@@ -236,7 +303,7 @@ export function StockPage() {
   const selectAllVisibleAdj = () => {
     setAdjSelected(prev => {
       const next = { ...prev };
-      adjVisibleProducts.forEach(p => { next[p.id] = true; });
+      adjVisibleRows.forEach(r => { next[r.key] = true; });
       return next;
     });
   };
@@ -320,7 +387,7 @@ export function StockPage() {
       try {
         await stockAdjustmentService.create({
           productId: change.productId,
-          companyId: adjCompanyId,
+          companyId: change.companyId,
           type: change.delta > 0 ? 'INCREASE' : 'DECREASE',
           quantity: Math.abs(change.delta),
           reason: adjReason,
@@ -334,6 +401,7 @@ export function StockPage() {
     queryClient.invalidateQueries({ queryKey: ['stock'] });
     queryClient.invalidateQueries({ queryKey: ['stock-adjustments'] });
     queryClient.invalidateQueries({ queryKey: ['stock-alerts'] });
+    queryClient.invalidateQueries({ queryKey: ['stock-by-product-summary'] });
     setAdjApplying(false);
     if (errors === 0) {
       toast.success(`${done} ajuste${done !== 1 ? 's' : ''} aplicado${done !== 1 ? 's' : ''}`);
@@ -1095,13 +1163,21 @@ export function StockPage() {
 
           {companyList.length > 1 && (
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => { setAdjAllWarehouses(true); setAdjCompanyId(''); setAdjSelected({}); setAdjNewQty({}); }}
+                disabled={adjApplying}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${adjAllWarehouses ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'} disabled:opacity-50`}
+              >
+                Todos
+              </button>
               {companyList.map((c: Company) => (
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => { setAdjCompanyId(c.id); setAdjSelected({}); setAdjNewQty({}); }}
+                  onClick={() => { setAdjAllWarehouses(false); setAdjCompanyId(c.id); setAdjSelected({}); setAdjNewQty({}); }}
                   disabled={adjApplying}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${adjCompanyId === c.id ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'} disabled:opacity-50`}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${!adjAllWarehouses && adjCompanyId === c.id ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'} disabled:opacity-50`}
                 >
                   {c.name}
                 </button>
@@ -1141,43 +1217,51 @@ export function StockPage() {
                   <tr>
                     <th className="w-10 px-3 py-2"></th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
+                    {adjAllWarehouses && (
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Almacén</th>
+                    )}
                     <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Stock actual</th>
                     <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Stock final</th>
                     <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider pr-4">Resultado</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {adjVisibleProducts.length === 0 ? (
+                  {adjVisibleRows.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="text-center py-8 text-gray-400">Sin productos</td>
+                      <td colSpan={adjAllWarehouses ? 6 : 5} className="text-center py-8 text-gray-400">
+                        {adjAllWarehouses ? 'Sin productos con stock en ningún almacén' : 'Sin productos'}
+                      </td>
                     </tr>
-                  ) : adjVisibleProducts.map(p => {
-                    const current = adjStockByProductId[p.id] ?? 0;
-                    const isSelected = !!adjSelected[p.id];
-                    const raw = adjNewQty[p.id];
+                  ) : adjVisibleRows.map(row => {
+                    const current = row.currentQty;
+                    const isSelected = !!adjSelected[row.key];
+                    const raw = adjNewQty[row.key];
                     const parsed = raw === undefined || raw === '' ? current : Number(raw);
                     const isInvalid = isSelected && raw !== undefined && raw !== '' && (isNaN(parsed) || parsed < 0);
                     const next = isInvalid ? current : (isNaN(parsed) ? current : parsed);
                     const delta = Math.round((next - current) * 100) / 100;
-                    const flash = adjFlashProductId === p.id;
+                    const flash = adjFlashProductId === row.productId;
                     return (
                       <tr
-                        key={p.id}
+                        key={row.key}
                         className={`${isSelected ? 'bg-orange-50/60' : 'hover:bg-gray-50'} ${flash ? 'ring-2 ring-inset ring-orange-300' : ''} transition-colors`}
                       >
                         <td className="px-3 py-2 align-middle">
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => toggleAdjProduct(p.id)}
+                            onChange={() => toggleAdjRow(row.key)}
                             disabled={adjApplying}
                             className="w-4 h-4 accent-orange-600 cursor-pointer disabled:cursor-not-allowed"
                           />
                         </td>
                         <td className="px-3 py-2">
-                          <div className="font-medium text-gray-800">{p.name}</div>
-                          {p.unit && <div className="text-[11px] text-gray-400">{p.unit}</div>}
+                          <div className="font-medium text-gray-800">{row.productName}</div>
+                          {row.productUnit && <div className="text-[11px] text-gray-400">{row.productUnit}</div>}
                         </td>
+                        {adjAllWarehouses && (
+                          <td className="px-3 py-2 text-gray-600 text-xs">{row.companyName}</td>
+                        )}
                         <td className="px-3 py-2 text-right text-gray-700">{current}</td>
                         <td className="px-3 py-2 text-right">
                           {isSelected ? (
@@ -1186,7 +1270,7 @@ export function StockPage() {
                               min="0"
                               step="0.01"
                               value={raw ?? String(current)}
-                              onChange={(e) => setAdjNewQty(prev => ({ ...prev, [p.id]: e.target.value }))}
+                              onChange={(e) => setAdjNewQty(prev => ({ ...prev, [row.key]: e.target.value }))}
                               disabled={adjApplying}
                               className={`w-24 px-2 py-1 border rounded text-right text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${isInvalid ? 'border-red-400 bg-red-50' : 'border-gray-300'} disabled:opacity-50`}
                             />

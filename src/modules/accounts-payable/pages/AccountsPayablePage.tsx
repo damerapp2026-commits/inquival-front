@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useAccountsPayable, useAccountPayableById, useRegisterAPPayment, useUpdateNumeroUnico } from '../hooks/useAccountsPayable';
+import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { usePaymentAgreements, useCreatePaymentAgreement, useRegisterAgreementPayment, useCancelPaymentAgreement } from '../hooks/usePaymentAgreements';
 import { Modal } from '../../../shared/components/Modal';
 import {
@@ -106,7 +107,16 @@ export function AccountsPayablePage() {
   const [showPayModal, setShowPayModal] = useState(false);
   const [selectedAP, setSelectedAP] = useState<AccountPayable | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
-  const [payForm, setPayForm] = useState({ amount: 0, codigoTransferencia: '', notes: '' });
+  const todayLocal = useMemo(
+    () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' }),
+    [],
+  );
+  const [payForm, setPayForm] = useState({ amount: 0, codigoTransferencia: '', notes: '', paymentDate: todayLocal, paymentMethodId: '' });
+  const { data: paymentMethodsData } = usePaymentMethods();
+  const paymentMethods: { id: string; name: string; isActive?: boolean }[] = useMemo(
+    () => (Array.isArray(paymentMethodsData) ? paymentMethodsData : []).filter((m: any) => m.isActive !== false),
+    [paymentMethodsData],
+  );
 
   // ── Agreements state ──
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -255,7 +265,7 @@ export function AccountsPayablePage() {
   const openAPPayment = (ap: AccountPayable) => {
     setSelectedAP(ap);
     const next = getNextInstallment(ap);
-    setPayForm({ amount: next ? next.amount : 0, codigoTransferencia: '', notes: '' });
+    setPayForm({ amount: next ? next.amount : 0, codigoTransferencia: '', notes: '', paymentDate: todayLocal, paymentMethodId: '' });
     setShowPayModal(true);
   };
   const nextInstallment = selectedAP ? getNextInstallment(selectedAP) : null;
@@ -263,7 +273,16 @@ export function AccountsPayablePage() {
   const handleAPPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (exceedsPending) return;
-    await registerAPPayment.mutateAsync({ apId: selectedAP!.id, data: payForm });
+    await registerAPPayment.mutateAsync({
+      apId: selectedAP!.id,
+      data: {
+        amount: payForm.amount,
+        codigoTransferencia: payForm.codigoTransferencia,
+        notes: payForm.notes,
+        paymentDate: payForm.paymentDate || undefined,
+        paymentMethodId: payForm.paymentMethodId || undefined,
+      },
+    });
     setShowPayModal(false);
   };
 
@@ -855,6 +874,42 @@ export function AccountsPayablePage() {
               <Hash size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input type="text" value={payForm.codigoTransferencia} onChange={e=>setPayForm({...payForm,codigoTransferencia:e.target.value})} placeholder="Ej: 00123456789"
                 className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm font-mono outline-none focus:border-primary-400 transition-colors" required />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                <CalendarDays size={13} /> Fecha del pago
+              </label>
+              <input
+                type="date"
+                value={payForm.paymentDate}
+                max={todayLocal}
+                onChange={(e) => setPayForm({ ...payForm, paymentDate: e.target.value })}
+                className={`w-full px-3.5 py-2.5 border rounded-xl text-sm outline-none transition-colors ${
+                  payForm.paymentDate && payForm.paymentDate !== todayLocal
+                    ? 'border-amber-300 bg-amber-50/40 focus:border-amber-400'
+                    : 'border-gray-200 focus:border-primary-400'
+                }`}
+              />
+              {payForm.paymentDate && payForm.paymentDate !== todayLocal && (
+                <p className="mt-1 text-[11px] text-amber-700">Pago retro-fechado · va a la caja de ese día</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Método de pago <span className="text-gray-400 font-normal text-xs">(si efectivo, afecta caja)</span>
+              </label>
+              <select
+                value={payForm.paymentMethodId}
+                onChange={(e) => setPayForm({ ...payForm, paymentMethodId: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:border-primary-400 transition-colors bg-white"
+              >
+                <option value="">— Sin afectar caja —</option>
+                {paymentMethods.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
             </div>
           </div>
           <div>
