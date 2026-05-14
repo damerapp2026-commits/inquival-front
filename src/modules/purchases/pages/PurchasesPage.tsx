@@ -4,7 +4,7 @@ import { usePurchases } from '../hooks/usePurchases';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
-import { Plus, ShoppingCart, Eye, Search } from 'lucide-react';
+import { Plus, ShoppingCart, Eye, Search, Wrench } from 'lucide-react';
 import type { Purchase } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
 
@@ -61,7 +61,16 @@ export function PurchasesPage() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><ShoppingCart size={24} /> Compras / Ingresos</h1>
-        <Link to="/purchases/new" className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus size={18} /> Nueva Compra</Link>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/cash-register/migrate?tab=purchases"
+            className="inline-flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-sm font-medium hover:bg-amber-100"
+            title="Reasignar compras a la caja correcta según su fecha"
+          >
+            <Wrench size={14} /> Migrar fechas
+          </Link>
+          <Link to="/purchases/new" className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus size={18} /> Nueva Compra</Link>
+        </div>
       </div>
       <div className="mb-4 flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1 max-w-md">

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMigrateMisplacedSales, useMigrateMisplacedPurchases } from '../hooks/useCashRegister';
 import type {
   MigrateMisplacedSalesResult,
@@ -23,7 +23,17 @@ function formatDate(d: string) {
 }
 
 export function MigrateMisplacedPage() {
-  const [tab, setTab] = useState<Tab>('sales');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab: Tab = searchParams.get('tab') === 'purchases' ? 'purchases' : 'sales';
+  const [tab, setTabState] = useState<Tab>(initialTab);
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (t === 'sales') next.delete('tab'); else next.set('tab', t);
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-6">
