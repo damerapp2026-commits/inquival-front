@@ -279,12 +279,15 @@ export function PurchaseFormBody({
     const { count, intervalDays, firstDaysFromPurchase } = installmentGen;
     if (count < 1) { toast.error('Ingresa al menos 1 cuota'); return; }
     if (!creditTotal || creditTotal <= 0) { toast.error('Primero ingresa el monto total de la compra'); return; }
-    if (!form.purchaseDate) { toast.error('Ingresa la fecha de la compra primero'); return; }
+    // Las cuotas se cuentan desde la fecha de EMISIÓN de la factura (fecha legal del
+    // crédito), con fallback a la fecha de recepción si no se indicó.
+    const refDate = form.issueDate || form.purchaseDate;
+    if (!refDate) { toast.error('Ingresa la fecha de emisión o recepción primero'); return; }
 
     const base = Math.round((creditTotal / count) * 100) / 100;
     const installments: { amount: number; dueDate: string }[] = [];
     let accumulated = 0;
-    const baseDate = new Date(form.purchaseDate + 'T00:00:00');
+    const baseDate = new Date(refDate + 'T00:00:00');
 
     for (let i = 0; i < count; i++) {
       const daysOffset = firstDaysFromPurchase + i * intervalDays;

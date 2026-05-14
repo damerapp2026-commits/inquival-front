@@ -16,6 +16,8 @@ const CHART_COLORS = ['#16a34a', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#e
 const SUPPLIER_COLORS = ['#15803d', '#0ea5e9', '#f43f5e', '#84cc16', '#fb923c'];
 const SELLER_COLORS = ['#16a34a', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1'];
 
+const symFor = (ap?: { currency?: 'PEN' | 'USD' } | null): string => (ap?.currency === 'USD' ? '$' : 'S/');
+
 function toInputDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
@@ -597,7 +599,7 @@ export function DashboardPage() {
                         Vencido: {ap.dueDate ? new Date(ap.dueDate).toLocaleDateString('es-PE') : ap.installments?.find(i => i.status === 'PENDING')?.dueDate ? new Date(ap.installments.find(i => i.status === 'PENDING')!.dueDate).toLocaleDateString('es-PE') : '-'}
                       </div>
                     </div>
-                    <span className="font-bold text-red-600">S/ {ap.pendingAmount.toFixed(2)}</span>
+                    <span className="font-bold text-red-600">{symFor(ap)} {ap.pendingAmount.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
@@ -618,7 +620,7 @@ export function DashboardPage() {
                         Vence: {ap.dueDate ? new Date(ap.dueDate).toLocaleDateString('es-PE') : ap.installments?.find(i => i.status === 'PENDING')?.dueDate ? new Date(ap.installments.find(i => i.status === 'PENDING')!.dueDate).toLocaleDateString('es-PE') : '-'}
                       </div>
                     </div>
-                    <span className="font-bold text-yellow-700">S/ {ap.pendingAmount.toFixed(2)}</span>
+                    <span className="font-bold text-yellow-700">{symFor(ap)} {ap.pendingAmount.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
