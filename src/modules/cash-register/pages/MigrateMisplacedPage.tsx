@@ -1,12 +1,21 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useMigrateMisplacedSales, useMigrateMisplacedPurchases } from '../hooks/useCashRegister';
+import {
+  useMigrateMisplacedSales,
+  useMigrateMisplacedPurchases,
+  useMigrateMisplacedCreditPayments,
+  useMigrateMisplacedAPPayments,
+} from '../hooks/useCashRegister';
 import { useMigrateMisdatedAP } from '../../accounts-payable/hooks/useAccountsPayable';
 import type {
   MigrateMisplacedSalesResult,
   MisplacedSaleRow,
   MigrateMisplacedPurchasesResult,
   MisplacedPurchaseRow,
+  MigrateMisplacedCreditPaymentsResult,
+  MisplacedCreditPaymentRow,
+  MigrateMisplacedAPPaymentsResult,
+  MisplacedAPPaymentRow,
 } from '../services/cashRegisterService';
 import type {
   MigrateMisdatedAccountPayablesResult,
@@ -16,9 +25,10 @@ import { Modal } from '../../../shared/components/Modal';
 import {
   Wrench, AlertTriangle, CalendarRange, History, Wallet, ArrowRight, ChevronLeft,
   PlayCircle, Search, CheckCircle2, Inbox, TriangleAlert, ShoppingCart, Receipt, FileText,
+  HandCoins, Coins,
 } from 'lucide-react';
 
-type Tab = 'sales' | 'purchases' | 'ap';
+type Tab = 'sales' | 'purchases' | 'ap' | 'credit-payments' | 'ap-payments';
 
 function formatDate(d: string) {
   if (!d) return '—';
@@ -33,6 +43,8 @@ export function MigrateMisplacedPage() {
     const t = searchParams.get('tab');
     if (t === 'purchases') return 'purchases';
     if (t === 'ap') return 'ap';
+    if (t === 'credit-payments') return 'credit-payments';
+    if (t === 'ap-payments') return 'ap-payments';
     return 'sales';
   })();
   const [tab, setTabState] = useState<Tab>(initialTab);
@@ -64,12 +76,18 @@ export function MigrateMisplacedPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-200">
+      <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
         <TabBtn active={tab === 'sales'} onClick={() => setTab('sales')} icon={<Receipt size={15} />}>
           Ventas
         </TabBtn>
         <TabBtn active={tab === 'purchases'} onClick={() => setTab('purchases')} icon={<ShoppingCart size={15} />}>
           Compras
+        </TabBtn>
+        <TabBtn active={tab === 'credit-payments'} onClick={() => setTab('credit-payments')} icon={<HandCoins size={15} />}>
+          Abonos Crédito
+        </TabBtn>
+        <TabBtn active={tab === 'ap-payments'} onClick={() => setTab('ap-payments')} icon={<Coins size={15} />}>
+          Abonos CxP
         </TabBtn>
         <TabBtn active={tab === 'ap'} onClick={() => setTab('ap')} icon={<FileText size={15} />}>
           Cuentas por Pagar
@@ -78,6 +96,8 @@ export function MigrateMisplacedPage() {
 
       {tab === 'sales' && <SalesTab />}
       {tab === 'purchases' && <PurchasesTab />}
+      {tab === 'credit-payments' && <CreditPaymentsTab />}
+      {tab === 'ap-payments' && <APPaymentsTab />}
       {tab === 'ap' && <APTab />}
     </div>
   );
@@ -468,6 +488,234 @@ function APIntro() {
         </p>
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// Tab Abonos Crédito (clientes)
+// ============================================================================
+
+function CreditPaymentsTab() {
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [report, setReport] = useState<MigrateMisplacedCreditPaymentsResult | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const migrate = useMigrateMisplacedCreditPayments();
+
+  const handleScan = async () => {
+    setReport(null);
+    const res = await migrate.mutateAsync({ dryRun: true, from: from || undefined, to: to || undefined });
+    setReport(res);
+  };
+
+  const handleApply = async () => {
+    const res = await migrate.mutateAsync({ dryRun: false, from: from || undefined, to: to || undefined });
+    setReport(res);
+    setConfirmOpen(false);
+  };
+
+  const groupedByPair = useMemo(() => {
+    if (!report) return [] as { key: string; from: string; to: string; rows: MisplacedCreditPaymentRow[] }[];
+    const map = new Map<string, MisplacedCreditPaymentRow[]>();
+    for (const row of report.misplaced) {
+      const key = `${row.currentRegisterDate}->${row.targetRegisterDate}`;
+      const arr = map.get(key) || [];
+      arr.push(row);
+      map.set(key, arr);
+    }
+    return Array.from(map.entries())
+      .map(([key, rows]) => ({ key, from: rows[0].currentRegisterDate, to: rows[0].targetRegisterDate, rows }))
+      .sort((a, b) => a.from.localeCompare(b.from));
+  }, [report]);
+
+  const totalAmount = useMemo(() => report?.misplaced.reduce((s, r) => s + r.amount, 0) || 0, [report]);
+
+  return (
+    <>
+      <Intro entityLabel="abonos a crédito" />
+      <Filters from={from} to={to} setFrom={setFrom} setTo={setTo} onScan={handleScan} isPending={migrate.isPending && report === null} />
+
+      {report && (
+        <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+          <Header
+            report={report}
+            entitySingular="abono"
+            entityPlural="abonos"
+            onApplyClick={() => setConfirmOpen(true)}
+            isPending={migrate.isPending}
+          />
+          <Kpis report={report} totalAmount={totalAmount} />
+
+          {report.misplaced.length === 0 && <EmptyState entityLabel="abonos a crédito" />}
+
+          {report.misplaced.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50/60">
+                  <tr className="text-[10px] uppercase tracking-wider text-gray-500 border-b border-gray-100">
+                    <th className="px-4 py-2.5 text-left">Caja actual → Caja correcta</th>
+                    <th className="px-4 py-2.5 text-left">Crédito</th>
+                    <th className="px-4 py-2.5 text-left">Cliente</th>
+                    <th className="px-4 py-2.5 text-left">Método</th>
+                    <th className="px-4 py-2.5 text-right">Monto</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {groupedByPair.map((group) => (
+                    <React.Fragment key={group.key}>
+                      <GroupHeader from={group.from} to={group.to} count={group.rows.length} entitySingular="abono" entityPlural="abonos" colSpan={5} />
+                      {group.rows.map((r) => (
+                        <tr key={r.entryId} className="hover:bg-gray-50/60">
+                          <td className="px-4 py-2.5 text-xs text-gray-400">↳</td>
+                          <td className="px-4 py-2.5">
+                            <div className="text-xs font-mono text-gray-700">{r.creditId.slice(-8)}</div>
+                            <div className="text-[10px] text-gray-400">Pago: {formatDate(r.paymentDate)}</div>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-gray-700">{r.clientName || <span className="text-gray-400">—</span>}</td>
+                          <td className="px-4 py-2.5 text-xs">
+                            {r.paymentMethodLabel ? (
+                              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-medium">{r.paymentMethodLabel}</span>
+                            ) : <span className="text-gray-400">—</span>}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-emerald-700">+ S/ {r.amount.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <Errors errors={report.errors.map((e) => ({ id: e.creditId, reason: e.reason }))} />
+        </div>
+      )}
+
+      <ConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={handleApply}
+        count={report?.misplaced.length || 0}
+        totalAmount={totalAmount}
+        isPending={migrate.isPending}
+        entitySingular="abono"
+        entityPlural="abonos"
+      />
+    </>
+  );
+}
+
+// ============================================================================
+// Tab Abonos CxP (proveedores)
+// ============================================================================
+
+function APPaymentsTab() {
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [report, setReport] = useState<MigrateMisplacedAPPaymentsResult | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const migrate = useMigrateMisplacedAPPayments();
+
+  const handleScan = async () => {
+    setReport(null);
+    const res = await migrate.mutateAsync({ dryRun: true, from: from || undefined, to: to || undefined });
+    setReport(res);
+  };
+
+  const handleApply = async () => {
+    const res = await migrate.mutateAsync({ dryRun: false, from: from || undefined, to: to || undefined });
+    setReport(res);
+    setConfirmOpen(false);
+  };
+
+  const groupedByPair = useMemo(() => {
+    if (!report) return [] as { key: string; from: string; to: string; rows: MisplacedAPPaymentRow[] }[];
+    const map = new Map<string, MisplacedAPPaymentRow[]>();
+    for (const row of report.misplaced) {
+      const key = `${row.currentRegisterDate}->${row.targetRegisterDate}`;
+      const arr = map.get(key) || [];
+      arr.push(row);
+      map.set(key, arr);
+    }
+    return Array.from(map.entries())
+      .map(([key, rows]) => ({ key, from: rows[0].currentRegisterDate, to: rows[0].targetRegisterDate, rows }))
+      .sort((a, b) => a.from.localeCompare(b.from));
+  }, [report]);
+
+  const totalAmount = useMemo(() => report?.misplaced.reduce((s, r) => s + r.amount, 0) || 0, [report]);
+
+  return (
+    <>
+      <Intro entityLabel="pagos a proveedor" />
+      <Filters from={from} to={to} setFrom={setFrom} setTo={setTo} onScan={handleScan} isPending={migrate.isPending && report === null} />
+
+      {report && (
+        <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+          <Header
+            report={report}
+            entitySingular="pago"
+            entityPlural="pagos"
+            onApplyClick={() => setConfirmOpen(true)}
+            isPending={migrate.isPending}
+          />
+          <Kpis report={report} totalAmount={totalAmount} />
+
+          {report.misplaced.length === 0 && <EmptyState entityLabel="pagos a proveedor" />}
+
+          {report.misplaced.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50/60">
+                  <tr className="text-[10px] uppercase tracking-wider text-gray-500 border-b border-gray-100">
+                    <th className="px-4 py-2.5 text-left">Caja actual → Caja correcta</th>
+                    <th className="px-4 py-2.5 text-left">CxP</th>
+                    <th className="px-4 py-2.5 text-left">Proveedor</th>
+                    <th className="px-4 py-2.5 text-left">Documento</th>
+                    <th className="px-4 py-2.5 text-right">Monto</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {groupedByPair.map((group) => (
+                    <React.Fragment key={group.key}>
+                      <GroupHeader from={group.from} to={group.to} count={group.rows.length} entitySingular="pago" entityPlural="pagos" colSpan={5} />
+                      {group.rows.map((r) => (
+                        <tr key={r.entryId} className="hover:bg-gray-50/60">
+                          <td className="px-4 py-2.5 text-xs text-gray-400">↳</td>
+                          <td className="px-4 py-2.5">
+                            <div className="text-xs font-mono text-gray-700">{r.accountPayableId.slice(-8)}</div>
+                            <div className="text-[10px] text-gray-400">Pago: {formatDate(r.paymentDate)}</div>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-gray-700">{r.supplier || <span className="text-gray-400">—</span>}</td>
+                          <td className="px-4 py-2.5 text-xs">
+                            {r.documentLabel ? (
+                              <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-medium font-mono">{r.documentLabel}</span>
+                            ) : <span className="text-gray-400">—</span>}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-xs font-semibold tabular-nums text-rose-600">− S/ {r.amount.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <Errors errors={report.errors.map((e) => ({ id: e.accountPayableId, reason: e.reason }))} />
+        </div>
+      )}
+
+      <ConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={handleApply}
+        count={report?.misplaced.length || 0}
+        totalAmount={totalAmount}
+        isPending={migrate.isPending}
+        entitySingular="pago"
+        entityPlural="pagos"
+      />
+    </>
   );
 }
 

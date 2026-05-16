@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { cashRegisterService, MigrateMisplacedSalesResult, MigrateMisplacedPurchasesResult } from '../services/cashRegisterService';
+import { cashRegisterService, MigrateMisplacedSalesResult, MigrateMisplacedPurchasesResult, MigrateMisplacedCreditPaymentsResult, MigrateMisplacedAPPaymentsResult } from '../services/cashRegisterService';
 import toast from 'react-hot-toast';
 
 export function useCashRegisterToday() {
@@ -94,6 +94,40 @@ export function useMigrateMisplacedPurchases() {
         qc.invalidateQueries({ queryKey: ['cash-registers'] });
         qc.invalidateQueries({ queryKey: ['cash-register'] });
         toast.success(`Migración completada: ${result.migrated} compra(s) movidas`);
+      }
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error en la migración'),
+  });
+}
+
+export function useMigrateMisplacedCreditPayments() {
+  const qc = useQueryClient();
+  return useMutation<MigrateMisplacedCreditPaymentsResult, any, { dryRun: boolean; from?: string; to?: string }>({
+    mutationFn: (data) => cashRegisterService.migrateMisplacedCreditPayments(data),
+    onSuccess: (result) => {
+      if (!result.dryRun) {
+        qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+        qc.invalidateQueries({ queryKey: ['cash-registers'] });
+        qc.invalidateQueries({ queryKey: ['cash-register'] });
+        qc.invalidateQueries({ queryKey: ['credit-accounts'] });
+        toast.success(`Migración completada: ${result.migrated} abono(s) movidos`);
+      }
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error en la migración'),
+  });
+}
+
+export function useMigrateMisplacedAPPayments() {
+  const qc = useQueryClient();
+  return useMutation<MigrateMisplacedAPPaymentsResult, any, { dryRun: boolean; from?: string; to?: string }>({
+    mutationFn: (data) => cashRegisterService.migrateMisplacedAPPayments(data),
+    onSuccess: (result) => {
+      if (!result.dryRun) {
+        qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+        qc.invalidateQueries({ queryKey: ['cash-registers'] });
+        qc.invalidateQueries({ queryKey: ['cash-register'] });
+        qc.invalidateQueries({ queryKey: ['accounts-payable'] });
+        toast.success(`Migración completada: ${result.migrated} pago(s) movidos`);
       }
     },
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error en la migración'),

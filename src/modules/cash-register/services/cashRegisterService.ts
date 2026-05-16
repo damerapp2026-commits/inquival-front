@@ -15,6 +15,10 @@ export const cashRegisterService = {
     api.post('/cash-registers/admin/migrate-misplaced-sales', data).then((r) => r.data.data),
   migrateMisplacedPurchases: (data: { dryRun: boolean; from?: string; to?: string }) =>
     api.post('/cash-registers/admin/migrate-misplaced-purchases', data).then((r) => r.data.data),
+  migrateMisplacedCreditPayments: (data: { dryRun: boolean; from?: string; to?: string }) =>
+    api.post('/cash-registers/admin/migrate-misplaced-credit-payments', data).then((r) => r.data.data),
+  migrateMisplacedAPPayments: (data: { dryRun: boolean; from?: string; to?: string }) =>
+    api.post('/cash-registers/admin/migrate-misplaced-ap-payments', data).then((r) => r.data.data),
 };
 
 export interface MisplacedSaleRow {
@@ -56,4 +60,46 @@ export interface MigrateMisplacedPurchasesResult {
   migrated: number;
   registersAffected: string[];
   errors: { purchaseId: string; reason: string }[];
+}
+
+export interface MisplacedCreditPaymentRow {
+  creditId: string;
+  paymentId?: string;
+  paymentDate: string;
+  currentRegisterDate: string;
+  targetRegisterDate: string;
+  entryId: string;
+  amount: number;
+  clientName?: string;
+  paymentMethodLabel?: string;
+}
+
+export interface MigrateMisplacedCreditPaymentsResult {
+  dryRun: boolean;
+  scanned: number;
+  misplaced: MisplacedCreditPaymentRow[];
+  migrated: number;
+  registersAffected: string[];
+  errors: { creditId: string; reason: string }[];
+}
+
+export interface MisplacedAPPaymentRow {
+  accountPayableId: string;
+  paymentId?: string;
+  paymentDate: string;
+  currentRegisterDate: string;
+  targetRegisterDate: string;
+  entryId: string;
+  amount: number;
+  supplier?: string;
+  documentLabel?: string;
+}
+
+export interface MigrateMisplacedAPPaymentsResult {
+  dryRun: boolean;
+  scanned: number;
+  misplaced: MisplacedAPPaymentRow[];
+  migrated: number;
+  registersAffected: string[];
+  errors: { accountPayableId: string; reason: string }[];
 }
