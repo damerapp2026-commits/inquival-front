@@ -39,13 +39,14 @@ export function EditCreditPaymentModal({ isOpen, onClose, credit, payment }: Pro
       setPaymentDate(payment.paymentDate.slice(0, 10));
       setNotes(payment.notes || '');
     }
-  }, [isOpen, payment]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, payment?.id]);
 
   if (!credit || !payment) return null;
 
   const isHistorical = !!paymentDate && paymentDate !== todayLocal;
-  // Tope: el resto de la deuda + lo que este abono ya pagaba.
-  const maxAmount = round2(credit.totalAmount - credit.paidAmount + payment.amount);
+  // Tope: lo pendiente (ya redondeado en backend) + lo que este abono ya cubría.
+  const maxAmount = round2(credit.pendingAmount + payment.amount);
 
   const errors: string[] = [];
   if (!amount || amount <= 0) errors.push('El monto debe ser mayor a 0');

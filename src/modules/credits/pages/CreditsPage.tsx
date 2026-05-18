@@ -568,9 +568,8 @@ export function CreditsPage() {
                         <button
                           type="button"
                           onClick={() => setEditPayment(p)}
-                          disabled={!!p.paymentGroupId}
-                          title={p.paymentGroupId ? 'Pago agrupado: edita desde el grupo' : 'Editar abono'}
-                          className="p-1 rounded hover:bg-white text-gray-500 hover:text-primary-600 disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                          title="Editar abono"
+                          className="p-1 rounded hover:bg-white text-gray-500 hover:text-primary-600"
                         >
                           <Edit2 size={13} />
                         </button>
