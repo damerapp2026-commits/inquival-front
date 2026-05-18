@@ -5,6 +5,13 @@ import toast from 'react-hot-toast';
 export function usePurchases(params?: any) {
   return useQuery({ queryKey: ['purchases', params], queryFn: () => purchaseService.getAll(params) });
 }
+export function usePurchaseById(id: string | undefined) {
+  return useQuery({
+    queryKey: ['purchase', id],
+    queryFn: () => purchaseService.getById(id!),
+    enabled: !!id,
+  });
+}
 export function useProductSuppliers(productId: string) {
   return useQuery({
     queryKey: ['product-suppliers', productId],

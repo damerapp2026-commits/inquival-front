@@ -71,7 +71,7 @@ export function PurchaseDetailPage() {
   }
 
   const sym = purchase.totalCostUsd ? '$' : 'S/';
-  const installments = (purchase as any).installments as { amount: number; dueDate: string; status?: string }[] | undefined;
+  const installments = purchase.installments;
 
   return (
     <div>

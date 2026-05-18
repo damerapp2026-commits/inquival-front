@@ -158,7 +158,7 @@ export function purchaseToFormState(purchase: Purchase, products: Product[]): Pu
     paymentType: purchase.paymentType,
     paymentScheduleType: purchase.paymentScheduleType || 'SINGLE_DATE',
     dueDate: dateInputStr(purchase.dueDate),
-    installments: ((purchase as any).installments || []).map((i: any) => ({
+    installments: (purchase.installments || []).map((i) => ({
       amount: i.amount,
       dueDate: dateInputStr(i.dueDate),
     })),

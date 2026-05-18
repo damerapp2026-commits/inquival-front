@@ -1,32 +1,27 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { usePurchases } from '../hooks/usePurchases';
-import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
-import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { Plus, ShoppingCart, Eye, Wrench } from 'lucide-react';
+import { Plus, ShoppingCart, Eye, Wrench, Search } from 'lucide-react';
 import type { Purchase } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
 
 export function PurchasesPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
-  const [laboratoryFilter, setLaboratoryFilter] = useState('');
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [debouncedSupplier, setDebouncedSupplier] = useState('');
 
-  const { data, isLoading } = usePurchases({ page, limit: 20, laboratoryId: laboratoryFilter || undefined });
-  const { data: laboratories } = useLaboratories();
-
-  const labList = Array.isArray(laboratories) ? laboratories : [];
+  const { data, isLoading } = usePurchases({ page, limit: 20, supplier: debouncedSupplier || undefined });
   const purchases = data?.data || [];
   const total = data?.total || 0;
 
-  const labOptions = useMemo(
-    () => labList
-      .filter((l: any) => l.isActive !== false)
-      .map((l: any) => ({ value: l.id, label: l.name })),
-    [labList],
-  );
+  const handleSupplierChange = (val: string) => {
+    setSupplierSearch(val);
+    clearTimeout((handleSupplierChange as any)._t);
+    (handleSupplierChange as any)._t = setTimeout(() => { setDebouncedSupplier(val); setPage(1); }, 400);
+  };
 
   const columns = [
     { key: 'date', header: 'Fecha', render: (item: Purchase) => formatDateEs(item.date) },
@@ -73,14 +68,13 @@ export function PurchasesPage() {
         </div>
       </div>
       <div className="mb-4 flex flex-col sm:flex-row gap-2">
-        <div className="flex-1 max-w-md">
-          <SearchableSelect
-            options={labOptions}
-            value={laboratoryFilter}
-            onChange={(v) => { setLaboratoryFilter(v); setPage(1); }}
-            placeholder="Buscar laboratorio... (todos)"
-            minChars={1}
-            className="py-2"
+        <div className="relative flex-1 max-w-md">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={supplierSearch}
+            onChange={(e) => handleSupplierChange(e.target.value)}
+            placeholder="Buscar por proveedor..."
+            className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
       </div>

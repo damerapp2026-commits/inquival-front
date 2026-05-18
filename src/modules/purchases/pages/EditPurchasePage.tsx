@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { ArrowLeft, ShoppingCart, AlertTriangle } from 'lucide-react';
-import { usePurchases, useUpdatePurchaseFull } from '../hooks/usePurchases';
+import { usePurchaseById, useUpdatePurchaseFull } from '../hooks/usePurchases';
 import { useProducts } from '../../products/hooks/useProducts';
 import { PurchaseFormBody, type PurchaseSubmitPayload } from '../components/PurchaseFormBody';
 import { purchaseToFormState } from '../utils/purchaseForm';
@@ -27,14 +27,11 @@ function WarningBanner({ purchaseRef, totalLabel }: { purchaseRef: string; total
 export function EditPurchasePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data, isLoading } = usePurchases({ limit: 500 });
+  const { data: purchaseData, isLoading } = usePurchaseById(id);
   const { data: productsData } = useProducts({ limit: 10000 });
   const updateFull = useUpdatePurchaseFull();
 
-  const purchase: Purchase | undefined = useMemo(() => {
-    const list: Purchase[] = data?.data || [];
-    return list.find((p) => p.id === id);
-  }, [data, id]);
+  const purchase: Purchase | undefined = purchaseData;
 
   const products: Product[] = useMemo(() => {
     const raw: any = productsData;

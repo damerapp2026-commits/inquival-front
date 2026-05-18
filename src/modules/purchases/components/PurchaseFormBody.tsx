@@ -399,7 +399,8 @@ export function PurchaseFormBody({
       return;
     }
     if (!form.supplier.trim()) { toast.error('Selecciona un laboratorio'); return; }
-    if (!documentTotal) { toast.error('Agrega productos con cantidad y costo unitario'); return; }
+    const hasValidItems = form.items.some(i => i.productId && i.quantity > 0);
+    if (!hasValidItems) { toast.error('Agrega al menos un producto con cantidad mayor a 0'); return; }
     if (currency === 'USD' && !exchangeRate) { toast.error('Verifique el tipo de cambio'); return; }
     const missingCompany = form.items.find(i => !i.companyId);
     if (missingCompany) { toast.error('Selecciona el almacén destino para cada producto'); return; }
@@ -908,7 +909,7 @@ export function PurchaseFormBody({
             </div>
             <div className="flex gap-2 ml-auto">
               <Link to={onCancelHref} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">Cancelar</Link>
-              <button type="submit" disabled={!documentTotal || (currency === 'USD' && !exchangeRate) || isSubmitting} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+              <button type="submit" disabled={(currency === 'USD' && !exchangeRate) || isSubmitting} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm">
                 {isSubmitting ? submittingLabel : submitLabel}
               </button>
             </div>

@@ -685,7 +685,7 @@ export function POSPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
         <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3">
-          <div className="relative flex-1 max-w-md">
+          <div className="relative flex-1">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               ref={searchRef}
@@ -695,7 +695,7 @@ export function POSPage() {
               className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white transition-colors"
             />
           </div>
-          <div className="relative flex-1 max-w-xs">
+          <div className="relative flex-1">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               value={ingredientFilter}
@@ -703,18 +703,6 @@ export function POSPage() {
               placeholder="Ingrediente activo…"
               className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white transition-colors"
             />
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={companyId}
-              onChange={(e) => setCompanyId(e.target.value)}
-              className="text-sm bg-white border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              <option value={ALL_COMPANIES}>Todos los almacenes</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
           </div>
         </div>
 
