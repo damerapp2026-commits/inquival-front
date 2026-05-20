@@ -83,9 +83,13 @@ export const itemAppliesIgv = (productId: string, products: Product[]): boolean 
 
 const dateInputStr = (d: any): string => {
   if (!d) return '';
+  if (typeof d === 'string') {
+    const dateOnly = /^(\d{4}-\d{2}-\d{2})/.exec(d);
+    if (dateOnly) return dateOnly[1];
+  }
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return '';
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
 };
 
 export interface PurchaseFormState {
