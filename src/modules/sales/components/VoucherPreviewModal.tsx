@@ -18,13 +18,17 @@ export interface VoucherSnapshot {
   igv?: number;
   baseImponible?: number;
   voucherNumber?: string;
-  /** Marca venta a crédito — el comprobante muestra el saldo pendiente. */
   isCredit?: boolean;
-  /** Total ya abonado al crédito (anticipo inicial + pagos posteriores). Si no se
-   *  pasa, se usa la suma de `payments` como aproximación. */
   creditPaidAmount?: number;
-  /** Fecha de vencimiento del crédito (ISO o Date). Opcional. */
   creditDueDate?: string | Date;
+  /** Venta de cortesía (precio 0). */
+  isCourtesy?: boolean;
+  /** Moneda de la venta: 'PEN' (default) o 'USD'. */
+  currency?: string;
+  /** Tipo de cambio usado. */
+  exchangeRate?: number;
+  /** Total en USD original (solo si currency='USD'). */
+  totalUsd?: number;
 }
 
 type Format = 'TICKET' | 'A4';
@@ -56,6 +60,8 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   const number = displayVoucherNumber(sale);
   const title = voucherTitle(sale.voucherType).toUpperCase();
   const company = COMPANY_INFO;
+  const isUsd = sale.currency === 'USD';
+  const sym = isUsd ? '$' : 'S/';
   const itemsRows = sale.items.map((i) => `
     <tr class="item">
       <td class="qty">${i.quantity}</td>
@@ -64,8 +70,8 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
     <tr class="item-prices">
       <td></td>
       <td></td>
-      <td class="right">S/ ${i.unitPrice.toFixed(2)}</td>
-      <td class="right">S/ ${i.subtotal.toFixed(2)}</td>
+      <td class="right">${sym} ${i.unitPrice.toFixed(2)}</td>
+      <td class="right">${sym} ${i.subtotal.toFixed(2)}</td>
     </tr>
   `).join('');
   const paymentsRows = sale.payments.map((p) => `
@@ -157,9 +163,15 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
     <tbody>${itemsRows}</tbody>
   </table>
   <div class="hr"></div>
-  ${typeof sale.baseImponible === 'number' ? `<div class="kv"><span>Subtotal</span><span>S/ ${sale.baseImponible.toFixed(2)}</span></div>` : ''}
-  ${typeof sale.igv === 'number' && sale.igv > 0 ? `<div class="kv"><span>IGV (18%)</span><span>S/ ${sale.igv.toFixed(2)}</span></div>` : ''}
+  ${typeof sale.baseImponible === 'number' ? `<div class="kv"><span>Subtotal</span><span>${sym} ${sale.baseImponible.toFixed(2)}</span></div>` : ''}
+  ${typeof sale.igv === 'number' && sale.igv > 0 ? `<div class="kv"><span>IGV (18%)</span><span>${sym} ${sale.igv.toFixed(2)}</span></div>` : ''}
+  ${isUsd && sale.totalUsd != null ? `
+  <div class="total bold xl"><span>TOTAL</span><span>$ ${sale.totalUsd.toFixed(2)}</span></div>
+  <div class="kv muted" style="font-size:10px;margin-top:2px;"><span>TC ${sale.exchangeRate?.toFixed(2)} → Equiv.</span><span>S/ ${sale.total.toFixed(2)}</span></div>
+  ` : `
   <div class="total bold xl"><span>TOTAL</span><span>S/ ${sale.total.toFixed(2)}</span></div>
+  `}
+  ${sale.isCourtesy ? `<div class="center bold" style="color:#059669;margin:4px 0;border:1px dashed #059669;padding:3px;">CORTESÍA</div>` : ''}
   ${creditBlock}
   ${cashPaymentBlock}
   <div class="hr"></div>

@@ -13,7 +13,7 @@ import { useQuote, useConvertQuote } from '../../quotes/hooks/useQuotes';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { stockService } from '../../stock/services/stockService';
-import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark, ChevronLeft, ChevronRight, Receipt, Building2, FileText, CheckCircle2, Eye, Banknote, Calendar } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark, ChevronLeft, ChevronRight, Receipt, Building2, FileText, CheckCircle2, Eye, Banknote, Calendar, Gift, DollarSign } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { Product, ProductPrice, Category, Company, Client, PriceTier, PaymentMethod, CreditAccount } from '../../../shared/types';
 import { useOpenClientCredits } from '../../credits/hooks/useCredits';
@@ -169,6 +169,12 @@ export function POSPage() {
     return d.toISOString().slice(0, 10);
   })();
   const [saleDate, setSaleDate] = useState<string>(todayLocal);
+  /** Venta de cortesía: solo ADMIN puede activar. Total = 0, sin pago. */
+  const [isCourtesy, setIsCourtesy] = useState(false);
+  /** Moneda de la venta. Los precios del carrito son en esta moneda. */
+  const [currency, setCurrency] = useState<'PEN' | 'USD'>('PEN');
+  /** Tipo de cambio vigente para ventas en USD. */
+  const [exchangeRate, setExchangeRate] = useState<number>(3.75);
 
   const computedDueDate = (() => {
     const days = parseInt(creditDueDays, 10);
@@ -355,8 +361,8 @@ export function POSPage() {
     }
 
     const price = resolvePrice(product, tierId, sourceCompanyId);
-    if (price == null) {
-      toast.error(`Sin precio configurado para ${product.name}`);
+    if (price == null && !isCourtesy) {
+      toast.error(`Sin precio configurado para ${product.name}. Activa "Cortesía" para agregar a precio 0.`);
       return;
     }
     setCart((prev) => {
@@ -373,9 +379,10 @@ export function POSPage() {
           name: product.name,
           unit: product.unit,
           quantity: 1,
-          unitPrice: price,
+          unitPrice: price ?? 0,
           taxType: normalizeTaxType(product.taxType),
           sourceCompanyId,
+          isCustomPrice: price == null ? true : undefined,
         },
       ];
     });
@@ -488,8 +495,16 @@ export function POSPage() {
       toast.error('El carrito está vacío');
       return;
     }
-    if (!paymentMethodId) {
+    if (!paymentMethodId && !isCourtesy) {
       toast.error('No hay métodos de pago configurados');
+      return;
+    }
+    if (isCourtesy && !isSellerRole && user?.role !== 'ADMIN') {
+      toast.error('Solo administradores pueden registrar ventas de cortesía');
+      return;
+    }
+    if (currency === 'USD' && (!exchangeRate || exchangeRate <= 0)) {
+      toast.error('Ingresa el tipo de cambio para ventas en USD');
       return;
     }
     const itemMissingSource = cart.find((i) => !i.sourceCompanyId && companyId === ALL_COMPANIES);
@@ -500,7 +515,7 @@ export function POSPage() {
     setIsCredit(false);
     setCreditName('');
     setCreditDueDays('');
-    setSplitPayments([{ paymentMethodId, amount: 0 }]);
+    setSplitPayments(isCourtesy ? [] : [{ paymentMethodId, amount: 0 }]);
     setCheckoutStep(1);
     setShowCheckout(true);
   };
@@ -519,8 +534,16 @@ export function POSPage() {
     ? currentDebt + creditPending - creditLimit
     : Math.max(creditLimit - currentDebt - creditPending, 0);
 
+  const sym = currency === 'USD' ? '$' : 'S/';
+
   const confirmSale = async () => {
-    if (isCredit) {
+    // Cortesía: sin validación de pagos, total debe ser 0
+    if (isCourtesy) {
+      if (total > 0.001) {
+        toast.error('Una venta de cortesía debe tener todos los items a precio 0');
+        return;
+      }
+    } else if (isCredit) {
       if (!clientId) { toast.error('Selecciona un cliente para la venta a crédito'); return; }
       if (creditOverLimit) {
         toast.error(`Esta venta supera el límite de crédito del cliente (S/ ${creditLimit.toFixed(2)})`);
@@ -540,19 +563,19 @@ export function POSPage() {
       if (validPayments.length === 0) { toast.error('Ingresa al menos un método de pago con monto'); return; }
       const overpay = Math.round((splitTotal - total) * 100) / 100;
       if (overpay < -0.01) {
-        toast.error(`La suma de pagos (${splitTotal.toFixed(2)}) es menor al total (${total.toFixed(2)})`);
+        toast.error(`La suma de pagos (${sym} ${splitTotal.toFixed(2)}) es menor al total (${sym} ${total.toFixed(2)})`);
         return;
       }
       if (overpay > 0.01) {
         const cashIdx = validPayments.findIndex(p => (paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '').toLowerCase().includes('efectivo'));
         if (cashIdx < 0 || validPayments[cashIdx].amount + 0.01 < overpay) {
-          toast.error(`La suma de pagos (${splitTotal.toFixed(2)}) supera el total (${total.toFixed(2)}). Solo Efectivo permite vuelto.`);
+          toast.error(`La suma de pagos (${sym} ${splitTotal.toFixed(2)}) supera el total (${sym} ${total.toFixed(2)}). Solo Efectivo permite vuelto.`);
           return;
         }
       }
     }
     let validPayments = splitPayments.filter(p => p.paymentMethodId && p.amount > 0);
-    if (!isCredit) {
+    if (!isCredit && !isCourtesy) {
       const overpay = Math.round((splitTotal - total) * 100) / 100;
       if (overpay > 0.01) {
         const cashIdx = validPayments.findIndex(p => (paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '').toLowerCase().includes('efectivo'));
@@ -596,6 +619,10 @@ export function POSPage() {
       clientPhone: clients.find((c) => c.id === clientId)?.phone,
       igv,
       baseImponible: gravadoBase,
+      isCourtesy: isCourtesy || undefined,
+      currency: currency !== 'PEN' ? currency : undefined,
+      exchangeRate: currency === 'USD' ? exchangeRate : undefined,
+      totalUsd: currency === 'USD' ? saleTotal : undefined,
     };
     try {
       const effectiveSellerId = sellerId || (isSellerRole ? user?.id : undefined);
@@ -629,6 +656,9 @@ export function POSPage() {
           })),
           payments: validPayments,
           date: saleDateObj.toISOString(),
+          isCourtesy: isCourtesy || undefined,
+          currency: currency !== 'PEN' ? currency : undefined,
+          exchangeRate: currency === 'USD' ? exchangeRate : undefined,
         } as any);
       }
       setCart([]);
@@ -639,6 +669,8 @@ export function POSPage() {
       setCreditName('');
       setCreditDueDays('');
       setSaleDate(todayLocal);
+      setIsCourtesy(false);
+      setCurrency('PEN');
       setShowCheckout(false);
       if (sourceQuoteId) {
         setSourceQuoteId('');
@@ -824,7 +856,7 @@ export function POSPage() {
                       )}
                       <div className="mt-2 flex items-center justify-between gap-2">
                         <span className="text-lg font-bold text-primary-600 truncate">
-                          {price != null ? `S/ ${price.toFixed(2)}` : '—'}
+                          {price != null ? `${currency === 'USD' ? '$' : 'S/'} ${price.toFixed(2)}` : isCourtesy ? '$ 0.00' : '—'}
                         </span>
                         <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-md ${stockColor}`}>
                           {stock === 0 ? 'Agotado' : `${stock} uds`}
@@ -888,6 +920,71 @@ export function POSPage() {
               </select>
             )}
           </div>
+
+          {/* Toggles: USD y Cortesía */}
+          <div className="flex items-center gap-2 mt-1">
+            {/* Toggle USD */}
+            <button
+              type="button"
+              onClick={() => {
+                const next = currency === 'USD' ? 'PEN' : 'USD';
+                setCurrency(next);
+                if (next === 'PEN') setExchangeRate(3.75);
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                currency === 'USD'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white text-gray-500 border-gray-200 hover:border-emerald-400 hover:text-emerald-600'
+              }`}
+              title="Activar venta en dólares"
+            >
+              <DollarSign size={12} />
+              USD
+            </button>
+
+            {/* Tipo de cambio (solo visible cuando USD) */}
+            {currency === 'USD' && (
+              <label className="flex items-center gap-1 text-xs text-gray-500">
+                <span className="shrink-0">TC:</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={exchangeRate}
+                  onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
+                  onFocus={(e) => e.target.select()}
+                  className="w-16 text-sm border border-emerald-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-emerald-50 text-emerald-800 font-semibold"
+                />
+              </label>
+            )}
+
+            {/* Toggle Cortesía (solo ADMIN) */}
+            {!isSellerRole && (
+              <button
+                type="button"
+                onClick={() => setIsCourtesy((v) => !v)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  isCourtesy
+                    ? 'bg-violet-600 text-white border-violet-600'
+                    : 'bg-white text-gray-500 border-gray-200 hover:border-violet-400 hover:text-violet-600'
+                }`}
+                title="Venta de cortesía (precio 0)"
+              >
+                <Gift size={12} />
+                Cortesía
+              </button>
+            )}
+          </div>
+          {currency === 'USD' && (
+            <div className="mt-1 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1">
+              Precios y pagos en USD · S/ por cada $ {exchangeRate.toFixed(2)}
+            </div>
+          )}
+          {isCourtesy && (
+            <div className="mt-1 text-[11px] text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1 flex items-center gap-1">
+              <Gift size={10} /> Todos los items deben estar a precio 0
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto px-3 py-3 space-y-2">
@@ -919,7 +1016,7 @@ export function POSPage() {
                       )}
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-sm text-gray-500">
-                          S/ {item.unitPrice.toFixed(2)} · {item.unit}
+                          {currency === 'USD' ? '$' : 'S/'} {item.unitPrice.toFixed(2)} · {item.unit}
                         </span>
                         {isSellerRole ? (
                           <span
@@ -1000,7 +1097,7 @@ export function POSPage() {
                       <div className="text-[11px] text-gray-500 font-medium pt-1">Precio personalizado</div>
                       <div className="flex gap-1.5">
                         <div className="relative flex-1">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">S/</span>
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">{currency === 'USD' ? '$' : 'S/'}</span>
                           <input
                             type="number"
                             step="0.01"
@@ -1046,28 +1143,36 @@ export function POSPage() {
             {gravadoBase > 0 && (
               <div className="flex justify-between text-base text-gray-600">
                 <span>Subtotal gravado</span>
-                <span className="font-medium">S/ {gravadoBase.toFixed(2)}</span>
+                <span className="font-medium">{currency === 'USD' ? '$' : 'S/'} {gravadoBase.toFixed(2)}</span>
               </div>
             )}
             {exoneradoBase > 0 && (
               <div className="flex justify-between text-base text-gray-600">
                 <span>Exonerado</span>
-                <span className="font-medium">S/ {exoneradoBase.toFixed(2)}</span>
+                <span className="font-medium">{currency === 'USD' ? '$' : 'S/'} {exoneradoBase.toFixed(2)}</span>
               </div>
             )}
             {inafectoBase > 0 && (
               <div className="flex justify-between text-base text-gray-600">
                 <span>Inafecto</span>
-                <span className="font-medium">S/ {inafectoBase.toFixed(2)}</span>
+                <span className="font-medium">{currency === 'USD' ? '$' : 'S/'} {inafectoBase.toFixed(2)}</span>
               </div>
             )}
             <div className="flex justify-between text-base text-gray-600">
               <span>IGV (18%)</span>
-              <span className="font-medium">S/ {igv.toFixed(2)}</span>
+              <span className="font-medium">{currency === 'USD' ? '$' : 'S/'} {igv.toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-baseline pt-2 border-t border-gray-100">
-              <span className="text-base font-semibold text-gray-700">Total</span>
-              <span className="text-2xl font-bold text-primary-600">S/ {total.toFixed(2)}</span>
+              <span className="text-base font-semibold text-gray-700">
+                Total {currency === 'USD' && <span className="text-xs font-normal text-emerald-600">USD</span>}
+                {isCourtesy && <span className="text-xs font-normal text-violet-600 ml-1">Cortesía</span>}
+              </span>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-primary-600">{currency === 'USD' ? '$' : 'S/'} {total.toFixed(2)}</div>
+                {currency === 'USD' && exchangeRate > 0 && (
+                  <div className="text-xs text-gray-400">≈ S/ {(total * exchangeRate).toFixed(2)}</div>
+                )}
+              </div>
             </div>
             <div className="flex gap-2">
               <button
@@ -1117,11 +1222,18 @@ export function POSPage() {
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl flex flex-col max-h-[92vh]">
 
             {/* Header */}
-            <div className="bg-primary-600 rounded-t-2xl px-6 py-6 text-white shrink-0">
+            <div className={`rounded-t-2xl px-6 py-6 text-white shrink-0 ${isCourtesy ? 'bg-violet-600' : currency === 'USD' ? 'bg-emerald-600' : 'bg-primary-600'}`}>
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
-                  <p className="text-white/70 text-sm mb-1">{cart.length} {cart.length === 1 ? 'producto' : 'productos'}</p>
-                  <p className="text-4xl font-bold tracking-tight">S/ {total.toFixed(2)}</p>
+                  <p className="text-white/70 text-sm mb-1">
+                    {cart.length} {cart.length === 1 ? 'producto' : 'productos'}
+                    {isCourtesy && <span className="ml-2 bg-white/20 rounded-full px-2 py-0.5 text-xs font-bold">CORTESÍA</span>}
+                    {currency === 'USD' && !isCourtesy && <span className="ml-2 bg-white/20 rounded-full px-2 py-0.5 text-xs font-bold">USD</span>}
+                  </p>
+                  <p className="text-4xl font-bold tracking-tight">{currency === 'USD' ? '$' : 'S/'} {total.toFixed(2)}</p>
+                  {currency === 'USD' && exchangeRate > 0 && (
+                    <p className="text-white/70 text-sm mt-0.5">≈ S/ {(total * exchangeRate).toFixed(2)}  ·  TC {exchangeRate.toFixed(2)}</p>
+                  )}
                 </div>
                 <div className="flex items-start gap-2">
                   <label className="flex items-center gap-2 bg-white/15 hover:bg-white/25 transition-colors rounded-xl px-3 py-2 cursor-pointer" title="Fecha de la venta">
@@ -1149,15 +1261,15 @@ export function POSPage() {
                     <span className="text-white/80 truncate flex-1 mr-3">
                       <span className="font-bold text-white mr-2">{item.quantity}×</span>{item.name}
                     </span>
-                    <span className="text-white font-semibold shrink-0">S/ {(item.quantity * item.unitPrice).toFixed(2)}</span>
+                    <span className="text-white font-semibold shrink-0">{currency === 'USD' ? '$' : 'S/'} {(item.quantity * item.unitPrice).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1 justify-between mt-3 text-xs text-white/60">
-                <span>Base imponible: S/ {gravadoBase.toFixed(2)}</span>
-                {exoneradoBase > 0 && <span>Exonerado: S/ {exoneradoBase.toFixed(2)}</span>}
-                {inafectoBase > 0 && <span>Inafecto: S/ {inafectoBase.toFixed(2)}</span>}
-                <span>IGV 18%: S/ {igv.toFixed(2)}</span>
+                <span>Base imponible: {currency === 'USD' ? '$' : 'S/'} {gravadoBase.toFixed(2)}</span>
+                {exoneradoBase > 0 && <span>Exonerado: {currency === 'USD' ? '$' : 'S/'} {exoneradoBase.toFixed(2)}</span>}
+                {inafectoBase > 0 && <span>Inafecto: {currency === 'USD' ? '$' : 'S/'} {inafectoBase.toFixed(2)}</span>}
+                <span>IGV 18%: {currency === 'USD' ? '$' : 'S/'} {igv.toFixed(2)}</span>
               </div>
             </div>
 
@@ -1294,12 +1406,34 @@ export function POSPage() {
               {checkoutStep === 2 && (
                 <>
                   {/* TOTAL banner */}
-                  <div className="-mt-1 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-primary-50 border-2 border-primary-100">
-                    <span className="text-xs font-bold uppercase tracking-wider text-primary-700">Total a cobrar</span>
-                    <span className="text-2xl font-bold tabular-nums text-primary-800">S/ {total.toFixed(2)}</span>
+                  <div className={`-mt-1 flex items-center justify-between gap-3 px-4 py-3 rounded-xl border-2 ${
+                    isCourtesy ? 'bg-violet-50 border-violet-100' : currency === 'USD' ? 'bg-emerald-50 border-emerald-100' : 'bg-primary-50 border-primary-100'
+                  }`}>
+                    <div>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${isCourtesy ? 'text-violet-700' : currency === 'USD' ? 'text-emerald-700' : 'text-primary-700'}`}>
+                        {isCourtesy ? 'Venta de Cortesía' : currency === 'USD' ? 'Total a cobrar (USD)' : 'Total a cobrar'}
+                      </span>
+                      {currency === 'USD' && !isCourtesy && (
+                        <div className="text-xs text-emerald-600 mt-0.5">≈ S/ {(total * exchangeRate).toFixed(2)}</div>
+                      )}
+                    </div>
+                    <span className={`text-2xl font-bold tabular-nums ${isCourtesy ? 'text-violet-800' : currency === 'USD' ? 'text-emerald-800' : 'text-primary-800'}`}>
+                      {isCourtesy ? 'S/ 0.00' : `${currency === 'USD' ? '$' : 'S/'} ${total.toFixed(2)}`}
+                    </span>
                   </div>
+                  {/* Cortesía: mensaje en lugar de métodos de pago */}
+                  {isCourtesy && (
+                    <div className="flex items-center gap-3 p-4 bg-violet-50 border-2 border-violet-200 rounded-xl">
+                      <Gift size={20} className="text-violet-600 shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold text-violet-800">Venta de cortesía registrada</p>
+                        <p className="text-xs text-violet-600 mt-0.5">No requiere pago. Quedará registrada en caja con monto S/ 0.00.</p>
+                      </div>
+                    </div>
+                  )}
 
-                  {/* Tipo de pago */}
+                  {/* Tipo de pago + Crédito + Métodos — todo oculto en cortesía */}
+                  {!isCourtesy && (<>
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <Tag size={14} className="text-gray-500" />
@@ -1432,12 +1566,6 @@ export function POSPage() {
                           {splitPayments.map((p, idx) => {
                             const selectedMethod = paymentMethods.find((m) => m.id === p.paymentMethodId);
                             const isCash = (selectedMethod?.name || '').toLowerCase().includes('efectivo');
-                            const setAmount = (amt: number) => {
-                              const next = [...splitPayments];
-                              next[idx] = { ...next[idx], amount: amt };
-                              setSplitPayments(next);
-                            };
-                            const quickAmounts = [10, 20, 50, 100, 200, 500];
                             return (
                               <div key={idx} className="bg-gray-50 rounded-xl p-4 space-y-3">
                                 <div className="flex flex-wrap gap-2">
@@ -1452,9 +1580,14 @@ export function POSPage() {
                                     </button>
                                   ))}
                                 </div>
+                                {isCash && (
+                                  <div className="flex items-center gap-2 mb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                                    <Banknote size={12} /> Monto recibido
+                                  </div>
+                                )}
                                 <div className="flex items-center gap-2">
                                   <div className="relative flex-1">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">S/</span>
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">{currency === 'USD' ? '$' : 'S/'}</span>
                                     <input
                                       type="number" min="0" step="0.01"
                                       value={p.amount || ''}
@@ -1470,32 +1603,6 @@ export function POSPage() {
                                     </button>
                                   )}
                                 </div>
-                                {isCash && (
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                                      <Banknote size={12} /> Monto recibido
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-2">
-                                      {quickAmounts.map((amt) => (
-                                        <button
-                                          key={amt}
-                                          type="button"
-                                          onClick={() => setAmount(amt)}
-                                          className="py-2 rounded-lg text-sm font-semibold border-2 border-gray-200 bg-white text-gray-700 hover:border-primary-300 hover:bg-primary-50 transition-colors"
-                                        >
-                                          S/ {amt}
-                                        </button>
-                                      ))}
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => setAmount(Math.max(0, splitRemaining + (p.amount || 0)))}
-                                      className="mt-2 w-full py-2 rounded-lg text-sm font-semibold border-2 border-primary-200 bg-white text-primary-700 hover:bg-primary-50 transition-colors"
-                                    >
-                                      Monto exacto · S/ {Math.max(0, splitRemaining + (p.amount || 0)).toFixed(2)}
-                                    </button>
-                                  </div>
-                                )}
                               </div>
                             );
                           })}
@@ -1510,11 +1617,11 @@ export function POSPage() {
                               }`}>
                                 <div className="flex items-center justify-between text-sm">
                                   <span className="font-medium text-gray-600">Anticipo</span>
-                                  <span className="font-bold tabular-nums text-gray-800">S/ {downPayment.toFixed(2)}</span>
+                                  <span className="font-bold tabular-nums text-gray-800">{sym} {downPayment.toFixed(2)}</span>
                                 </div>
                                 <div className="flex items-center justify-between text-sm mt-1">
                                   <span className="font-medium text-orange-700">Saldo a crédito</span>
-                                  <span className="font-bold tabular-nums text-orange-700">S/ {creditPending.toFixed(2)}</span>
+                                  <span className="font-bold tabular-nums text-orange-700">{sym} {creditPending.toFixed(2)}</span>
                                 </div>
                                 {downPaymentExceedsTotal && (
                                   <div className="mt-2 text-xs text-red-700">
@@ -1529,7 +1636,7 @@ export function POSPage() {
                               splitRemaining > 0 ? 'bg-orange-50 border-2 border-orange-200' : 'bg-blue-50 border-2 border-blue-200'
                             }`}>
                               <span className={`font-bold text-base ${Math.abs(splitRemaining) <= 0.01 ? 'text-green-700' : splitRemaining > 0 ? 'text-orange-700' : 'text-blue-700'}`}>
-                                {Math.abs(splitRemaining) <= 0.01 ? '✓ Pago completo' : splitRemaining > 0 ? `Falta S/ ${splitRemaining.toFixed(2)}` : `Vuelto S/ ${Math.abs(splitRemaining).toFixed(2)}`}
+                                {Math.abs(splitRemaining) <= 0.01 ? '✓ Pago completo' : splitRemaining > 0 ? `Falta ${sym} ${splitRemaining.toFixed(2)}` : `Vuelto ${sym} ${Math.abs(splitRemaining).toFixed(2)}`}
                               </span>
                               {splitRemaining > 0.01 && (
                                 <button type="button" onClick={() => {
@@ -1560,6 +1667,7 @@ export function POSPage() {
                         )}
                       </div>
                     </>
+                  </>)}
                 </>
               )}
             </div>
@@ -1596,17 +1704,19 @@ export function POSPage() {
                     onClick={confirmSale}
                     disabled={createSale.isPending || creditOverLimit || downPaymentExceedsTotal}
                     className={`flex-1 py-3.5 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed font-bold text-base transition-colors shadow-sm flex items-center justify-center gap-2 ${
-                      isCredit ? 'bg-orange-500 hover:bg-orange-600' : 'bg-primary-600 hover:bg-primary-700'
+                      isCourtesy ? 'bg-violet-600 hover:bg-violet-700' : isCredit ? 'bg-orange-500 hover:bg-orange-600' : currency === 'USD' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-primary-600 hover:bg-primary-700'
                     }`}
                   >
-                    {isCredit ? <Landmark size={18} /> : <CreditCard size={18} />}
+                    {isCourtesy ? <Gift size={18} /> : isCredit ? <Landmark size={18} /> : <CreditCard size={18} />}
                     {createSale.isPending
                       ? 'Procesando…'
-                      : isCredit
-                        ? downPayment > 0
-                          ? `Anticipo S/ ${downPayment.toFixed(2)} + Crédito S/ ${creditPending.toFixed(2)}`
-                          : `A Crédito · S/ ${total.toFixed(2)}`
-                        : `Confirmar · S/ ${total.toFixed(2)}`}
+                      : isCourtesy
+                        ? 'Confirmar Cortesía · S/ 0.00'
+                        : isCredit
+                          ? downPayment > 0
+                            ? `Anticipo ${sym} ${downPayment.toFixed(2)} + Crédito ${sym} ${creditPending.toFixed(2)}`
+                            : `A Crédito · ${sym} ${total.toFixed(2)}`
+                          : `Confirmar · ${sym} ${total.toFixed(2)}`}
                   </button>
                 </>
               )}
@@ -1720,7 +1830,7 @@ export function POSPage() {
             {cart.length === 0 ? 'Carrito vacío' : `${cart.length} ${cart.length === 1 ? 'producto' : 'productos'}`}
           </span>
         </div>
-        <span className="text-lg font-bold">S/ {total.toFixed(2)}</span>
+        <span className="text-lg font-bold">{currency === 'USD' ? '$' : 'S/'} {total.toFixed(2)}</span>
       </button>
     </div>
   );
