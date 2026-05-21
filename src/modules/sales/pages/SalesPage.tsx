@@ -97,7 +97,7 @@ export function SalesPage() {
   const { data: loansData, isLoading: loansLoading } = useLoans({ page: loanPage, limit: 10, status: loanStatusFilter || undefined, startDate, endDate });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
-  const { data: clientsData } = useClients({ limit: 200 });
+  const { data: clientsData } = useClients({ limit: 9999 });
   const { data: priceTiers } = usePriceTiers();
   const { data: paymentMethodsData } = usePaymentMethods();
   const createSale = useCreateSale();
