@@ -85,7 +85,7 @@ export function POSPage() {
   const sellerOptions: any[] = useMemo(() => {
     const raw: any = usersData;
     const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
-    return list.filter((u) => u.isActive !== false && (u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO'));
+    return list.filter((u) => u.isActive !== false && (u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO' || u.role === 'ADMIN'));
   }, [usersData]);
 
   const [search, setSearch] = useState('');
@@ -588,10 +588,10 @@ export function POSPage() {
     }
     const saleTotal = total;
     const saleVoucherType = voucherType;
-    const snapshotSellerId = sellerId || (isSellerRole ? user?.id : '');
+    const snapshotSellerId = sellerId || user?.id || '';
     const snapshotSeller = sellerOptions.find((s) => s.id === snapshotSellerId);
     const sellerName: string = snapshotSeller?.fullName || snapshotSeller?.username
-      || (isSellerRole ? (user?.fullName || user?.username || '') : '')
+      || user?.fullName || user?.username
       || 'Sin asignar';
     // saleDate viene como YYYY-MM-DD; preservamos la hora actual al combinar.
     const now = new Date();
@@ -625,7 +625,7 @@ export function POSPage() {
       totalUsd: currency === 'USD' ? saleTotal : undefined,
     };
     try {
-      const effectiveSellerId = sellerId || (isSellerRole ? user?.id : undefined);
+      const effectiveSellerId = sellerId || user?.id;
       let saleResult: any;
       if (sourceQuoteId) {
         saleResult = await convertQuote.mutateAsync({
@@ -1314,7 +1314,7 @@ export function POSPage() {
                         onChange={(e) => setSellerId(e.target.value)}
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400 bg-white"
                       >
-                        <option value="">— Sin atribuir —</option>
+                        <option value="">— Yo mismo ({user?.fullName || user?.username}) —</option>
                         {sellerOptions.map((s) => <option key={s.id} value={s.id}>{s.fullName || s.username}</option>)}
                       </select>
                     </div>

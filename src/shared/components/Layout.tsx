@@ -47,7 +47,6 @@ const navSections: NavSection[] = [
     items: [
       { path: '/cash-register', label: 'Caja', icon: Wallet, roles: ['ADMIN'] },
       { path: '/expenses', label: 'Gastos', icon: ArrowDownCircle, roles: ['ADMIN'] },
-      { path: '/credits', label: 'Créditos', icon: CreditCard, roles: ['ADMIN'] },
       { path: '/accounts-payable', label: 'Cuentas por Pagar', icon: FileText, roles: ['ADMIN'] },
       { path: '/invoices', label: 'Facturas', icon: Receipt, roles: ['ADMIN'] },
     ],

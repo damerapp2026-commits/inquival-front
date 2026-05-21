@@ -140,18 +140,22 @@ export function DashboardPage() {
   const sellersList: any[] = useMemo(() => {
     const raw: any = usersData;
     const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
-    return list.filter((u: any) => u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO');
+    return list.filter((u: any) => u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO' || u.role === 'ADMIN');
   }, [usersData]);
 
   const sellerComparison = useMemo(() => {
-    const sales: Sale[] = (sellerSalesData?.data || []).filter((s: Sale) => !s.isCancelled && s.sellerId);
+    const sellersById = new Map(sellersList.map((u: any) => [u.id, u]));
+    const sales: Sale[] = (sellerSalesData?.data || []).filter((s: Sale) => {
+      if (s.isCancelled) return false;
+      if (s.sellerId) return true;
+      // ventas antiguas de admins: no tienen sellerId pero sí createdBy
+      return !!s.createdBy && sellersById.has(s.createdBy);
+    });
     const map: Record<string, { name: string; total: number; count: number }> = {};
     sales.forEach((sale) => {
-      const id = sale.sellerId!;
-      const name = sale.sellerName
-        || sellersList.find((s) => s.id === id)?.fullName
-        || sellersList.find((s) => s.id === id)?.username
-        || 'Vendedor';
+      const id = sale.sellerId || sale.createdBy!;
+      const user = sellersById.get(id);
+      const name = sale.sellerName || user?.fullName || user?.username || 'Vendedor';
       if (!map[id]) map[id] = { name, total: 0, count: 0 };
       map[id].total += sale.total;
       map[id].count += 1;

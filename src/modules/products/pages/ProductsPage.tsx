@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct } from '../hooks/useProducts';
+import { useStockByProductSummary } from '../../stock/hooks/useStock';
 import { productService } from '../services/productService';
 import { categoryService } from '../../categories/services/categoryService';
 import { laboratoryService } from '../../laboratories/services/laboratoryService';
@@ -482,6 +483,11 @@ export function ProductsPage() {
   const labsById = new Map<string, any>(labs.map((l: any) => [l.id, l]));
   const comps = Array.isArray(companies) ? companies : [];
 
+  const { data: stockSummaryData } = useStockByProductSummary();
+  const stockByProduct = new Map(
+    (stockSummaryData || []).map((s: any) => [s.productId, s])
+  );
+
   const getPricesForDisplay = (product: Product) => {
     if (!priceCompanyFilter) {
       return product.prices?.filter(p => !p.companyId) || [];
@@ -527,7 +533,27 @@ export function ProductsPage() {
         </div>
       );
     }},
-    { key: 'isActive', header: 'Estado', render: (item: Product) => <span className={`px-2 py-1 rounded-full text-xs ${item.isActive ? 'bg-primary-100 text-primary-800' : 'bg-red-100 text-red-800'}`}>{item.isActive ? 'Activo' : 'Inactivo'}</span> },
+    { key: 'stock', header: 'Stock', render: (item: Product) => {
+      const s = stockByProduct.get(item.id);
+      if (!s) return <span className="text-gray-300 text-xs">—</span>;
+      if (comps.length <= 1) {
+        return <span className="text-sm font-semibold tabular-nums text-gray-800">{s.totalQuantity}</span>;
+      }
+      return (
+        <div className="text-xs space-y-0.5">
+          {s.byCompany.map((bc: any) => {
+            const comp = comps.find((c: any) => c.id === bc.companyId);
+            if (!comp) return null;
+            return (
+              <div key={bc.companyId} className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-gray-500 truncate max-w-[70px]">{comp.name}:</span>
+                <span className="font-semibold tabular-nums text-gray-800">{bc.quantity}</span>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }},
     { key: 'actions', header: 'Acciones', render: (item: Product) => (
       <div className="flex gap-2">
         <button onClick={() => setSuppliersTarget(item)} className="text-gray-500 hover:text-primary-600" title="Ver proveedores"><Truck size={16} /></button>

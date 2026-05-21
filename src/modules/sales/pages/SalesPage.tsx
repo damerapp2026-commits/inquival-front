@@ -389,7 +389,8 @@ export function SalesPage() {
   const productMap = useMemo(() => new Map<string, Product>(products.map((p: Product) => [p.id, p])), [products]);
 
   const getCompanyName = (id?: string) => id ? companyMap.get(id)?.name || 'N/A' : 'Mixta';
-  const getClientName = (id?: string) => id ? clientMap.get(id)?.name || 'N/A' : 'Sin cliente';
+  const getClientName = (id?: string, nameFromSale?: string) =>
+    nameFromSale || (id ? clientMap.get(id)?.name || id : 'Sin cliente');
   const getProductName = (id: string) => productMap.get(id)?.name || id;
   const getSellerName = (sale: Sale) => sale.sellerName
     || (sale.sellerId ? sellerNameById[sale.sellerId] : '')
@@ -479,7 +480,7 @@ export function SalesPage() {
 
         return {
           'Fecha': formatDateEs(sale.date),
-          'Cliente': getClientName(sale.clientId),
+          'Cliente': getClientName(sale.clientId, sale.clientName),
           'Almacén': almacen,
           'Productos': productosStr,
           'Valor Venta': Math.round(baseAmount * 100) / 100,
@@ -526,7 +527,7 @@ export function SalesPage() {
         className="text-primary-700 hover:text-primary-900 hover:underline text-left"
         title="Ver todas las ventas de este cliente"
       >
-        {getClientName(item.clientId)}
+        {getClientName(item.clientId, item.clientName)}
       </button>
     ) : <span className="text-gray-400">Sin cliente</span> },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
@@ -571,7 +572,7 @@ export function SalesPage() {
         className="text-primary-700 hover:text-primary-900 hover:underline text-left"
         title="Ver todas las ventas de este cliente"
       >
-        {getClientName(item.clientId)}
+        {getClientName(item.clientId, item.clientName)}
       </button>
     ) : <span className="text-gray-400">Sin cliente</span> },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
@@ -1162,7 +1163,7 @@ export function SalesPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="border border-gray-200 rounded-xl p-3">
                     <span className="block text-xs text-gray-500 mb-0.5">Cliente</span>
-                    <div className="text-sm font-medium text-gray-900 truncate">{getClientName(sale.clientId)}</div>
+                    <div className="text-sm font-medium text-gray-900 truncate">{getClientName(sale.clientId, sale.clientName)}</div>
                   </div>
                   <div className="border border-gray-200 rounded-xl p-3">
                     <span className="block text-xs text-gray-500 mb-0.5">Vendedor</span>
