@@ -78,8 +78,8 @@ export function AppRoutes() {
           <Route path="workers" element={<Suspense fallback={<Loading />}><WorkerExpensesPage /></Suspense>} />
           <Route path="analytics" element={<Suspense fallback={<Loading />}><ExpensesAnalyticsPage /></Suspense>} />
         </Route>
-        <Route path="credits" element={<AdminOnly><Suspense fallback={<Loading />}><CreditsPage /></Suspense></AdminOnly>} />
-        <Route path="credits/client/:clientId" element={<AdminOnly><Suspense fallback={<Loading />}><ClientCreditDetailPage /></Suspense></AdminOnly>} />
+        <Route path="credits" element={<Suspense fallback={<Loading />}><CreditsPage /></Suspense>} />
+        <Route path="credits/client/:clientId" element={<Suspense fallback={<Loading />}><ClientCreditDetailPage /></Suspense>} />
         <Route path="credits/migrate" element={<AdminOnly><Suspense fallback={<Loading />}><MigrateMisdatedCreditsPage /></Suspense></AdminOnly>} />
         <Route path="clients" element={<Suspense fallback={<Loading />}><ClientsPage /></Suspense>} />
         <Route path="categories" element={<AdminOnly><Suspense fallback={<Loading />}><CategoriesPage /></Suspense></AdminOnly>} />

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
@@ -9,10 +10,14 @@ import { Plus, Search, Edit2, Trash2, Users, Loader2, AlertTriangle, UserCheck, 
 import type { Client } from '../../../shared/types';
 import { clientService } from '../services/clientService';
 import { ExportClientStatementButton } from '../../credits/components/ExportClientStatementButton';
+import { CreditsPage } from '../../credits/pages/CreditsPage';
 import { LocationFields } from '../components/LocationFields';
 import toast from 'react-hot-toast';
 
 export function ClientsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') === 'creditos' ? 'creditos' : 'datos';
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search);
@@ -211,12 +216,41 @@ export function ClientsPage() {
               <p className="text-sm text-gray-500 mt-0.5">Gestiona la base de clientes con consulta automática a RENIEC y SUNAT</p>
             </div>
           </div>
-          <button onClick={openCreate} className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-medium shadow-sm transition-colors">
-            <Plus size={18} /> Nuevo Cliente
+          {activeTab === 'datos' && (
+            <button onClick={openCreate} className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-medium shadow-sm transition-colors">
+              <Plus size={18} /> Nuevo Cliente
+            </button>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 mt-4 border-b border-gray-100">
+          <button
+            onClick={() => setSearchParams({})}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              activeTab === 'datos'
+                ? 'text-primary-600 border-b-2 border-primary-600 -mb-px'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <span className="flex items-center gap-1.5"><Users size={14} /> Datos</span>
+          </button>
+          <button
+            onClick={() => setSearchParams({ tab: 'creditos' })}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              activeTab === 'creditos'
+                ? 'text-primary-600 border-b-2 border-primary-600 -mb-px'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <span className="flex items-center gap-1.5"><CreditCard size={14} /> Créditos</span>
           </button>
         </div>
       </div>
 
+      {activeTab === 'creditos' && <CreditsPage asTab />}
+
+      {activeTab === 'datos' && <>
       {/* KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiMini icon={Contact} label="Total" value={total} accent="bg-primary-100 text-primary-700" />
@@ -391,6 +425,7 @@ export function ClientsPage() {
           </div>
         </div>
       </Modal>
+      </>}
     </div>
   );
 }

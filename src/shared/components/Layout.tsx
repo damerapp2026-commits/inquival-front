@@ -55,6 +55,7 @@ const navSections: NavSection[] = [
     label: 'CATÁLOGO',
     items: [
       { path: '/clients', label: 'Clientes', icon: Users },
+      { path: '/credits', label: 'Créditos', icon: CreditCard },
       { path: '/categories', label: 'Categorías', icon: FolderTree, roles: ['ADMIN'] },
       { path: '/laboratories', label: 'Laboratorios', icon: FlaskConical, roles: ['ADMIN'] },
       { path: '/units', label: 'Unidades de Medida', icon: Ruler, roles: ['ADMIN'] },

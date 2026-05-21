@@ -47,7 +47,7 @@ function getDueState(dueDate?: string, status?: Status): { label: string; class:
 
 const PAGE_SIZE = 10;
 
-export function CreditsPage() {
+export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'' | Status>('');
@@ -170,6 +170,7 @@ export function CreditsPage() {
 
   return (
     <div>
+      {!asTab && (
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <CreditCard size={24} /> Créditos
@@ -241,11 +242,65 @@ export function CreditsPage() {
         </div>
         </div>
       </div>
+      )}
 
       <RegisterHistoricalCreditModal
         isOpen={showHistoricalModal}
         onClose={() => setShowHistoricalModal(false)}
       />
+
+      {asTab && (
+        <div className="flex items-center justify-end gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => setShowHistoricalModal(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-700 shadow-sm"
+          >
+            <History size={16} />
+            Deuda histórica
+          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowExportMenu((v) => !v)}
+              className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300"
+            >
+              <FileDown size={16} />
+              Exportar PDF
+              <ChevronDown size={14} />
+            </button>
+            {showExportMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)} />
+                <div className="absolute right-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      downloadCreditsSummaryPdf({ credits: groups.flatMap((g) => g.credits), clients, filters: { search: search || undefined, status: statusFilter || undefined } });
+                      setShowExportMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+                  >
+                    <div className="font-medium text-gray-800">Resumen por fecha</div>
+                    <div className="text-xs text-gray-500">Agrupa créditos por día, con totales</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      downloadCreditsDetailedPdf({ credits: groups.flatMap((g) => g.credits), clients, filters: { search: search || undefined, status: statusFilter || undefined } });
+                      setShowExportMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-t border-gray-100"
+                  >
+                    <div className="font-medium text-gray-800">Detallado</div>
+                    <div className="text-xs text-gray-500">Por cliente, con productos y pagos</div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[240px] max-w-md">
