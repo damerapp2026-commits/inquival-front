@@ -230,7 +230,11 @@ export function CashRegisterPage() {
   const activeEntries = entries;
   const totalIncome = activeEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
   const totalExpense = activeEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
-  const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
+  const totalIncomeUsd = activeEntries
+    .filter((e) => e.type === 'INCOME' && e.referenceType === 'Sale' && salesByRefId.get(e.referenceId || '')?.currency === 'USD')
+    .reduce((s, e) => s + e.amount, 0);
+  const totalIncomePen = totalIncome - totalIncomeUsd;
+  const netBalance = (register?.openingBalance || 0) + totalIncomePen - totalExpense;
 
   const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '' }); setShowAddModal(true); };
   const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo' }); setRucInput(''); setRucFound(''); setShowAddModal(true); };
@@ -495,9 +499,9 @@ export function CashRegisterPage() {
       {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiTile icon={Scale} label="Apertura" value={`S/ ${(register?.openingBalance || 0).toFixed(2)}`} accent="bg-gray-100 text-gray-700" />
-        <KpiTile icon={TrendingUp} label="Ingresos" value={`+ S/ ${totalIncome.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" />
+        <KpiTile icon={TrendingUp} label={totalIncomeUsd > 0 ? 'Ingresos S/' : 'Ingresos'} value={`+ S/ ${totalIncomePen.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" subValue={totalIncomeUsd > 0 ? `+ $ ${totalIncomeUsd.toFixed(2)} USD` : undefined} subValueAccent="text-emerald-600" />
         <KpiTile icon={TrendingDown} label="Egresos" value={`− S/ ${totalExpense.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" />
-        <KpiTile icon={Wallet} label="Balance Neto" value={`S/ ${netBalance.toFixed(2)}`} accent="bg-blue-100 text-blue-700" valueAccent="text-blue-700" />
+        <KpiTile icon={Wallet} label="Balance Neto (S/)" value={`S/ ${netBalance.toFixed(2)}`} accent="bg-blue-100 text-blue-700" valueAccent="text-blue-700" />
       </div>
 
       {/* Tabs */}
@@ -656,15 +660,18 @@ export function CashRegisterPage() {
                             const groupSale = isSaleGroup ? salesByRefId.get(first.referenceId!) : undefined;
                             const isCreditPaymentGroup = first.referenceType === 'CreditAccount' && !!first.referenceId;
                             const groupCredit = isCreditPaymentGroup ? creditsByRefId.get(first.referenceId!) : undefined;
+                            const isGroupUsd = groupSale?.currency === 'USD';
+                            const groupSym = isGroupUsd ? '$' : 'S/';
                             if (groupSale?.isCredit) {
                               return (
                                 <div className="flex flex-col items-end leading-tight">
                                   <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
-                                    C: S/ {groupSale.total.toFixed(2)}
+                                    C: {groupSym} {groupSale.total.toFixed(2)}
                                   </span>
                                   <span className="text-primary-700">
-                                    P: + S/ {total.toFixed(2)}
+                                    P: + {groupSym} {total.toFixed(2)}
                                   </span>
+                                  {isGroupUsd && <span className="text-[10px] text-emerald-600 font-semibold">USD</span>}
                                 </div>
                               );
                             }
@@ -686,7 +693,12 @@ export function CashRegisterPage() {
                                 </div>
                               );
                             }
-                            return <span>{first.type === 'INCOME' ? '+' : '−'} S/ {total.toFixed(2)}</span>;
+                            return (
+                              <span className={isGroupUsd ? 'text-emerald-600' : ''}>
+                                {first.type === 'INCOME' ? '+' : '−'} {groupSym} {total.toFixed(2)}
+                                {isGroupUsd && <span className="ml-1 text-[10px] font-bold">USD</span>}
+                              </span>
+                            );
                           })()}
                         </td>
                         <td className="px-4 py-3.5 text-center"><span className="text-gray-300">—</span></td>
@@ -972,9 +984,12 @@ export function CashRegisterPage() {
 
               <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 space-y-1.5 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Saldo apertura</span><span className="font-semibold tabular-nums">S/ {(register?.openingBalance || 0).toFixed(2)}</span></div>
-                <div className="flex justify-between text-primary-700"><span>+ Ingresos</span><span className="font-semibold tabular-nums">S/ {totalIncome.toFixed(2)}</span></div>
+                <div className="flex justify-between text-primary-700"><span>+ Ingresos (S/)</span><span className="font-semibold tabular-nums">S/ {totalIncomePen.toFixed(2)}</span></div>
+                {totalIncomeUsd > 0 && (
+                  <div className="flex justify-between text-emerald-600"><span>+ Ingresos (USD)</span><span className="font-semibold tabular-nums">$ {totalIncomeUsd.toFixed(2)}</span></div>
+                )}
                 <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">S/ {totalExpense.toFixed(2)}</span></div>
-                <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-200 mt-2"><span>Balance cierre</span><span className="tabular-nums">S/ {netBalance.toFixed(2)}</span></div>
+                <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-200 mt-2"><span>Balance cierre (S/)</span><span className="tabular-nums">S/ {netBalance.toFixed(2)}</span></div>
               </div>
 
               {methods.length > 0 && (
@@ -1037,6 +1052,8 @@ export function CashRegisterPage() {
           const sellerName = sale.sellerName || (sale.sellerId ? userById[sale.sellerId] : '') || 'Sin asignar';
           // En venta a crédito, "sale.total" es el total de la venta pero la caja
           // solo recibió la suma de sale.payments (anticipo). El saldo queda como deuda.
+          const isUsdSaleDetail = sale.currency === 'USD';
+          const detailSym = isUsdSaleDetail ? '$' : 'S/';
           const anticipo = sale.isCredit
             ? (sale.payments || []).reduce((s: number, p: any) => s + (p.amount || 0), 0)
             : sale.total;
@@ -1047,9 +1064,12 @@ export function CashRegisterPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <span className={`text-xs font-semibold uppercase tracking-wide ${sale.isCancelled ? 'text-red-600' : sale.isCredit ? 'text-orange-700' : 'text-primary-700'}`}>
-                      {sale.isCredit ? 'Total de la venta' : 'Total cobrado'}
+                      {sale.isCredit ? 'Total de la venta' : 'Total cobrado'}{isUsdSaleDetail ? ' (USD)' : ''}
                     </span>
-                    <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>S/ {sale.total.toFixed(2)}</div>
+                    <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{detailSym} {sale.total.toFixed(2)}</div>
+                    {isUsdSaleDetail && sale.exchangeRate && (
+                      <div className="text-xs text-emerald-600 mt-0.5">TC {sale.exchangeRate.toFixed(2)} · Equiv. S/ {(sale.total * sale.exchangeRate).toFixed(2)}</div>
+                    )}
                   </div>
                   <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : sale.isCredit ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
                     {sale.isCancelled ? 'Anulada' : sale.isCredit ? 'A crédito' : 'Completada'}
@@ -1069,11 +1089,11 @@ export function CashRegisterPage() {
                   <div className="mt-3 pt-3 border-t border-orange-200/70 grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="block text-[10px] uppercase tracking-wider text-orange-700/80 font-semibold">Cobrado en caja</span>
-                      <div className="font-bold text-primary-700 tabular-nums">S/ {anticipo.toFixed(2)}</div>
+                      <div className="font-bold text-primary-700 tabular-nums">{detailSym} {anticipo.toFixed(2)}</div>
                     </div>
                     <div>
                       <span className="block text-[10px] uppercase tracking-wider text-orange-700/80 font-semibold">Saldo a crédito</span>
-                      <div className="font-bold text-red-600 tabular-nums">S/ {pendienteCredito.toFixed(2)}</div>
+                      <div className="font-bold text-red-600 tabular-nums">{detailSym} {pendienteCredito.toFixed(2)}</div>
                     </div>
                   </div>
                 )}
@@ -1173,7 +1193,7 @@ function PageHeader() {
   );
 }
 
-function KpiTile({ icon: Icon, label, value, accent, valueAccent }: { icon: any; label: string; value: string; accent: string; valueAccent?: string }) {
+function KpiTile({ icon: Icon, label, value, accent, valueAccent, subValue, subValueAccent }: { icon: any; label: string; value: string; accent: string; valueAccent?: string; subValue?: string; subValueAccent?: string }) {
   return (
     <div className="bg-white rounded-xl shadow-card p-5 hover:shadow-card-hover transition-shadow">
       <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
@@ -1181,6 +1201,9 @@ function KpiTile({ icon: Icon, label, value, accent, valueAccent }: { icon: any;
         {label}
       </div>
       <div className={`text-2xl font-bold tabular-nums ${valueAccent || 'text-gray-800'}`}>{value}</div>
+      {subValue && (
+        <div className={`text-sm font-semibold tabular-nums mt-1 ${subValueAccent || 'text-emerald-600'}`}>{subValue}</div>
+      )}
     </div>
   );
 }
@@ -1342,22 +1365,23 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
       <td className="px-4 py-3.5">{method ? <MethodPill name={method} /> : <span className="text-gray-300">—</span>}</td>
       <td className={`px-4 py-3.5 text-right font-semibold tabular-nums ${entry.type === 'INCOME' ? 'text-primary-700' : 'text-rose-600'}`}>
         {(() => {
+          const isUsdSale = isSale && sale?.currency === 'USD';
+          const saleSym = isUsdSale ? '$' : 'S/';
           const isCreditSale = isSale && !!sale?.isCredit;
           if (isCreditSale) {
-            // Venta a crédito: la entry refleja solo el anticipo cobrado en este registro.
             return (
               <div className="flex flex-col items-end leading-tight">
                 <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
-                  C: S/ {sale!.total.toFixed(2)}
+                  C: {saleSym} {sale!.total.toFixed(2)}
                 </span>
                 <span className="text-primary-700">
-                  P: + S/ {entry.amount.toFixed(2)}
+                  P: + {saleSym} {entry.amount.toFixed(2)}
                 </span>
+                {isUsdSale && <span className="text-[10px] text-emerald-600 font-semibold">USD</span>}
               </div>
             );
           }
           if (credit) {
-            // Pago de crédito (abono parcial o final). Mostramos el crédito total y este abono.
             const cleared = isPaymentThatClears(credit, [entry.id!]);
             return (
               <div className="flex flex-col items-end leading-tight">
@@ -1375,7 +1399,12 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
               </div>
             );
           }
-          return <span>{entry.type === 'INCOME' ? '+' : '−'} S/ {entry.amount.toFixed(2)}</span>;
+          return (
+            <span className={isUsdSale ? 'text-emerald-600' : ''}>
+              {entry.type === 'INCOME' ? '+' : '−'} {saleSym} {entry.amount.toFixed(2)}
+              {isUsdSale && <span className="ml-1 text-[10px] font-bold">USD</span>}
+            </span>
+          );
         })()}
       </td>
       <td className="px-4 py-3.5 text-center"><VoucherPill type={entry.voucherType} series={entry.voucherSeries} number={entry.voucherNumber} /></td>

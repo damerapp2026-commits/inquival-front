@@ -122,7 +122,7 @@ export function ClientCreditDetailPage() {
               <div key={g.groupId} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-3 text-sm">
-                    <span className="text-gray-500">{new Date(g.paymentDate).toLocaleDateString('es-PE')}</span>
+                    <span className="text-gray-500">{new Date(g.paymentDate + 'T00:00:00').toLocaleDateString('es-PE')}</span>
                     {g.paymentMethodName && (
                       <span className="text-xs bg-white border rounded px-2 py-0.5 text-gray-600">{g.paymentMethodName}</span>
                     )}
@@ -227,7 +227,7 @@ export function ClientCreditDetailPage() {
                       return (
                         <div key={idx} className="flex items-center justify-between bg-primary-50 rounded px-3 py-1.5 text-sm">
                           <div className="flex items-center gap-3">
-                            <span className="text-gray-500">{new Date(p.paymentDate).toLocaleDateString('es-PE')}</span>
+                            <span className="text-gray-500">{new Date(p.paymentDate + 'T00:00:00').toLocaleDateString('es-PE')}</span>
                             <span className="font-medium text-primary-700">S/ {p.amount.toFixed(2)}</span>
                             {p.paymentMethodName && (
                               <span className="text-xs bg-white border rounded px-1.5 py-0.5 text-gray-600">{p.paymentMethodName}</span>

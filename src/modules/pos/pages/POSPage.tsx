@@ -56,6 +56,8 @@ interface CartItem {
   tierOverride?: string;   // if set, uses this tier instead of global
   isCustomPrice?: boolean; // true = manually edited, don't re-resolve
   sourceCompanyId?: string; // when global selector is "Todos", store which warehouse this item comes from
+  isItemCourtesy?: boolean; // this specific item is gifted at price 0
+  savedUnitPrice?: number;  // original price before marking as courtesy
 }
 
 function normalizeTaxType(value: unknown): TaxType {
@@ -173,8 +175,6 @@ export function POSPage() {
   const [isCourtesy, setIsCourtesy] = useState(false);
   /** Moneda de la venta. Los precios del carrito son en esta moneda. */
   const [currency, setCurrency] = useState<'PEN' | 'USD'>('PEN');
-  /** Tipo de cambio vigente para ventas en USD. */
-  const [exchangeRate, setExchangeRate] = useState<number>(3.75);
 
   const computedDueDate = (() => {
     const days = parseInt(creditDueDays, 10);
@@ -465,6 +465,18 @@ export function POSPage() {
     );
   };
 
+  const toggleItemCourtesy = (productId: string) => {
+    setCart((prev) =>
+      prev.map((i) => {
+        if (i.productId !== productId) return i;
+        if (i.isItemCourtesy) {
+          return { ...i, isItemCourtesy: false, unitPrice: i.savedUnitPrice ?? i.unitPrice, savedUnitPrice: undefined };
+        }
+        return { ...i, isItemCourtesy: true, savedUnitPrice: i.unitPrice, unitPrice: 0 };
+      }),
+    );
+  };
+
   const [editingPriceFor, setEditingPriceFor] = useState<string | null>(null);
 
   // Solo los items GRAVADO contribuyen IGV. Los precios en carrito vienen con IGV incluido,
@@ -501,10 +513,6 @@ export function POSPage() {
     }
     if (isCourtesy && !isSellerRole && user?.role !== 'ADMIN') {
       toast.error('Solo administradores pueden registrar ventas de cortesía');
-      return;
-    }
-    if (currency === 'USD' && (!exchangeRate || exchangeRate <= 0)) {
-      toast.error('Ingresa el tipo de cambio para ventas en USD');
       return;
     }
     const itemMissingSource = cart.find((i) => !i.sourceCompanyId && companyId === ALL_COMPANIES);
@@ -621,7 +629,6 @@ export function POSPage() {
       baseImponible: gravadoBase,
       isCourtesy: isCourtesy || undefined,
       currency: currency !== 'PEN' ? currency : undefined,
-      exchangeRate: currency === 'USD' ? exchangeRate : undefined,
       totalUsd: currency === 'USD' ? saleTotal : undefined,
     };
     try {
@@ -658,7 +665,6 @@ export function POSPage() {
           date: saleDateObj.toISOString(),
           isCourtesy: isCourtesy || undefined,
           currency: currency !== 'PEN' ? currency : undefined,
-          exchangeRate: currency === 'USD' ? exchangeRate : undefined,
         } as any);
       }
       setCart([]);
@@ -926,11 +932,7 @@ export function POSPage() {
             {/* Toggle USD */}
             <button
               type="button"
-              onClick={() => {
-                const next = currency === 'USD' ? 'PEN' : 'USD';
-                setCurrency(next);
-                if (next === 'PEN') setExchangeRate(3.75);
-              }}
+              onClick={() => setCurrency(currency === 'USD' ? 'PEN' : 'USD')}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
                 currency === 'USD'
                   ? 'bg-emerald-600 text-white border-emerald-600'
@@ -941,22 +943,6 @@ export function POSPage() {
               <DollarSign size={12} />
               USD
             </button>
-
-            {/* Tipo de cambio (solo visible cuando USD) */}
-            {currency === 'USD' && (
-              <label className="flex items-center gap-1 text-xs text-gray-500">
-                <span className="shrink-0">TC:</span>
-                <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={exchangeRate}
-                  onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
-                  onFocus={(e) => e.target.select()}
-                  className="w-16 text-sm border border-emerald-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-emerald-50 text-emerald-800 font-semibold"
-                />
-              </label>
-            )}
 
             {/* Toggle Cortesía (solo ADMIN) */}
             {!isSellerRole && (
@@ -977,7 +963,7 @@ export function POSPage() {
           </div>
           {currency === 'USD' && (
             <div className="mt-1 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1">
-              Precios y pagos en USD · S/ por cada $ {exchangeRate.toFixed(2)}
+              Precios y pagos en dólares (USD)
             </div>
           )}
           {isCourtesy && (
@@ -1002,10 +988,10 @@ export function POSPage() {
               const isOverridden = !!item.tierOverride || !!item.isCustomPrice;
               const isEditing = editingPriceFor === item.productId;
               return (
-                <div key={item.productId} className="bg-gray-50 rounded-xl p-3 group">
+                <div key={item.productId} className={`rounded-xl p-3 group ${item.isItemCourtesy ? 'bg-violet-50 border border-violet-200' : 'bg-gray-50'}`}>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-white text-primary-600 flex items-center justify-center shrink-0">
-                      <Package size={18} />
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${item.isItemCourtesy ? 'bg-violet-100 text-violet-600' : 'bg-white text-primary-600'}`}>
+                      {item.isItemCourtesy ? <Gift size={18} /> : <Package size={18} />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-base font-medium text-gray-800 truncate">{item.name}</div>
@@ -1015,9 +1001,14 @@ export function POSPage() {
                         </div>
                       )}
                       <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-sm text-gray-500">
+                        <span className={`text-sm ${item.isItemCourtesy ? 'text-violet-600' : 'text-gray-500'}`}>
                           {currency === 'USD' ? '$' : 'S/'} {item.unitPrice.toFixed(2)} · {item.unit}
                         </span>
+                        {item.isItemCourtesy && (
+                          <span className="text-[10px] bg-violet-100 text-violet-700 rounded px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
+                            <Gift size={9} /> Cortesía
+                          </span>
+                        )}
                         {isSellerRole ? (
                           <span
                             className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium ${
@@ -1063,6 +1054,19 @@ export function POSPage() {
                         <Plus size={12} />
                       </button>
                     </div>
+                    {!isSellerRole && (
+                      <button
+                        onClick={() => toggleItemCourtesy(item.productId)}
+                        className={`transition-colors ${
+                          item.isItemCourtesy
+                            ? 'text-violet-500 hover:text-violet-700'
+                            : 'text-gray-300 opacity-0 group-hover:opacity-100 hover:text-violet-400'
+                        }`}
+                        title={item.isItemCourtesy ? 'Quitar cortesía de este item' : 'Marcar este item como cortesía (precio 0)'}
+                      >
+                        <Gift size={14} />
+                      </button>
+                    )}
                     <button
                       onClick={() => removeFromCart(item.productId)}
                       className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1070,7 +1074,7 @@ export function POSPage() {
                       <Trash2 size={14} />
                     </button>
                   </div>
-                  {isEditing && !isSellerRole && (
+                  {isEditing && !isSellerRole && !item.isItemCourtesy && (
                     <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
                       <div className="text-[11px] text-gray-500 font-medium">Cambiar rango de precio</div>
                       <div className="flex flex-wrap gap-1">
@@ -1169,9 +1173,6 @@ export function POSPage() {
               </span>
               <div className="text-right">
                 <div className="text-2xl font-bold text-primary-600">{currency === 'USD' ? '$' : 'S/'} {total.toFixed(2)}</div>
-                {currency === 'USD' && exchangeRate > 0 && (
-                  <div className="text-xs text-gray-400">≈ S/ {(total * exchangeRate).toFixed(2)}</div>
-                )}
               </div>
             </div>
             <div className="flex gap-2">
@@ -1231,9 +1232,6 @@ export function POSPage() {
                     {currency === 'USD' && !isCourtesy && <span className="ml-2 bg-white/20 rounded-full px-2 py-0.5 text-xs font-bold">USD</span>}
                   </p>
                   <p className="text-4xl font-bold tracking-tight">{currency === 'USD' ? '$' : 'S/'} {total.toFixed(2)}</p>
-                  {currency === 'USD' && exchangeRate > 0 && (
-                    <p className="text-white/70 text-sm mt-0.5">≈ S/ {(total * exchangeRate).toFixed(2)}  ·  TC {exchangeRate.toFixed(2)}</p>
-                  )}
                 </div>
                 <div className="flex items-start gap-2">
                   <label className="flex items-center gap-2 bg-white/15 hover:bg-white/25 transition-colors rounded-xl px-3 py-2 cursor-pointer" title="Fecha de la venta">
@@ -1413,9 +1411,6 @@ export function POSPage() {
                       <span className={`text-xs font-bold uppercase tracking-wider ${isCourtesy ? 'text-violet-700' : currency === 'USD' ? 'text-emerald-700' : 'text-primary-700'}`}>
                         {isCourtesy ? 'Venta de Cortesía' : currency === 'USD' ? 'Total a cobrar (USD)' : 'Total a cobrar'}
                       </span>
-                      {currency === 'USD' && !isCourtesy && (
-                        <div className="text-xs text-emerald-600 mt-0.5">≈ S/ {(total * exchangeRate).toFixed(2)}</div>
-                      )}
                     </div>
                     <span className={`text-2xl font-bold tabular-nums ${isCourtesy ? 'text-violet-800' : currency === 'USD' ? 'text-emerald-800' : 'text-primary-800'}`}>
                       {isCourtesy ? 'S/ 0.00' : `${currency === 'USD' ? '$' : 'S/'} ${total.toFixed(2)}`}

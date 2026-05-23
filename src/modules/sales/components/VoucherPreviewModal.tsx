@@ -75,7 +75,7 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
     </tr>
   `).join('');
   const paymentsRows = sale.payments.map((p) => `
-    <div class="kv"><span>${escapeHtml(p.methodName)}</span><span>S/ ${p.amount.toFixed(2)}</span></div>
+    <div class="kv"><span>${escapeHtml(p.methodName)}</span><span>${sym} ${p.amount.toFixed(2)}</span></div>
   `).join('');
 
   const paidSoFar = sale.creditPaidAmount ?? sale.payments.reduce((s, p) => s + p.amount, 0);
@@ -89,16 +89,16 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
     ${paidSoFar > 0 ? `
       <div class="bold" style="margin-top: 4px;">Abonado a la fecha</div>
       ${sale.payments.map((p) => `
-        <div class="kv"><span>${escapeHtml(p.methodName)}</span><span>S/ ${p.amount.toFixed(2)}</span></div>
+        <div class="kv"><span>${escapeHtml(p.methodName)}</span><span>${sym} ${p.amount.toFixed(2)}</span></div>
       `).join('')}
       ${sale.creditPaidAmount !== undefined && sale.creditPaidAmount > sale.payments.reduce((s, p) => s + p.amount, 0) ? `
-        <div class="kv"><span>Abonos posteriores</span><span>S/ ${(sale.creditPaidAmount - sale.payments.reduce((s, p) => s + p.amount, 0)).toFixed(2)}</span></div>
+        <div class="kv"><span>Abonos posteriores</span><span>${sym} ${(sale.creditPaidAmount - sale.payments.reduce((s, p) => s + p.amount, 0)).toFixed(2)}</span></div>
       ` : ''}
-      <div class="kv bold"><span>Total abonado</span><span>S/ ${paidSoFar.toFixed(2)}</span></div>
+      <div class="kv bold"><span>Total abonado</span><span>${sym} ${paidSoFar.toFixed(2)}</span></div>
     ` : `
       <div class="muted" style="margin-top:2px;">Sin abono inicial</div>
     `}
-    <div class="kv bold lg" style="margin-top: 4px; color: #b91c1c;"><span>SALDO PENDIENTE</span><span>S/ ${pendingAmount.toFixed(2)}</span></div>
+    <div class="kv bold lg" style="margin-top: 4px; color: #b91c1c;"><span>SALDO PENDIENTE</span><span>${sym} ${pendingAmount.toFixed(2)}</span></div>
     ${dueDateFmt ? `<div class="kv"><span class="bold">Vence el</span><span>${dueDateFmt}</span></div>` : ''}
   ` : '';
 
@@ -106,7 +106,7 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
     <div class="hr"></div>
     <div class="bold">Forma de pago</div>
     ${paymentsRows}
-    ${sale.payments.length > 1 ? `<div class="kv bold" style="margin-top:2px;"><span>Total pagado</span><span>S/ ${sale.payments.reduce((s, p) => s + p.amount, 0).toFixed(2)}</span></div>` : ''}
+    ${sale.payments.length > 1 ? `<div class="kv bold" style="margin-top:2px;"><span>Total pagado</span><span>${sym} ${sale.payments.reduce((s, p) => s + p.amount, 0).toFixed(2)}</span></div>` : ''}
   ` : '';
 
   return `<!doctype html>
@@ -186,6 +186,8 @@ function buildA4Html(sale: VoucherSnapshot): string {
   const c = COMPANY_INFO;
   const headerName = c.legalName || 'INQUIVEN';
   const headerRuc = c.ruc || '—';
+  const isUsd = sale.currency === 'USD';
+  const sym = isUsd ? '$' : 'S/';
 
   const subtotal = typeof sale.baseImponible === 'number'
     ? sale.baseImponible
@@ -208,7 +210,7 @@ function buildA4Html(sale: VoucherSnapshot): string {
   `).join('');
 
   const paymentsRows = sale.payments.map((p) => `
-    <tr><td class="kv-key">${escapeHtml(p.methodName)}</td><td class="kv-sep">:</td><td class="kv-val r">S/ ${p.amount.toFixed(2)}</td></tr>
+    <tr><td class="kv-key">${escapeHtml(p.methodName)}</td><td class="kv-sep">:</td><td class="kv-val r">${sym} ${p.amount.toFixed(2)}</td></tr>
   `).join('');
 
   const paidSoFarA4 = sale.creditPaidAmount ?? sale.payments.reduce((s, p) => s + p.amount, 0);
@@ -219,10 +221,10 @@ function buildA4Html(sale: VoucherSnapshot): string {
   const creditExtraA4 = sale.isCredit ? `
     <tr><td colspan="3" class="credit-banner-a4">VENTA A CRÉDITO</td></tr>
     ${paidSoFarA4 > 0 && sale.creditPaidAmount !== undefined && sale.creditPaidAmount > sale.payments.reduce((s, p) => s + p.amount, 0) ? `
-      <tr><td class="kv-key">Abonos posteriores</td><td class="kv-sep">:</td><td class="kv-val r">S/ ${(sale.creditPaidAmount - sale.payments.reduce((s, p) => s + p.amount, 0)).toFixed(2)}</td></tr>
+      <tr><td class="kv-key">Abonos posteriores</td><td class="kv-sep">:</td><td class="kv-val r">${sym} ${(sale.creditPaidAmount - sale.payments.reduce((s, p) => s + p.amount, 0)).toFixed(2)}</td></tr>
     ` : ''}
-    <tr><td class="kv-key">Total abonado</td><td class="kv-sep">:</td><td class="kv-val r"><b>S/ ${paidSoFarA4.toFixed(2)}</b></td></tr>
-    <tr><td class="kv-key" style="color:#b91c1c;"><b>SALDO PENDIENTE</b></td><td class="kv-sep">:</td><td class="kv-val r" style="color:#b91c1c;"><b>S/ ${pendingAmountA4.toFixed(2)}</b></td></tr>
+    <tr><td class="kv-key">Total abonado</td><td class="kv-sep">:</td><td class="kv-val r"><b>${sym} ${paidSoFarA4.toFixed(2)}</b></td></tr>
+    <tr><td class="kv-key" style="color:#b91c1c;"><b>SALDO PENDIENTE</b></td><td class="kv-sep">:</td><td class="kv-val r" style="color:#b91c1c;"><b>${sym} ${pendingAmountA4.toFixed(2)}</b></td></tr>
     ${dueDateFmtA4 ? `<tr><td class="kv-key">Vence el</td><td class="kv-sep">:</td><td class="kv-val r">${dueDateFmtA4}</td></tr>` : ''}
   ` : '';
 
@@ -374,7 +376,7 @@ function buildA4Html(sale: VoucherSnapshot): string {
     <tbody>${itemsRows}</tbody>
   </table>
 
-  <div class="amount-words"><span class="b">SON: </span>${escapeHtml(numberToWords(sale.total, 'PEN'))}</div>
+  <div class="amount-words"><span class="b">SON: </span>${escapeHtml(numberToWords(sale.total, isUsd ? 'USD' : 'PEN'))}</div>
 
   <div class="two-col">
     <div class="col-l">
@@ -383,7 +385,7 @@ function buildA4Html(sale: VoucherSnapshot): string {
           <div class="panel-title">${sale.isCredit ? 'FORMA DE PAGO · CRÉDITO' : 'FORMA DE PAGO'}</div>
           <table class="pay-rows"><tbody>
             ${paymentsRows}
-            ${sale.payments.length > 1 && !sale.isCredit ? `<tr><td class="kv-key"><b>Total pagado</b></td><td class="kv-sep">:</td><td class="kv-val r"><b>S/ ${sale.payments.reduce((s, p) => s + p.amount, 0).toFixed(2)}</b></td></tr>` : ''}
+            ${sale.payments.length > 1 && !sale.isCredit ? `<tr><td class="kv-key"><b>Total pagado</b></td><td class="kv-sep">:</td><td class="kv-val r"><b>${sym} ${sale.payments.reduce((s, p) => s + p.amount, 0).toFixed(2)}</b></td></tr>` : ''}
             ${creditExtraA4}
           </tbody></table>
         </div>
@@ -392,19 +394,25 @@ function buildA4Html(sale: VoucherSnapshot): string {
     <div class="col-r totals">
       <div class="totals-row first">
         <div class="lbl r">OP. GRAVADAS</div>
-        <div class="cur">S/</div>
+        <div class="cur">${sym}</div>
         <div class="val">${subtotal.toFixed(2)}</div>
       </div>
       <div class="totals-row">
         <div class="lbl r">I.G.V. 18%</div>
-        <div class="cur">S/</div>
+        <div class="cur">${sym}</div>
         <div class="val">${igv.toFixed(2)}</div>
       </div>
       <div class="totals-row last">
         <div class="lbl r">IMPORTE TOTAL</div>
-        <div class="cur">S/</div>
+        <div class="cur">${sym}</div>
         <div class="val">${sale.total.toFixed(2)}</div>
       </div>
+      ${isUsd ? `
+      <div class="totals-row" style="margin-top:4px;opacity:0.75;">
+        <div class="lbl r" style="font-size:8px;">TC ${(sale.exchangeRate || 0).toFixed(2)} → EQUIV.</div>
+        <div class="cur">S/</div>
+        <div class="val" style="font-size:8px;">${((sale.total || 0) * (sale.exchangeRate || 1)).toFixed(2)}</div>
+      </div>` : ''}
     </div>
   </div>
 
@@ -424,23 +432,27 @@ function buildA4Html(sale: VoucherSnapshot): string {
 }
 
 function buildWhatsappText(sale: VoucherSnapshot): string {
+  const isUsd = sale.currency === 'USD';
+  const sym = isUsd ? '$' : 'S/';
   const lines: string[] = [];
   lines.push(`*${voucherTitle(sale.voucherType)}* — ${displayVoucherNumber(sale)}`);
   lines.push(`${COMPANY_INFO.legalName}`);
   lines.push(`Fecha: ${formatDate(sale.date)}`);
   if (sale.clientName) lines.push(`Cliente: ${sale.clientName}`);
   lines.push(`Vendedor: ${sale.sellerName}`);
+  if (isUsd && sale.exchangeRate) lines.push(`Moneda: USD · TC ${sale.exchangeRate.toFixed(2)}`);
   lines.push('');
   lines.push('*Productos:*');
   sale.items.forEach((i) => {
-    lines.push(`• ${i.quantity} × ${i.name} — S/ ${i.subtotal.toFixed(2)}`);
+    lines.push(`• ${i.quantity} × ${i.name} — ${sym} ${i.subtotal.toFixed(2)}`);
   });
   lines.push('');
-  lines.push(`*TOTAL: S/ ${sale.total.toFixed(2)}*`);
+  lines.push(`*TOTAL: ${sym} ${sale.total.toFixed(2)}*`);
+  if (isUsd && sale.exchangeRate) lines.push(`_(Equiv. S/ ${(sale.total * sale.exchangeRate).toFixed(2)})_`);
   if (sale.payments.length) {
     lines.push('');
     lines.push('Forma de pago:');
-    sale.payments.forEach((p) => lines.push(`• ${p.methodName}: S/ ${p.amount.toFixed(2)}`));
+    sale.payments.forEach((p) => lines.push(`• ${p.methodName}: ${sym} ${p.amount.toFixed(2)}`));
   }
   lines.push('');
   lines.push('¡Gracias por su preferencia!');
@@ -637,7 +649,7 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
             <span>{sale.items.length} producto{sale.items.length === 1 ? '' : 's'}</span>
             {sale.clientName && <span className="text-gray-700 font-medium">· {sale.clientName}</span>}
           </div>
-          <div className="text-base font-bold text-primary-700 tabular-nums">S/ {sale.total.toFixed(2)}</div>
+          <div className="text-base font-bold text-primary-700 tabular-nums">{sale.currency === 'USD' ? '$' : 'S/'} {sale.total.toFixed(2)}</div>
         </div>
 
         {/* Actions */}
