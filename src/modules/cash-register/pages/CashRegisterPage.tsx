@@ -534,7 +534,7 @@ export function CashRegisterPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiTile icon={Scale} label="Apertura" value={`S/ ${(register?.openingBalance || 0).toFixed(2)}`} accent="bg-gray-100 text-gray-700" />
         <KpiTile icon={TrendingUp} label={totalIncomeUsd > 0 ? 'Ingresos S/' : 'Ingresos'} value={`+ S/ ${totalIncomePen.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" subValue={totalIncomeUsd > 0 ? `+ $ ${totalIncomeUsd.toFixed(2)} USD` : undefined} subValueAccent="text-emerald-600" />
-        <KpiTile icon={TrendingDown} label={totalExpenseUsd > 0 ? 'Egresos S/' : 'Egresos'} value={`− S/ ${totalExpensePen.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" subValue={totalExpenseUsd > 0 ? `− $ ${totalExpenseUsd.toFixed(2)} USD` : undefined} subValueAccent="text-rose-500" />
+        <KpiTile icon={TrendingDown} label={totalExpenseUsd > 0 ? 'Egresos S/' : 'Egresos'} value={`− S/ ${totalExpensePen.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" subValue={totalExpenseUsd > 0 ? `− $ ${totalExpenseUsd.toFixed(2)} USD` : undefined} subValueAccent="text-rose-600" />
         <KpiTile icon={Wallet} label={netBalanceUsd !== 0 ? 'Balance Neto S/' : 'Balance Neto'} value={`S/ ${netBalancePen.toFixed(2)}`} accent="bg-blue-100 text-blue-700" valueAccent="text-blue-700" subValue={netBalanceUsd !== 0 ? `${netBalanceUsd >= 0 ? '+' : '−'} $ ${Math.abs(netBalanceUsd).toFixed(2)} USD` : undefined} subValueAccent={netBalanceUsd >= 0 ? 'text-blue-600' : 'text-rose-500'} />
       </div>
 
