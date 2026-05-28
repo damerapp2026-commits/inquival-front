@@ -304,7 +304,7 @@ export function CashRegisterHistoryPage() {
       {/* Period summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiTile icon={Calendar} label="Cajas" value={`${summary.count}`} accent="bg-gray-100 text-gray-700" />
-        <KpiTile icon={ArrowUpCircle} label="Ingresos" value={`S/ ${summary.income.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" />
+        <KpiTile icon={ArrowUpCircle} label="Ingresos" value={`S/ ${summary.income.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" subValue={summary.incomeUsd > 0 ? `+ $ ${summary.incomeUsd.toFixed(2)} USD` : undefined} />
         <KpiTile icon={ArrowDownCircle} label="Egresos" value={`S/ ${summary.expense.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" />
         <KpiTile icon={Lock} label="Abiertas" value={`${summary.opens}`} accent="bg-amber-100 text-amber-700" valueAccent="text-amber-700" />
       </div>
@@ -542,7 +542,7 @@ export function CashRegisterHistoryPage() {
   );
 }
 
-function KpiTile({ icon: Icon, label, value, accent, valueAccent }: { icon: any; label: string; value: string; accent: string; valueAccent?: string }) {
+function KpiTile({ icon: Icon, label, value, accent, valueAccent, subValue }: { icon: any; label: string; value: string; accent: string; valueAccent?: string; subValue?: string }) {
   return (
     <div className="bg-white rounded-xl shadow-card p-5 hover:shadow-card-hover transition-shadow">
       <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
@@ -550,6 +550,7 @@ function KpiTile({ icon: Icon, label, value, accent, valueAccent }: { icon: any;
         {label}
       </div>
       <div className={`text-2xl font-bold tabular-nums ${valueAccent || 'text-gray-800'}`}>{value}</div>
+      {subValue && <div className="text-sm font-semibold tabular-nums text-emerald-600 mt-0.5">{subValue}</div>}
     </div>
   );
 }
