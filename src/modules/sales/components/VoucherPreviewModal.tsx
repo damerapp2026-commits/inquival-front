@@ -31,7 +31,7 @@ export interface VoucherSnapshot {
   totalUsd?: number;
 }
 
-type Format = 'TICKET' | 'A4';
+type Format = 'TICKET' | 'A4' | 'A5';
 
 function escapeHtml(s: string | undefined): string {
   if (!s) return '';
@@ -180,7 +180,8 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
 </body></html>`;
 }
 
-function buildA4Html(sale: VoucherSnapshot): string {
+function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
+  const isA5 = size === 'A5';
   const number = displayVoucherNumber(sale);
   const title = voucherTitle(sale.voucherType).toUpperCase();
   const c = COMPANY_INFO;
@@ -196,7 +197,7 @@ function buildA4Html(sale: VoucherSnapshot): string {
     ? sale.igv
     : Math.round((sale.total - subtotal) * 100) / 100;
 
-  const blankItemRows = Math.max(0, 8 - sale.items.length);
+  const blankItemRows = Math.max(0, (isA5 ? 5 : 8) - sale.items.length);
   const itemsRows = sale.items.map((i, idx) => `
     <tr>
       <td class="c">${idx + 1}</td>
@@ -251,9 +252,9 @@ function buildA4Html(sale: VoucherSnapshot): string {
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>${number}</title>
 <style>
-  @page { size: A4; margin: 0; }
+  @page { size: ${size}; margin: 0; }
   * { box-sizing: border-box; }
-  body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 9px; color: #111827; margin: 0; padding: 14mm 14mm; line-height: 1.35; }
+  body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: ${isA5 ? '7.5px' : '9px'}; color: #111827; margin: 0; padding: ${isA5 ? '8mm 10mm' : '14mm 14mm'}; line-height: 1.35; }
   h1, h2, h3 { margin: 0; }
   table { border-collapse: collapse; width: 100%; }
   td, th { vertical-align: top; }
@@ -264,12 +265,12 @@ function buildA4Html(sale: VoucherSnapshot): string {
   /* Header */
   .header { display: flex; gap: 12px; align-items: flex-start; }
   .header .info { flex: 1; padding-top: 4px; }
-  .header .brand { font-size: 16px; font-weight: 800; color: #15803d; margin-bottom: 4px; letter-spacing: 0.5px; }
-  .header .detail { font-size: 8px; color: #374151; margin-top: 1px; }
-  .header .docs { width: 200px; display: flex; flex-direction: column; gap: 4px; }
-  .doc-box { border: 1px solid #16a34a; padding: 4px 0; text-align: center; font-weight: 700; font-size: 10px; color: #111827; }
-  .doc-title { background: #16a34a; color: #fff; padding: 5px 0; text-align: center; font-weight: 700; font-size: 12px; letter-spacing: 0.4px; }
-  .doc-num { border: 1px solid #16a34a; padding: 4px 0; text-align: center; font-weight: 700; font-size: 11px; color: #15803d; }
+  .header .brand { font-size: ${isA5 ? '12px' : '16px'}; font-weight: 800; color: #15803d; margin-bottom: 4px; letter-spacing: 0.5px; }
+  .header .detail { font-size: ${isA5 ? '7px' : '8px'}; color: #374151; margin-top: 1px; }
+  .header .docs { width: ${isA5 ? '150px' : '200px'}; display: flex; flex-direction: column; gap: 4px; }
+  .doc-box { border: 1px solid #16a34a; padding: 4px 0; text-align: center; font-weight: 700; font-size: ${isA5 ? '8px' : '10px'}; color: #111827; }
+  .doc-title { background: #16a34a; color: #fff; padding: 5px 0; text-align: center; font-weight: 700; font-size: ${isA5 ? '10px' : '12px'}; letter-spacing: 0.4px; }
+  .doc-num { border: 1px solid #16a34a; padding: 4px 0; text-align: center; font-weight: 700; font-size: ${isA5 ? '9px' : '11px'}; color: #15803d; }
 
   /* Client/seller block */
   .info-block { margin-top: 14px; border: 1px solid #94a3b8; }
@@ -431,6 +432,10 @@ function buildA4Html(sale: VoucherSnapshot): string {
 </body></html>`;
 }
 
+function buildA5Html(sale: VoucherSnapshot): string {
+  return buildA4Html(sale, 'A5');
+}
+
 function buildWhatsappText(sale: VoucherSnapshot): string {
   const isUsd = sale.currency === 'USD';
   const sym = isUsd ? '$' : 'S/';
@@ -475,7 +480,9 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
 
   const html = useMemo(() => {
     if (!sale) return '';
-    return format === 'TICKET' ? buildTicketHtml(sale) : buildA4Html(sale);
+    if (format === 'TICKET') return buildTicketHtml(sale);
+    if (format === 'A5') return buildA5Html(sale);
+    return buildA4Html(sale);
   }, [sale, format]);
 
   useEffect(() => {
@@ -540,7 +547,7 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
     <>
     <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className={`bg-white rounded-2xl shadow-2xl w-full ${format === 'TICKET' ? 'max-w-xl' : 'max-w-4xl'} h-[92vh] flex flex-col overflow-hidden`}
+        className={`bg-white rounded-2xl shadow-2xl w-full ${format === 'TICKET' ? 'max-w-xl' : format === 'A5' ? 'max-w-2xl' : 'max-w-4xl'} h-[92vh] flex flex-col overflow-hidden`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -577,6 +584,15 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
             </button>
             <button
               type="button"
+              onClick={() => setFormat('A5')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                format === 'A5' ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <FileIcon size={15} /> A5
+            </button>
+            <button
+              type="button"
               onClick={() => setFormat('A4')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
                 format === 'A4' ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
@@ -598,6 +614,8 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
               className={`bg-white shadow-xl rounded-sm ${
                 format === 'TICKET'
                   ? 'w-[340px] h-[640px]'
+                  : format === 'A5'
+                  ? 'w-[520px] h-[740px]'
                   : 'w-full max-w-[820px] h-[1100px]'
               }`}
             />
