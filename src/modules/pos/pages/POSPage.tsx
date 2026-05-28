@@ -364,7 +364,7 @@ export function POSPage() {
 
     const price = resolvePrice(product, tierId, sourceCompanyId);
     if (price == null && !isCourtesy) {
-      toast.error(`Sin precio configurado para ${product.name}. Activa "Cortesía" para agregar a precio 0.`);
+      toast.error(`Sin precio configurado para ${product.name}. Activa "Bonificación" para agregar a precio 0.`);
       return;
     }
     setCart((prev) => {
@@ -514,7 +514,7 @@ export function POSPage() {
       return;
     }
     if (isCourtesy && !isSellerRole && user?.role !== 'ADMIN') {
-      toast.error('Solo administradores pueden registrar ventas de cortesía');
+      toast.error('Solo administradores pueden registrar bonificaciones');
       return;
     }
     const itemMissingSource = cart.find((i) => !i.sourceCompanyId && companyId === ALL_COMPANIES);
@@ -550,7 +550,7 @@ export function POSPage() {
     // Cortesía: sin validación de pagos, total debe ser 0
     if (isCourtesy) {
       if (total > 0.001) {
-        toast.error('Una venta de cortesía debe tener todos los items a precio 0');
+        toast.error('Una bonificación debe tener todos los items a precio 0');
         return;
       }
     } else if (isCredit) {
@@ -958,10 +958,10 @@ export function POSPage() {
                     ? 'bg-violet-600 text-white border-violet-600'
                     : 'bg-white text-gray-500 border-gray-200 hover:border-violet-400 hover:text-violet-600'
                 }`}
-                title="Venta de cortesía (precio 0)"
+                title="Bonificación (precio 0)"
               >
                 <Gift size={12} />
-                Cortesía
+                Bonificación
               </button>
             )}
           </div>
@@ -1010,7 +1010,7 @@ export function POSPage() {
                         </span>
                         {item.isItemCourtesy && (
                           <span className="text-[10px] bg-violet-100 text-violet-700 rounded px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
-                            <Gift size={9} /> Cortesía
+                            <Gift size={9} /> Bonif.
                           </span>
                         )}
                         {isSellerRole ? (
@@ -1066,7 +1066,7 @@ export function POSPage() {
                             ? 'text-violet-500 hover:text-violet-700'
                             : 'text-gray-300 opacity-0 group-hover:opacity-100 hover:text-violet-400'
                         }`}
-                        title={item.isItemCourtesy ? 'Quitar cortesía de este item' : 'Marcar este item como cortesía (precio 0)'}
+                        title={item.isItemCourtesy ? 'Quitar bonificación de este item' : 'Marcar este item como bonificación (precio 0)'}
                       >
                         <Gift size={14} />
                       </button>
@@ -1173,7 +1173,7 @@ export function POSPage() {
             <div className="flex justify-between items-baseline pt-2 border-t border-gray-100">
               <span className="text-base font-semibold text-gray-700">
                 Total {currency === 'USD' && <span className="text-xs font-normal text-emerald-600">USD</span>}
-                {isCourtesy && <span className="text-xs font-normal text-violet-600 ml-1">Cortesía</span>}
+                {isCourtesy && <span className="text-xs font-normal text-violet-600 ml-1">Bonificación</span>}
               </span>
               <div className="text-right">
                 <div className="text-2xl font-bold text-primary-600">{currency === 'USD' ? '$' : 'S/'} {total.toFixed(2)}</div>
@@ -1232,7 +1232,7 @@ export function POSPage() {
                 <div>
                   <p className="text-white/70 text-sm mb-1">
                     {cart.length} {cart.length === 1 ? 'producto' : 'productos'}
-                    {isCourtesy && <span className="ml-2 bg-white/20 rounded-full px-2 py-0.5 text-xs font-bold">CORTESÍA</span>}
+                    {isCourtesy && <span className="ml-2 bg-white/20 rounded-full px-2 py-0.5 text-xs font-bold">BONIF.</span>}
                     {currency === 'USD' && !isCourtesy && <span className="ml-2 bg-white/20 rounded-full px-2 py-0.5 text-xs font-bold">USD</span>}
                   </p>
                   <p className="text-4xl font-bold tracking-tight">{currency === 'USD' ? '$' : 'S/'} {total.toFixed(2)}</p>
@@ -1440,7 +1440,7 @@ export function POSPage() {
                   }`}>
                     <div>
                       <span className={`text-xs font-bold uppercase tracking-wider ${isCourtesy ? 'text-violet-700' : currency === 'USD' ? 'text-emerald-700' : 'text-primary-700'}`}>
-                        {isCourtesy ? 'Venta de Cortesía' : currency === 'USD' ? 'Total a cobrar (USD)' : 'Total a cobrar'}
+                        {isCourtesy ? 'Bonificación' : currency === 'USD' ? 'Total a cobrar (USD)' : 'Total a cobrar'}
                       </span>
                     </div>
                     <span className={`text-2xl font-bold tabular-nums ${isCourtesy ? 'text-violet-800' : currency === 'USD' ? 'text-emerald-800' : 'text-primary-800'}`}>
@@ -1452,7 +1452,7 @@ export function POSPage() {
                     <div className="flex items-center gap-3 p-4 bg-violet-50 border-2 border-violet-200 rounded-xl">
                       <Gift size={20} className="text-violet-600 shrink-0" />
                       <div>
-                        <p className="text-sm font-semibold text-violet-800">Venta de cortesía registrada</p>
+                        <p className="text-sm font-semibold text-violet-800">Bonificación registrada</p>
                         <p className="text-xs text-violet-600 mt-0.5">No requiere pago. Quedará registrada en caja con monto S/ 0.00.</p>
                       </div>
                     </div>
@@ -1737,7 +1737,7 @@ export function POSPage() {
                     {createSale.isPending
                       ? 'Procesando…'
                       : isCourtesy
-                        ? 'Confirmar Cortesía · S/ 0.00'
+                        ? 'Confirmar Bonificación · S/ 0.00'
                         : isCredit
                           ? downPayment > 0
                             ? `Anticipo ${sym} ${downPayment.toFixed(2)} + Crédito ${sym} ${creditPending.toFixed(2)}`

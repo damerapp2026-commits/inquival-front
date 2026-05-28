@@ -171,7 +171,7 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   ` : `
   <div class="total bold xl"><span>TOTAL</span><span>S/ ${sale.total.toFixed(2)}</span></div>
   `}
-  ${sale.isCourtesy ? `<div class="center bold" style="color:#059669;margin:4px 0;border:1px dashed #059669;padding:3px;">CORTESÍA</div>` : ''}
+  ${sale.isCourtesy ? `<div class="center bold" style="color:#059669;margin:4px 0;border:1px dashed #059669;padding:3px;">BONIFICACIÓN</div>` : ''}
   ${creditBlock}
   ${cashPaymentBlock}
   <div class="hr"></div>
