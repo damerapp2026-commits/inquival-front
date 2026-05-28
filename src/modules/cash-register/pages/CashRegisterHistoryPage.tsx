@@ -69,7 +69,7 @@ function sanitizeEntryDesc(desc: string): string {
 }
 
 function methodFromDescription(desc: string) {
-  const m = sanitizeEntryDesc(desc).match(/\[(.+?)\]$/);
+  const m = sanitizeEntryDesc(desc).match(/\[([^\]]+)\]$/);
   return m ? m[1] : null;
 }
 
