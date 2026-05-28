@@ -169,6 +169,7 @@ export function CashRegisterHistoryPage() {
       : null;
     const clientName = e.clientName || clientFromDesc;
     const displayClient = clientName && !/^sin\s*cliente$/i.test(clientName) ? clientName : null;
+    const isUsdEntry = getEntryUsdAmount(e) != null;
     return (
       <tr key={key} className={`${e.isDeleted ? 'opacity-50' : ''} ${nested ? 'bg-gray-50/50' : ''}`}>
         <td className={`px-3 py-2.5 ${nested ? 'pl-9' : ''}`}>
@@ -206,8 +207,14 @@ export function CashRegisterHistoryPage() {
             : e.voucherType === 'FACTURA' ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100"><FileText size={10} /> Factura</span>
             : <span className="text-gray-300 text-xs">—</span>}
         </td>
-        <td className={`px-3 py-2.5 text-right text-xs font-semibold tabular-nums ${e.type === 'INCOME' ? 'text-primary-700' : 'text-rose-600'}`}>
-          {e.type === 'INCOME' ? '+' : '−'} S/ {e.amount.toFixed(2)}
+        <td className={`px-3 py-2.5 text-right text-xs font-semibold tabular-nums ${e.type === 'INCOME' ? (isUsdEntry ? 'text-emerald-600' : 'text-primary-700') : 'text-rose-600'}`}>
+          {(() => {
+            const usdAmt = getEntryUsdAmount(e);
+            const isUsd = usdAmt != null;
+            return isUsd
+              ? <>{e.type === 'INCOME' ? '+' : '−'} $ {usdAmt!.toFixed(2)} <span className="text-[10px] font-bold">USD</span></>
+              : <>{e.type === 'INCOME' ? '+' : '−'} S/ {e.amount.toFixed(2)}</>;
+          })()}
         </td>
         <td className="px-3 py-2.5 text-center">
           {isSale && !nested && (
