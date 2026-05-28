@@ -1010,10 +1010,14 @@ export function SalesPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Cliente {isCredit ? '(obligatorio)' : '(opcional)'}</label>
-              <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" required={isCredit}>
-                <option value="">Sin cliente</option>
-                {clients.map((c: Client) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <SearchableSelect
+                options={clients.map((c: Client) => ({ value: c.id, label: c.name, sublabel: c.documentNumber }))}
+                value={form.clientId}
+                onChange={(v) => setForm(prev => ({ ...prev, clientId: v }))}
+                placeholder={isCredit ? 'Buscar cliente (obligatorio)...' : 'Buscar cliente (opcional)...'}
+                required={isCredit}
+                minChars={1}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Comprobante</label>
