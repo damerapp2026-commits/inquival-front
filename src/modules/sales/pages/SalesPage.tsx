@@ -197,6 +197,8 @@ export function SalesPage() {
     paymentMode: '' as PaymentMode, // paymentMethodId, 'MIXED', or 'CREDIT'
     mixedPayments: [{ paymentMethodId: '', amount: 0 }] as PaymentSplit[],
     items: [{ productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }],
+    currency: 'PEN' as 'PEN' | 'USD',
+    exchangeRate: 3.70,
   });
 
   const [loanForm, setLoanForm] = useState({
@@ -218,6 +220,8 @@ export function SalesPage() {
       clientId: '', voucherType: 'NONE', paymentMode: defaultMethodId,
       mixedPayments: [{ paymentMethodId: '', amount: 0 }],
       items: [{ productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }],
+      currency: 'PEN',
+      exchangeRate: 3.70,
     });
     setShowModal(true);
   };
@@ -285,11 +289,13 @@ export function SalesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const isUsd = form.currency === 'USD';
     const payload: any = {
       clientId: form.clientId || undefined,
       voucherType: form.voucherType,
       isCredit,
       items: form.items.map(({ subtotal, ...item }) => item),
+      ...(isUsd ? { currency: 'USD', exchangeRate: form.exchangeRate } : {}),
     };
     if (!isCredit) {
       if (isMixed) {
@@ -853,6 +859,35 @@ export function SalesPage() {
       {/* Modal crear venta */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Venta" size="lg">
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Moneda */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Moneda</label>
+            <div className="flex gap-2 items-center flex-wrap">
+              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setForm({ ...form, currency: 'PEN' })}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${form.currency === 'PEN' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                S/ Soles
+              </button>
+              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setForm({ ...form, currency: 'USD' })}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${form.currency === 'USD' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                $ USD
+              </button>
+              {form.currency === 'USD' && (
+                <div className="flex items-center gap-2 ml-2">
+                  <span className="text-sm text-gray-500">TC:</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={form.exchangeRate}
+                    onChange={(e) => setForm({ ...form, exchangeRate: parseFloat(e.target.value) || 3.70 })}
+                    className="w-20 px-2 py-1.5 border rounded-lg text-sm"
+                  />
+                  <span className="text-xs text-gray-400">S/ por $</span>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Método de pago */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Método de pago</label>
@@ -900,7 +935,7 @@ export function SalesPage() {
                       ))}
                     </select>
                     <div className="relative w-32">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-gray-400">S/</span>
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-gray-400">{form.currency === 'USD' ? '$' : 'S/'}</span>
                       <input
                         type="number"
                         min="0.01"
@@ -922,7 +957,7 @@ export function SalesPage() {
               </div>
               {!mixedSumValid && saleTotal > 0 && (
                 <p className="text-xs text-red-500 mt-2">
-                  La suma (S/ {form.mixedPayments.reduce((s, p) => s + p.amount, 0).toFixed(2)}) debe ser igual al total (S/ {saleTotal.toFixed(2)})
+                  La suma ({form.currency === 'USD' ? '$' : 'S/'} {form.mixedPayments.reduce((s, p) => s + p.amount, 0).toFixed(2)}) debe ser igual al total ({form.currency === 'USD' ? '$' : 'S/'} {saleTotal.toFixed(2)})
                 </p>
               )}
             </div>
@@ -1001,7 +1036,7 @@ export function SalesPage() {
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Subtotal</label>
-                      <div className="px-2 py-1.5 bg-white border rounded text-sm font-medium text-gray-700">S/ {item.subtotal.toFixed(2)}</div>
+                      <div className="px-2 py-1.5 bg-white border rounded text-sm font-medium text-gray-700">{form.currency === 'USD' ? '$' : 'S/'} {item.subtotal.toFixed(2)}</div>
                     </div>
                   </div>
                 </div>
@@ -1011,8 +1046,13 @@ export function SalesPage() {
 
           {/* Total y Submit */}
           <div className="bg-primary-50 p-3 rounded-lg flex items-center justify-between">
-            <span className="text-sm font-medium text-primary-800">Total de la venta</span>
-            <span className="text-xl font-bold text-primary-700">S/ {saleTotal.toFixed(2)}</span>
+            <div>
+              <span className="text-sm font-medium text-primary-800">Total de la venta</span>
+              {form.currency === 'USD' && (
+                <div className="text-xs text-gray-500 mt-0.5">≈ S/ {(saleTotal * form.exchangeRate).toFixed(2)} (TC {form.exchangeRate})</div>
+              )}
+            </div>
+            <span className="text-xl font-bold text-primary-700">{form.currency === 'USD' ? '$' : 'S/'} {saleTotal.toFixed(2)}</span>
           </div>
           <button type="submit" disabled={createSale.isPending || !paymentValid} className="w-full py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium disabled:opacity-50">
             {createSale.isPending ? 'Registrando...' : 'Registrar Venta'}
