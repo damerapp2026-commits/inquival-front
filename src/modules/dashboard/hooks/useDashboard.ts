@@ -4,8 +4,11 @@ import { dashboardService } from '../services/dashboardService';
 export function useDashboardSummary(period?: string) {
   return useQuery({ queryKey: ['dashboard-summary', period], queryFn: () => dashboardService.getSummary(period) });
 }
-export function useProfitability() {
-  return useQuery({ queryKey: ['dashboard-profitability'], queryFn: () => dashboardService.getProfitability() });
+export function useProfitability(startDate?: string, endDate?: string) {
+  return useQuery({
+    queryKey: ['dashboard-profitability', startDate, endDate],
+    queryFn: () => dashboardService.getProfitability(startDate, endDate),
+  });
 }
 export function useCreditsSummary() {
   return useQuery({ queryKey: ['dashboard-credits-summary'], queryFn: () => dashboardService.getCreditsSummary() });
