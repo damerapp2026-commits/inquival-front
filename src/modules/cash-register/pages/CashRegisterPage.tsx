@@ -666,7 +666,7 @@ export function CashRegisterPage() {
                               return (
                                 <div className="flex flex-col items-end leading-tight">
                                   <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
-                                    C: {groupSym} {groupSale.total.toFixed(2)}
+                                    C: {groupSym} {(isGroupUsd && groupSale.totalUsd != null ? groupSale.totalUsd : groupSale.total).toFixed(2)}
                                   </span>
                                   <span className="text-primary-700">
                                     P: + {groupSym} {total.toFixed(2)}
@@ -693,9 +693,10 @@ export function CashRegisterPage() {
                                 </div>
                               );
                             }
+                            const groupDispAmt = isGroupUsd && groupSale?.totalUsd != null ? groupSale.totalUsd : total;
                             return (
                               <span className={isGroupUsd ? 'text-emerald-600' : ''}>
-                                {first.type === 'INCOME' ? '+' : '−'} {groupSym} {total.toFixed(2)}
+                                {first.type === 'INCOME' ? '+' : '−'} {groupSym} {groupDispAmt.toFixed(2)}
                                 {isGroupUsd && <span className="ml-1 text-[10px] font-bold">USD</span>}
                               </span>
                             );
@@ -1372,7 +1373,7 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
             return (
               <div className="flex flex-col items-end leading-tight">
                 <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
-                  C: {saleSym} {sale!.total.toFixed(2)}
+                  C: {saleSym} {(isUsdSale && sale!.totalUsd != null ? sale!.totalUsd : sale!.total).toFixed(2)}
                 </span>
                 <span className="text-primary-700">
                   P: + {saleSym} {entry.amount.toFixed(2)}
@@ -1399,9 +1400,10 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
               </div>
             );
           }
+          const dispAmt = isUsdSale && sale?.totalUsd != null ? sale.totalUsd : entry.amount;
           return (
             <span className={isUsdSale ? 'text-emerald-600' : ''}>
-              {entry.type === 'INCOME' ? '+' : '−'} {saleSym} {entry.amount.toFixed(2)}
+              {entry.type === 'INCOME' ? '+' : '−'} {saleSym} {dispAmt.toFixed(2)}
               {isUsdSale && <span className="ml-1 text-[10px] font-bold">USD</span>}
             </span>
           );
