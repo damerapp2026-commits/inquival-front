@@ -196,9 +196,8 @@ export function SalesPage() {
     voucherType: 'NONE' as string,
     paymentMode: '' as PaymentMode, // paymentMethodId, 'MIXED', or 'CREDIT'
     mixedPayments: [{ paymentMethodId: '', amount: 0 }] as PaymentSplit[],
-    items: [{ productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }],
+    items: [{ productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0, isBonus: false }],
     currency: 'PEN' as 'PEN' | 'USD',
-    exchangeRate: 3.70,
   });
 
   const [loanForm, setLoanForm] = useState({
@@ -219,14 +218,13 @@ export function SalesPage() {
     setForm({
       clientId: '', voucherType: 'NONE', paymentMode: defaultMethodId,
       mixedPayments: [{ paymentMethodId: '', amount: 0 }],
-      items: [{ productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }],
+      items: [{ productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0, isBonus: false }],
       currency: 'PEN',
-      exchangeRate: 3.70,
     });
     setShowModal(true);
   };
 
-  const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0 }] }));
+  const addItem = () => setForm(prev => ({ ...prev, items: [...prev.items, { productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0, isBonus: false }] }));
   const removeItem = (idx: number) => setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
 
   const getUnitPrice = (product: Product | undefined, tierId: string, companyId: string): number | undefined => {
@@ -241,6 +239,23 @@ export function SalesPage() {
     setForm(prev => {
       const items = [...prev.items];
       items[idx] = { ...items[idx], [field]: value };
+      if (field === 'isBonus') {
+        if (value) {
+          items[idx].unitPrice = 0;
+          items[idx].subtotal = 0;
+        } else {
+          const item = items[idx];
+          if (item.productId && item.priceTier && item.companyId) {
+            const product = products.find((p: Product) => p.id === item.productId);
+            const price = getUnitPrice(product, item.priceTier, item.companyId);
+            if (price != null) {
+              items[idx].unitPrice = price;
+              items[idx].subtotal = item.quantity * price;
+            }
+          }
+        }
+        return { ...prev, items };
+      }
       if (field === 'companyId') {
         const available = getProductsForCompany(value);
         if (!available.find(p => p.id === items[idx].productId)) {
@@ -253,9 +268,14 @@ export function SalesPage() {
       if ((field === 'productId' || field === 'priceTier' || field === 'companyId') && item.productId && item.priceTier && item.companyId) {
         const product = products.find((p: Product) => p.id === item.productId);
         const price = getUnitPrice(product, item.priceTier, item.companyId);
-        if (price != null) items[idx].unitPrice = price;
+        if (price != null && !item.isBonus) items[idx].unitPrice = price;
       }
-      items[idx].subtotal = items[idx].quantity * items[idx].unitPrice;
+      if (item.isBonus) {
+        items[idx].unitPrice = 0;
+        items[idx].subtotal = 0;
+      } else {
+        items[idx].subtotal = items[idx].quantity * items[idx].unitPrice;
+      }
       return { ...prev, items };
     });
   };
@@ -294,8 +314,9 @@ export function SalesPage() {
       clientId: form.clientId || undefined,
       voucherType: form.voucherType,
       isCredit,
-      items: form.items.map(({ subtotal, ...item }) => item),
-      ...(isUsd ? { currency: 'USD', exchangeRate: form.exchangeRate } : {}),
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      items: form.items.map(({ subtotal, isBonus, ...item }) => item),
+      ...(isUsd ? { currency: 'USD', exchangeRate: 1 } : {}),
     };
     if (!isCredit) {
       if (isMixed) {
@@ -862,7 +883,7 @@ export function SalesPage() {
           {/* Moneda */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Moneda</label>
-            <div className="flex gap-2 items-center flex-wrap">
+            <div className="flex gap-2 items-center">
               <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setForm({ ...form, currency: 'PEN' })}
                 className={`px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${form.currency === 'PEN' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
                 S/ Soles
@@ -871,20 +892,6 @@ export function SalesPage() {
                 className={`px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${form.currency === 'USD' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
                 $ USD
               </button>
-              {form.currency === 'USD' && (
-                <div className="flex items-center gap-2 ml-2">
-                  <span className="text-sm text-gray-500">TC:</span>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={form.exchangeRate}
-                    onChange={(e) => setForm({ ...form, exchangeRate: parseFloat(e.target.value) || 3.70 })}
-                    className="w-20 px-2 py-1.5 border rounded-lg text-sm"
-                  />
-                  <span className="text-xs text-gray-400">S/ por $</span>
-                </div>
-              )}
             </div>
           </div>
 
@@ -995,10 +1002,20 @@ export function SalesPage() {
             </div>
             <div className="space-y-3 max-h-72 overflow-y-auto">
               {form.items.map((item, idx) => (
-                <div key={idx} className="bg-gray-50 rounded-lg p-3 relative">
-                  {form.items.length > 1 && (
-                    <button type="button" onClick={() => removeItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-                  )}
+                <div key={idx} className={`rounded-lg p-3 relative ${item.isBonus ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => updateItem(idx, 'isBonus', !item.isBonus)}
+                      className={`px-2.5 py-1 rounded text-xs font-semibold border transition-colors ${item.isBonus ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'}`}
+                    >
+                      {item.isBonus ? '🎁 Bonificación' : 'Bonificación'}
+                    </button>
+                    {form.items.length > 1 && (
+                      <button type="button" onClick={() => removeItem(idx)} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+                    )}
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Almacén</label>
@@ -1032,11 +1049,17 @@ export function SalesPage() {
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Precio unit.</label>
-                      <input type="number" min="0.01" step="0.01" value={item.unitPrice || ''} onChange={(e) => updateItem(idx, 'unitPrice', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                      {item.isBonus ? (
+                        <div className="px-2 py-1.5 bg-amber-100 border border-amber-200 rounded text-sm font-medium text-amber-700">Gratis</div>
+                      ) : (
+                        <input type="number" min="0.01" step="0.01" value={item.unitPrice || ''} onChange={(e) => updateItem(idx, 'unitPrice', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Subtotal</label>
-                      <div className="px-2 py-1.5 bg-white border rounded text-sm font-medium text-gray-700">{form.currency === 'USD' ? '$' : 'S/'} {item.subtotal.toFixed(2)}</div>
+                      <div className={`px-2 py-1.5 border rounded text-sm font-medium ${item.isBonus ? 'bg-amber-100 border-amber-200 text-amber-700' : 'bg-white text-gray-700'}`}>
+                        {item.isBonus ? 'S/ 0.00' : `${form.currency === 'USD' ? '$' : 'S/'} ${item.subtotal.toFixed(2)}`}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1046,12 +1069,7 @@ export function SalesPage() {
 
           {/* Total y Submit */}
           <div className="bg-primary-50 p-3 rounded-lg flex items-center justify-between">
-            <div>
-              <span className="text-sm font-medium text-primary-800">Total de la venta</span>
-              {form.currency === 'USD' && (
-                <div className="text-xs text-gray-500 mt-0.5">≈ S/ {(saleTotal * form.exchangeRate).toFixed(2)} (TC {form.exchangeRate})</div>
-              )}
-            </div>
+            <span className="text-sm font-medium text-primary-800">Total de la venta</span>
             <span className="text-xl font-bold text-primary-700">{form.currency === 'USD' ? '$' : 'S/'} {saleTotal.toFixed(2)}</span>
           </div>
           <button type="submit" disabled={createSale.isPending || !paymentValid} className="w-full py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium disabled:opacity-50">
