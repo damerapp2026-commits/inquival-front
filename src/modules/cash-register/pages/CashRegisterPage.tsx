@@ -235,11 +235,13 @@ export function CashRegisterPage() {
   const activeEntries = entries;
   const totalIncome = activeEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
   const totalExpense = activeEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
-  const totalIncomeUsd = activeEntries
-    .filter((e) => e.type === 'INCOME' && e.referenceType === 'Sale' && salesByRefId.get(e.referenceId || '')?.currency === 'USD')
-    .reduce((s, e) => s + e.amount, 0);
-  const totalIncomePen = totalIncome - totalIncomeUsd;
-  const netBalance = (register?.openingBalance || 0) + totalIncomePen - totalExpense;
+  const usdEntries = activeEntries.filter(
+    (e) => e.type === 'INCOME' && e.referenceType === 'Sale' && salesByRefId.get(e.referenceId || '')?.currency === 'USD',
+  );
+  const totalIncomeUsdPen = usdEntries.reduce((s, e) => s + e.amount, 0);
+  const totalIncomeUsd = usdEntries.reduce((s, e) => s + (e.amountUsd ?? 0), 0);
+  const totalIncomePen = totalIncome - totalIncomeUsdPen;
+  const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
 
   const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '' }); setShowAddModal(true); };
   const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo' }); setRucInput(''); setRucFound(''); setShowAddModal(true); };
