@@ -152,6 +152,7 @@ export function CashRegisterPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [vendorFilter, setVendorFilter] = useState<string | null>(null);
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('');
+  const [currencyFilter, setCurrencyFilter] = useState<'PEN' | 'USD' | null>(null);
 
   const editingIsSale = !!(selectedEntry?.referenceType === 'Sale' && selectedEntry?.referenceId);
   const { data: editingSale } = useSaleById(showEditModal && editingIsSale ? selectedEntry!.referenceId! : null);
@@ -354,8 +355,14 @@ export function CashRegisterPage() {
     if (paymentMethodFilter) {
       result = result.filter((e) => methodFromDescription(e.description) === paymentMethodFilter);
     }
+    if (currencyFilter) {
+      result = result.filter((e) => {
+        const isUsd = e.referenceType === 'Sale' && !!e.referenceId && salesByRefId.get(e.referenceId)?.currency === 'USD';
+        return currencyFilter === 'USD' ? isUsd : !isUsd;
+      });
+    }
     return result;
-  }, [entries, vendorFilter, paymentMethodFilter]);
+  }, [entries, vendorFilter, paymentMethodFilter, currencyFilter, salesByRefId]);
 
   const uniqueSellersInEntries = useMemo(() => {
     const seen = new Set<string>();
@@ -547,10 +554,26 @@ export function CashRegisterPage() {
             <Layers size={16} className="text-gray-400" />
             <h2 className="text-base font-semibold text-gray-800">Movimientos del día</h2>
             <span className="text-xs text-gray-400">
-              · {filteredEntries.length}{(vendorFilter || paymentMethodFilter) ? ` de ${entries.length}` : ''} entrada{filteredEntries.length === 1 ? '' : 's'}
+              · {filteredEntries.length}{(vendorFilter || paymentMethodFilter || currencyFilter) ? ` de ${entries.length}` : ''} entrada{filteredEntries.length === 1 ? '' : 's'}
             </span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {totalIncomeUsd > 0 && (
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium">
+                <button
+                  onClick={() => setCurrencyFilter(currencyFilter === 'PEN' ? null : 'PEN')}
+                  className={`px-3 py-2 transition-colors ${currencyFilter === 'PEN' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                >
+                  S/
+                </button>
+                <button
+                  onClick={() => setCurrencyFilter(currencyFilter === 'USD' ? null : 'USD')}
+                  className={`px-3 py-2 border-l border-gray-200 transition-colors ${currencyFilter === 'USD' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                >
+                  $
+                </button>
+              </div>
+            )}
             {uniqueSellersInEntries.length > 0 && (
               <select
                 value={vendorFilter || ''}
@@ -575,9 +598,9 @@ export function CashRegisterPage() {
                 ))}
               </select>
             )}
-            {(vendorFilter || paymentMethodFilter) && (
+            {(vendorFilter || paymentMethodFilter || currencyFilter) && (
               <button
-                onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); }}
+                onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); setCurrencyFilter(null); }}
                 className="px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors"
               >
                 Limpiar filtros
@@ -586,10 +609,12 @@ export function CashRegisterPage() {
           </div>
         </div>
 
-        {(vendorFilter || paymentMethodFilter) && filteredEntries.length > 0 && (
+        {(vendorFilter || paymentMethodFilter || currencyFilter) && filteredEntries.length > 0 && (
           <div className="px-5 sm:px-6 py-2.5 bg-primary-50/50 border-b border-primary-100 flex items-center justify-between text-xs gap-3 flex-wrap">
             <span className="text-gray-500 flex items-center gap-1.5 flex-wrap">
               Filtrado por
+              {currencyFilter && <strong className={currencyFilter === 'USD' ? 'text-emerald-700' : 'text-primary-700'}>{currencyFilter === 'USD' ? '$ USD' : 'S/ Soles'}</strong>}
+              {currencyFilter && (vendorFilter || paymentMethodFilter) && <span className="text-gray-400">·</span>}
               {vendorFilter && <strong className="text-gray-700">{userById[vendorFilter] || 'vendedor'}</strong>}
               {vendorFilter && paymentMethodFilter && <span className="text-gray-400">·</span>}
               {paymentMethodFilter && <strong className="text-gray-700">{paymentMethodFilter}</strong>}
@@ -607,12 +632,12 @@ export function CashRegisterPage() {
             <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-3">
               <AlertCircle size={22} className="text-gray-400" />
             </div>
-            {(vendorFilter || paymentMethodFilter) ? (
+            {(vendorFilter || paymentMethodFilter || currencyFilter) ? (
               <>
                 <p className="text-sm text-gray-500 font-medium">Sin movimientos para el filtro seleccionado</p>
                 <button
                   type="button"
-                  onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); }}
+                  onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); setCurrencyFilter(null); }}
                   className="text-xs text-primary-600 hover:text-primary-700 font-medium mt-2"
                 >
                   Ver todos los movimientos
