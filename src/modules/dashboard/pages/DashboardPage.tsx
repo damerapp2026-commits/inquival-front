@@ -1,17 +1,22 @@
 import { useState, useMemo } from 'react';
-import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart, useExchangeRate } from '../hooks/useDashboard';
+import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart, useExchangeRate, useProfitability } from '../hooks/useDashboard';
 import { useAPAlerts } from '../../accounts-payable/hooks/useAccountsPayable';
+import { useSales } from '../../sales/hooks/useSales';
+import { useUsers } from '../../users/hooks/useUsers';
 import { useAuth } from '../../../app/providers/AuthProvider';
-import { TrendingUp, TrendingDown, DollarSign, CreditCard, FileText, AlertTriangle, Clock, Tag, Truck, ShoppingCart, Package, BarChart3, Wallet } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, CreditCard, FileText, AlertTriangle, Clock, Tag, Truck, ShoppingCart, Package, BarChart3, Wallet, Users as UsersIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, Cell,
 } from 'recharts';
-import type { AccountPayable } from '../../../shared/types';
+import type { AccountPayable, Sale } from '../../../shared/types';
 
 const CHART_COLORS = ['#16a34a', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
 const SUPPLIER_COLORS = ['#15803d', '#0ea5e9', '#f43f5e', '#84cc16', '#fb923c'];
+const SELLER_COLORS = ['#16a34a', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1'];
+
+const symFor = (ap?: { currency?: 'PEN' | 'USD' } | null): string => (ap?.currency === 'USD' ? '$' : 'S/');
 
 function toInputDate(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -121,6 +126,8 @@ export function DashboardPage() {
   const [disabledCats, setDisabledCats] = useState<Set<string>>(new Set());
   const [exchangeDays, setExchangeDays] = useState(7);
 
+  const [profitRange, setProfitRange] = useState(last30Days);
+
   const { data: summary } = useDashboardSummary(period);
   const { data: creditsSummary } = useCreditsSummary();
   const { data: salesChart } = useSalesChart(salesRange.start, salesRange.end);
@@ -129,6 +136,34 @@ export function DashboardPage() {
   const { data: categorySales } = useCategorySales(chartRange.start, chartRange.end);
   const { data: topSuppliers } = useTopSuppliers(chartRange.start, chartRange.end);
   const { data: catSalesChart } = useCategorySalesChart(catChartRange.start, catChartRange.end);
+  const { data: sellerSalesData, isLoading: sellerSalesLoading } = useSales({ page: 1, limit: 1000, startDate: chartRange.start, endDate: chartRange.end });
+  const { data: usersData } = useUsers({ limit: 200 });
+  const { data: profitabilityData, isLoading: profitLoading } = useProfitability(
+    user?.role === 'ADMIN' ? profitRange.start : undefined,
+    user?.role === 'ADMIN' ? profitRange.end : undefined,
+  );
+
+  const sellersList: any[] = useMemo(() => {
+    const raw: any = usersData;
+    const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
+    return list.filter((u: any) => u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO');
+  }, [usersData]);
+
+  const sellerComparison = useMemo(() => {
+    const sales: Sale[] = (sellerSalesData?.data || []).filter((s: Sale) => !s.isCancelled && s.sellerId);
+    const map: Record<string, { name: string; total: number; count: number }> = {};
+    sales.forEach((sale) => {
+      const id = sale.sellerId!;
+      const name = sale.sellerName
+        || sellersList.find((s) => s.id === id)?.fullName
+        || sellersList.find((s) => s.id === id)?.username
+        || 'Vendedor';
+      if (!map[id]) map[id] = { name, total: 0, count: 0 };
+      map[id].total += sale.total;
+      map[id].count += 1;
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [sellerSalesData, sellersList]);
 
   const dailySales = salesChart?.dailySales || [];
   const categorySalesData: { name: string; total: number }[] = Array.isArray(categorySales) ? categorySales : [];
@@ -201,7 +236,7 @@ export function DashboardPage() {
               <div className="text-xl font-semibold">S/ {(summary?.totalExpense || 0).toFixed(2)}</div>
             </div>
             <div>
-              <div className="text-xs text-primary-100">Créditos pendientes</div>
+              <div className="text-xs text-primary-100">Deudas por cobrar</div>
               <div className="text-xl font-semibold">S/ {(creditsSummary?.totalPending || 0).toFixed(2)}</div>
             </div>
           </div>
@@ -224,14 +259,14 @@ export function DashboardPage() {
         />
         <KpiCard
           icon={CreditCard}
-          label="Créditos pendientes"
+          label="Deudas por cobrar"
           value={`S/ ${(creditsSummary?.totalPending || 0).toFixed(2)}`}
           sublabel={`${creditsSummary?.activeCredits || 0} créditos activos`}
           accent="bg-orange-100 text-orange-600"
         />
         <KpiCard
           icon={FileText}
-          label="Deuda proveedores"
+          label="Deudas por pagar"
           value={`S/ ${(apAlerts?.summary?.totalPending || 0).toFixed(2)}`}
           sublabel={`${apAlerts?.summary?.count || 0} cuentas activas`}
           accent="bg-purple-100 text-purple-600"
@@ -326,7 +361,7 @@ export function DashboardPage() {
                 width={62}
               />
               <Tooltip
-                formatter={(value: any, name: string) => [`S/ ${Number(value).toFixed(3)}`, name === 'venta' ? 'Venta' : 'Compra']}
+                formatter={(value: any, name) => [`S/ ${Number(value).toFixed(3)}`, name === 'venta' ? 'Venta' : 'Compra']}
                 labelFormatter={(label) => {
                   const [y, m, d] = label.split('-');
                   return `${d}/${m}/${y}`;
@@ -508,6 +543,178 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {/* Comparativo de Vendedores */}
+      <div className="bg-white rounded-xl shadow-card p-5">
+        <h2 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+          <UsersIcon size={18} className="text-primary-600" /> Comparativo de Vendedores
+        </h2>
+        {sellerSalesLoading ? (
+          <div className="flex items-center justify-center h-[300px] text-gray-400 text-sm">Cargando vendedores...</div>
+        ) : sellerComparison.length > 0 ? (
+          <>
+            <ResponsiveContainer width="100%" height={Math.max(280, sellerComparison.length * 48)}>
+              <BarChart data={sellerComparison} layout="vertical" margin={{ left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `S/${v}`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={140} />
+                <Tooltip
+                  formatter={(value: any, name: any) => [
+                    name === 'total' ? `S/ ${Number(value || 0).toFixed(2)}` : value,
+                    name === 'total' ? 'Total vendido' : 'Ventas',
+                  ]}
+                />
+                <Bar dataKey="total" radius={[0, 4, 4, 0]}>
+                  {sellerComparison.map((_, i) => (
+                    <Cell key={i} fill={SELLER_COLORS[i % SELLER_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+              {sellerComparison.map((s, i) => (
+                <div key={s.name + i} className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: SELLER_COLORS[i % SELLER_COLORS.length] }} />
+                    <span className="truncate">{s.name}</span>
+                  </div>
+                  <span className="text-gray-400 whitespace-nowrap">{s.count} venta{s.count !== 1 ? 's' : ''}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-center h-[280px] text-gray-400 text-sm">Sin ventas registradas en el período</div>
+        )}
+      </div>
+
+      {/* Rentabilidad Bruta — solo ADMIN */}
+      {user?.role === 'ADMIN' && (
+        <div className="bg-white rounded-xl shadow-card p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <TrendingUp size={20} className="text-emerald-600" />
+                Rentabilidad Bruta por Producto
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">Precio Venta − Precio Costo · Top 15 productos</p>
+            </div>
+            <DateRangeFilter
+              range={profitRange}
+              onChange={setProfitRange}
+              onReset={() => setProfitRange(last30Days())}
+              resetLabel="Últimos 30 días"
+            />
+          </div>
+
+          {profitLoading ? (
+            <div className="h-[360px] flex items-center justify-center text-gray-400 text-sm">Calculando rentabilidad...</div>
+          ) : !Array.isArray(profitabilityData) || profitabilityData.length === 0 ? (
+            <div className="h-[360px] flex items-center justify-center text-gray-400 text-sm">Sin ventas en el período seleccionado</div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={Math.max(320, profitabilityData.length * 48)}>
+                <BarChart
+                  data={profitabilityData}
+                  layout="vertical"
+                  margin={{ left: 10, right: 60 }}
+                  barCategoryGap="25%"
+                  barGap={3}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => `S/${v}`}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="productName"
+                    tick={{ fontSize: 11 }}
+                    width={160}
+                    tickFormatter={(v: string) => v.length > 22 ? v.slice(0, 21) + '…' : v}
+                  />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const row = payload[0]?.payload;
+                      return (
+                        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs space-y-1 min-w-[200px]">
+                          <p className="font-semibold text-gray-800 mb-2">{label}</p>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-500">Ingresos</span>
+                            <span className="font-medium text-blue-600">S/ {Number(row?.totalRevenue || 0).toFixed(2)}</span>
+                          </div>
+                          {row?.totalCost != null && (
+                            <div className="flex justify-between gap-4">
+                              <span className="text-gray-500">Costo</span>
+                              <span className="font-medium text-orange-500">S/ {Number(row.totalCost).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {row?.grossProfit != null && (
+                            <div className="flex justify-between gap-4 border-t border-gray-100 pt-1 mt-1">
+                              <span className="text-gray-700 font-medium">Ganancia bruta</span>
+                              <span className={`font-bold ${row.grossProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                S/ {Number(row.grossProfit).toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {row?.marginPercent != null && (
+                            <div className="flex justify-between gap-4">
+                              <span className="text-gray-500">Margen</span>
+                              <span className={`font-semibold ${row.marginPercent >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                {Number(row.marginPercent).toFixed(1)}%
+                              </span>
+                            </div>
+                          )}
+                          {row?.totalCost == null && (
+                            <p className="text-gray-400 italic">Sin precio de costo registrado</p>
+                          )}
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="totalRevenue" name="Ingresos" fill="#3b82f6" radius={[0, 3, 3, 0]} />
+                  <Bar dataKey="totalCost" name="Costo" fill="#f97316" radius={[0, 3, 3, 0]} />
+                  <Bar dataKey="grossProfit" name="Ganancia" fill="#10b981" radius={[0, 3, 3, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+
+              {/* Resumen en chips */}
+              <div className="mt-4 flex flex-wrap gap-3">
+                {(() => {
+                  const rows = profitabilityData as any[];
+                  const totalRev = rows.reduce((s: number, r: any) => s + (r.totalRevenue || 0), 0);
+                  const totalCost = rows.filter((r: any) => r.totalCost != null).reduce((s: number, r: any) => s + r.totalCost, 0);
+                  const totalProfit = totalRev - totalCost;
+                  const avgMargin = totalRev > 0 ? (totalProfit / totalRev) * 100 : 0;
+                  const hasCost = rows.some((r: any) => r.totalCost != null);
+                  return (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                        Ingresos totales: S/ {totalRev.toFixed(2)}
+                      </span>
+                      {hasCost && (
+                        <>
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">
+                            Costo total: S/ {totalCost.toFixed(2)}
+                          </span>
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${totalProfit >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                            Ganancia bruta: S/ {totalProfit.toFixed(2)}
+                          </span>
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${avgMargin >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                            Margen promedio: {avgMargin.toFixed(1)}%
+                          </span>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Accounts Payable Alerts */}
       {((apAlerts?.overdue?.length || 0) > 0 || (apAlerts?.upcoming?.length || 0) > 0) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -526,7 +733,7 @@ export function DashboardPage() {
                         Vencido: {ap.dueDate ? new Date(ap.dueDate).toLocaleDateString('es-PE') : ap.installments?.find(i => i.status === 'PENDING')?.dueDate ? new Date(ap.installments.find(i => i.status === 'PENDING')!.dueDate).toLocaleDateString('es-PE') : '-'}
                       </div>
                     </div>
-                    <span className="font-bold text-red-600">S/ {ap.pendingAmount.toFixed(2)}</span>
+                    <span className="font-bold text-red-600">{symFor(ap)} {ap.pendingAmount.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
@@ -547,7 +754,7 @@ export function DashboardPage() {
                         Vence: {ap.dueDate ? new Date(ap.dueDate).toLocaleDateString('es-PE') : ap.installments?.find(i => i.status === 'PENDING')?.dueDate ? new Date(ap.installments.find(i => i.status === 'PENDING')!.dueDate).toLocaleDateString('es-PE') : '-'}
                       </div>
                     </div>
-                    <span className="font-bold text-yellow-700">S/ {ap.pendingAmount.toFixed(2)}</span>
+                    <span className="font-bold text-yellow-700">{symFor(ap)} {ap.pendingAmount.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
