@@ -353,6 +353,28 @@ export function CashRegisterPage() {
     return result;
   }, [entries, vendorFilter, paymentMethodFilter]);
 
+  const uniqueSellersInEntries = useMemo(() => {
+    const seen = new Set<string>();
+    const result: { id: string; name: string }[] = [];
+    for (const e of entries) {
+      if (e.createdBy && !seen.has(e.createdBy)) {
+        seen.add(e.createdBy);
+        result.push({ id: e.createdBy, name: userById[e.createdBy] || 'Usuario' });
+      }
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }, [entries, userById]);
+
+  const uniqueMethodsInEntries = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const e of entries) {
+      const m = methodFromDescription(e.description);
+      if (m && !seen.has(m)) { seen.add(m); result.push(m); }
+    }
+    return result.sort();
+  }, [entries]);
+
   const filteredIncome = filteredEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
   const filteredExpense = filteredEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
 
@@ -521,43 +543,52 @@ export function CashRegisterPage() {
             <Layers size={16} className="text-gray-400" />
             <h2 className="text-base font-semibold text-gray-800">Movimientos del día</h2>
             <span className="text-xs text-gray-400">
-              · {filteredEntries.length}{vendorFilter ? ` de ${entries.length}` : ''} entrada{filteredEntries.length === 1 ? '' : 's'}
+              · {filteredEntries.length}{(vendorFilter || paymentMethodFilter) ? ` de ${entries.length}` : ''} entrada{filteredEntries.length === 1 ? '' : 's'}
             </span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {sellers.length > 0 && (
+            {uniqueSellersInEntries.length > 0 && (
               <select
                 value={vendorFilter || ''}
                 onChange={(e) => setVendorFilter(e.target.value || null)}
-                className="px-3 py-2 border rounded-lg text-sm"
+                className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400"
               >
-                <option value="">Todos los responsables</option>
-                {sellers.map((s: any) => (
-                  <option key={s.id} value={s.id}>
-                    {(s.fullName || s.username) + (s.role === 'ADMIN' ? ' (Admin)' : '')}
-                  </option>
+                <option value="">Todos los vendedores</option>
+                {uniqueSellersInEntries.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
             )}
-            {paymentMethods.some((m: any) => m.isActive) && (
+            {uniqueMethodsInEntries.length > 0 && (
               <select
                 value={paymentMethodFilter}
                 onChange={(e) => setPaymentMethodFilter(e.target.value)}
-                className="px-3 py-2 border rounded-lg text-sm"
+                className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400"
               >
-                <option value="">Todos los métodos de pago</option>
-                {paymentMethods.filter((m: any) => m.isActive).map((m: any) => (
-                  <option key={m.id} value={m.name}>{m.name}</option>
+                <option value="">Todos los métodos</option>
+                {uniqueMethodsInEntries.map((m) => (
+                  <option key={m} value={m}>{m}</option>
                 ))}
               </select>
+            )}
+            {(vendorFilter || paymentMethodFilter) && (
+              <button
+                onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); }}
+                className="px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors"
+              >
+                Limpiar filtros
+              </button>
             )}
           </div>
         </div>
 
-        {vendorFilter && filteredEntries.length > 0 && (
-          <div className="px-5 sm:px-6 py-2.5 bg-gray-50/70 border-b border-gray-100 flex items-center justify-between text-xs">
-            <span className="text-gray-500">
-              Filtrado por <strong className="text-gray-700">{userById[vendorFilter] || 'vendedor'}</strong>
+        {(vendorFilter || paymentMethodFilter) && filteredEntries.length > 0 && (
+          <div className="px-5 sm:px-6 py-2.5 bg-primary-50/50 border-b border-primary-100 flex items-center justify-between text-xs gap-3 flex-wrap">
+            <span className="text-gray-500 flex items-center gap-1.5 flex-wrap">
+              Filtrado por
+              {vendorFilter && <strong className="text-gray-700">{userById[vendorFilter] || 'vendedor'}</strong>}
+              {vendorFilter && paymentMethodFilter && <span className="text-gray-400">·</span>}
+              {paymentMethodFilter && <strong className="text-gray-700">{paymentMethodFilter}</strong>}
             </span>
             <span className="flex items-center gap-3 tabular-nums">
               <span className="text-primary-700 font-semibold">+ S/ {filteredIncome.toFixed(2)}</span>
@@ -572,12 +603,12 @@ export function CashRegisterPage() {
             <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-3">
               <AlertCircle size={22} className="text-gray-400" />
             </div>
-            {vendorFilter ? (
+            {(vendorFilter || paymentMethodFilter) ? (
               <>
-                <p className="text-sm text-gray-500 font-medium">Sin movimientos para este vendedor</p>
+                <p className="text-sm text-gray-500 font-medium">Sin movimientos para el filtro seleccionado</p>
                 <button
                   type="button"
-                  onClick={() => setVendorFilter(null)}
+                  onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); }}
                   className="text-xs text-primary-600 hover:text-primary-700 font-medium mt-2"
                 >
                   Ver todos los movimientos
