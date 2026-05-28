@@ -9,13 +9,11 @@ import { useClients } from '../../clients/hooks/useClients';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useUsers } from '../../users/hooks/useUsers';
 import { useAuth } from '../../../app/providers/AuthProvider';
-import { useRucLookup } from '../../../shared/hooks/useLookup';
-import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
 import { Modal } from '../../../shared/components/Modal';
 import {
   Wallet, TrendingUp, TrendingDown, Edit2, Trash2, Lock, History, ChevronDown, ChevronRight,
   Layers, Clock, Eye, ArrowDownCircle, ArrowUpCircle, Scale, CheckCircle2, AlertCircle,
-  ReceiptText, FileText, CircleDashed, Search, Loader2,
+  ReceiptText, FileText, CircleDashed, Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { CashRegisterEntry, Sale, Client, CreditAccount } from '../../../shared/types';
@@ -218,17 +216,11 @@ export function CashRegisterPage() {
   const getClientName = (id?: string) => id ? clientMap.get(id)?.name || 'N/A' : 'Sin cliente';
 
   const { data: paymentMethods = [] } = usePaymentMethods();
-  const rucLookup = useRucLookup();
-  const supplierByRuc = useSupplierByRuc();
-  const createSupplier = useCreateSupplier();
 
-  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '' });
+  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '', expenseCurrency: 'PEN' as 'PEN' | 'USD' });
   const [editForm, setEditForm] = useState({ amount: 0, reason: '', voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '' });
   const [deleteReason, setDeleteReason] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
-  const [rucInput, setRucInput] = useState('');
-  const [rucFound, setRucFound] = useState('');
-  const [rucLoading, setRucLoading] = useState(false);
 
   const isClosed = register?.status === 'CLOSED';
   const entries: CashRegisterEntry[] = (register?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted);
@@ -253,34 +245,10 @@ export function CashRegisterPage() {
   const totalIncomePen = totalIncome - totalIncomeUsdPen;
   const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
 
-  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '' }); setShowAddModal(true); };
-  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo' }); setRucInput(''); setRucFound(''); setShowAddModal(true); };
+  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '', expenseCurrency: 'PEN' }); setShowAddModal(true); };
+  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo', expenseCurrency: 'PEN' }); setShowAddModal(true); };
   const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', voucherType: entry.voucherType || 'NONE', voucherSeries: entry.voucherSeries || '', voucherNumber: entry.voucherNumber || '', paymentMethodName: methodFromDescription(entry.description) || '' }); setShowEditModal(true); };
 
-  const handleRucLookup = async () => {
-    const ruc = rucInput.trim();
-    if (ruc.length !== 11) return;
-    setRucLoading(true);
-    try {
-      const local = await supplierByRuc.mutateAsync(ruc);
-      if (local) {
-        setRucFound(local.businessName);
-        setAddForm((prev) => ({ ...prev, description: local.businessName }));
-        setRucLoading(false);
-        return;
-      }
-    } catch { /* not found locally, try SUNAT */ }
-    try {
-      const result = await rucLookup.mutateAsync(ruc);
-      if (result?.razonSocial) {
-        await createSupplier.mutateAsync({ ruc, businessName: result.razonSocial, address: result.direccion || '' });
-        setRucFound(result.razonSocial);
-        setAddForm((prev) => ({ ...prev, description: result.razonSocial }));
-      }
-    } catch { /* error toasts handled by hooks */ } finally {
-      setRucLoading(false);
-    }
-  };
   const openDelete = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setDeleteReason(''); setShowDeleteModal(true); };
 
   const handleOpen = async (e: React.FormEvent) => {
@@ -290,8 +258,16 @@ export function CashRegisterPage() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     const desc = addForm.paymentMethodName ? `${addForm.description} [${addForm.paymentMethodName}]` : addForm.description;
-    const { paymentMethodName, ...rest } = addForm;
-    await addEntry.mutateAsync({ registerId: register.id, data: { ...rest, description: desc } });
+    const { paymentMethodName, expenseCurrency, ...rest } = addForm;
+    const isUsdExpense = addForm.type === 'EXPENSE' && expenseCurrency === 'USD';
+    await addEntry.mutateAsync({
+      registerId: register.id,
+      data: {
+        ...rest,
+        description: desc,
+        ...(isUsdExpense ? { currency: 'USD', amountUsd: addForm.amount } : {}),
+      },
+    });
     setShowAddModal(false);
   };
   const handleEdit = async (e: React.FormEvent) => {
@@ -850,31 +826,20 @@ export function CashRegisterPage() {
           )}
           {addForm.type === 'EXPENSE' && (
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
-                Empresa por RUC <span className="text-gray-400 font-normal normal-case">(opcional)</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  value={rucInput}
-                  onChange={(e) => { setRucInput(e.target.value.replace(/\D/g, '').slice(0, 11)); setRucFound(''); }}
-                  className="w-40 px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="RUC (11 dígitos)"
-                  maxLength={11}
-                />
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Moneda</label>
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium w-fit">
                 <button
                   type="button"
-                  onClick={handleRucLookup}
-                  disabled={rucInput.length !== 11 || rucLoading}
-                  className="px-3.5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 text-sm font-medium"
-                >
-                  {rucLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                  Buscar
-                </button>
-                {rucFound && (
-                  <div className="flex-1 min-w-0 px-3.5 py-2.5 bg-primary-50 border border-primary-200 rounded-xl text-sm text-primary-800 font-medium truncate">
-                    {rucFound}
-                  </div>
-                )}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setAddForm({ ...addForm, expenseCurrency: 'PEN' })}
+                  className={`px-4 py-2 transition-colors ${addForm.expenseCurrency === 'PEN' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                >S/</button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setAddForm({ ...addForm, expenseCurrency: 'USD' })}
+                  className={`px-4 py-2 border-l border-gray-200 transition-colors ${addForm.expenseCurrency === 'USD' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                >$</button>
               </div>
             </div>
           )}
@@ -886,7 +851,9 @@ export function CashRegisterPage() {
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Monto <span className="text-red-500 normal-case">*</span></label>
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">S/</span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">
+                  {addForm.type === 'EXPENSE' && addForm.expenseCurrency === 'USD' ? '$' : 'S/'}
+                </span>
                 <input type="number" min="0.01" step="0.01" value={addForm.amount || ''} onChange={(e) => setAddForm({ ...addForm, amount: parseFloat(e.target.value) || 0 })} className="w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500" required />
               </div>
             </div>
@@ -1439,7 +1406,8 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
       <td className={`px-4 py-3.5 text-right font-semibold tabular-nums ${entry.type === 'INCOME' ? 'text-primary-700' : 'text-rose-600'}`}>
         {(() => {
           const isUsdSale = isSale && sale?.currency === 'USD';
-          const saleSym = isUsdSale ? '$' : 'S/';
+          const isUsdExpense = entry.type === 'EXPENSE' && entry.currency === 'USD';
+          const saleSym = (isUsdSale || isUsdExpense) ? '$' : 'S/';
           const isCreditSale = isSale && !!sale?.isCredit;
           if (isCreditSale) {
             return (
@@ -1473,10 +1441,11 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
             );
           }
           const dispAmt = isUsdSale && sale?.totalUsd != null ? sale.totalUsd : entry.amount;
+          const isUsdEntry = isUsdSale || isUsdExpense;
           return (
-            <span className={isUsdSale ? 'text-emerald-600' : ''}>
+            <span className={isUsdEntry ? 'text-emerald-600' : ''}>
               {entry.type === 'INCOME' ? '+' : '−'} {saleSym} {dispAmt.toFixed(2)}
-              {isUsdSale && <span className="ml-1 text-[10px] font-bold">USD</span>}
+              {isUsdEntry && <span className="ml-1 text-[10px] font-bold">USD</span>}
             </span>
           );
         })()}
