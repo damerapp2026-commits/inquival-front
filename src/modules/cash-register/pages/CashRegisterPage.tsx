@@ -1068,9 +1068,6 @@ export function CashRegisterPage() {
                       {sale.isCredit ? 'Total de la venta' : 'Total cobrado'}{isUsdSaleDetail ? ' (USD)' : ''}
                     </span>
                     <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{detailSym} {sale.total.toFixed(2)}</div>
-                    {isUsdSaleDetail && sale.exchangeRate && (
-                      <div className="text-xs text-emerald-600 mt-0.5">TC {sale.exchangeRate.toFixed(2)} · Equiv. S/ {(sale.total * sale.exchangeRate).toFixed(2)}</div>
-                    )}
                   </div>
                   <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : sale.isCredit ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
                     {sale.isCancelled ? 'Anulada' : sale.isCredit ? 'A crédito' : 'Completada'}

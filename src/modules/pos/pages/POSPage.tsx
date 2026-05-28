@@ -1417,31 +1417,6 @@ export function POSPage() {
                   <div className="border-t border-gray-100" />
 
                   {/* Tipo de cambio — solo visible cuando la venta es en USD */}
-                  {currency === 'USD' && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <DollarSign size={14} className="text-emerald-600" />
-                        <span className="text-sm font-bold text-gray-700 uppercase tracking-wide">Tipo de cambio</span>
-                      </div>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 font-medium">USD 1 =</span>
-                        <input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          value={exchangeRate || ''}
-                          onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
-                          className="w-full pl-20 pr-16 py-3 border-2 border-emerald-200 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-400"
-                          placeholder="3.75"
-                          required
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-emerald-700 font-bold">PEN</span>
-                      </div>
-                      <p className="text-xs text-emerald-700 mt-1.5 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1">
-                        Total equivalente: S/ {(total * exchangeRate).toFixed(2)} · se guarda en soles con referencia USD
-                      </p>
-                    </div>
-                  )}
 
                   {/* Comprobante */}
                   <div>
