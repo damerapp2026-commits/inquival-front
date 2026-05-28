@@ -17,6 +17,17 @@ import { VoucherPreviewModal, type VoucherSnapshot } from './VoucherPreviewModal
 import { EditSaleItemsModal } from './EditSaleItemsModal';
 import type { Sale, SalePayment, Company, Product, Client, PriceTier, Stock } from '../../../shared/types';
 
+function saleSym(s: { currency?: string }): string { return s.currency === 'USD' ? '$' : 'S/'; }
+function saleDispTotal(s: { currency?: string; total: number; totalUsd?: number }): number {
+  return s.currency === 'USD' && s.totalUsd != null ? s.totalUsd : s.total;
+}
+function itemDispPrice(s: { currency?: string }, item: { unitPrice: number; unitPriceUsd?: number }): number {
+  return s.currency === 'USD' && item.unitPriceUsd != null ? item.unitPriceUsd : item.unitPrice;
+}
+function itemDispSub(s: { currency?: string }, item: { subtotal: number; subtotalUsd?: number }): number {
+  return s.currency === 'USD' && item.subtotalUsd != null ? item.subtotalUsd : item.subtotal;
+}
+
 interface SaleDetailModalProps {
   saleId: string | null;
   onClose: () => void;
@@ -214,7 +225,12 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
                       <span className={`text-xs font-semibold uppercase tracking-wide ${sale.isCancelled ? 'text-red-600' : sale.isCredit ? 'text-orange-700' : 'text-primary-700'}`}>
                         {sale.isCredit ? 'Total de la venta' : 'Total cobrado'}
                       </span>
-                      <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>S/ {sale.total.toFixed(2)}</div>
+                      <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                        {saleSym(sale)} {saleDispTotal(sale).toFixed(2)}
+                        {sale.currency === 'USD' && sale.exchangeRate && (
+                          <span className="block text-xs font-normal text-gray-400 mt-0.5">S/ {sale.total.toFixed(2)} · TC {sale.exchangeRate.toFixed(2)}</span>
+                        )}
+                      </div>
                     </div>
                     <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : sale.isCredit ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
                       {sale.isCancelled ? 'Anulada' : sale.isCredit ? 'A crédito' : 'Completada'}
@@ -341,8 +357,8 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
                           <div className="text-xs text-gray-400">{[company?.name, tier?.name].filter(Boolean).join(' · ') || ''}</div>
                         </td>
                         <td className="px-2 py-2.5 text-right text-gray-700">{item.quantity}</td>
-                        <td className="px-2 py-2.5 text-right text-gray-500">S/ {item.unitPrice.toFixed(2)}</td>
-                        <td className="px-4 py-2.5 text-right font-semibold text-gray-900">S/ {item.subtotal.toFixed(2)}</td>
+                        <td className="px-2 py-2.5 text-right text-gray-500">{saleSym(sale)} {itemDispPrice(sale, item).toFixed(2)}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{saleSym(sale)} {itemDispSub(sale, item).toFixed(2)}</td>
                       </tr>
                     );
                   })}
@@ -354,15 +370,15 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
             <div className="border border-gray-200 rounded-xl p-4 space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Subtotal</span>
-                <span className="text-gray-900">S/ {baseImponible.toFixed(2)}</span>
+                <span className="text-gray-900">{saleSym(sale)} {baseImponible.toFixed(2)}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">IGV</span>
-                <span className="text-gray-900">S/ {igv.toFixed(2)}</span>
+                <span className="text-gray-900">{saleSym(sale)} {igv.toFixed(2)}</span>
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                 <span className="text-base font-semibold text-gray-900">Total</span>
-                <span className="text-lg font-bold text-primary-600">S/ {sale.total.toFixed(2)}</span>
+                <span className="text-lg font-bold text-primary-600">{saleSym(sale)} {saleDispTotal(sale).toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -445,7 +461,7 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
           className="space-y-4"
         >
           <div className="bg-red-50 rounded-lg p-3">
-            <p className="text-sm text-red-700">Esta acción <strong>anulará la venta</strong> por S/ {sale.total.toFixed(2)}:</p>
+            <p className="text-sm text-red-700">Esta acción <strong>anulará la venta</strong> por {saleSym(sale)} {saleDispTotal(sale).toFixed(2)}:</p>
             <ul className="text-xs text-red-600 mt-2 space-y-1 list-disc list-inside">
               <li>Se devolverá el stock de todos los productos</li>
               {!sale.isCredit && <li>Se eliminarán las entradas de caja asociadas</li>}

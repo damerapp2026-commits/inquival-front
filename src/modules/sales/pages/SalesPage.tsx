@@ -24,6 +24,17 @@ import { ClientSalesHistoryModal } from '../components/ClientSalesHistoryModal';
 import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod, Stock } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
 
+function saleSym(s: { currency?: string }): string { return s.currency === 'USD' ? '$' : 'S/'; }
+function saleDispTotal(s: { currency?: string; total: number; totalUsd?: number }): number {
+  return s.currency === 'USD' && s.totalUsd != null ? s.totalUsd : s.total;
+}
+function itemDispPrice(s: { currency?: string }, item: { unitPrice: number; unitPriceUsd?: number }): number {
+  return s.currency === 'USD' && item.unitPriceUsd != null ? item.unitPriceUsd : item.unitPrice;
+}
+function itemDispSub(s: { currency?: string }, item: { subtotal: number; subtotalUsd?: number }): number {
+  return s.currency === 'USD' && item.subtotalUsd != null ? item.subtotalUsd : item.subtotal;
+}
+
 function getMonthStart() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
@@ -532,15 +543,17 @@ export function SalesPage() {
     ) : <span className="text-gray-400">Sin cliente</span> },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'total', header: isMethodPortionFilter ? 'Cobrado' : 'Total', render: (item: Sale) => {
-      if (item.isCancelled) return <span className="line-through text-gray-400">S/ {item.total.toFixed(2)}</span>;
+      const sym = saleSym(item);
+      const disp = saleDispTotal(item);
+      if (item.isCancelled) return <span className="line-through text-gray-400">{sym} {disp.toFixed(2)}</span>;
       const portion = portionInFilter(item);
       const isPartial = isMethodPortionFilter && Math.abs(portion - item.total) > 0.005;
       return isPartial ? (
         <div className="leading-tight">
           <div className="font-medium">S/ {portion.toFixed(2)}</div>
-          <div className="text-[10px] text-gray-400">de S/ {item.total.toFixed(2)}</div>
+          <div className="text-[10px] text-gray-400">de {sym} {disp.toFixed(2)}</div>
         </div>
-      ) : `S/ ${item.total.toFixed(2)}`;
+      ) : `${sym} ${disp.toFixed(2)}`;
     }},
     { key: 'voucherType', header: 'Comprobante', render: (item: Sale) => {
       if (item.voucherType === 'BOLETA') return <span className="text-primary-600 font-medium">Boleta</span>;
@@ -585,15 +598,17 @@ export function SalesPage() {
       return item.isCancelled ? <span className="line-through text-gray-400">S/ {igv.toFixed(2)}</span> : igv > 0 ? <span className="text-orange-600">S/ {igv.toFixed(2)}</span> : <span className="text-gray-400">S/ 0.00</span>;
     }},
     { key: 'total', header: isMethodPortionFilter ? 'Cobrado' : 'Total', render: (item: Sale) => {
-      if (item.isCancelled) return <span className="line-through text-gray-400">S/ {item.total.toFixed(2)}</span>;
+      const sym = saleSym(item);
+      const disp = saleDispTotal(item);
+      if (item.isCancelled) return <span className="line-through text-gray-400">{sym} {disp.toFixed(2)}</span>;
       const portion = portionInFilter(item);
       const isPartial = isMethodPortionFilter && Math.abs(portion - item.total) > 0.005;
       return isPartial ? (
         <div className="leading-tight">
           <div className="font-medium">S/ {portion.toFixed(2)}</div>
-          <div className="text-[10px] text-gray-400">de S/ {item.total.toFixed(2)}</div>
+          <div className="text-[10px] text-gray-400">de {sym} {disp.toFixed(2)}</div>
         </div>
-      ) : <span className="font-medium">S/ {item.total.toFixed(2)}</span>;
+      ) : <span className="font-medium">{sym} {disp.toFixed(2)}</span>;
     }},
     { key: 'payment', header: 'Pago', render: (item: Sale) => item.isCancelled ? <span className="text-red-600 font-medium">Anulada</span> : getPaymentLabel(item) },
     { key: 'actions', header: '', render: (item: Sale) => (
@@ -1083,7 +1098,10 @@ export function SalesPage() {
                             {sale.isCredit ? 'Total de la venta' : 'Total cobrado'}
                           </span>
                           <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
-                            S/ {sale.total.toFixed(2)}
+                            {saleSym(sale)} {saleDispTotal(sale).toFixed(2)}
+                            {sale.currency === 'USD' && sale.exchangeRate && (
+                              <span className="block text-xs font-normal text-gray-400 mt-0.5">S/ {sale.total.toFixed(2)} · TC {sale.exchangeRate.toFixed(2)}</span>
+                            )}
                           </div>
                         </div>
                         <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : sale.isCredit ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
@@ -1224,8 +1242,8 @@ export function SalesPage() {
                               </div>
                             </td>
                             <td className="px-2 py-2.5 text-right text-gray-700">{item.quantity}</td>
-                            <td className="px-2 py-2.5 text-right text-gray-500">S/ {item.unitPrice.toFixed(2)}</td>
-                            <td className="px-4 py-2.5 text-right font-semibold text-gray-900">S/ {item.subtotal.toFixed(2)}</td>
+                            <td className="px-2 py-2.5 text-right text-gray-500">{saleSym(sale)} {itemDispPrice(sale, item).toFixed(2)}</td>
+                            <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{saleSym(sale)} {itemDispSub(sale, item).toFixed(2)}</td>
                           </tr>
                         );
                       })}
@@ -1237,15 +1255,15 @@ export function SalesPage() {
                 <div className="border border-gray-200 rounded-xl p-4 space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600">Subtotal</span>
-                    <span className="text-gray-900">S/ {baseImponible.toFixed(2)}</span>
+                    <span className="text-gray-900">{saleSym(sale)} {baseImponible.toFixed(2)}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600">IGV</span>
-                    <span className="text-gray-900">S/ {igv.toFixed(2)}</span>
+                    <span className="text-gray-900">{saleSym(sale)} {igv.toFixed(2)}</span>
                   </div>
                   <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                     <span className="text-base font-semibold text-gray-900">Total</span>
-                    <span className="text-lg font-bold text-primary-600">S/ {sale.total.toFixed(2)}</span>
+                    <span className="text-lg font-bold text-primary-600">{saleSym(sale)} {saleDispTotal(sale).toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -1511,7 +1529,7 @@ export function SalesPage() {
         {cancellingsale && (
           <form onSubmit={async (e) => { e.preventDefault(); await cancelSale.mutateAsync({ id: cancellingsale.id, reason: cancelReason }); setCancellingSale(null); }} className="space-y-4">
             <div className="bg-red-50 rounded-lg p-3">
-              <p className="text-sm text-red-700">Esta acción <strong>anulará la venta</strong> por S/ {cancellingsale.total.toFixed(2)}:</p>
+              <p className="text-sm text-red-700">Esta acción <strong>anulará la venta</strong> por {saleSym(cancellingsale)} {saleDispTotal(cancellingsale).toFixed(2)}:</p>
               <ul className="text-xs text-red-600 mt-2 space-y-1 list-disc list-inside">
                 <li>Se devolverá el stock de todos los productos</li>
                 {!cancellingsale.isCredit && <li>Se eliminarán las entradas de caja asociadas</li>}
