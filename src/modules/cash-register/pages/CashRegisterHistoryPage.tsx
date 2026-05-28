@@ -98,6 +98,8 @@ export function CashRegisterHistoryPage() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeTarget, setCloseTarget] = useState<CashRegister | null>(null);
   const [closeNotes, setCloseNotes] = useState('');
+  const [methodFilter, setMethodFilter] = useState<string | null>(null);
+  const [vendorFilter, setVendorFilter] = useState<string | null>(null);
 
   const { data, isLoading } = useCashRegisters({ page, limit: 20, startDate: startDate || undefined, endDate: endDate || undefined });
   const { data: detail } = useCashRegisterById(selectedId);
@@ -119,6 +121,25 @@ export function CashRegisterHistoryPage() {
   const total = data?.total || 0;
   const today = getTodayDateString();
 
+  const { uniqueMethods, uniqueVendors } = useMemo(() => {
+    const methods = new Set<string>();
+    const vendors = new Set<string>();
+    registers.forEach((r) => {
+      r.entries.filter((e) => !e.isDeleted).forEach((e) => {
+        const m = methodFromDescription(e.description);
+        if (m) methods.add(m);
+        if (e.createdBy) vendors.add(e.createdBy);
+      });
+    });
+    return { uniqueMethods: Array.from(methods).sort(), uniqueVendors: Array.from(vendors) };
+  }, [registers]);
+
+  const passesFilter = (e: CashRegisterEntry): boolean => {
+    if (methodFilter && methodFromDescription(e.description) !== methodFilter) return false;
+    if (vendorFilter && e.createdBy !== vendorFilter) return false;
+    return true;
+  };
+
   const summary = useMemo(() => {
     let income = 0;
     let expense = 0;
@@ -128,6 +149,8 @@ export function CashRegisterHistoryPage() {
     registers.forEach((r) => {
       const active = r.entries.filter((e) => !e.isDeleted);
       active.filter((e) => e.type === 'INCOME').forEach((e) => {
+        if (methodFilter && methodFromDescription(e.description) !== methodFilter) return;
+        if (vendorFilter && e.createdBy !== vendorFilter) return;
         const usd = getEntryUsdAmount(e);
         if (usd != null) {
           incomeUsd += usd;
@@ -137,12 +160,16 @@ export function CashRegisterHistoryPage() {
           if (m) methodMap.set(m, (methodMap.get(m) || 0) + e.amount);
         }
       });
-      expense += active.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
+      active.filter((e) => e.type === 'EXPENSE').forEach((e) => {
+        if (methodFilter && methodFromDescription(e.description) !== methodFilter) return;
+        if (vendorFilter && e.createdBy !== vendorFilter) return;
+        expense += e.amount;
+      });
       if (r.status === 'OPEN') opens += 1;
     });
     const methodTotals = Array.from(methodMap.entries()).sort((a, b) => b[1] - a[1]);
     return { income, expense, incomeUsd, opens, count: registers.length, methodTotals };
-  }, [registers]);
+  }, [registers, methodFilter, vendorFilter]);
 
   const openDetail = (reg: CashRegister) => { setSelectedId(reg.id); setShowDetail(true); };
   const openClose = (reg: CashRegister) => { setCloseTarget(reg); setCloseNotes(''); setShowCloseModal(true); };
@@ -153,7 +180,12 @@ export function CashRegisterHistoryPage() {
   };
   const goToSale = (saleId: string) => navigate(`/sales?openSaleId=${saleId}`);
 
-  const detailEntries: CashRegisterEntry[] = (detail?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted);
+  const detailEntries: CashRegisterEntry[] = (detail?.entries || []).filter((e: CashRegisterEntry) => {
+    if (e.isDeleted) return false;
+    if (methodFilter && methodFromDescription(e.description) !== methodFilter) return false;
+    if (vendorFilter && e.createdBy !== vendorFilter) return false;
+    return true;
+  });
   const detailGroups = useMemo(() => groupEntries(detailEntries), [detailEntries]);
   const [expandedDetailGroups, setExpandedDetailGroups] = useState<Set<string>>(new Set());
   const toggleDetailGroup = (id: string) => setExpandedDetailGroups((prev) => {
@@ -277,6 +309,40 @@ export function CashRegisterHistoryPage() {
               />
             </div>
           </div>
+          <div className="flex flex-wrap gap-3 sm:items-end">
+            {uniqueMethods.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Método de Pago</label>
+                <select
+                  value={methodFilter || ''}
+                  onChange={(e) => setMethodFilter(e.target.value || null)}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                >
+                  <option value="">Todos</option>
+                  {uniqueMethods.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            )}
+            {uniqueVendors.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Vendedor</label>
+                <select
+                  value={vendorFilter || ''}
+                  onChange={(e) => setVendorFilter(e.target.value || null)}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                >
+                  <option value="">Todos</option>
+                  {uniqueVendors.map((id) => <option key={id} value={id}>{userById[id] || id}</option>)}
+                </select>
+              </div>
+            )}
+            {(methodFilter || vendorFilter) && (
+              <button
+                onClick={() => { setMethodFilter(null); setVendorFilter(null); }}
+                className="text-sm text-rose-500 hover:underline font-medium self-end pb-2"
+              >Limpiar filtros</button>
+            )}
+          </div>
           {(startDate !== monthRange.start || endDate !== monthRange.end) && (
             <button
               onClick={() => { setStartDate(monthRange.start); setEndDate(monthRange.end); setPage(1); }}
@@ -343,9 +409,10 @@ export function CashRegisterHistoryPage() {
               <tbody className="divide-y divide-gray-100">
                 {registers.map((reg) => {
                   const active = reg.entries.filter((e) => !e.isDeleted);
-                  const income = active.filter((e) => e.type === 'INCOME' && getEntryUsdAmount(e) == null).reduce((s, e) => s + e.amount, 0);
-                  const incomeUsdRow = active.filter((e) => e.type === 'INCOME').reduce((s, e) => s + (getEntryUsdAmount(e) ?? 0), 0);
-                  const expense = active.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
+                  const filtered = active.filter(passesFilter);
+                  const income = filtered.filter((e) => e.type === 'INCOME' && getEntryUsdAmount(e) == null).reduce((s, e) => s + e.amount, 0);
+                  const incomeUsdRow = filtered.filter((e) => e.type === 'INCOME').reduce((s, e) => s + (getEntryUsdAmount(e) ?? 0), 0);
+                  const expense = filtered.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
                   return (
                     <tr key={reg.id} className="hover:bg-gray-50/60 transition-colors">
                       <td className="px-4 sm:px-6 py-3.5 whitespace-nowrap">
