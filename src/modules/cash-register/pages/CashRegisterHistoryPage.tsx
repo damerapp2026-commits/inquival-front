@@ -124,17 +124,21 @@ export function CashRegisterHistoryPage() {
     let expense = 0;
     let incomeUsd = 0;
     let opens = 0;
+    const methodMap = new Map<string, number>();
     registers.forEach((r) => {
       const active = r.entries.filter((e) => !e.isDeleted);
-      income += active.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
-      expense += active.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
       active.filter((e) => e.type === 'INCOME').forEach((e) => {
+        income += e.amount;
+        const m = methodFromDescription(e.description);
+        if (m) methodMap.set(m, (methodMap.get(m) || 0) + e.amount);
         const usd = getEntryUsdAmount(e);
         if (usd != null) incomeUsd += usd;
       });
+      expense += active.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
       if (r.status === 'OPEN') opens += 1;
     });
-    return { income, expense, incomeUsd, opens, count: registers.length };
+    const methodTotals = Array.from(methodMap.entries()).sort((a, b) => b[1] - a[1]);
+    return { income, expense, incomeUsd, opens, count: registers.length, methodTotals };
   }, [registers]);
 
   const openDetail = (reg: CashRegister) => { setSelectedId(reg.id); setShowDetail(true); };
@@ -230,32 +234,49 @@ export function CashRegisterHistoryPage() {
       </div>
 
       {/* Filter card */}
-      <div className="bg-white rounded-2xl shadow-card p-5 flex flex-col sm:flex-row sm:items-end gap-4">
-        <div className="flex-1 grid grid-cols-2 gap-3 max-w-md">
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Desde</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+      <div className="bg-white rounded-2xl shadow-card p-5 flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+          <div className="flex-1 grid grid-cols-2 gap-3 max-w-md">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Desde</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Hasta</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Hasta</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
-          </div>
+          {(startDate !== monthRange.start || endDate !== monthRange.end) && (
+            <button
+              onClick={() => { setStartDate(monthRange.start); setEndDate(monthRange.end); setPage(1); }}
+              className="text-sm text-primary-600 hover:underline font-medium"
+            >Mes actual</button>
+          )}
         </div>
-        {(startDate !== monthRange.start || endDate !== monthRange.end) && (
-          <button
-            onClick={() => { setStartDate(monthRange.start); setEndDate(monthRange.end); setPage(1); }}
-            className="text-sm text-primary-600 hover:underline font-medium"
-          >Mes actual</button>
+        {(summary.methodTotals.length > 0 || summary.incomeUsd > 0) && (
+          <div className="flex flex-wrap gap-2 items-center pt-3 border-t border-gray-100">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mr-1">Ingresos del período</span>
+            {summary.methodTotals.map(([method, amount]) => (
+              <span key={method} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-100">
+                {method}: S/ {amount.toFixed(2)}
+              </span>
+            ))}
+            {summary.incomeUsd > 0 && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-100">
+                $ {summary.incomeUsd.toFixed(2)} USD
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -301,78 +322,44 @@ export function CashRegisterHistoryPage() {
               <tbody className="divide-y divide-gray-100">
                 {registers.map((reg) => {
                   const active = reg.entries.filter((e) => !e.isDeleted);
-                  const incomeEntries = active.filter((e) => e.type === 'INCOME');
-                  const income = incomeEntries.reduce((s, e) => s + e.amount, 0);
+                  const income = active.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
                   const expense = active.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
-
-                  // Per-method totals (income only)
-                  const methodMap = new Map<string, number>();
-                  let regUsdTotal = 0;
-                  incomeEntries.forEach((e) => {
-                    const m = methodFromDescription(e.description);
-                    if (m) methodMap.set(m, (methodMap.get(m) || 0) + e.amount);
-                    const usd = getEntryUsdAmount(e);
-                    if (usd != null) regUsdTotal += usd;
-                  });
-                  const methodTotals = Array.from(methodMap.entries()).sort((a, b) => b[1] - a[1]);
-
                   return (
-                    <React.Fragment key={reg.id}>
-                      <tr className="hover:bg-gray-50/60 transition-colors">
-                        <td className="px-4 sm:px-6 pt-3.5 pb-1 whitespace-nowrap">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary-100 to-primary-50 text-primary-700 flex items-center justify-center text-[11px] font-bold uppercase">
-                              {formatPrettyDate(reg.date).split(' ')[0]}
-                            </div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm capitalize">{formatPrettyDate(reg.date)}</div>
-                              <div className="text-[11px] text-gray-400 tabular-nums">{reg.date}</div>
-                            </div>
+                    <tr key={reg.id} className="hover:bg-gray-50/60 transition-colors">
+                      <td className="px-4 sm:px-6 py-3.5 whitespace-nowrap">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary-100 to-primary-50 text-primary-700 flex items-center justify-center text-[11px] font-bold uppercase">
+                            {formatPrettyDate(reg.date).split(' ')[0]}
                           </div>
-                        </td>
-                        <td className="px-4 pt-3.5 pb-1 text-right tabular-nums text-gray-700">S/ {reg.openingBalance.toFixed(2)}</td>
-                        <td className="px-4 pt-3.5 pb-1 text-right tabular-nums font-semibold text-primary-700">+ S/ {income.toFixed(2)}</td>
-                        <td className="px-4 pt-3.5 pb-1 text-right tabular-nums font-semibold text-rose-600">− S/ {expense.toFixed(2)}</td>
-                        <td className="px-4 pt-3.5 pb-1 text-right tabular-nums font-bold text-gray-800">
-                          {reg.closingBalance != null ? `S/ ${reg.closingBalance.toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
-                        </td>
-                        <td className="px-4 pt-3.5 pb-1 text-center">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${reg.status === 'CLOSED' ? 'bg-gray-100 text-gray-600' : 'bg-emerald-100 text-emerald-700'}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${reg.status === 'CLOSED' ? 'bg-gray-400' : 'bg-emerald-500 animate-pulse'}`} />
-                            {reg.status === 'CLOSED' ? 'Cerrada' : 'Abierta'}
-                          </span>
-                        </td>
-                        <td className="px-4 sm:px-6 pt-3.5 pb-1 text-right">
-                          <div className="inline-flex items-center gap-1">
-                            <button onClick={() => openDetail(reg)} className="p-2 rounded-lg text-blue-600 hover:bg-blue-50" title="Ver detalle"><Eye size={15} /></button>
-                            {reg.status === 'OPEN' && reg.date !== today && (
-                              <button onClick={() => openClose(reg)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-50 text-rose-700 rounded-lg text-xs font-semibold hover:bg-rose-100" title="Cerrar caja">
-                                <Lock size={12} /> Cerrar
-                              </button>
-                            )}
+                          <div>
+                            <div className="font-semibold text-gray-800 text-sm capitalize">{formatPrettyDate(reg.date)}</div>
+                            <div className="text-[11px] text-gray-400 tabular-nums">{reg.date}</div>
                           </div>
-                        </td>
-                      </tr>
-                      {/* Method breakdown row */}
-                      {(methodTotals.length > 0 || regUsdTotal > 0) && (
-                        <tr className="hover:bg-gray-50/60 transition-colors">
-                          <td colSpan={7} className="px-4 sm:px-6 pt-0 pb-3">
-                            <div className="flex flex-wrap gap-1.5 items-center">
-                              {methodTotals.map(([method, amount]) => (
-                                <span key={method} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold border border-blue-100">
-                                  {method}: S/ {amount.toFixed(2)}
-                                </span>
-                              ))}
-                              {regUsdTotal > 0 && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-100">
-                                  $ {regUsdTotal.toFixed(2)} USD
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5 text-right tabular-nums text-gray-700">S/ {reg.openingBalance.toFixed(2)}</td>
+                      <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-primary-700">+ S/ {income.toFixed(2)}</td>
+                      <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-rose-600">− S/ {expense.toFixed(2)}</td>
+                      <td className="px-4 py-3.5 text-right tabular-nums font-bold text-gray-800">
+                        {reg.closingBalance != null ? `S/ ${reg.closingBalance.toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
+                      </td>
+                      <td className="px-4 py-3.5 text-center">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${reg.status === 'CLOSED' ? 'bg-gray-100 text-gray-600' : 'bg-emerald-100 text-emerald-700'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${reg.status === 'CLOSED' ? 'bg-gray-400' : 'bg-emerald-500 animate-pulse'}`} />
+                          {reg.status === 'CLOSED' ? 'Cerrada' : 'Abierta'}
+                        </span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <button onClick={() => openDetail(reg)} className="p-2 rounded-lg text-blue-600 hover:bg-blue-50" title="Ver detalle"><Eye size={15} /></button>
+                          {reg.status === 'OPEN' && reg.date !== today && (
+                            <button onClick={() => openClose(reg)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-50 text-rose-700 rounded-lg text-xs font-semibold hover:bg-rose-100" title="Cerrar caja">
+                              <Lock size={12} /> Cerrar
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>
