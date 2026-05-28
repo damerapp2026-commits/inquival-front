@@ -1854,7 +1854,11 @@ export function POSPage() {
                   <span className="text-gray-400 font-mono">· {successSale.voucherNumber || `#${successSale.id.slice(-6).toUpperCase()}`}</span>
                 )}
               </div>
-              <div className="text-3xl font-bold text-gray-900 tabular-nums">S/ {successSale.total.toFixed(2)}</div>
+              <div className="text-3xl font-bold text-gray-900 tabular-nums">
+                {successSale.currency === 'USD' && successSale.totalUsd != null
+                  ? `$ ${successSale.totalUsd.toFixed(2)}`
+                  : `S/ ${successSale.total.toFixed(2)}`}
+              </div>
 
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <button
