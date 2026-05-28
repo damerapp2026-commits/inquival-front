@@ -89,13 +89,17 @@ function formatLongDate(iso?: string) {
   } catch { return ''; }
 }
 
+function sanitizeEntryDesc(desc: string): string {
+  return desc.replace(/\s*·\s*TC\s+[\d.]+/g, '');
+}
+
 function methodFromDescription(desc: string) {
-  const m = desc.match(/\[(.+?)\]$/);
+  const m = sanitizeEntryDesc(desc).match(/\[(.+?)\]$/);
   return m ? m[1] : null;
 }
 
 function stripMethod(desc: string) {
-  return desc.replace(/\s*\[.*?\]\s*$/, '');
+  return sanitizeEntryDesc(desc).replace(/\s*\[.*?\]\s*$/, '');
 }
 
 function clientFromSaleDescription(desc: string): string {
@@ -649,7 +653,7 @@ export function CashRegisterPage() {
                   const first = group.entries[0];
                   const total = group.total ?? group.entries.reduce((s, e) => s + e.amount, 0);
                   const isSaleGroup = first.referenceType === 'Sale' && !!first.referenceId;
-                  const baseRaw = first.description.replace(/\s*\(\d+ de \d+\)\s*$/, '');
+                  const baseRaw = sanitizeEntryDesc(first.description).replace(/\s*\(\d+ de \d+\)\s*$/, '');
                   const baseDesc = isSaleGroup ? clientFromSaleDescription(baseRaw) : stripMethod(baseRaw);
                   const method = methodFromDescription(first.description);
                   const vendor = first.createdBy ? (userById[first.createdBy] || 'Usuario') : '';
