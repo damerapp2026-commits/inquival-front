@@ -760,8 +760,8 @@ export function SalesPage() {
       {/* Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         {!isSellerRole && (activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && sellers.length > 0 && (
-          <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }} className="px-3 py-2 border rounded-lg">
-            <option value="">Todos los responsables</option>
+          <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }} className="px-3 py-2 border rounded-lg text-sm">
+            <option value="">Responsables</option>
             {sellers.map((s: any) => <option key={s.id} value={s.id}>{(s.fullName || s.username) + (s.role === 'ADMIN' ? ' (Admin)' : '')}</option>)}
           </select>
         )}
@@ -791,9 +791,9 @@ export function SalesPage() {
           <select
             value={paymentMethodFilter}
             onChange={(e) => { setPaymentMethodFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }}
-            className="px-3 py-2 border rounded-lg"
+            className="px-3 py-2 border rounded-lg text-sm"
           >
-            <option value="">Todos los métodos de pago</option>
+            <option value="">Métodos de Pago</option>
             <option value="__CREDIT__">Crédito</option>
             {paymentMethods.map((m: PaymentMethod) => (
               <option key={m.id} value={m.id}>{m.name}</option>
