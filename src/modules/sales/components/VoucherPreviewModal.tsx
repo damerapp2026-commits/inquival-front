@@ -537,6 +537,7 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div
         className={`bg-white rounded-2xl shadow-2xl w-full ${format === 'TICKET' ? 'max-w-xl' : 'max-w-4xl'} h-[92vh] flex flex-col overflow-hidden`}
@@ -719,5 +720,6 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
         </div>
       </div>
     )}
+    </>
   );
 }
