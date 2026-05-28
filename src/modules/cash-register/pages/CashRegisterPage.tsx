@@ -561,12 +561,14 @@ export function CashRegisterPage() {
             {totalIncomeUsd > 0 && (
               <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium">
                 <button
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => setCurrencyFilter(currencyFilter === 'PEN' ? null : 'PEN')}
                   className={`px-3 py-2 transition-colors ${currencyFilter === 'PEN' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                 >
                   S/
                 </button>
                 <button
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => setCurrencyFilter(currencyFilter === 'USD' ? null : 'USD')}
                   className={`px-3 py-2 border-l border-gray-200 transition-colors ${currencyFilter === 'USD' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                 >
@@ -600,6 +602,7 @@ export function CashRegisterPage() {
             )}
             {(vendorFilter || paymentMethodFilter || currencyFilter) && (
               <button
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); setCurrencyFilter(null); }}
                 className="px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors"
               >
