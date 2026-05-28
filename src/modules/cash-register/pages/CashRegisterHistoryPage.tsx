@@ -100,6 +100,7 @@ export function CashRegisterHistoryPage() {
   const [closeNotes, setCloseNotes] = useState('');
   const [methodFilter, setMethodFilter] = useState<string | null>(null);
   const [vendorFilter, setVendorFilter] = useState<string | null>(null);
+  const [currencyFilter, setCurrencyFilter] = useState<'PEN' | 'USD' | null>(null);
 
   const { data, isLoading } = useCashRegisters({ page, limit: 20, startDate: startDate || undefined, endDate: endDate || undefined });
   const { data: detail } = useCashRegisterById(selectedId);
@@ -121,22 +122,26 @@ export function CashRegisterHistoryPage() {
   const total = data?.total || 0;
   const today = getTodayDateString();
 
-  const { uniqueMethods, uniqueVendors } = useMemo(() => {
+  const { uniqueMethods, uniqueVendors, hasUsdEntries } = useMemo(() => {
     const methods = new Set<string>();
     const vendors = new Set<string>();
+    let usd = false;
     registers.forEach((r) => {
       r.entries.filter((e) => !e.isDeleted).forEach((e) => {
         const m = methodFromDescription(e.description);
         if (m) methods.add(m);
         if (e.createdBy) vendors.add(e.createdBy);
+        if (getEntryUsdAmount(e) != null) usd = true;
       });
     });
-    return { uniqueMethods: Array.from(methods).sort(), uniqueVendors: Array.from(vendors) };
+    return { uniqueMethods: Array.from(methods).sort(), uniqueVendors: Array.from(vendors), hasUsdEntries: usd };
   }, [registers]);
 
   const passesFilter = (e: CashRegisterEntry): boolean => {
     if (methodFilter && methodFromDescription(e.description) !== methodFilter) return false;
     if (vendorFilter && e.createdBy !== vendorFilter) return false;
+    if (currencyFilter === 'USD' && getEntryUsdAmount(e) == null) return false;
+    if (currencyFilter === 'PEN' && getEntryUsdAmount(e) != null) return false;
     return true;
   };
 
@@ -169,7 +174,7 @@ export function CashRegisterHistoryPage() {
     });
     const methodTotals = Array.from(methodMap.entries()).sort((a, b) => b[1] - a[1]);
     return { income, expense, incomeUsd, opens, count: registers.length, methodTotals };
-  }, [registers, methodFilter, vendorFilter]);
+  }, [registers, methodFilter, vendorFilter, currencyFilter]);
 
   const openDetail = (reg: CashRegister) => { setSelectedId(reg.id); setShowDetail(true); };
   const openClose = (reg: CashRegister) => { setCloseTarget(reg); setCloseNotes(''); setShowCloseModal(true); };
@@ -310,6 +315,23 @@ export function CashRegisterHistoryPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-3 sm:items-end">
+            {hasUsdEntries && (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Moneda</label>
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium">
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setCurrencyFilter(currencyFilter === 'PEN' ? null : 'PEN')}
+                    className={`px-3 py-2 transition-colors ${currencyFilter === 'PEN' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >S/</button>
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setCurrencyFilter(currencyFilter === 'USD' ? null : 'USD')}
+                    className={`px-3 py-2 border-l border-gray-200 transition-colors ${currencyFilter === 'USD' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >$</button>
+                </div>
+              </div>
+            )}
             {uniqueMethods.length > 0 && (
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Método de Pago</label>
@@ -336,9 +358,10 @@ export function CashRegisterHistoryPage() {
                 </select>
               </div>
             )}
-            {(methodFilter || vendorFilter) && (
+            {(methodFilter || vendorFilter || currencyFilter) && (
               <button
-                onClick={() => { setMethodFilter(null); setVendorFilter(null); }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { setMethodFilter(null); setVendorFilter(null); setCurrencyFilter(null); }}
                 className="text-sm text-rose-500 hover:underline font-medium self-end pb-2"
               >Limpiar filtros</button>
             )}
