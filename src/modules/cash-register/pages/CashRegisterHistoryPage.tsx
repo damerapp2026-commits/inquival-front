@@ -128,11 +128,14 @@ export function CashRegisterHistoryPage() {
     registers.forEach((r) => {
       const active = r.entries.filter((e) => !e.isDeleted);
       active.filter((e) => e.type === 'INCOME').forEach((e) => {
-        income += e.amount;
-        const m = methodFromDescription(e.description);
-        if (m) methodMap.set(m, (methodMap.get(m) || 0) + e.amount);
         const usd = getEntryUsdAmount(e);
-        if (usd != null) incomeUsd += usd;
+        if (usd != null) {
+          incomeUsd += usd;
+        } else {
+          income += e.amount;
+          const m = methodFromDescription(e.description);
+          if (m) methodMap.set(m, (methodMap.get(m) || 0) + e.amount);
+        }
       });
       expense += active.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
       if (r.status === 'OPEN') opens += 1;
@@ -340,7 +343,8 @@ export function CashRegisterHistoryPage() {
               <tbody className="divide-y divide-gray-100">
                 {registers.map((reg) => {
                   const active = reg.entries.filter((e) => !e.isDeleted);
-                  const income = active.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
+                  const income = active.filter((e) => e.type === 'INCOME' && getEntryUsdAmount(e) == null).reduce((s, e) => s + e.amount, 0);
+                  const incomeUsdRow = active.filter((e) => e.type === 'INCOME').reduce((s, e) => s + (getEntryUsdAmount(e) ?? 0), 0);
                   const expense = active.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
                   return (
                     <tr key={reg.id} className="hover:bg-gray-50/60 transition-colors">
@@ -356,7 +360,10 @@ export function CashRegisterHistoryPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3.5 text-right tabular-nums text-gray-700">S/ {reg.openingBalance.toFixed(2)}</td>
-                      <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-primary-700">+ S/ {income.toFixed(2)}</td>
+                      <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-primary-700">
+                        <div>+ S/ {income.toFixed(2)}</div>
+                        {incomeUsdRow > 0 && <div className="text-emerald-600 text-[11px]">+ $ {incomeUsdRow.toFixed(2)}</div>}
+                      </td>
                       <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-rose-600">− S/ {expense.toFixed(2)}</td>
                       <td className="px-4 py-3.5 text-right tabular-nums font-bold text-gray-800">
                         {reg.closingBalance != null ? `S/ ${reg.closingBalance.toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
@@ -409,7 +416,16 @@ export function CashRegisterHistoryPage() {
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Ingresos</div>
-              <div className="font-bold tabular-nums text-primary-700 mt-1">+ S/ {detailEntries.filter(e => !e.isDeleted && e.type === 'INCOME').reduce((s, e) => s + e.amount, 0).toFixed(2)}</div>
+              {(() => {
+                const penIncome = detailEntries.filter(e => !e.isDeleted && e.type === 'INCOME' && getEntryUsdAmount(e) == null).reduce((s, e) => s + e.amount, 0);
+                const usdIncome = detailEntries.filter(e => !e.isDeleted && e.type === 'INCOME').reduce((s, e) => s + (getEntryUsdAmount(e) ?? 0), 0);
+                return (
+                  <>
+                    <div className="font-bold tabular-nums text-primary-700 mt-1">+ S/ {penIncome.toFixed(2)}</div>
+                    {usdIncome > 0 && <div className="font-bold tabular-nums text-emerald-600 text-xs mt-0.5">+ $ {usdIncome.toFixed(2)}</div>}
+                  </>
+                );
+              })()}
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Egresos</div>
