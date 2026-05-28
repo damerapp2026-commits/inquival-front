@@ -192,6 +192,21 @@ export function CashRegisterHistoryPage() {
     return true;
   });
   const detailGroups = useMemo(() => groupEntries(detailEntries), [detailEntries]);
+
+  const detailMethodTotals = useMemo(() => {
+    const allActive = (detail?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted && e.type === 'INCOME');
+    const map = new Map<string, { pen: number; usd: number }>();
+    allActive.forEach((e: CashRegisterEntry) => {
+      const m = methodFromDescription(e.description) || 'Sin método';
+      const usd = getEntryUsdAmount(e);
+      const prev = map.get(m) || { pen: 0, usd: 0 };
+      if (usd != null) map.set(m, { ...prev, usd: prev.usd + usd });
+      else map.set(m, { ...prev, pen: prev.pen + e.amount });
+    });
+    return Array.from(map.entries())
+      .filter(([, v]) => v.pen > 0 || v.usd > 0)
+      .sort((a, b) => (b[1].pen + b[1].usd) - (a[1].pen + a[1].usd));
+  }, [detail]);
   const [expandedDetailGroups, setExpandedDetailGroups] = useState<Set<string>>(new Set());
   const toggleDetailGroup = (id: string) => setExpandedDetailGroups((prev) => {
     const next = new Set(prev);
@@ -526,6 +541,25 @@ export function CashRegisterHistoryPage() {
               <div className="font-bold tabular-nums text-gray-800 mt-1">{detail?.closingBalance != null ? `S/ ${detail.closingBalance.toFixed(2)}` : '—'}</div>
             </div>
           </div>
+
+          {detailMethodTotals.length > 0 && (
+            <div className="border border-gray-100 rounded-xl overflow-hidden">
+              <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Ingresos por método de pago</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {detailMethodTotals.map(([method, totals]) => (
+                  <div key={method} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">{method}</span>
+                    <div className="flex items-center gap-3 tabular-nums font-semibold">
+                      {totals.pen > 0 && <span className="text-primary-700">+ S/ {totals.pen.toFixed(2)}</span>}
+                      {totals.usd > 0 && <span className="text-emerald-600">+ $ {totals.usd.toFixed(2)}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="border border-gray-100 rounded-xl overflow-hidden max-h-96 overflow-y-auto">
             <table className="w-full text-sm">
