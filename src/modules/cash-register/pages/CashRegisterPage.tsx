@@ -239,7 +239,17 @@ export function CashRegisterPage() {
     (e) => e.type === 'INCOME' && e.referenceType === 'Sale' && salesByRefId.get(e.referenceId || '')?.currency === 'USD',
   );
   const totalIncomeUsdPen = usdEntries.reduce((s, e) => s + e.amount, 0);
-  const totalIncomeUsd = usdEntries.reduce((s, e) => s + (e.amountUsd ?? 0), 0);
+  const totalIncomeUsd = (() => {
+    const seenSaleIds = new Set<string>();
+    return usdEntries.reduce((s, e) => {
+      if (e.amountUsd != null) return s + e.amountUsd;
+      if (e.referenceId && !seenSaleIds.has(e.referenceId)) {
+        seenSaleIds.add(e.referenceId);
+        return s + (salesByRefId.get(e.referenceId)?.totalUsd ?? 0);
+      }
+      return s;
+    }, 0);
+  })();
   const totalIncomePen = totalIncome - totalIncomeUsdPen;
   const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
 
