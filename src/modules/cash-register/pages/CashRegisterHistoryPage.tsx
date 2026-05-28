@@ -160,10 +160,11 @@ export function CashRegisterHistoryPage() {
   });
 
   const renderDetailEntry = (e: CashRegisterEntry, nested: boolean, key: React.Key) => {
-    const description = stripMethod(e.description);
     const method = methodFromDescription(e.description);
     const vendor = e.createdBy ? (userById[e.createdBy] || 'Usuario') : '';
     const isSale = e.referenceType === 'Sale' && !!e.referenceId;
+    const clientName = e.clientName || (isSale ? stripMethod(e.description).replace(/^Venta\s+a\s+/i, '').trim() : null);
+    const displayClient = clientName && !/^sin\s*cliente$/i.test(clientName) ? clientName : null;
     return (
       <tr key={key} className={`${e.isDeleted ? 'opacity-50' : ''} ${nested ? 'bg-gray-50/50' : ''}`}>
         <td className={`px-3 py-2.5 ${nested ? 'pl-9' : ''}`}>
@@ -179,8 +180,14 @@ export function CashRegisterHistoryPage() {
         </td>
         <td className="px-3 py-2.5 text-xs text-gray-600">{categoryLabels[e.category] || e.category}</td>
         <td className="px-3 py-2.5 text-xs text-gray-800">
-          <span className={e.isDeleted ? 'line-through text-gray-400' : ''}>{description}</span>
-          {method && <span className="ml-2 text-[10px] text-blue-700 font-medium">[{method}]</span>}
+          {displayClient
+            ? <span className={e.isDeleted ? 'line-through text-gray-400' : 'font-medium'}>{displayClient}</span>
+            : <span className="text-gray-400 italic">Sin cliente</span>}
+        </td>
+        <td className="px-3 py-2.5">
+          {method
+            ? <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">{method}</span>
+            : <span className="text-gray-300 text-xs">—</span>}
         </td>
         <td className="px-3 py-2.5">
           {vendor ? (
@@ -410,7 +417,8 @@ export function CashRegisterHistoryPage() {
                   <th className="px-3 py-2 text-left">Hora</th>
                   <th className="px-3 py-2 text-left">Tipo</th>
                   <th className="px-3 py-2 text-left">Categoría</th>
-                  <th className="px-3 py-2 text-left">Descripción</th>
+                  <th className="px-3 py-2 text-left">Cliente</th>
+                  <th className="px-3 py-2 text-left">Método de Pago</th>
                   <th className="px-3 py-2 text-left">Vendedor</th>
                   <th className="px-3 py-2 text-center">Comprobante</th>
                   <th className="px-3 py-2 text-right">Monto</th>
@@ -419,7 +427,7 @@ export function CashRegisterHistoryPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {detailGroups.length === 0 && (
-                  <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400 text-xs">Sin movimientos</td></tr>
+                  <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-400 text-xs">Sin movimientos</td></tr>
                 )}
                 {detailGroups.map((g, gi) => {
                   if (!g.groupId || g.entries.length === 1) {
@@ -454,6 +462,7 @@ export function CashRegisterHistoryPage() {
                           </span>
                           <span className="font-medium">{baseDesc}</span>
                         </td>
+                        <td className="px-3 py-2.5 text-center"><span className="text-gray-300 text-xs">—</span></td>
                         <td className="px-3 py-2.5">
                           {vendor ? (
                             <div className="inline-flex items-center gap-1.5">
