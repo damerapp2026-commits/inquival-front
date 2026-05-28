@@ -16,7 +16,7 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download, FileText, X } from 'lucide-react';
+import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download, FileText, X, CheckCircle2, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { VoucherPreviewModal, type VoucherSnapshot } from '../components/VoucherPreviewModal';
 import { EditSaleItemsModal } from '../components/EditSaleItemsModal';
@@ -189,6 +189,7 @@ export function SalesPage() {
   const [cancellingsale, setCancellingSale] = useState<Sale | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [voucherPreview, setVoucherPreview] = useState<VoucherSnapshot | null>(null);
+  const [successSale, setSuccessSale] = useState<VoucherSnapshot | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
 
   const [form, setForm] = useState({
@@ -329,8 +330,43 @@ export function SalesPage() {
         payload.payments = [{ paymentMethodId: form.paymentMode, amount: Math.round(saleTotal * 100) / 100 }];
       }
     }
-    await createSale.mutateAsync(payload);
+    const saleResult = await createSale.mutateAsync(payload);
     setShowModal(false);
+
+    // Construir snapshot para el modal de éxito
+    const client = form.clientId ? clientMap.get(form.clientId) : undefined;
+    const sellerUser = user;
+    const snapshot: VoucherSnapshot = {
+      id: saleResult?.id || '',
+      voucherNumber: saleResult?.saleNumber,
+      total: saleResult?.total ?? saleTotal,
+      totalUsd: saleResult?.totalUsd,
+      currency: form.currency !== 'PEN' ? form.currency : undefined,
+      voucherType: form.voucherType as VoucherSnapshot['voucherType'],
+      date: new Date(),
+      items: form.items.map((item) => {
+        const product = productMap.get(item.productId);
+        const name = product?.name || item.productId;
+        return {
+          name: item.isBonus ? `${name} (Bonificación)` : name,
+          quantity: item.quantity,
+          unitPrice: item.isBonus ? 0 : item.unitPrice,
+          subtotal: item.isBonus ? 0 : item.subtotal,
+        };
+      }),
+      payments: isCredit ? [] : (isMixed
+        ? form.mixedPayments.map((p) => ({
+            methodName: paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '',
+            amount: p.amount,
+          }))
+        : [{ methodName: paymentMethods.find((m) => m.id === form.paymentMode)?.name || '', amount: saleTotal }]
+      ),
+      isCredit,
+      sellerName: sellerUser?.fullName || sellerUser?.username || 'Sin asignar',
+      clientName: client?.name,
+      clientPhone: client?.phone,
+    };
+    setSuccessSale(snapshot);
   };
 
   // Loan form handlers
@@ -1369,6 +1405,75 @@ export function SalesPage() {
         paymentMethods={paymentMethods}
         stockByCompanyMap={stockQtyByCompany}
       />
+
+      {/* Modal éxito post-venta */}
+      {successSale && (
+        <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4" onClick={() => setSuccessSale(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Header verde */}
+            <div className="relative bg-gradient-to-br from-primary-500 via-primary-600 to-primary-700 text-white px-8 pt-8 pb-7 text-center overflow-hidden">
+              <div className="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full" />
+              <div className="absolute -bottom-12 -left-8 w-28 h-28 bg-white/10 rounded-full" />
+              <button
+                type="button"
+                onClick={() => setSuccessSale(null)}
+                className="absolute top-3 right-3 z-10 p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/20 transition-colors"
+              >
+                <X size={18} />
+              </button>
+              <div className="relative">
+                <div className="inline-flex w-16 h-16 rounded-full bg-white/20 items-center justify-center mb-3 backdrop-blur">
+                  <CheckCircle2 size={36} strokeWidth={2.5} className="text-white" />
+                </div>
+                <h2 className="text-2xl font-bold">¡Venta registrada!</h2>
+                <p className="text-primary-50 text-sm mt-1">
+                  {successSale.voucherType === 'BOLETA' ? 'Boleta emitida correctamente'
+                    : successSale.voucherType === 'FACTURA' ? 'Factura emitida correctamente'
+                    : 'Nota de venta generada'}
+                </p>
+              </div>
+            </div>
+            {/* Body */}
+            <div className="px-6 pt-6 pb-5 text-center space-y-4">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-lg text-xs font-semibold text-gray-700">
+                {successSale.voucherType === 'BOLETA' ? <Receipt size={13} />
+                  : successSale.voucherType === 'FACTURA' ? <Building2 size={13} />
+                  : <FileText size={13} />}
+                {successSale.voucherType === 'BOLETA' ? 'Boleta de venta'
+                  : successSale.voucherType === 'FACTURA' ? 'Factura'
+                  : 'Nota de venta'}
+                {(successSale.voucherNumber || successSale.id) && (
+                  <span className="text-gray-400 font-mono">· {successSale.voucherNumber || `#${successSale.id.slice(-6).toUpperCase()}`}</span>
+                )}
+              </div>
+              <div className="text-3xl font-bold text-gray-900 tabular-nums">
+                {successSale.currency === 'USD' && successSale.totalUsd != null
+                  ? `$ ${successSale.totalUsd.toFixed(2)}`
+                  : `S/ ${successSale.total.toFixed(2)}`}
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setVoucherPreview(successSale); setSuccessSale(null); }}
+                  className="flex flex-col items-center gap-1 px-3 py-3 border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                >
+                  <Eye size={18} className="text-gray-600" />
+                  <span className="text-sm font-semibold text-gray-700">Ver comprobante</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSuccessSale(null); openCreate(); }}
+                  className="flex flex-col items-center gap-1 px-3 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors shadow-sm"
+                >
+                  <Plus size={18} />
+                  <span className="text-sm font-semibold">Nueva venta</span>
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 pt-1">Haz clic fuera para cerrar</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal vista previa del comprobante */}
       <VoucherPreviewModal sale={voucherPreview} onClose={() => setVoucherPreview(null)} />
