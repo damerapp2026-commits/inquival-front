@@ -199,7 +199,6 @@ export function POSPage() {
   })();
   const searchRef = useRef<HTMLInputElement>(null);
   const [successSale, setSuccessSale] = useState<VoucherSnapshot | null>(null);
-  const [successCountdown, setSuccessCountdown] = useState(5);
   const [voucherPreview, setVoucherPreview] = useState<VoucherSnapshot | null>(null);
 
   const { data: openCredits } = useOpenClientCredits(isCredit ? clientId : '');
@@ -724,23 +723,12 @@ export function POSPage() {
       const saleId = saleResult?.id || saleResult?.sale?.id || '';
       const saleNumber = saleResult?.saleNumber || saleResult?.sale?.saleNumber;
       setSuccessSale({ id: saleId, voucherNumber: saleNumber, ...saleSnapshotBase });
-      setSuccessCountdown(5);
     } catch {
       // errors handled by mutation onError
     }
   };
 
-  // Auto-close countdown + keyboard shortcuts for success modal
-  useEffect(() => {
-    if (!successSale) return;
-    const tick = setInterval(() => setSuccessCountdown((c) => (c <= 1 ? 0 : c - 1)), 1000);
-    return () => clearInterval(tick);
-  }, [successSale]);
-
-  useEffect(() => {
-    if (successSale && successCountdown === 0) setSuccessSale(null);
-  }, [successCountdown, successSale]);
-
+  // Keyboard shortcuts for success modal
   useEffect(() => {
     if (!successSale) return;
     const handler = (e: KeyboardEvent) => {
@@ -1828,6 +1816,14 @@ export function POSPage() {
             <div className="relative bg-gradient-to-br from-primary-500 via-primary-600 to-primary-700 text-white px-8 pt-8 pb-7 text-center overflow-hidden">
               <div className="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full" />
               <div className="absolute -bottom-12 -left-8 w-28 h-28 bg-white/10 rounded-full" />
+              <button
+                type="button"
+                onClick={() => setSuccessSale(null)}
+                className="absolute top-3 right-3 z-10 p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/20 transition-colors"
+                aria-label="Cerrar"
+              >
+                <X size={18} />
+              </button>
               <div className="relative">
                 <div className="inline-flex w-16 h-16 rounded-full bg-white/20 items-center justify-center mb-3 backdrop-blur">
                   <CheckCircle2 size={36} strokeWidth={2.5} className="text-white" />
@@ -1882,7 +1878,7 @@ export function POSPage() {
               </div>
 
               <p className="text-xs text-gray-400 pt-1">
-                Se cerrará automáticamente en {successCountdown}s · <span className="border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 font-mono">Esc</span> para cerrar
+                <span className="border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 font-mono">Esc</span> para cerrar
               </p>
             </div>
           </div>
