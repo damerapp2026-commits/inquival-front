@@ -243,7 +243,10 @@ export function CashRegisterPage() {
     }, 0);
   })();
   const totalIncomePen = totalIncome - totalIncomeUsdPen;
-  const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
+  const totalExpenseUsd = activeEntries.filter((e) => e.type === 'EXPENSE' && e.currency === 'USD').reduce((s, e) => s + e.amount, 0);
+  const totalExpensePen = totalExpense - totalExpenseUsd;
+  const netBalancePen = (register?.openingBalance || 0) + totalIncomePen - totalExpensePen;
+  const netBalanceUsd = totalIncomeUsd - totalExpenseUsd;
 
   const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '', expenseCurrency: 'PEN', convertToSoles: false, exchangeRate: 3.70 }); setShowAddModal(true); };
   const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo', expenseCurrency: 'PEN', convertToSoles: false, exchangeRate: 3.70 }); setShowAddModal(true); };
@@ -497,12 +500,17 @@ export function CashRegisterPage() {
               </div>
               <div className="flex items-baseline gap-3 flex-wrap">
                 <div className="text-2xl sm:text-3xl font-bold tabular-nums tracking-tight">
-                  S/ {netBalance.toFixed(2)}
+                  S/ {netBalancePen.toFixed(2)}
                 </div>
                 <div className={`text-xs ${isClosed ? 'text-gray-300' : 'text-primary-100'}`}>
                   {activeEntries.length} movimiento{activeEntries.length === 1 ? '' : 's'} · {register?.date}
                 </div>
               </div>
+              {netBalanceUsd !== 0 && (
+                <div className={`text-sm font-semibold tabular-nums mt-0.5 ${netBalanceUsd >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  Balance USD: {netBalanceUsd >= 0 ? '+' : '−'} $ {Math.abs(netBalanceUsd).toFixed(2)}
+                </div>
+              )}
             </div>
           </div>
 
@@ -526,8 +534,8 @@ export function CashRegisterPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiTile icon={Scale} label="Apertura" value={`S/ ${(register?.openingBalance || 0).toFixed(2)}`} accent="bg-gray-100 text-gray-700" />
         <KpiTile icon={TrendingUp} label={totalIncomeUsd > 0 ? 'Ingresos S/' : 'Ingresos'} value={`+ S/ ${totalIncomePen.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" subValue={totalIncomeUsd > 0 ? `+ $ ${totalIncomeUsd.toFixed(2)} USD` : undefined} subValueAccent="text-emerald-600" />
-        <KpiTile icon={TrendingDown} label="Egresos" value={`− S/ ${totalExpense.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" />
-        <KpiTile icon={Wallet} label="Balance Neto (S/)" value={`S/ ${netBalance.toFixed(2)}`} accent="bg-blue-100 text-blue-700" valueAccent="text-blue-700" />
+        <KpiTile icon={TrendingDown} label={totalExpenseUsd > 0 ? 'Egresos S/' : 'Egresos'} value={`− S/ ${totalExpensePen.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" subValue={totalExpenseUsd > 0 ? `− $ ${totalExpenseUsd.toFixed(2)} USD` : undefined} subValueAccent="text-rose-500" />
+        <KpiTile icon={Wallet} label={netBalanceUsd !== 0 ? 'Balance Neto S/' : 'Balance Neto'} value={`S/ ${netBalancePen.toFixed(2)}`} accent="bg-blue-100 text-blue-700" valueAccent="text-blue-700" subValue={netBalanceUsd !== 0 ? `${netBalanceUsd >= 0 ? '+' : '−'} $ ${Math.abs(netBalanceUsd).toFixed(2)} USD` : undefined} subValueAccent={netBalanceUsd >= 0 ? 'text-emerald-600' : 'text-rose-500'} />
       </div>
 
       {/* Tabs */}
@@ -1082,8 +1090,14 @@ export function CashRegisterPage() {
                 {totalIncomeUsd > 0 && (
                   <div className="flex justify-between text-emerald-600"><span>+ Ingresos (USD)</span><span className="font-semibold tabular-nums">$ {totalIncomeUsd.toFixed(2)}</span></div>
                 )}
-                <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">S/ {totalExpense.toFixed(2)}</span></div>
-                <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-200 mt-2"><span>Balance cierre (S/)</span><span className="tabular-nums">S/ {netBalance.toFixed(2)}</span></div>
+                <div className="flex justify-between text-rose-600"><span>− Egresos (S/)</span><span className="font-semibold tabular-nums">S/ {totalExpensePen.toFixed(2)}</span></div>
+                {totalExpenseUsd > 0 && (
+                  <div className="flex justify-between text-rose-500"><span>− Egresos (USD)</span><span className="font-semibold tabular-nums">$ {totalExpenseUsd.toFixed(2)}</span></div>
+                )}
+                <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-200 mt-2"><span>Balance cierre (S/)</span><span className="tabular-nums">S/ {netBalancePen.toFixed(2)}</span></div>
+                {netBalanceUsd !== 0 && (
+                  <div className="flex justify-between text-sm font-bold text-emerald-700"><span>Balance cierre (USD)</span><span className="tabular-nums">$ {netBalanceUsd.toFixed(2)}</span></div>
+                )}
               </div>
 
               {methods.length > 0 && (
