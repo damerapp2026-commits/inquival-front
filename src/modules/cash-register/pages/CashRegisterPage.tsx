@@ -217,7 +217,7 @@ export function CashRegisterPage() {
 
   const { data: paymentMethods = [] } = usePaymentMethods();
 
-  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '', expenseCurrency: 'PEN' as 'PEN' | 'USD' });
+  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '', expenseCurrency: 'PEN' as 'PEN' | 'USD', convertToSoles: false, exchangeRate: 3.70 });
   const [editForm, setEditForm] = useState({ amount: 0, reason: '', voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '' });
   const [deleteReason, setDeleteReason] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
@@ -245,8 +245,8 @@ export function CashRegisterPage() {
   const totalIncomePen = totalIncome - totalIncomeUsdPen;
   const netBalance = (register?.openingBalance || 0) + totalIncome - totalExpense;
 
-  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '', expenseCurrency: 'PEN' }); setShowAddModal(true); };
-  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo', expenseCurrency: 'PEN' }); setShowAddModal(true); };
+  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '', expenseCurrency: 'PEN', convertToSoles: false, exchangeRate: 3.70 }); setShowAddModal(true); };
+  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo', expenseCurrency: 'PEN', convertToSoles: false, exchangeRate: 3.70 }); setShowAddModal(true); };
   const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', voucherType: entry.voucherType || 'NONE', voucherSeries: entry.voucherSeries || '', voucherNumber: entry.voucherNumber || '', paymentMethodName: methodFromDescription(entry.description) || '' }); setShowEditModal(true); };
 
   const openDelete = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setDeleteReason(''); setShowDeleteModal(true); };
@@ -258,15 +258,20 @@ export function CashRegisterPage() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     const desc = addForm.paymentMethodName ? `${addForm.description} [${addForm.paymentMethodName}]` : addForm.description;
-    const { paymentMethodName, expenseCurrency, ...rest } = addForm;
+    const { paymentMethodName, expenseCurrency, convertToSoles, exchangeRate, ...rest } = addForm;
     const isUsdExpense = addForm.type === 'EXPENSE' && expenseCurrency === 'USD';
+    let finalAmount = addForm.amount;
+    let currencyExtra: Record<string, any> = {};
+    if (isUsdExpense) {
+      if (convertToSoles) {
+        finalAmount = Math.round(addForm.amount * exchangeRate * 100) / 100;
+      } else {
+        currencyExtra = { currency: 'USD', amountUsd: addForm.amount };
+      }
+    }
     await addEntry.mutateAsync({
       registerId: register.id,
-      data: {
-        ...rest,
-        description: desc,
-        ...(isUsdExpense ? { currency: 'USD', amountUsd: addForm.amount } : {}),
-      },
+      data: { ...rest, description: desc, amount: finalAmount, ...currencyExtra },
     });
     setShowAddModal(false);
   };
@@ -769,7 +774,7 @@ export function CashRegisterPage() {
       </div>
 
       {/* --- Add modal --- */}
-      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title={addForm.type === 'INCOME' ? 'Nuevo ingreso' : 'Nuevo egreso'}>
+      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title={addForm.type === 'INCOME' ? 'Nuevo Ingreso' : 'Nuevo Egreso'}>
         <form onSubmit={handleAdd} className="space-y-4">
           <div className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold ${addForm.type === 'INCOME' ? 'bg-primary-50 text-primary-700' : 'bg-rose-50 text-rose-700'}`}>
             {addForm.type === 'INCOME' ? <ArrowUpCircle size={16} /> : <ArrowDownCircle size={16} />}
@@ -825,22 +830,68 @@ export function CashRegisterPage() {
             </div>
           )}
           {addForm.type === 'EXPENSE' && (
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Moneda</label>
-              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium w-fit">
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => setAddForm({ ...addForm, expenseCurrency: 'PEN' })}
-                  className={`px-4 py-2 transition-colors ${addForm.expenseCurrency === 'PEN' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                >S/</button>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => setAddForm({ ...addForm, expenseCurrency: 'USD' })}
-                  className={`px-4 py-2 border-l border-gray-200 transition-colors ${addForm.expenseCurrency === 'USD' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                >$</button>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Moneda</label>
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium w-fit">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setAddForm({ ...addForm, expenseCurrency: 'PEN', convertToSoles: false })}
+                    className={`px-4 py-2 transition-colors ${addForm.expenseCurrency === 'PEN' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >S/</button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setAddForm({ ...addForm, expenseCurrency: 'USD' })}
+                    className={`px-4 py-2 border-l border-gray-200 transition-colors ${addForm.expenseCurrency === 'USD' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >$</button>
+                </div>
               </div>
+              {addForm.expenseCurrency === 'USD' && (
+                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 space-y-3">
+                  <div className="flex rounded-lg border border-emerald-200 overflow-hidden text-sm font-medium w-fit bg-white">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setAddForm({ ...addForm, convertToSoles: false })}
+                      className={`px-3.5 py-2 transition-colors ${!addForm.convertToSoles ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >Mantener en $</button>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setAddForm({ ...addForm, convertToSoles: true })}
+                      className={`px-3.5 py-2 border-l border-emerald-200 transition-colors ${addForm.convertToSoles ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >Convertir a S/</button>
+                  </div>
+                  {addForm.convertToSoles && (
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold uppercase tracking-wider text-emerald-700 mb-1">Tipo de cambio</label>
+                        <div className="relative w-28">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">S/</span>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={addForm.exchangeRate || ''}
+                            onChange={(e) => setAddForm({ ...addForm, exchangeRate: parseFloat(e.target.value) || 0 })}
+                            className="w-full pl-9 pr-2 py-2 border border-emerald-200 rounded-lg text-sm font-semibold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                          />
+                        </div>
+                      </div>
+                      {addForm.amount > 0 && addForm.exchangeRate > 0 && (
+                        <div className="mt-4">
+                          <div className="text-[11px] text-emerald-600 font-semibold uppercase tracking-wider mb-0.5">Total en soles</div>
+                          <div className="text-lg font-bold text-emerald-700 tabular-nums">
+                            S/ {(addForm.amount * addForm.exchangeRate).toFixed(2)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
           <div>
