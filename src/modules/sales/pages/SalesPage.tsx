@@ -527,6 +527,10 @@ export function SalesPage() {
 
   const total = periodSales.length;
   const totalAmount = sumTotal(periodSales);
+  const totalAmountPen = sumTotal(periodSales.filter(s => s.currency !== 'USD'));
+  const totalAmountUsd = Math.round(
+    periodSales.filter(s => s.currency === 'USD').reduce((s, sale) => s + saleDispTotal(sale), 0) * 100,
+  ) / 100;
   const boletasTotal = periodBoletas.length;
   const boletasTotalAmount = sumTotal(periodBoletas);
   const boletasBaseAmount = sumBase(periodBoletas);
@@ -824,15 +828,20 @@ export function SalesPage() {
         return (
           <div className="mb-4 bg-primary-50 border border-primary-200 rounded-lg px-4 py-2 flex items-center justify-between">
             <span className="text-sm text-primary-700">{total} venta(s) en el período</span>
-            <span className="text-lg font-bold text-primary-700">
-              {filterMethodName ? `Cobrado en ${filterMethodName}: ` : 'Total: '}
-              S/ {totalAmount.toFixed(2)}
-              {showSplit && (
-                <span className="ml-2 text-xs font-medium text-primary-600/70">
-                  (de S/ {fullPeriodTotal.toFixed(2)} en ventas)
-                </span>
+            <div className="text-right">
+              <div className="text-lg font-bold text-primary-700">
+                {filterMethodName ? `Cobrado en ${filterMethodName}: ` : 'Total: '}
+                S/ {(filterMethodName ? totalAmount : totalAmountPen).toFixed(2)}
+                {showSplit && (
+                  <span className="ml-2 text-xs font-medium text-primary-600/70">
+                    (de S/ {fullPeriodTotal.toFixed(2)} en ventas)
+                  </span>
+                )}
+              </div>
+              {!filterMethodName && totalAmountUsd > 0 && (
+                <div className="text-sm font-semibold text-emerald-600">+ $ {totalAmountUsd.toFixed(2)} USD</div>
               )}
-            </span>
+            </div>
           </div>
         );
       })()}
