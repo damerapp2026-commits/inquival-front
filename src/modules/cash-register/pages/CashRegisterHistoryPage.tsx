@@ -163,7 +163,11 @@ export function CashRegisterHistoryPage() {
     const method = methodFromDescription(e.description);
     const vendor = e.createdBy ? (userById[e.createdBy] || 'Usuario') : '';
     const isSale = e.referenceType === 'Sale' && !!e.referenceId;
-    const clientName = e.clientName || (isSale ? stripMethod(e.description).replace(/^Venta\s+a\s+/i, '').trim() : null);
+    const descStripped = isSale ? stripMethod(e.description) : null;
+    const clientFromDesc = descStripped && /^Venta\s+a\s+/i.test(descStripped)
+      ? descStripped.replace(/^Venta\s+a\s+/i, '').trim()
+      : null;
+    const clientName = e.clientName || clientFromDesc;
     const displayClient = clientName && !/^sin\s*cliente$/i.test(clientName) ? clientName : null;
     return (
       <tr key={key} className={`${e.isDeleted ? 'opacity-50' : ''} ${nested ? 'bg-gray-50/50' : ''}`}>
