@@ -1344,6 +1344,9 @@ export function SalesPage() {
                   <div className="border border-gray-200 rounded-xl p-3">
                     <span className="block text-xs text-gray-500 mb-0.5">Cliente</span>
                     <div className="text-sm font-medium text-gray-900 truncate">{getClientName(sale.clientId, sale.clientName)}</div>
+                    {sale.clientId && clientMap.get(sale.clientId)?.documentNumber && (
+                      <div className="text-xs text-gray-500 mt-0.5">{clientMap.get(sale.clientId)?.documentNumber}</div>
+                    )}
                   </div>
                   <div className="border border-gray-200 rounded-xl p-3">
                     <span className="block text-xs text-gray-500 mb-0.5">Vendedor</span>
