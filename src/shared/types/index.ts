@@ -49,4 +49,4 @@ export interface CreditAccount { id: string; clientId: string; name?: string; sa
 export interface LoanItem { productId: string; companyId: string; quantity: number; returnedQuantity: number; }
 export interface LoanReturnItem { productId: string; companyId: string; quantity: number; }
 export interface LoanReturn { id?: string; items: LoanReturnItem[]; notes?: string; returnedBy?: string; date: string; }
-export interface Loan { id: string; borrowerName: string; items: LoanItem[]; status: 'ACTIVE' | 'PARTIAL' | 'RETURNED'; returns: LoanReturn[]; notes?: string; date: string; createdBy?: string; createdAt: string; }
+export interface Loan { id: string; loanType?: 'OUTGOING' | 'INCOMING'; borrowerName: string; items: LoanItem[]; status: 'ACTIVE' | 'PARTIAL' | 'RETURNED'; returns: LoanReturn[]; notes?: string; date: string; createdBy?: string; createdAt: string; }

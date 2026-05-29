@@ -202,7 +202,13 @@ export function SalesPage() {
     currency: 'PEN' as 'PEN' | 'USD',
   });
 
-  const [loanForm, setLoanForm] = useState({
+  const [loanForm, setLoanForm] = useState<{
+    loanType: 'OUTGOING' | 'INCOMING';
+    borrowerName: string;
+    notes: string;
+    items: { productId: string; companyId: string; quantity: number }[];
+  }>({
+    loanType: 'OUTGOING',
     borrowerName: '',
     notes: '',
     items: [{ productId: '', companyId: '', quantity: 0 }],
@@ -372,7 +378,7 @@ export function SalesPage() {
 
   // Loan form handlers
   const openLoanCreate = () => {
-    setLoanForm({ borrowerName: '', notes: '', items: [{ productId: '', companyId: '', quantity: 0 }] });
+    setLoanForm({ loanType: 'OUTGOING', borrowerName: '', notes: '', items: [{ productId: '', companyId: '', quantity: 0 }] });
     setShowLoanModal(true);
   };
 
@@ -711,9 +717,14 @@ export function SalesPage() {
     return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[status] || ''}`}>{labels[status] || status}</span>;
   };
 
+  const loanTypeBadge = (loanType?: string) => loanType === 'INCOMING'
+    ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">← Pedimos</span>
+    : <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">→ Prestamos</span>;
+
   const loanColumns = [
     { key: 'date', header: 'Fecha', render: (item: Loan) => formatDateEs(item.date) },
-    { key: 'borrowerName', header: 'Prestatario', render: (item: Loan) => item.borrowerName },
+    { key: 'loanType', header: 'Tipo', render: (item: Loan) => loanTypeBadge(item.loanType) },
+    { key: 'borrowerName', header: 'Tienda', render: (item: Loan) => item.borrowerName },
     { key: 'items', header: 'Productos', render: (item: Loan) => item.items.map(i => `${getProductName(i.productId)} x${i.quantity}`).join(', ') },
     { key: 'status', header: 'Estado', render: (item: Loan) => loanStatusBadge(item.status) },
     { key: 'actions', header: '', render: (item: Loan) => (
@@ -1541,9 +1552,34 @@ export function SalesPage() {
       {/* Modal crear préstamo */}
       <Modal isOpen={showLoanModal} onClose={() => setShowLoanModal(false)} title="Nuevo Préstamo" size="lg">
         <form onSubmit={handleLoanSubmit} className="space-y-5 pb-4">
-          {/* Prestatario (obligatorio) */}
+          {/* Dirección del préstamo */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setLoanForm(prev => ({ ...prev, loanType: 'OUTGOING' }))}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${loanForm.loanType === 'OUTGOING' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'}`}
+            >
+              → Prestamos a otra tienda
+            </button>
+            <button
+              type="button"
+              onClick={() => setLoanForm(prev => ({ ...prev, loanType: 'INCOMING' }))}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-medium border-2 transition-colors ${loanForm.loanType === 'INCOMING' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300'}`}
+            >
+              ← Pedimos a otra tienda
+            </button>
+          </div>
+          <div className={`rounded-lg px-3 py-2 text-xs ${loanForm.loanType === 'INCOMING' ? 'bg-orange-50 text-orange-700' : 'bg-purple-50 text-purple-700'}`}>
+            {loanForm.loanType === 'INCOMING'
+              ? 'El stock de tu almacén aumenta al registrar. Al devolver, el stock disminuye.'
+              : 'El stock de tu almacén disminuye al registrar. Al devolver, el stock aumenta.'}
+          </div>
+
+          {/* Tienda (obligatorio) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del local (obligatorio)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {loanForm.loanType === 'INCOMING' ? 'Tienda que nos presta (obligatorio)' : 'Tienda que recibe (obligatorio)'}
+            </label>
             <input type="text" value={loanForm.borrowerName} onChange={(e) => setLoanForm({ ...loanForm, borrowerName: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Ej: Tienda Don Juan, Ferretería El Sol..." required />
           </div>
 
@@ -1610,8 +1646,11 @@ export function SalesPage() {
                 <span className="text-sm font-medium">{formatDateEs(viewingLoan.date, { day: '2-digit', month: 'long', year: 'numeric' })}</span>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
-                <span className="block text-xs text-gray-500">Prestatario</span>
-                <span className="text-sm font-medium">{viewingLoan.borrowerName}</span>
+                <span className="block text-xs text-gray-500">{viewingLoan.loanType === 'INCOMING' ? 'Tienda que nos prestó' : 'Tienda que recibió'}</span>
+                <div className="flex items-center gap-2 mt-0.5">
+                  {loanTypeBadge(viewingLoan.loanType)}
+                  <span className="text-sm font-medium">{viewingLoan.borrowerName}</span>
+                </div>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
                 <span className="block text-xs text-gray-500">Estado</span>
@@ -1627,7 +1666,9 @@ export function SalesPage() {
 
             {/* Items */}
             <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Productos prestados</h3>
+              <h3 className="text-sm font-medium text-gray-700 mb-2">
+                {viewingLoan.loanType === 'INCOMING' ? 'Productos recibidos (a devolver)' : 'Productos prestados'}
+              </h3>
               <div className="border rounded-lg overflow-hidden">
                 <table className="min-w-full divide-y divide-gray-200 text-sm">
                   <thead className="bg-gray-50">
@@ -1678,8 +1719,8 @@ export function SalesPage() {
             )}
 
             {viewingLoan.status !== 'RETURNED' && (
-              <button onClick={() => { setViewingLoan(null); openReturn(viewingLoan); }} className="w-full py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium">
-                Registrar Devolución
+              <button onClick={() => { setViewingLoan(null); openReturn(viewingLoan); }} className={`w-full py-2.5 text-white rounded-lg font-medium ${viewingLoan.loanType === 'INCOMING' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-purple-600 hover:bg-purple-700'}`}>
+                {viewingLoan.loanType === 'INCOMING' ? `Devolver a ${viewingLoan.borrowerName}` : 'Registrar Devolución'}
               </button>
             )}
           </div>
@@ -1687,11 +1728,15 @@ export function SalesPage() {
       </Modal>
 
       {/* Modal devolución */}
-      <Modal isOpen={!!returningLoan} onClose={() => setReturningLoan(null)} title="Registrar Devolución">
+      <Modal isOpen={!!returningLoan} onClose={() => setReturningLoan(null)} title={returningLoan?.loanType === 'INCOMING' ? `Devolver a ${returningLoan.borrowerName}` : 'Registrar Devolución'}>
         {returningLoan && (
           <form onSubmit={handleReturnSubmit} className="space-y-4">
-            <div className="bg-purple-50 rounded-lg p-3">
-              <span className="text-sm text-purple-700">Préstamo a: <strong>{returningLoan.borrowerName}</strong></span>
+            <div className={`rounded-lg p-3 ${returningLoan.loanType === 'INCOMING' ? 'bg-orange-50' : 'bg-purple-50'}`}>
+              <span className={`text-sm ${returningLoan.loanType === 'INCOMING' ? 'text-orange-700' : 'text-purple-700'}`}>
+                {returningLoan.loanType === 'INCOMING'
+                  ? <>Devolviendo a: <strong>{returningLoan.borrowerName}</strong> — el stock <strong>disminuirá</strong></>
+                  : <>Préstamo a: <strong>{returningLoan.borrowerName}</strong></>}
+              </span>
             </div>
 
             <div>
