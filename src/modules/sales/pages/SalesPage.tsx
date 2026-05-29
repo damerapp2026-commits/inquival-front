@@ -773,6 +773,7 @@ export function SalesPage() {
                 value={clientFilter}
                 onChange={(v) => { setClientFilter(v); setPage(1); setBoletaPage(1); setFacturaPage(1); }}
                 placeholder="Buscar cliente..."
+                minChars={1}
               />
             </div>
             {clientFilter && (
