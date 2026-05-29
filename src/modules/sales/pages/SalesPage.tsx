@@ -1264,9 +1264,6 @@ export function SalesPage() {
                           </span>
                           <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
                             {saleSym(sale)} {saleDispTotal(sale).toFixed(2)}
-                            {sale.currency === 'USD' && sale.exchangeRate && (
-                              <span className="block text-xs font-normal text-gray-400 mt-0.5">S/ {sale.total.toFixed(2)} · TC {sale.exchangeRate.toFixed(2)}</span>
-                            )}
                           </div>
                         </div>
                         <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : sale.isCredit ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
