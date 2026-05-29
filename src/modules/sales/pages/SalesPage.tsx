@@ -538,6 +538,12 @@ export function SalesPage() {
   const totalAmountUsd = Math.round(
     periodSales.filter(s => s.currency === 'USD').reduce((s, sale) => s + saleDispTotal(sale), 0) * 100,
   ) / 100;
+  const contadoSales = periodSales.filter(s => !s.isCredit);
+  const creditoSales = periodSales.filter(s => s.isCredit);
+  const totalContadoPen = Math.round(contadoSales.filter(s => s.currency !== 'USD').reduce((acc, s) => acc + s.total, 0) * 100) / 100;
+  const totalContadoUsd = Math.round(contadoSales.filter(s => s.currency === 'USD').reduce((acc, s) => acc + saleDispTotal(s), 0) * 100) / 100;
+  const totalCreditoPen = Math.round(creditoSales.filter(s => s.currency !== 'USD').reduce((acc, s) => acc + s.total, 0) * 100) / 100;
+  const totalCreditoUsd = Math.round(creditoSales.filter(s => s.currency === 'USD').reduce((acc, s) => acc + saleDispTotal(s), 0) * 100) / 100;
   const boletasTotal = periodBoletas.length;
   const boletasTotalAmount = sumTotal(periodBoletas);
   const boletasBaseAmount = sumBase(periodBoletas);
@@ -872,6 +878,16 @@ export function SalesPage() {
               {!filterMethodName && totalAmountUsd > 0 && (
                 <div className="text-sm font-semibold text-emerald-600">+ $ {totalAmountUsd.toFixed(2)} USD</div>
               )}
+              <div className="flex gap-4 justify-end mt-1">
+                <span className="text-xs text-gray-600">
+                  Contado: <span className="font-semibold text-gray-800">S/ {totalContadoPen.toFixed(2)}</span>
+                  {totalContadoUsd > 0 && <span className="text-emerald-600 ml-1">+ $ {totalContadoUsd.toFixed(2)}</span>}
+                </span>
+                <span className="text-xs text-gray-600">
+                  Crédito: <span className="font-semibold text-purple-700">S/ {totalCreditoPen.toFixed(2)}</span>
+                  {totalCreditoUsd > 0 && <span className="text-emerald-600 ml-1">+ $ {totalCreditoUsd.toFixed(2)}</span>}
+                </span>
+              </div>
             </div>
           </div>
         );
