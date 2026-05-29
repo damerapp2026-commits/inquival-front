@@ -98,6 +98,7 @@ export function AccountsPayablePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<'calendar' | 'agreements'>('calendar');
   const [supplierSearch, setSupplierSearch] = useState('');
+  const [currencyFilter, setCurrencyFilter] = useState<'ALL' | 'PEN' | 'USD'>('ALL');
 
   // ── Calendar state ──
   const [selectedDate, setSelectedDate] = useState<string | null>(() => searchParams.get('date'));
@@ -148,10 +149,11 @@ export function AccountsPayablePage() {
   const allAccounts: AccountPayable[] = data?.data || [];
   const normalizedSearch = supplierSearch.trim().toLowerCase();
   const activeAccounts = useMemo(() => {
-    const base = allAccounts.filter(ap => ap.status !== 'PAID' && ap.status !== 'CONSOLIDATED');
+    let base = allAccounts.filter(ap => ap.status !== 'PAID' && ap.status !== 'CONSOLIDATED');
+    if (currencyFilter !== 'ALL') base = base.filter(ap => (ap.currency || 'PEN') === currencyFilter);
     if (!normalizedSearch) return base;
     return base.filter(ap => (ap.supplier || '').toLowerCase().includes(normalizedSearch));
-  }, [allAccounts, normalizedSearch]);
+  }, [allAccounts, normalizedSearch, currencyFilter]);
   const paymentsByDate = useMemo(() => groupPaymentsByDate(activeAccounts), [activeAccounts]);
   const selectedPayments = selectedDate ? (paymentsByDate[selectedDate] || []) : [];
 
@@ -417,9 +419,9 @@ export function AccountsPayablePage() {
         </button>
       </div>
 
-      {/* Buscador de proveedor / laboratorio */}
-      <div className="mb-4 max-w-md">
-        <div className="relative">
+      {/* Buscador + filtro de moneda */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="relative max-w-md flex-1 min-w-[200px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
@@ -438,6 +440,21 @@ export function AccountsPayablePage() {
               <X size={14} />
             </button>
           )}
+        </div>
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          {(['ALL', 'PEN', 'USD'] as const).map(c => (
+            <button
+              key={c}
+              onClick={() => setCurrencyFilter(c)}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                currencyFilter === c
+                  ? c === 'USD' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white text-gray-800 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {c === 'ALL' ? 'Todas' : c === 'PEN' ? 'S/ Soles' : '$ Dólares'}
+            </button>
+          ))}
         </div>
       </div>
 
