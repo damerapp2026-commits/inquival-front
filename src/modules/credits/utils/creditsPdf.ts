@@ -323,7 +323,7 @@ function buildDetailed({ credits, clients, filters, title, subtitle }: ExportPar
               const label = creditHeaderLabel(credit);
               return { text: label.text, fontSize: 9, bold: true, color: label.text === 'Sin nombre' ? GRAY : '#111827', italics: label.text === 'Sin nombre' };
             })(),
-            { text: `Creado: ${formatDate(credit.createdAt)}`, fontSize: 8, color: GRAY, alignment: 'right' },
+            { text: `Creado: ${formatDate(credit.createdAt)}`, fontSize: 8, color: '#111827', alignment: 'right' },
             { text: `Total: ${money(credit.totalAmount)}`, fontSize: 8, alignment: 'right' },
             { text: `Pend: ${money(credit.pendingAmount)}`, fontSize: 8, alignment: 'right', color: '#dc2626', bold: true },
             {
