@@ -206,6 +206,14 @@ export function AccountsPayablePage() {
       });
   }, [allPending]);
 
+  // Totales globales por moneda (ignoran filtro de moneda activo)
+  const totalByMoneda = useMemo(() => {
+    const active = allAccounts.filter(ap => ap.status !== 'PAID' && ap.status !== 'CONSOLIDATED');
+    const pen = active.filter(ap => (ap.currency || 'PEN') === 'PEN').reduce((s, ap) => s + ap.pendingAmount, 0);
+    const usd = active.filter(ap => ap.currency === 'USD').reduce((s, ap) => s + ap.pendingAmount, 0);
+    return { pen, usd };
+  }, [allAccounts]);
+
   // Reset page when filters change
   useEffect(() => { setApPage(1); }, [normalizedSearch, currencyFilter]);
 
@@ -469,6 +477,30 @@ export function AccountsPayablePage() {
       {/* ── TAB: CALENDARIO ── */}
       {activeTab === 'calendar' && (
         <>
+        {/* Totales globales por moneda */}
+        {!isLoading && (totalByMoneda.pen > 0 || totalByMoneda.usd > 0) && (
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border border-blue-200 p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-bold text-sm">S/</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] uppercase tracking-wider text-blue-700 font-semibold">Total por pagar en Soles</div>
+                <div className="font-bold text-blue-900 text-xl leading-tight">S/ {totalByMoneda.pen.toFixed(2)}</div>
+              </div>
+            </div>
+            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl border border-emerald-200 p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-bold text-sm">$</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] uppercase tracking-wider text-emerald-700 font-semibold">Total por pagar en Dólares</div>
+                <div className="font-bold text-emerald-900 text-xl leading-tight">$ {totalByMoneda.usd.toFixed(2)}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* KPI summary */}
         {!isLoading && summary.totalCount > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
