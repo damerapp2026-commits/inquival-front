@@ -161,7 +161,7 @@ function buildSummaryByDate({ credits, clients, filters, title, subtitle }: Expo
     arr.push(credit);
     byDate.set(key, arr);
   }
-  const sortedDates = Array.from(byDate.keys()).sort((a, b) => (a < b ? 1 : -1));
+  const sortedDates = Array.from(byDate.keys()).sort((a, b) => (a < b ? -1 : 1));
 
   const groupSections: any[] = [];
   for (const date of sortedDates) {
@@ -313,7 +313,7 @@ function buildDetailed({ credits, clients, filters, title, subtitle }: ExportPar
       ],
     });
 
-    for (const credit of clientCredits.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())) {
+    for (const credit of clientCredits.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())) {
       // Encabezado del crédito
       sections.push({
         table: {
