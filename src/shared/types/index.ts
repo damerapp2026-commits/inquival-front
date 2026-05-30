@@ -9,7 +9,7 @@ export interface ProductCommission { workerId: string; type: 'PERCENT' | 'AMOUNT
 export interface Company { id: string; name: string; ruc?: string; address?: string; phone?: string; isActive: boolean; }
 export interface PriceTier { id: string; name: string; description?: string; priority: number; isActive: boolean; }
 export interface Stock { id: string; productId: string; companyId: string; quantity: number; lastUpdated: string; productName?: string; productIsActive?: boolean; productMissing?: boolean; }
-export interface Client { id: string; name: string; documentNumber?: string; phone?: string; email?: string; address?: string; department?: string; province?: string; district?: string; city?: string; hamlet?: string; creditLimit?: number; isActive: boolean; }
+export interface Client { id: string; name: string; documentNumber?: string; phone?: string; email?: string; address?: string; department?: string; province?: string; district?: string; city?: string; hamlet?: string; creditLimit?: number; creditLimitCurrency?: 'PEN' | 'USD'; isActive: boolean; }
 
 export interface PaymentMethod { id: string; name: string; isActive: boolean; }
 export interface SalePayment { paymentMethodId: string; paymentMethodName: string; amount: number; }
@@ -39,7 +39,7 @@ export interface User { id: string; username: string; email?: string; fullName: 
 
 export interface StockAdjustment { id: string; productId: string; companyId: string; type: 'INCREASE' | 'DECREASE'; quantity: number; reason: string; previousQuantity: number; newQuantity: number; adjustedBy?: string; date: string; createdAt: string; }
 
-export interface CashRegisterEntry { id: string; type: 'INCOME' | 'EXPENSE'; category: 'SALE' | 'CREDIT_PAYMENT' | 'PURCHASE' | 'ADJUSTMENT' | 'SERVICES' | 'SALARY' | 'SUPPLIES' | 'RENT' | 'TRANSPORT' | 'OTHER'; description: string; amount: number; referenceId?: string; referenceType?: string; clientId?: string; clientName?: string; voucherType: string; voucherSeries?: string; voucherNumber?: string; isDeleted: boolean; deletedBy?: string; deletedAt?: string; deleteReason?: string; editHistory: { previousAmount: number; newAmount: number; reason: string; editedBy: string; editedAt: string }[]; createdBy?: string; createdAt?: string; paymentGroupId?: string; paymentGroupTotal?: number; }
+export interface CashRegisterEntry { id: string; type: 'INCOME' | 'EXPENSE'; category: 'SALE' | 'CREDIT_PAYMENT' | 'PURCHASE' | 'ADJUSTMENT' | 'SERVICES' | 'SALARY' | 'SUPPLIES' | 'RENT' | 'TRANSPORT' | 'OTHER'; description: string; amount: number; referenceId?: string; referenceType?: string; clientId?: string; clientName?: string; voucherType: string; voucherSeries?: string; voucherNumber?: string; isDeleted: boolean; deletedBy?: string; deletedAt?: string; deleteReason?: string; editHistory: { previousAmount: number; newAmount: number; reason: string; editedBy: string; editedAt: string }[]; createdBy?: string; createdAt?: string; paymentGroupId?: string; paymentGroupTotal?: number; currency?: string; amountUsd?: number; }
 export interface CashRegister { id: string; date: string; openingBalance: number; status: 'OPEN' | 'CLOSED'; entries: CashRegisterEntry[]; closingBalance?: number; closedBy?: string; closedAt?: string; notes?: string; createdBy?: string; }
 
 export interface CreditPayment { id: string; amount: number; paymentDate: string; paymentMethodId?: string; paymentMethodName?: string; cashRegisterEntryId?: string; notes?: string; receivedBy?: string; receivedByName?: string; paymentGroupId?: string; }
@@ -49,4 +49,4 @@ export interface CreditAccount { id: string; clientId: string; name?: string; sa
 export interface LoanItem { productId: string; companyId: string; quantity: number; returnedQuantity: number; }
 export interface LoanReturnItem { productId: string; companyId: string; quantity: number; }
 export interface LoanReturn { id?: string; items: LoanReturnItem[]; notes?: string; returnedBy?: string; date: string; }
-export interface Loan { id: string; borrowerName: string; items: LoanItem[]; status: 'ACTIVE' | 'PARTIAL' | 'RETURNED'; returns: LoanReturn[]; notes?: string; date: string; createdBy?: string; createdAt: string; }
+export interface Loan { id: string; loanType?: 'OUTGOING' | 'INCOMING'; borrowerName: string; items: LoanItem[]; status: 'ACTIVE' | 'PARTIAL' | 'RETURNED'; returns: LoanReturn[]; notes?: string; date: string; createdBy?: string; createdAt: string; }

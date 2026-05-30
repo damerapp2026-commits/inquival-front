@@ -161,7 +161,7 @@ function buildSummaryByDate({ credits, clients, filters, title, subtitle }: Expo
     arr.push(credit);
     byDate.set(key, arr);
   }
-  const sortedDates = Array.from(byDate.keys()).sort((a, b) => (a < b ? 1 : -1));
+  const sortedDates = Array.from(byDate.keys()).sort((a, b) => (a < b ? -1 : 1));
 
   const groupSections: any[] = [];
   for (const date of sortedDates) {
@@ -313,7 +313,7 @@ function buildDetailed({ credits, clients, filters, title, subtitle }: ExportPar
       ],
     });
 
-    for (const credit of clientCredits.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())) {
+    for (const credit of clientCredits.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())) {
       // Encabezado del crédito
       sections.push({
         table: {
@@ -323,7 +323,7 @@ function buildDetailed({ credits, clients, filters, title, subtitle }: ExportPar
               const label = creditHeaderLabel(credit);
               return { text: label.text, fontSize: 9, bold: true, color: label.text === 'Sin nombre' ? GRAY : '#111827', italics: label.text === 'Sin nombre' };
             })(),
-            { text: `Creado: ${formatDate(credit.createdAt)}`, fontSize: 8, color: GRAY, alignment: 'right' },
+            { text: `Creado: ${formatDate(credit.createdAt)}`, fontSize: 8, color: '#111827', alignment: 'right' },
             { text: `Total: ${money(credit.totalAmount)}`, fontSize: 8, alignment: 'right' },
             { text: `Pend: ${money(credit.pendingAmount)}`, fontSize: 8, alignment: 'right', color: '#dc2626', bold: true },
             {

@@ -5,6 +5,11 @@ import { Modal } from '../../../shared/components/Modal';
 import { formatDateEs } from '../../../shared/utils/date.util';
 import type { Sale, Client } from '../../../shared/types';
 
+function saleSym(s: { currency?: string }): string { return s.currency === 'USD' ? '$' : 'S/'; }
+function saleDispTotal(s: { currency?: string; total: number; totalUsd?: number }): number {
+  return s.currency === 'USD' && s.totalUsd != null ? s.totalUsd : s.total;
+}
+
 interface Props {
   clientId: string;
   client?: Client;
@@ -67,7 +72,7 @@ export function ClientSalesHistoryModal({ clientId, client, onClose, onViewSale 
                     <td className="px-3 py-2">{formatDateEs(sale.date)}</td>
                     <td className="px-3 py-2">{voucherLabel(sale.voucherType)}</td>
                     <td className="px-3 py-2 text-right">{sale.items.length}</td>
-                    <td className="px-3 py-2 text-right font-medium">S/ {sale.total.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right font-medium">{saleSym(sale)} {saleDispTotal(sale).toFixed(2)}</td>
                     <td className="px-3 py-2">
                       {sale.isCredit
                         ? <span className="text-orange-600 font-medium">Crédito</span>

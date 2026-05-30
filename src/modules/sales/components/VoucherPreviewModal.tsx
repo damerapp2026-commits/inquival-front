@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, FileText, Smartphone, FileText as FileIcon, Printer, ExternalLink, MessageCircle, Download, Loader2 } from 'lucide-react';
 import { COMPANY_INFO } from '../../../config/companyInfo';
-import { buildVoucherPdfBlob, downloadVoucherPdf, openVoucherPdf } from '../utils/voucherPdf';
+import { downloadVoucherPdf, openVoucherPdf } from '../utils/voucherPdf';
 import { numberToWords } from '../../quotes/utils/numberToWords';
 
 export interface VoucherSnapshot {
@@ -31,7 +31,7 @@ export interface VoucherSnapshot {
   totalUsd?: number;
 }
 
-type Format = 'TICKET' | 'A4';
+type Format = 'TICKET' | 'A4' | 'A5';
 
 function escapeHtml(s: string | undefined): string {
   if (!s) return '';
@@ -171,7 +171,7 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   ` : `
   <div class="total bold xl"><span>TOTAL</span><span>S/ ${sale.total.toFixed(2)}</span></div>
   `}
-  ${sale.isCourtesy ? `<div class="center bold" style="color:#059669;margin:4px 0;border:1px dashed #059669;padding:3px;">CORTESÍA</div>` : ''}
+  ${sale.isCourtesy ? `<div class="center bold" style="color:#059669;margin:4px 0;border:1px dashed #059669;padding:3px;">BONIFICACIÓN</div>` : ''}
   ${creditBlock}
   ${cashPaymentBlock}
   <div class="hr"></div>
@@ -180,7 +180,8 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
 </body></html>`;
 }
 
-function buildA4Html(sale: VoucherSnapshot): string {
+function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
+  const isA5 = size === 'A5';
   const number = displayVoucherNumber(sale);
   const title = voucherTitle(sale.voucherType).toUpperCase();
   const c = COMPANY_INFO;
@@ -196,7 +197,7 @@ function buildA4Html(sale: VoucherSnapshot): string {
     ? sale.igv
     : Math.round((sale.total - subtotal) * 100) / 100;
 
-  const blankItemRows = Math.max(0, 8 - sale.items.length);
+  const blankItemRows = Math.max(0, (isA5 ? 5 : 8) - sale.items.length);
   const itemsRows = sale.items.map((i, idx) => `
     <tr>
       <td class="c">${idx + 1}</td>
@@ -251,9 +252,9 @@ function buildA4Html(sale: VoucherSnapshot): string {
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>${number}</title>
 <style>
-  @page { size: A4; margin: 0; }
+  @page { size: ${size}; margin: 0; }
   * { box-sizing: border-box; }
-  body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 9px; color: #111827; margin: 0; padding: 14mm 14mm; line-height: 1.35; }
+  body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: ${isA5 ? '7.5px' : '9px'}; color: #111827; margin: 0; padding: ${isA5 ? '8mm 10mm' : '14mm 14mm'}; line-height: 1.35; }
   h1, h2, h3 { margin: 0; }
   table { border-collapse: collapse; width: 100%; }
   td, th { vertical-align: top; }
@@ -264,12 +265,12 @@ function buildA4Html(sale: VoucherSnapshot): string {
   /* Header */
   .header { display: flex; gap: 12px; align-items: flex-start; }
   .header .info { flex: 1; padding-top: 4px; }
-  .header .brand { font-size: 16px; font-weight: 800; color: #15803d; margin-bottom: 4px; letter-spacing: 0.5px; }
-  .header .detail { font-size: 8px; color: #374151; margin-top: 1px; }
-  .header .docs { width: 200px; display: flex; flex-direction: column; gap: 4px; }
-  .doc-box { border: 1px solid #16a34a; padding: 4px 0; text-align: center; font-weight: 700; font-size: 10px; color: #111827; }
-  .doc-title { background: #16a34a; color: #fff; padding: 5px 0; text-align: center; font-weight: 700; font-size: 12px; letter-spacing: 0.4px; }
-  .doc-num { border: 1px solid #16a34a; padding: 4px 0; text-align: center; font-weight: 700; font-size: 11px; color: #15803d; }
+  .header .brand { font-size: ${isA5 ? '12px' : '16px'}; font-weight: 800; color: #15803d; margin-bottom: 4px; letter-spacing: 0.5px; }
+  .header .detail { font-size: ${isA5 ? '7px' : '8px'}; color: #374151; margin-top: 1px; }
+  .header .docs { width: ${isA5 ? '150px' : '200px'}; display: flex; flex-direction: column; gap: 4px; }
+  .doc-box { border: 1px solid #16a34a; padding: 4px 0; text-align: center; font-weight: 700; font-size: ${isA5 ? '8px' : '10px'}; color: #111827; }
+  .doc-title { background: #16a34a; color: #fff; padding: 5px 0; text-align: center; font-weight: 700; font-size: ${isA5 ? '10px' : '12px'}; letter-spacing: 0.4px; }
+  .doc-num { border: 1px solid #16a34a; padding: 4px 0; text-align: center; font-weight: 700; font-size: ${isA5 ? '9px' : '11px'}; color: #15803d; }
 
   /* Client/seller block */
   .info-block { margin-top: 14px; border: 1px solid #94a3b8; }
@@ -431,31 +432,37 @@ function buildA4Html(sale: VoucherSnapshot): string {
 </body></html>`;
 }
 
+function buildA5Html(sale: VoucherSnapshot): string {
+  return buildA4Html(sale, 'A5');
+}
+
 function buildWhatsappText(sale: VoucherSnapshot): string {
   const isUsd = sale.currency === 'USD';
   const sym = isUsd ? '$' : 'S/';
+  const dispTotal = isUsd && sale.totalUsd != null ? sale.totalUsd : sale.total;
   const lines: string[] = [];
-  lines.push(`*${voucherTitle(sale.voucherType)}* — ${displayVoucherNumber(sale)}`);
-  lines.push(`${COMPANY_INFO.legalName}`);
-  lines.push(`Fecha: ${formatDate(sale.date)}`);
-  if (sale.clientName) lines.push(`Cliente: ${sale.clientName}`);
-  lines.push(`Vendedor: ${sale.sellerName}`);
-  if (isUsd && sale.exchangeRate) lines.push(`Moneda: USD · TC ${sale.exchangeRate.toFixed(2)}`);
+  lines.push(`🧾 *${voucherTitle(sale.voucherType)} · ${displayVoucherNumber(sale)}*`);
+  lines.push(`🏢 ${COMPANY_INFO.legalName}`);
+  lines.push(`📅 ${formatDate(sale.date)}`);
+  if (sale.clientName) lines.push(`👤 Cliente: ${sale.clientName}`);
+  lines.push(`🧑‍💼 Vendedor: ${sale.sellerName}`);
+  if (isUsd && sale.exchangeRate) lines.push(`💱 Moneda: USD · TC ${sale.exchangeRate.toFixed(2)}`);
   lines.push('');
   lines.push('*Productos:*');
   sale.items.forEach((i) => {
-    lines.push(`• ${i.quantity} × ${i.name} — ${sym} ${i.subtotal.toFixed(2)}`);
+    const itemAmt = isUsd && sale.exchangeRate ? (i.subtotal / sale.exchangeRate).toFixed(2) : i.subtotal.toFixed(2);
+    lines.push(`• ${i.quantity} × ${i.name} — ${sym} ${itemAmt}`);
   });
   lines.push('');
-  lines.push(`*TOTAL: ${sym} ${sale.total.toFixed(2)}*`);
-  if (isUsd && sale.exchangeRate) lines.push(`_(Equiv. S/ ${(sale.total * sale.exchangeRate).toFixed(2)})_`);
-  if (sale.payments.length) {
+  lines.push(`*💰 TOTAL: ${sym} ${dispTotal.toFixed(2)}*`);
+  if (isUsd && sale.exchangeRate) lines.push(`_(Equiv. S/ ${(dispTotal * sale.exchangeRate).toFixed(2)})_`);
+  if (!sale.isCourtesy && sale.payments.length) {
     lines.push('');
     lines.push('Forma de pago:');
-    sale.payments.forEach((p) => lines.push(`• ${p.methodName}: ${sym} ${p.amount.toFixed(2)}`));
+    sale.payments.forEach((p) => lines.push(`• ${p.methodName}: S/ ${p.amount.toFixed(2)}`));
   }
   lines.push('');
-  lines.push('¡Gracias por su preferencia!');
+  lines.push('¡Gracias por su preferencia! 🙏');
   return lines.join('\n');
 }
 
@@ -466,13 +473,16 @@ interface Props {
 
 export function VoucherPreviewModal({ sale, onClose }: Props) {
   const [format, setFormat] = useState<Format>('TICKET');
-  const [whatsappLoading, setWhatsappLoading] = useState(false);
   const [pdfBusy, setPdfBusy] = useState<null | 'download' | 'open'>(null);
+  const [showWaModal, setShowWaModal] = useState(false);
+  const [waPhone, setWaPhone] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const html = useMemo(() => {
     if (!sale) return '';
-    return format === 'TICKET' ? buildTicketHtml(sale) : buildA4Html(sale);
+    if (format === 'TICKET') return buildTicketHtml(sale);
+    if (format === 'A5') return buildA5Html(sale);
+    return buildA4Html(sale);
   }, [sale, format]);
 
   useEffect(() => {
@@ -516,69 +526,28 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
     }
   };
 
-  const handleWhatsapp = async () => {
+  const handleWhatsapp = () => {
+    const raw = (sale.clientPhone || '').replace(/\D/g, '');
+    const local = raw.startsWith('51') && raw.length === 11 ? raw.slice(2) : raw;
+    setWaPhone(local.slice(0, 9));
+    setShowWaModal(true);
+  };
+
+  const handleSendWhatsapp = () => {
     const text = buildWhatsappText(sale);
-    const phone = (sale.clientPhone || '').replace(/\D/g, '');
+    const digits = waPhone.replace(/\D/g, '');
+    const fullPhone = digits.length === 9 ? `51${digits}` : digits;
     const encodedText = encodeURIComponent(text);
-    const waUrl = phone ? `https://wa.me/${phone}?text=${encodedText}` : `https://wa.me/?text=${encodedText}`;
-
-    // Probe whether this browser can share files (mobile yes; desktop almost never).
-    const probe = new File([new Blob(['x'])], 'probe.pdf', { type: 'application/pdf' });
-    const canShareFiles =
-      typeof navigator.canShare === 'function' &&
-      typeof navigator.share === 'function' &&
-      (() => { try { return navigator.canShare({ files: [probe] }); } catch { return false; } })();
-
-    if (!canShareFiles) {
-      // Desktop path: open WhatsApp Web immediately (preserves popup permission),
-      // then download the PDF so the user can drag it into the chat.
-      window.open(waUrl, '_blank');
-      setWhatsappLoading(true);
-      try {
-        const blob = await buildVoucherPdfBlob(sale, format);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${number}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      } catch {
-        // PDF generation failed; WhatsApp tab is already open with the text.
-      } finally {
-        setWhatsappLoading(false);
-      }
-      return;
-    }
-
-    // Mobile path: native share sheet with PDF + text attached.
-    setWhatsappLoading(true);
-    try {
-      const blob = await buildVoucherPdfBlob(sale);
-      const file = new File([blob], `${number}.pdf`, { type: 'application/pdf' });
-      const data: ShareData = { files: [file], text, title: `${title} ${number}` };
-      if (!navigator.canShare(data)) {
-        window.open(waUrl, '_blank');
-        return;
-      }
-      try {
-        await navigator.share(data);
-      } catch (err: any) {
-        if (err?.name === 'AbortError') return; // user canceled the native share sheet
-        window.open(waUrl, '_blank');
-      }
-    } catch {
-      window.open(waUrl, '_blank');
-    } finally {
-      setWhatsappLoading(false);
-    }
+    const waUrl = fullPhone ? `https://wa.me/${fullPhone}?text=${encodedText}` : `https://wa.me/?text=${encodedText}`;
+    window.open(waUrl, '_blank');
+    setShowWaModal(false);
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className={`bg-white rounded-2xl shadow-2xl w-full ${format === 'TICKET' ? 'max-w-xl' : 'max-w-4xl'} h-[92vh] flex flex-col overflow-hidden`}
+        className={`bg-white rounded-2xl shadow-2xl w-full ${format === 'TICKET' ? 'max-w-xl' : format === 'A5' ? 'max-w-2xl' : 'max-w-4xl'} h-[92vh] flex flex-col overflow-hidden`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -615,6 +584,15 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
             </button>
             <button
               type="button"
+              onClick={() => setFormat('A5')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                format === 'A5' ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <FileIcon size={15} /> A5
+            </button>
+            <button
+              type="button"
               onClick={() => setFormat('A4')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
                 format === 'A4' ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
@@ -636,6 +614,8 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
               className={`bg-white shadow-xl rounded-sm ${
                 format === 'TICKET'
                   ? 'w-[340px] h-[640px]'
+                  : format === 'A5'
+                  ? 'w-[520px] h-[740px]'
                   : 'w-full max-w-[820px] h-[1100px]'
               }`}
             />
@@ -675,11 +655,9 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
           <button
             type="button"
             onClick={handleWhatsapp}
-            disabled={whatsappLoading}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#25D366] text-white rounded-xl hover:bg-[#1ebe57] disabled:opacity-60 disabled:cursor-wait text-sm font-semibold transition-colors shadow-sm"
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#25D366] text-white rounded-xl hover:bg-[#1ebe57] text-sm font-semibold transition-colors shadow-sm"
           >
-            {whatsappLoading ? <Loader2 size={15} className="animate-spin" /> : <MessageCircle size={15} />}
-            {whatsappLoading ? 'Preparando...' : 'WhatsApp'}
+            <MessageCircle size={15} /> WhatsApp
           </button>
           <button
             type="button"
@@ -691,5 +669,75 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
         </div>
       </div>
     </div>
+
+    {/* WhatsApp — modal de número de celular */}
+    {showWaModal && (
+      <div
+        className="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4"
+        onClick={() => setShowWaModal(false)}
+      >
+        <div
+          className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#25D366]/10 flex items-center justify-center">
+                <MessageCircle size={20} className="text-[#25D366]" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Enviar por WhatsApp</h3>
+                <p className="text-xs text-gray-500">Ingresa el número del cliente</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowWaModal(false)}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="mb-5">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Número de celular</label>
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-2.5 bg-gray-100 border border-gray-300 rounded-xl text-sm font-medium text-gray-600 select-none">
+                +51
+              </span>
+              <input
+                type="tel"
+                value={waPhone}
+                onChange={(e) => setWaPhone(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                placeholder="999 999 999"
+                maxLength={9}
+                autoFocus
+                className="flex-1 px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#25D366]/40 focus:border-[#25D366] tabular-nums tracking-wider"
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5">9 dígitos · Perú (+51)</p>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowWaModal(false)}
+              className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 text-sm font-medium transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSendWhatsapp}
+              disabled={waPhone.length > 0 && waPhone.length !== 9}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#25D366] text-white rounded-xl hover:bg-[#1ebe57] disabled:opacity-40 text-sm font-semibold transition-colors"
+            >
+              <MessageCircle size={15} /> Enviar
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

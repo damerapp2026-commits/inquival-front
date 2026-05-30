@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart, useExchangeRate } from '../hooks/useDashboard';
+import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart, useExchangeRate, useProfitability } from '../hooks/useDashboard';
 import { useAPAlerts } from '../../accounts-payable/hooks/useAccountsPayable';
 import { useSales } from '../../sales/hooks/useSales';
 import { useUsers } from '../../users/hooks/useUsers';
@@ -125,6 +125,7 @@ export function DashboardPage() {
   const [chartRange, setChartRange] = useState(thisMonth);
   const [disabledCats, setDisabledCats] = useState<Set<string>>(new Set());
   const [exchangeDays, setExchangeDays] = useState(7);
+  const [profitRange, setProfitRange] = useState(last30Days);
 
   const { data: summary } = useDashboardSummary(period);
   const { data: creditsSummary } = useCreditsSummary();
@@ -136,6 +137,10 @@ export function DashboardPage() {
   const { data: catSalesChart } = useCategorySalesChart(catChartRange.start, catChartRange.end);
   const { data: sellerSalesData, isLoading: sellerSalesLoading } = useSales({ page: 1, limit: 1000, startDate: chartRange.start, endDate: chartRange.end });
   const { data: usersData } = useUsers({ limit: 200 });
+  const { data: profitabilityData, isLoading: profitLoading } = useProfitability(
+    user?.role === 'ADMIN' ? profitRange.start : undefined,
+    user?.role === 'ADMIN' ? profitRange.end : undefined,
+  );
 
   const sellersList: any[] = useMemo(() => {
     const raw: any = usersData;
@@ -584,6 +589,123 @@ export function DashboardPage() {
           <div className="flex items-center justify-center h-[280px] text-gray-400 text-sm">Sin ventas registradas en el período</div>
         )}
       </div>
+
+      {/* Rentabilidad Bruta — solo ADMIN */}
+      {user?.role === 'ADMIN' && (
+        <div className="bg-white rounded-xl shadow-card p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <TrendingUp size={20} className="text-emerald-600" />
+                Rentabilidad Bruta por Producto
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">Precio Venta − Precio Costo · Top 15 productos</p>
+            </div>
+            <DateRangeFilter
+              range={profitRange}
+              onChange={setProfitRange}
+              onReset={() => setProfitRange(last30Days())}
+              resetLabel="Últimos 30 días"
+            />
+          </div>
+
+          {profitLoading ? (
+            <div className="h-[360px] flex items-center justify-center text-gray-400 text-sm">Calculando rentabilidad...</div>
+          ) : !Array.isArray(profitabilityData) || profitabilityData.length === 0 ? (
+            <div className="h-[360px] flex items-center justify-center text-gray-400 text-sm">Sin ventas en el período seleccionado</div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={Math.max(320, profitabilityData.length * 48)}>
+                <BarChart data={profitabilityData} layout="vertical" margin={{ left: 10, right: 60 }} barCategoryGap="25%" barGap={3}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `S/${v}`} />
+                  <YAxis
+                    type="category"
+                    dataKey="productName"
+                    tick={{ fontSize: 11 }}
+                    width={160}
+                    tickFormatter={(v: string) => v.length > 22 ? v.slice(0, 21) + '…' : v}
+                  />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const row = payload[0]?.payload;
+                      return (
+                        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs space-y-1 min-w-[200px]">
+                          <p className="font-semibold text-gray-800 mb-2">{label}</p>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-gray-500">Ingresos</span>
+                            <span className="font-medium text-blue-600">S/ {Number(row?.totalRevenue || 0).toFixed(2)}</span>
+                          </div>
+                          {row?.totalCost != null && (
+                            <div className="flex justify-between gap-4">
+                              <span className="text-gray-500">Costo</span>
+                              <span className="font-medium text-orange-500">S/ {Number(row.totalCost).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {row?.grossProfit != null && (
+                            <div className="flex justify-between gap-4 border-t border-gray-100 pt-1 mt-1">
+                              <span className="text-gray-700 font-medium">Ganancia bruta</span>
+                              <span className={`font-bold ${row.grossProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                S/ {Number(row.grossProfit).toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {row?.marginPercent != null && (
+                            <div className="flex justify-between gap-4">
+                              <span className="text-gray-500">Margen</span>
+                              <span className={`font-semibold ${row.marginPercent >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                {Number(row.marginPercent).toFixed(1)}%
+                              </span>
+                            </div>
+                          )}
+                          {row?.totalCost == null && (
+                            <p className="text-gray-400 italic">Sin precio de costo registrado</p>
+                          )}
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="totalRevenue" name="Ingresos" fill="#3b82f6" radius={[0, 3, 3, 0]} />
+                  <Bar dataKey="totalCost" name="Costo" fill="#f97316" radius={[0, 3, 3, 0]} />
+                  <Bar dataKey="grossProfit" name="Ganancia" fill="#10b981" radius={[0, 3, 3, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                {(() => {
+                  const rows = profitabilityData as any[];
+                  const totalRev = rows.reduce((s: number, r: any) => s + (r.totalRevenue || 0), 0);
+                  const totalCost = rows.filter((r: any) => r.totalCost != null).reduce((s: number, r: any) => s + r.totalCost, 0);
+                  const totalProfit = totalRev - totalCost;
+                  const avgMargin = totalRev > 0 ? (totalProfit / totalRev) * 100 : 0;
+                  const hasCost = rows.some((r: any) => r.totalCost != null);
+                  return (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                        Ingresos totales: S/ {totalRev.toFixed(2)}
+                      </span>
+                      {hasCost && (
+                        <>
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">
+                            Costo total: S/ {totalCost.toFixed(2)}
+                          </span>
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${totalProfit >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                            Ganancia bruta: S/ {totalProfit.toFixed(2)}
+                          </span>
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${avgMargin >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                            Margen promedio: {avgMargin.toFixed(1)}%
+                          </span>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Accounts Payable Alerts */}
       {((apAlerts?.overdue?.length || 0) > 0 || (apAlerts?.upcoming?.length || 0) > 0) && (

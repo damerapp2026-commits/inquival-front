@@ -1,26 +1,30 @@
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients';
-import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
-import { Plus, Search, Edit2, Trash2, Users, Loader2, AlertTriangle, UserCheck, UserX, Contact, MapPin, CreditCard } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Users, Loader2, AlertTriangle, UserCheck, UserX, Contact, MapPin, CreditCard, ChevronDown } from 'lucide-react';
 import type { Client } from '../../../shared/types';
 import { clientService } from '../services/clientService';
 import { ExportClientStatementButton } from '../../credits/components/ExportClientStatementButton';
 import { CreditsPage } from '../../credits/pages/CreditsPage';
 import { LocationFields } from '../components/LocationFields';
+import { ClientHistoryPanel } from '../components/ClientHistoryPanel';
+import { useAuth } from '../../../app/providers/AuthProvider';
 import toast from 'react-hot-toast';
 
 export function ClientsPage() {
+  const { user } = useAuth();
+  const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') === 'creditos' ? 'creditos' : 'datos';
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search);
+  const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
@@ -34,17 +38,18 @@ export function ClientsPage() {
   const rucLookup = useRucLookup();
 
   const [docType, setDocType] = useState<'DNI' | 'RUC'>('DNI');
-  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '' });
+  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '', creditLimitCurrency: 'PEN' as 'PEN' | 'USD' });
   const [lookupLoading, setLookupLoading] = useState(false);
 
   const openCreate = () => {
     setEditing(null);
     setDocType('DNI');
-    setForm({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '' });
+    setForm({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '', creditLimitCurrency: 'PEN' });
     setShowModal(true);
   };
 
   const openEdit = (client: Client) => {
+    if (isSellerRole) return;
     setEditing(client);
     const dn = client.documentNumber || '';
     setDocType(dn.length === 11 ? 'RUC' : 'DNI');
@@ -59,6 +64,7 @@ export function ClientsPage() {
       district: client.district || client.city || '',
       hamlet: client.hamlet || '',
       creditLimit: typeof client.creditLimit === 'number' ? String(client.creditLimit) : '',
+      creditLimitCurrency: client.creditLimitCurrency || 'PEN',
     });
     setShowModal(true);
   };
@@ -89,6 +95,7 @@ export function ClientsPage() {
           district: localMatch.district || localMatch.city || '',
           hamlet: localMatch.hamlet || '',
           creditLimit: typeof localMatch.creditLimit === 'number' ? String(localMatch.creditLimit) : '',
+          creditLimitCurrency: localMatch.creditLimitCurrency || 'PEN',
         });
         toast.success('Cliente encontrado en el sistema');
         setLookupLoading(false);
@@ -128,6 +135,7 @@ export function ClientsPage() {
       if (Number.isFinite(parsed) && parsed >= 0) cleanForm.creditLimit = parsed;
       else delete cleanForm.creditLimit;
     }
+    cleanForm.creditLimitCurrency = form.creditLimitCurrency;
     if (cleanForm.district) cleanForm.city = cleanForm.district;
     if (editing) await updateClient.mutateAsync({ id: editing.id, data: cleanForm });
     else await createClient.mutateAsync(cleanForm);
@@ -138,65 +146,6 @@ export function ClientsPage() {
   const total = data?.total || 0;
   const activeCount = clients.filter((c) => c.isActive).length;
   const inactiveCount = clients.filter((c) => !c.isActive).length;
-
-  const columns = [
-    { key: 'name', header: 'Nombre', render: (item: Client) => <span className="font-medium text-gray-800">{item.name}</span> },
-    {
-      key: 'documentNumber', header: 'DNI/RUC',
-      render: (item: Client) => item.documentNumber
-        ? <span className="font-mono text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded">{item.documentNumber}</span>
-        : <span className="text-gray-300">—</span>,
-    },
-    { key: 'phone', header: 'Teléfono', render: (item: Client) => item.phone || <span className="text-gray-300">—</span> },
-    {
-      key: 'creditLimit', header: 'Límite crédito',
-      render: (item: Client) => typeof item.creditLimit === 'number' && item.creditLimit > 0
-        ? (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100 tabular-nums">
-            <CreditCard size={12} /> S/ {item.creditLimit.toFixed(2)}
-          </span>
-        )
-        : <span className="text-gray-300">—</span>,
-    },
-    {
-      key: 'zone', header: 'Zona',
-      render: (item: Client) => {
-        const primary = item.district || item.city;
-        const secondary = [item.province, item.department].filter(Boolean).join(' · ');
-        if (!primary && !secondary && !item.hamlet) return <span className="text-gray-300">—</span>;
-        return (
-          <div className="flex items-center gap-1.5 text-sm text-gray-700">
-            <MapPin size={13} className="text-gray-400 flex-shrink-0" />
-            <div className="min-w-0">
-              {primary && <div className="font-medium truncate">{primary}</div>}
-              {item.hamlet && <div className="text-xs text-gray-600 truncate">Caserío: {item.hamlet}</div>}
-              {secondary && <div className="text-xs text-gray-500 truncate">{secondary}</div>}
-            </div>
-          </div>
-        );
-      },
-    },
-    { key: 'email', header: 'Email', render: (item: Client) => item.email || <span className="text-gray-300">—</span> },
-    {
-      key: 'isActive', header: 'Estado',
-      render: (item: Client) => (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${item.isActive ? 'bg-primary-50 text-primary-700' : 'bg-red-50 text-red-700'}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${item.isActive ? 'bg-primary-500' : 'bg-red-500'}`} />
-          {item.isActive ? 'Activo' : 'Inactivo'}
-        </span>
-      ),
-    },
-    {
-      key: 'actions', header: 'Acciones',
-      render: (item: Client) => (
-        <div className="flex items-center gap-1">
-          <ExportClientStatementButton client={item} variant="icon" />
-          <button onClick={() => openEdit(item)} className="p-2 rounded-lg text-blue-600 hover:bg-blue-50" title="Editar"><Edit2 size={15} /></button>
-          <button onClick={() => openDelete(item)} className="p-2 rounded-lg text-red-600 hover:bg-red-50" title="Eliminar"><Trash2 size={15} /></button>
-        </div>
-      ),
-    },
-  ];
 
   const isValidDoc = docType === 'DNI' ? form.documentNumber.length === 8 : form.documentNumber.length === 11;
   const confirmRequired = deleteTarget?.documentNumber || deleteTarget?.name || '';
@@ -266,14 +215,112 @@ export function ClientsPage() {
             type="text"
             placeholder="Buscar por nombre, DNI/RUC, teléfono o email..."
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); setExpandedClientId(null); }}
             className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
       </div>
 
-      <DataTable columns={columns} data={clients} isLoading={isLoading} />
-      <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+      {/* Clients table with expandable history rows */}
+      {isLoading ? (
+        <div className="bg-white rounded-xl shadow-card p-4 animate-pulse space-y-3">
+          {[...Array(5)].map((_, i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}
+        </div>
+      ) : (
+        <div className="overflow-x-auto bg-white rounded-xl shadow-card">
+          <table className="min-w-full">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="px-3 py-3 w-8 bg-gray-50/60" />
+                {['Nombre', 'DNI/RUC', 'Teléfono', 'Límite crédito', 'Zona', 'Estado', 'Acciones'].map(h => (
+                  <th key={h} className="px-4 sm:px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider bg-gray-50/60">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {clients.length === 0 ? (
+                <tr><td colSpan={8} className="px-6 py-10 text-center text-sm text-gray-400">No hay datos disponibles</td></tr>
+              ) : clients.map(client => {
+                const isExpanded = expandedClientId === client.id;
+                const primary = client.district || client.city;
+                const secondary = [client.province, client.department].filter(Boolean).join(' · ');
+                return (
+                  <React.Fragment key={client.id}>
+                    <tr className={`transition-colors hover:bg-gray-50/60 ${isExpanded ? 'bg-indigo-50/30' : ''}`}>
+                      <td className="px-3 py-3.5 text-center">
+                        <button
+                          onClick={() => setExpandedClientId(prev => prev === client.id ? null : client.id!)}
+                          className="p-1 rounded-md hover:bg-gray-200 text-gray-400 hover:text-gray-700 transition-colors"
+                          title={isExpanded ? 'Cerrar historial' : 'Ver historial de ventas'}
+                        >
+                          <ChevronDown size={15} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                        </button>
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 whitespace-nowrap text-sm">
+                        <span className="font-medium text-gray-800">{client.name}</span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 whitespace-nowrap text-sm">
+                        {client.documentNumber
+                          ? <span className="font-mono text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded">{client.documentNumber}</span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 whitespace-nowrap text-sm text-gray-700">
+                        {client.phone || <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 whitespace-nowrap text-sm">
+                        {typeof client.creditLimit === 'number' && client.creditLimit > 0 ? (
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border tabular-nums ${client.creditLimitCurrency === 'USD' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                            <CreditCard size={12} /> {client.creditLimitCurrency === 'USD' ? '$' : 'S/'} {client.creditLimit.toFixed(2)}
+                          </span>
+                        ) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 text-sm">
+                        {!primary && !secondary && !client.hamlet ? (
+                          <span className="text-gray-300">—</span>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-gray-700">
+                            <MapPin size={13} className="text-gray-400 flex-shrink-0" />
+                            <div className="min-w-0">
+                              {primary && <div className="font-medium truncate">{primary}</div>}
+                              {client.hamlet && <div className="text-xs text-gray-600 truncate">Caserío: {client.hamlet}</div>}
+                              {secondary && <div className="text-xs text-gray-500 truncate">{secondary}</div>}
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 whitespace-nowrap text-sm">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${client.isActive ? 'bg-primary-50 text-primary-700' : 'bg-red-50 text-red-700'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${client.isActive ? 'bg-primary-500' : 'bg-red-500'}`} />
+                          {client.isActive ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-3.5 whitespace-nowrap text-sm">
+                        <div className="flex items-center gap-1">
+                          <ExportClientStatementButton client={client} variant="icon" />
+                          {!isSellerRole && (
+                            <>
+                              <button onClick={() => openEdit(client)} className="p-2 rounded-lg text-blue-600 hover:bg-blue-50" title="Editar"><Edit2 size={15} /></button>
+                              <button onClick={() => openDelete(client)} className="p-2 rounded-lg text-red-600 hover:bg-red-50" title="Eliminar"><Trash2 size={15} /></button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={8} className="p-0 border-b border-indigo-100">
+                          <ClientHistoryPanel clientId={client.id!} />
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={(p) => { setPage(p); setExpandedClientId(null); }} />
 
       {/* Create/Edit modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar cliente' : 'Nuevo cliente'}>
@@ -333,13 +380,26 @@ export function ClientsPage() {
           </div>
 
           <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <CreditCard size={13} className="text-primary-600" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Límite de crédito <span className="text-red-500 normal-case">*</span></span>
-              <span className="text-[11px] text-gray-400 normal-case font-normal">— en S/</span>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-2">
+                <CreditCard size={13} className="text-primary-600" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Límite de crédito <span className="text-red-500 normal-case">*</span></span>
+              </div>
+              <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+                <button type="button" onClick={() => setForm(prev => ({ ...prev, creditLimitCurrency: 'PEN' }))}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${form.creditLimitCurrency === 'PEN' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  S/ Soles
+                </button>
+                <button type="button" onClick={() => setForm(prev => ({ ...prev, creditLimitCurrency: 'USD' }))}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${form.creditLimitCurrency === 'USD' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  $ Dólares
+                </button>
+              </div>
             </div>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">S/</span>
+              <span className={`absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold ${form.creditLimitCurrency === 'USD' ? 'text-emerald-600' : 'text-blue-600'}`}>
+                {form.creditLimitCurrency === 'USD' ? '$' : 'S/'}
+              </span>
               <input
                 type="number"
                 min="0"

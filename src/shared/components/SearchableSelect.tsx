@@ -29,14 +29,17 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
         return o.label.toLowerCase().includes(q) || (o.sublabel && o.sublabel.toLowerCase().includes(q));
       })
     : [];
+  const MAX_RESULTS = 50;
+  const displayFiltered = filtered.slice(0, MAX_RESULTS);
+  const hiddenCount = filtered.length - MAX_RESULTS;
 
   useEffect(() => { setHighlightedIndex(0); }, [search, isOpen]);
 
   useEffect(() => {
-    if (isOpen && filtered.length > 0) {
+    if (isOpen && displayFiltered.length > 0) {
       optionRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
     }
-  }, [highlightedIndex, isOpen, filtered.length]);
+  }, [highlightedIndex, isOpen, displayFiltered.length]);
 
   const updatePosition = useCallback(() => {
     if (inputRef.current) {
@@ -93,16 +96,16 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (!isOpen) { setIsOpen(true); return; }
-      if (filtered.length === 0) return;
-      setHighlightedIndex((i) => (i + 1) % filtered.length);
+      if (displayFiltered.length === 0) return;
+      setHighlightedIndex((i) => (i + 1) % displayFiltered.length);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (filtered.length === 0) return;
-      setHighlightedIndex((i) => (i - 1 + filtered.length) % filtered.length);
+      if (displayFiltered.length === 0) return;
+      setHighlightedIndex((i) => (i - 1 + displayFiltered.length) % displayFiltered.length);
     } else if (e.key === 'Enter') {
-      if (isOpen && filtered.length > 0) {
+      if (isOpen && displayFiltered.length > 0) {
         e.preventDefault();
-        const opt = filtered[highlightedIndex];
+        const opt = displayFiltered[highlightedIndex];
         if (opt) handleSelect(opt.value, opt.label);
       }
     } else if (e.key === 'Escape') {
@@ -125,19 +128,26 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
       ) : filtered.length === 0 ? (
         <div className="px-3 py-2 text-xs text-gray-400">Sin resultados</div>
       ) : (
-        filtered.map((o, idx) => (
-          <button
-            key={o.value}
-            ref={(el) => { optionRefs.current[idx] = el; }}
-            type="button"
-            onMouseDown={(e) => { e.preventDefault(); handleSelect(o.value, o.label); }}
-            onMouseEnter={() => setHighlightedIndex(idx)}
-            className={`w-full text-left px-3 py-2 text-sm ${idx === highlightedIndex ? 'bg-primary-100' : o.value === value ? 'bg-primary-50 font-medium' : 'hover:bg-primary-50'}`}
-          >
-            <div>{o.label}</div>
-            {o.sublabel && <div className="text-xs text-gray-400 mt-0.5">{o.sublabel}</div>}
-          </button>
-        ))
+        <>
+          {displayFiltered.map((o, idx) => (
+            <button
+              key={o.value}
+              ref={(el) => { optionRefs.current[idx] = el; }}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); handleSelect(o.value, o.label); }}
+              onMouseEnter={() => setHighlightedIndex(idx)}
+              className={`w-full text-left px-3 py-2 text-sm ${idx === highlightedIndex ? 'bg-primary-100' : o.value === value ? 'bg-primary-50 font-medium' : 'hover:bg-primary-50'}`}
+            >
+              <div>{o.label}</div>
+              {o.sublabel && <div className="text-xs text-gray-400 mt-0.5">{o.sublabel}</div>}
+            </button>
+          ))}
+          {hiddenCount > 0 && (
+            <div className="px-3 py-2 text-xs text-gray-400 border-t text-center">
+              +{hiddenCount} resultado{hiddenCount !== 1 ? 's' : ''}. Escribe más para filtrar.
+            </div>
+          )}
+        </>
       )}
     </div>,
     document.body,

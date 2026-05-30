@@ -52,12 +52,19 @@ interface CartItem {
   unit: string;
   quantity: number;
   unitPrice: number;
-  taxType: TaxType;        // affects IGV calculation: only GRAVADO items contribute IGV
-  tierOverride?: string;   // if set, uses this tier instead of global
-  isCustomPrice?: boolean; // true = manually edited, don't re-resolve
-  sourceCompanyId?: string; // when global selector is "Todos", store which warehouse this item comes from
-  isItemCourtesy?: boolean; // this specific item is gifted at price 0
-  savedUnitPrice?: number;  // original price before marking as courtesy
+  taxType: TaxType;
+  tierOverride?: string;
+  isCustomPrice?: boolean;
+  sourceCompanyId?: string;
+}
+
+interface BonusCartItem {
+  productId: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  taxType: TaxType;
+  sourceCompanyId?: string;
 }
 
 function normalizeTaxType(value: unknown): TaxType {
@@ -175,6 +182,9 @@ export function POSPage() {
   const [isCourtesy, setIsCourtesy] = useState(false);
   /** Moneda de la venta. Los precios del carrito son en esta moneda. */
   const [currency, setCurrency] = useState<'PEN' | 'USD'>('PEN');
+  /** Tipo de cambio USD → PEN (requerido cuando currency === 'USD'). */
+  const [exchangeRate, setExchangeRate] = useState<number>(3.75);
+  const [bonusItems, setBonusItems] = useState<BonusCartItem[]>([]);
 
   const computedDueDate = (() => {
     const days = parseInt(creditDueDays, 10);
@@ -189,7 +199,6 @@ export function POSPage() {
   })();
   const searchRef = useRef<HTMLInputElement>(null);
   const [successSale, setSuccessSale] = useState<VoucherSnapshot | null>(null);
-  const [successCountdown, setSuccessCountdown] = useState(5);
   const [voucherPreview, setVoucherPreview] = useState<VoucherSnapshot | null>(null);
 
   const { data: openCredits } = useOpenClientCredits(isCredit ? clientId : '');
@@ -361,8 +370,8 @@ export function POSPage() {
     }
 
     const price = resolvePrice(product, tierId, sourceCompanyId);
-    if (price == null && !isCourtesy) {
-      toast.error(`Sin precio configurado para ${product.name}. Activa "Cortesía" para agregar a precio 0.`);
+    if (price == null) {
+      toast.error(`Sin precio configurado para ${product.name}`);
       return;
     }
     setCart((prev) => {
@@ -424,9 +433,13 @@ export function POSPage() {
 
   const removeFromCart = (productId: string) => {
     setCart((prev) => prev.filter((i) => i.productId !== productId));
+    setBonusItems((prev) => prev.filter((b) => b.productId !== productId));
   };
 
-  const clearCart = () => setCart([]);
+  const clearCart = () => {
+    setCart([]);
+    setBonusItems([]);
+  };
 
   const setItemTier = (productId: string, newTierId: string) => {
     setCart((prev) =>
@@ -465,16 +478,26 @@ export function POSPage() {
     );
   };
 
-  const toggleItemCourtesy = (productId: string) => {
-    setCart((prev) =>
-      prev.map((i) => {
-        if (i.productId !== productId) return i;
-        if (i.isItemCourtesy) {
-          return { ...i, isItemCourtesy: false, unitPrice: i.savedUnitPrice ?? i.unitPrice, savedUnitPrice: undefined };
-        }
-        return { ...i, isItemCourtesy: true, savedUnitPrice: i.unitPrice, unitPrice: 0 };
-      }),
+  const addBonusRow = (item: CartItem) => {
+    setBonusItems((prev) => {
+      if (prev.find((b) => b.productId === item.productId)) return prev;
+      return [...prev, { productId: item.productId, name: item.name, unit: item.unit, quantity: 1, taxType: item.taxType, sourceCompanyId: item.sourceCompanyId }];
+    });
+  };
+
+  const removeBonusRow = (productId: string) => {
+    setBonusItems((prev) => prev.filter((b) => b.productId !== productId));
+  };
+
+  const updateBonusQty = (productId: string, delta: number) => {
+    setBonusItems((prev) =>
+      prev.map((b) => b.productId === productId ? { ...b, quantity: Math.max(1, b.quantity + delta) } : b)
     );
+  };
+
+  const setBonusQty = (productId: string, value: number) => {
+    if (isNaN(value) || value <= 0) { removeBonusRow(productId); return; }
+    setBonusItems((prev) => prev.map((b) => b.productId === productId ? { ...b, quantity: value } : b));
   };
 
   const [editingPriceFor, setEditingPriceFor] = useState<string | null>(null);
@@ -503,16 +526,13 @@ export function POSPage() {
   }, [cart]);
 
   const openCheckout = () => {
-    if (cart.length === 0) {
+    if (cart.length === 0 && bonusItems.length === 0) {
       toast.error('El carrito está vacío');
       return;
     }
-    if (!paymentMethodId && !isCourtesy) {
+    const effectiveIsCourtesy = total < 0.001;
+    if (!paymentMethodId && !effectiveIsCourtesy) {
       toast.error('No hay métodos de pago configurados');
-      return;
-    }
-    if (isCourtesy && !isSellerRole && user?.role !== 'ADMIN') {
-      toast.error('Solo administradores pueden registrar ventas de cortesía');
       return;
     }
     const itemMissingSource = cart.find((i) => !i.sourceCompanyId && companyId === ALL_COMPANIES);
@@ -523,7 +543,8 @@ export function POSPage() {
     setIsCredit(false);
     setCreditName('');
     setCreditDueDays('');
-    setSplitPayments(isCourtesy ? [] : [{ paymentMethodId, amount: 0 }]);
+    setIsCourtesy(effectiveIsCourtesy);
+    setSplitPayments(effectiveIsCourtesy ? [] : [{ paymentMethodId, amount: 0 }]);
     setCheckoutStep(1);
     setShowCheckout(true);
   };
@@ -545,12 +566,8 @@ export function POSPage() {
   const sym = currency === 'USD' ? '$' : 'S/';
 
   const confirmSale = async () => {
-    // Cortesía: sin validación de pagos, total debe ser 0
     if (isCourtesy) {
-      if (total > 0.001) {
-        toast.error('Una venta de cortesía debe tener todos los items a precio 0');
-        return;
-      }
+      // pure bonificación: no payment needed
     } else if (isCredit) {
       if (!clientId) { toast.error('Selecciona un cliente para la venta a crédito'); return; }
       if (creditOverLimit) {
@@ -609,12 +626,20 @@ export function POSPage() {
       total: saleTotal,
       voucherType: saleVoucherType as VoucherSnapshot['voucherType'],
       date: saleDateObj,
-      items: cart.map((i) => ({
-        name: i.name,
-        quantity: i.quantity,
-        unitPrice: i.unitPrice,
-        subtotal: i.quantity * i.unitPrice,
-      })),
+      items: [
+        ...cart.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          subtotal: i.quantity * i.unitPrice,
+        })),
+        ...bonusItems.map((b) => ({
+          name: `${b.name} (Bonificación)`,
+          quantity: b.quantity,
+          unitPrice: 0,
+          subtotal: 0,
+        })),
+      ],
       payments: validPayments.map((p) => ({
         methodName: paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '',
         amount: p.amount,
@@ -654,20 +679,32 @@ export function POSPage() {
           creditName: isCredit && creditName.trim() ? creditName.trim() : undefined,
           creditDueDate: isCredit && computedDueDate ? computedDueDate : undefined,
           sellerId: effectiveSellerId,
-          items: cart.map((i) => ({
-            productId: i.productId,
-            companyId: i.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : ''),
-            quantity: i.quantity,
-            priceTier: i.tierOverride || tierId,
-            unitPrice: i.unitPrice,
-          })),
+          items: [
+            ...cart.map((i) => ({
+              productId: i.productId,
+              companyId: i.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : ''),
+              quantity: i.quantity,
+              priceTier: i.tierOverride || tierId,
+              unitPrice: i.unitPrice,
+            })),
+            ...bonusItems.map((b) => ({
+              productId: b.productId,
+              companyId: b.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : ''),
+              quantity: b.quantity,
+              priceTier: tierId,
+              unitPrice: 0,
+              isItemCourtesy: true,
+            })),
+          ],
           payments: validPayments,
           date: saleDateObj.toISOString(),
           isCourtesy: isCourtesy || undefined,
           currency: currency !== 'PEN' ? currency : undefined,
+          exchangeRate: currency === 'USD' ? exchangeRate : undefined,
         } as any);
       }
       setCart([]);
+      setBonusItems([]);
       setClientId('');
       setVoucherType('NONE');
       setSplitPayments([]);
@@ -677,6 +714,7 @@ export function POSPage() {
       setSaleDate(todayLocal);
       setIsCourtesy(false);
       setCurrency('PEN');
+      setExchangeRate(3.75);
       setShowCheckout(false);
       if (sourceQuoteId) {
         setSourceQuoteId('');
@@ -685,23 +723,12 @@ export function POSPage() {
       const saleId = saleResult?.id || saleResult?.sale?.id || '';
       const saleNumber = saleResult?.saleNumber || saleResult?.sale?.saleNumber;
       setSuccessSale({ id: saleId, voucherNumber: saleNumber, ...saleSnapshotBase });
-      setSuccessCountdown(5);
     } catch {
       // errors handled by mutation onError
     }
   };
 
-  // Auto-close countdown + keyboard shortcuts for success modal
-  useEffect(() => {
-    if (!successSale) return;
-    const tick = setInterval(() => setSuccessCountdown((c) => (c <= 1 ? 0 : c - 1)), 1000);
-    return () => clearInterval(tick);
-  }, [successSale]);
-
-  useEffect(() => {
-    if (successSale && successCountdown === 0) setSuccessSale(null);
-  }, [successCountdown, successSale]);
-
+  // Keyboard shortcuts for success modal
   useEffect(() => {
     if (!successSale) return;
     const handler = (e: KeyboardEvent) => {
@@ -944,31 +971,15 @@ export function POSPage() {
               USD
             </button>
 
-            {/* Toggle Cortesía (solo ADMIN) */}
-            {!isSellerRole && (
-              <button
-                type="button"
-                onClick={() => setIsCourtesy((v) => !v)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                  isCourtesy
-                    ? 'bg-violet-600 text-white border-violet-600'
-                    : 'bg-white text-gray-500 border-gray-200 hover:border-violet-400 hover:text-violet-600'
-                }`}
-                title="Venta de cortesía (precio 0)"
-              >
-                <Gift size={12} />
-                Cortesía
-              </button>
-            )}
           </div>
           {currency === 'USD' && (
             <div className="mt-1 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1">
               Precios y pagos en dólares (USD)
             </div>
           )}
-          {isCourtesy && (
+          {bonusItems.length > 0 && (
             <div className="mt-1 text-[11px] text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1 flex items-center gap-1">
-              <Gift size={10} /> Todos los items deben estar a precio 0
+              <Gift size={10} /> {bonusItems.length} fila(s) de bonificación en el carrito
             </div>
           )}
         </div>
@@ -987,11 +998,13 @@ export function POSPage() {
                 : tiers.find((t) => t.id === effectiveTierId)?.name || '';
               const isOverridden = !!item.tierOverride || !!item.isCustomPrice;
               const isEditing = editingPriceFor === item.productId;
+              const bonusRow = bonusItems.find((b) => b.productId === item.productId);
               return (
-                <div key={item.productId} className={`rounded-xl p-3 group ${item.isItemCourtesy ? 'bg-violet-50 border border-violet-200' : 'bg-gray-50'}`}>
+                <div key={item.productId}>
+                  <div className="rounded-xl p-3 group bg-gray-50">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${item.isItemCourtesy ? 'bg-violet-100 text-violet-600' : 'bg-white text-primary-600'}`}>
-                      {item.isItemCourtesy ? <Gift size={18} /> : <Package size={18} />}
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-white text-primary-600">
+                      <Package size={18} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-base font-medium text-gray-800 truncate">{item.name}</div>
@@ -1001,14 +1014,9 @@ export function POSPage() {
                         </div>
                       )}
                       <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className={`text-sm ${item.isItemCourtesy ? 'text-violet-600' : 'text-gray-500'}`}>
+                        <span className="text-sm text-gray-500">
                           {currency === 'USD' ? '$' : 'S/'} {item.unitPrice.toFixed(2)} · {item.unit}
                         </span>
-                        {item.isItemCourtesy && (
-                          <span className="text-[10px] bg-violet-100 text-violet-700 rounded px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
-                            <Gift size={9} /> Cortesía
-                          </span>
-                        )}
                         {isSellerRole ? (
                           <span
                             className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium ${
@@ -1054,17 +1062,13 @@ export function POSPage() {
                         <Plus size={12} />
                       </button>
                     </div>
-                    {!isSellerRole && (
+                    {!isSellerRole && !bonusRow && (
                       <button
-                        onClick={() => toggleItemCourtesy(item.productId)}
-                        className={`transition-colors ${
-                          item.isItemCourtesy
-                            ? 'text-violet-500 hover:text-violet-700'
-                            : 'text-gray-300 opacity-0 group-hover:opacity-100 hover:text-violet-400'
-                        }`}
-                        title={item.isItemCourtesy ? 'Quitar cortesía de este item' : 'Marcar este item como cortesía (precio 0)'}
+                        onClick={() => addBonusRow(item)}
+                        className="text-[10px] font-semibold text-gray-300 opacity-0 group-hover:opacity-100 hover:text-violet-600 transition-colors whitespace-nowrap px-1.5 py-0.5 rounded border border-transparent hover:border-violet-300 hover:bg-violet-50"
+                        title="Agregar fila de bonificación para este producto"
                       >
-                        <Gift size={14} />
+                        +Bonif.
                       </button>
                     )}
                     <button
@@ -1074,7 +1078,7 @@ export function POSPage() {
                       <Trash2 size={14} />
                     </button>
                   </div>
-                  {isEditing && !isSellerRole && !item.isItemCourtesy && (
+                  {isEditing && !isSellerRole && (
                     <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
                       <div className="text-[11px] text-gray-500 font-medium">Cambiar rango de precio</div>
                       <div className="flex flex-wrap gap-1">
@@ -1136,13 +1140,58 @@ export function POSPage() {
                       </div>
                     </div>
                   )}
+                  </div>
+                  {bonusRow && (
+                    <div className="mt-1.5 rounded-xl p-3 bg-violet-50 border border-violet-200 ml-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-violet-100 text-violet-600">
+                          <Gift size={15} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-violet-800 truncate">{item.name}</div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[10px] bg-violet-200 text-violet-700 rounded px-1.5 py-0.5 font-semibold">Bonificación</span>
+                            <span className="text-xs text-violet-600">{currency === 'USD' ? '$' : 'S/'} 0.00 · {item.unit}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => updateBonusQty(item.productId, -1)}
+                            className="w-6 h-6 rounded-md bg-white border border-violet-200 text-violet-500 hover:bg-violet-100 flex items-center justify-center"
+                          >
+                            <Minus size={12} />
+                          </button>
+                          <input
+                            type="number"
+                            min="1"
+                            value={bonusRow.quantity}
+                            onChange={(e) => setBonusQty(item.productId, parseFloat(e.target.value))}
+                            onFocus={(e) => e.target.select()}
+                            className="text-sm font-semibold w-10 text-center border border-violet-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-violet-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <button
+                            onClick={() => updateBonusQty(item.productId, 1)}
+                            className="w-6 h-6 rounded-md bg-violet-500 text-white hover:bg-violet-600 flex items-center justify-center"
+                          >
+                            <Plus size={12} />
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => removeBonusRow(item.productId)}
+                          className="text-violet-300 hover:text-red-500 transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })
           )}
         </div>
 
-        {cart.length > 0 && (
+        {(cart.length > 0 || bonusItems.length > 0) && (
           <div className="border-t border-gray-100 px-5 py-4 space-y-2">
             {gravadoBase > 0 && (
               <div className="flex justify-between text-base text-gray-600">
@@ -1169,7 +1218,7 @@ export function POSPage() {
             <div className="flex justify-between items-baseline pt-2 border-t border-gray-100">
               <span className="text-base font-semibold text-gray-700">
                 Total {currency === 'USD' && <span className="text-xs font-normal text-emerald-600">USD</span>}
-                {isCourtesy && <span className="text-xs font-normal text-violet-600 ml-1">Cortesía</span>}
+                {isCourtesy && <span className="text-xs font-normal text-violet-600 ml-1">Bonificación</span>}
               </span>
               <div className="text-right">
                 <div className="text-2xl font-bold text-primary-600">{currency === 'USD' ? '$' : 'S/'} {total.toFixed(2)}</div>
@@ -1227,8 +1276,9 @@ export function POSPage() {
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
                   <p className="text-white/70 text-sm mb-1">
-                    {cart.length} {cart.length === 1 ? 'producto' : 'productos'}
-                    {isCourtesy && <span className="ml-2 bg-white/20 rounded-full px-2 py-0.5 text-xs font-bold">CORTESÍA</span>}
+                    {cart.length + bonusItems.length} {(cart.length + bonusItems.length) === 1 ? 'producto' : 'productos'}
+                    {isCourtesy && <span className="ml-2 bg-white/20 rounded-full px-2 py-0.5 text-xs font-bold">BONIF.</span>}
+                    {!isCourtesy && bonusItems.length > 0 && <span className="ml-2 bg-white/20 rounded-full px-2 py-0.5 text-xs font-bold">+BONIF.</span>}
                     {currency === 'USD' && !isCourtesy && <span className="ml-2 bg-white/20 rounded-full px-2 py-0.5 text-xs font-bold">USD</span>}
                   </p>
                   <p className="text-4xl font-bold tracking-tight">{currency === 'USD' ? '$' : 'S/'} {total.toFixed(2)}</p>
@@ -1260,6 +1310,15 @@ export function POSPage() {
                       <span className="font-bold text-white mr-2">{item.quantity}×</span>{item.name}
                     </span>
                     <span className="text-white font-semibold shrink-0">{currency === 'USD' ? '$' : 'S/'} {(item.quantity * item.unitPrice).toFixed(2)}</span>
+                  </div>
+                ))}
+                {bonusItems.map((b) => (
+                  <div key={`bonus-${b.productId}`} className="flex items-center justify-between text-sm">
+                    <span className="text-white/60 truncate flex-1 mr-3">
+                      <span className="font-bold text-white/80 mr-2">{b.quantity}×</span>{b.name}
+                      <span className="ml-1 text-white/40 text-xs">(Bonif.)</span>
+                    </span>
+                    <span className="text-white/60 font-semibold shrink-0">{currency === 'USD' ? '$' : 'S/'} 0.00</span>
                   </div>
                 ))}
               </div>
@@ -1357,6 +1416,8 @@ export function POSPage() {
 
                   <div className="border-t border-gray-100" />
 
+                  {/* Tipo de cambio — solo visible cuando la venta es en USD */}
+
                   {/* Comprobante */}
                   <div>
                     <div className="flex items-center gap-2 mb-3">
@@ -1409,7 +1470,7 @@ export function POSPage() {
                   }`}>
                     <div>
                       <span className={`text-xs font-bold uppercase tracking-wider ${isCourtesy ? 'text-violet-700' : currency === 'USD' ? 'text-emerald-700' : 'text-primary-700'}`}>
-                        {isCourtesy ? 'Venta de Cortesía' : currency === 'USD' ? 'Total a cobrar (USD)' : 'Total a cobrar'}
+                        {isCourtesy ? 'Bonificación' : currency === 'USD' ? 'Total a cobrar (USD)' : 'Total a cobrar'}
                       </span>
                     </div>
                     <span className={`text-2xl font-bold tabular-nums ${isCourtesy ? 'text-violet-800' : currency === 'USD' ? 'text-emerald-800' : 'text-primary-800'}`}>
@@ -1421,7 +1482,7 @@ export function POSPage() {
                     <div className="flex items-center gap-3 p-4 bg-violet-50 border-2 border-violet-200 rounded-xl">
                       <Gift size={20} className="text-violet-600 shrink-0" />
                       <div>
-                        <p className="text-sm font-semibold text-violet-800">Venta de cortesía registrada</p>
+                        <p className="text-sm font-semibold text-violet-800">Bonificación registrada</p>
                         <p className="text-xs text-violet-600 mt-0.5">No requiere pago. Quedará registrada en caja con monto S/ 0.00.</p>
                       </div>
                     </div>
@@ -1706,7 +1767,7 @@ export function POSPage() {
                     {createSale.isPending
                       ? 'Procesando…'
                       : isCourtesy
-                        ? 'Confirmar Cortesía · S/ 0.00'
+                        ? 'Confirmar Bonificación · S/ 0.00'
                         : isCredit
                           ? downPayment > 0
                             ? `Anticipo ${sym} ${downPayment.toFixed(2)} + Crédito ${sym} ${creditPending.toFixed(2)}`
@@ -1730,6 +1791,14 @@ export function POSPage() {
             <div className="relative bg-gradient-to-br from-primary-500 via-primary-600 to-primary-700 text-white px-8 pt-8 pb-7 text-center overflow-hidden">
               <div className="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full" />
               <div className="absolute -bottom-12 -left-8 w-28 h-28 bg-white/10 rounded-full" />
+              <button
+                type="button"
+                onClick={() => setSuccessSale(null)}
+                className="absolute top-3 right-3 z-10 p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/20 transition-colors"
+                aria-label="Cerrar"
+              >
+                <X size={18} />
+              </button>
               <div className="relative">
                 <div className="inline-flex w-16 h-16 rounded-full bg-white/20 items-center justify-center mb-3 backdrop-blur">
                   <CheckCircle2 size={36} strokeWidth={2.5} className="text-white" />
@@ -1756,7 +1825,11 @@ export function POSPage() {
                   <span className="text-gray-400 font-mono">· {successSale.voucherNumber || `#${successSale.id.slice(-6).toUpperCase()}`}</span>
                 )}
               </div>
-              <div className="text-3xl font-bold text-gray-900 tabular-nums">S/ {successSale.total.toFixed(2)}</div>
+              <div className="text-3xl font-bold text-gray-900 tabular-nums">
+                {successSale.currency === 'USD' && successSale.totalUsd != null
+                  ? `$ ${successSale.totalUsd.toFixed(2)}`
+                  : `S/ ${successSale.total.toFixed(2)}`}
+              </div>
 
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <button
@@ -1780,7 +1853,7 @@ export function POSPage() {
               </div>
 
               <p className="text-xs text-gray-400 pt-1">
-                Se cerrará automáticamente en {successCountdown}s · <span className="border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 font-mono">Esc</span> para cerrar
+                <span className="border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 font-mono">Esc</span> para cerrar
               </p>
             </div>
           </div>

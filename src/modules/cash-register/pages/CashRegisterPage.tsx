@@ -9,13 +9,11 @@ import { useClients } from '../../clients/hooks/useClients';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useUsers } from '../../users/hooks/useUsers';
 import { useAuth } from '../../../app/providers/AuthProvider';
-import { useRucLookup } from '../../../shared/hooks/useLookup';
-import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
 import { Modal } from '../../../shared/components/Modal';
 import {
   Wallet, TrendingUp, TrendingDown, Edit2, Trash2, Lock, History, ChevronDown, ChevronRight,
   Layers, Clock, Eye, ArrowDownCircle, ArrowUpCircle, Scale, CheckCircle2, AlertCircle,
-  ReceiptText, FileText, CircleDashed, Search, Loader2,
+  ReceiptText, FileText, CircleDashed, Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { CashRegisterEntry, Sale, Client, CreditAccount } from '../../../shared/types';
@@ -89,13 +87,17 @@ function formatLongDate(iso?: string) {
   } catch { return ''; }
 }
 
+function sanitizeEntryDesc(desc: string): string {
+  return desc.replace(/\s*·\s*TC\s+[\d.]+/g, '');
+}
+
 function methodFromDescription(desc: string) {
-  const m = desc.match(/\[(.+?)\]$/);
+  const m = sanitizeEntryDesc(desc).match(/\[([^\]]+)\]$/);
   return m ? m[1] : null;
 }
 
 function stripMethod(desc: string) {
-  return desc.replace(/\s*\[.*?\]\s*$/, '');
+  return sanitizeEntryDesc(desc).replace(/\s*\[.*?\]\s*$/, '');
 }
 
 function clientFromSaleDescription(desc: string): string {
@@ -148,6 +150,7 @@ export function CashRegisterPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [vendorFilter, setVendorFilter] = useState<string | null>(null);
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('');
+  const [currencyFilter, setCurrencyFilter] = useState<'PEN' | 'USD' | null>(null);
 
   const editingIsSale = !!(selectedEntry?.referenceType === 'Sale' && selectedEntry?.referenceId);
   const { data: editingSale } = useSaleById(showEditModal && editingIsSale ? selectedEntry!.referenceId! : null);
@@ -213,57 +216,42 @@ export function CashRegisterPage() {
   const getClientName = (id?: string) => id ? clientMap.get(id)?.name || 'N/A' : 'Sin cliente';
 
   const { data: paymentMethods = [] } = usePaymentMethods();
-  const rucLookup = useRucLookup();
-  const supplierByRuc = useSupplierByRuc();
-  const createSupplier = useCreateSupplier();
 
-  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '' });
+  const [addForm, setAddForm] = useState({ type: 'INCOME' as string, category: 'OTHER' as string, description: '', amount: 0, voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '', expenseCurrency: 'PEN' as 'PEN' | 'USD', convertToSoles: false, exchangeRate: 3.70 });
   const [editForm, setEditForm] = useState({ amount: 0, reason: '', voucherType: 'NONE' as string, voucherSeries: '', voucherNumber: '', paymentMethodName: '' });
   const [deleteReason, setDeleteReason] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
-  const [rucInput, setRucInput] = useState('');
-  const [rucFound, setRucFound] = useState('');
-  const [rucLoading, setRucLoading] = useState(false);
 
   const isClosed = register?.status === 'CLOSED';
   const entries: CashRegisterEntry[] = (register?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted);
   const activeEntries = entries;
   const totalIncome = activeEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
   const totalExpense = activeEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
-  const totalIncomeUsd = activeEntries
-    .filter((e) => e.type === 'INCOME' && e.referenceType === 'Sale' && salesByRefId.get(e.referenceId || '')?.currency === 'USD')
-    .reduce((s, e) => s + e.amount, 0);
-  const totalIncomePen = totalIncome - totalIncomeUsd;
-  const netBalance = (register?.openingBalance || 0) + totalIncomePen - totalExpense;
+  const usdEntries = activeEntries.filter(
+    (e) => e.type === 'INCOME' && e.referenceType === 'Sale' && salesByRefId.get(e.referenceId || '')?.currency === 'USD',
+  );
+  const totalIncomeUsdPen = usdEntries.reduce((s, e) => s + e.amount, 0);
+  const totalIncomeUsd = (() => {
+    const seenSaleIds = new Set<string>();
+    return usdEntries.reduce((s, e) => {
+      if (e.amountUsd != null) return s + e.amountUsd;
+      if (e.referenceId && !seenSaleIds.has(e.referenceId)) {
+        seenSaleIds.add(e.referenceId);
+        return s + (salesByRefId.get(e.referenceId)?.totalUsd ?? 0);
+      }
+      return s;
+    }, 0);
+  })();
+  const totalIncomePen = totalIncome - totalIncomeUsdPen;
+  const totalExpenseUsd = activeEntries.filter((e) => e.type === 'EXPENSE' && e.currency === 'USD').reduce((s, e) => s + e.amount, 0);
+  const totalExpensePen = totalExpense - totalExpenseUsd;
+  const netBalancePen = (register?.openingBalance || 0) + totalIncomePen - totalExpensePen;
+  const netBalanceUsd = totalIncomeUsd - totalExpenseUsd;
 
-  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '' }); setShowAddModal(true); };
-  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo' }); setRucInput(''); setRucFound(''); setShowAddModal(true); };
+  const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '', expenseCurrency: 'PEN', convertToSoles: false, exchangeRate: 3.70 }); setShowAddModal(true); };
+  const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo', expenseCurrency: 'PEN', convertToSoles: false, exchangeRate: 3.70 }); setShowAddModal(true); };
   const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', voucherType: entry.voucherType || 'NONE', voucherSeries: entry.voucherSeries || '', voucherNumber: entry.voucherNumber || '', paymentMethodName: methodFromDescription(entry.description) || '' }); setShowEditModal(true); };
 
-  const handleRucLookup = async () => {
-    const ruc = rucInput.trim();
-    if (ruc.length !== 11) return;
-    setRucLoading(true);
-    try {
-      const local = await supplierByRuc.mutateAsync(ruc);
-      if (local) {
-        setRucFound(local.businessName);
-        setAddForm((prev) => ({ ...prev, description: local.businessName }));
-        setRucLoading(false);
-        return;
-      }
-    } catch { /* not found locally, try SUNAT */ }
-    try {
-      const result = await rucLookup.mutateAsync(ruc);
-      if (result?.razonSocial) {
-        await createSupplier.mutateAsync({ ruc, businessName: result.razonSocial, address: result.direccion || '' });
-        setRucFound(result.razonSocial);
-        setAddForm((prev) => ({ ...prev, description: result.razonSocial }));
-      }
-    } catch { /* error toasts handled by hooks */ } finally {
-      setRucLoading(false);
-    }
-  };
   const openDelete = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setDeleteReason(''); setShowDeleteModal(true); };
 
   const handleOpen = async (e: React.FormEvent) => {
@@ -273,8 +261,21 @@ export function CashRegisterPage() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     const desc = addForm.paymentMethodName ? `${addForm.description} [${addForm.paymentMethodName}]` : addForm.description;
-    const { paymentMethodName, ...rest } = addForm;
-    await addEntry.mutateAsync({ registerId: register.id, data: { ...rest, description: desc } });
+    const { paymentMethodName, expenseCurrency, convertToSoles, exchangeRate, ...rest } = addForm;
+    const isUsdExpense = addForm.type === 'EXPENSE' && expenseCurrency === 'USD';
+    let finalAmount = addForm.amount;
+    let currencyExtra: Record<string, any> = {};
+    if (isUsdExpense) {
+      if (convertToSoles) {
+        finalAmount = Math.round(addForm.amount * exchangeRate * 100) / 100;
+      } else {
+        currencyExtra = { currency: 'USD', amountUsd: addForm.amount };
+      }
+    }
+    await addEntry.mutateAsync({
+      registerId: register.id,
+      data: { ...rest, description: desc, amount: finalAmount, ...currencyExtra },
+    });
     setShowAddModal(false);
   };
   const handleEdit = async (e: React.FormEvent) => {
@@ -350,8 +351,36 @@ export function CashRegisterPage() {
     if (paymentMethodFilter) {
       result = result.filter((e) => methodFromDescription(e.description) === paymentMethodFilter);
     }
+    if (currencyFilter) {
+      result = result.filter((e) => {
+        const isUsd = e.referenceType === 'Sale' && !!e.referenceId && salesByRefId.get(e.referenceId)?.currency === 'USD';
+        return currencyFilter === 'USD' ? isUsd : !isUsd;
+      });
+    }
     return result;
-  }, [entries, vendorFilter, paymentMethodFilter]);
+  }, [entries, vendorFilter, paymentMethodFilter, currencyFilter, salesByRefId]);
+
+  const uniqueSellersInEntries = useMemo(() => {
+    const seen = new Set<string>();
+    const result: { id: string; name: string }[] = [];
+    for (const e of entries) {
+      if (e.createdBy && !seen.has(e.createdBy)) {
+        seen.add(e.createdBy);
+        result.push({ id: e.createdBy, name: userById[e.createdBy] || 'Usuario' });
+      }
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }, [entries, userById]);
+
+  const uniqueMethodsInEntries = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const e of entries) {
+      const m = methodFromDescription(e.description);
+      if (m && !seen.has(m)) { seen.add(m); result.push(m); }
+    }
+    return result.sort();
+  }, [entries]);
 
   const filteredIncome = filteredEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
   const filteredExpense = filteredEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
@@ -471,12 +500,17 @@ export function CashRegisterPage() {
               </div>
               <div className="flex items-baseline gap-3 flex-wrap">
                 <div className="text-2xl sm:text-3xl font-bold tabular-nums tracking-tight">
-                  S/ {netBalance.toFixed(2)}
+                  S/ {netBalancePen.toFixed(2)}
                 </div>
                 <div className={`text-xs ${isClosed ? 'text-gray-300' : 'text-primary-100'}`}>
                   {activeEntries.length} movimiento{activeEntries.length === 1 ? '' : 's'} · {register?.date}
                 </div>
               </div>
+              {netBalanceUsd !== 0 && (
+                <div className={`text-sm font-semibold tabular-nums mt-0.5 ${netBalanceUsd >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  Balance USD: {netBalanceUsd >= 0 ? '+' : '−'} $ {Math.abs(netBalanceUsd).toFixed(2)}
+                </div>
+              )}
             </div>
           </div>
 
@@ -500,8 +534,8 @@ export function CashRegisterPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiTile icon={Scale} label="Apertura" value={`S/ ${(register?.openingBalance || 0).toFixed(2)}`} accent="bg-gray-100 text-gray-700" />
         <KpiTile icon={TrendingUp} label={totalIncomeUsd > 0 ? 'Ingresos S/' : 'Ingresos'} value={`+ S/ ${totalIncomePen.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" subValue={totalIncomeUsd > 0 ? `+ $ ${totalIncomeUsd.toFixed(2)} USD` : undefined} subValueAccent="text-emerald-600" />
-        <KpiTile icon={TrendingDown} label="Egresos" value={`− S/ ${totalExpense.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" />
-        <KpiTile icon={Wallet} label="Balance Neto (S/)" value={`S/ ${netBalance.toFixed(2)}`} accent="bg-blue-100 text-blue-700" valueAccent="text-blue-700" />
+        <KpiTile icon={TrendingDown} label={totalExpenseUsd > 0 ? 'Egresos S/' : 'Egresos'} value={`− S/ ${totalExpensePen.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" subValue={totalExpenseUsd > 0 ? `− $ ${totalExpenseUsd.toFixed(2)} USD` : undefined} subValueAccent="text-rose-600" />
+        <KpiTile icon={Wallet} label={netBalanceUsd !== 0 ? 'Balance Neto S/' : 'Balance Neto'} value={`S/ ${netBalancePen.toFixed(2)}`} accent="bg-blue-100 text-blue-700" valueAccent="text-blue-700" subValue={netBalanceUsd !== 0 ? `${netBalanceUsd >= 0 ? '+' : '−'} $ ${Math.abs(netBalanceUsd).toFixed(2)} USD` : undefined} subValueAccent={netBalanceUsd >= 0 ? 'text-blue-600' : 'text-rose-500'} />
       </div>
 
       {/* Tabs */}
@@ -521,43 +555,73 @@ export function CashRegisterPage() {
             <Layers size={16} className="text-gray-400" />
             <h2 className="text-base font-semibold text-gray-800">Movimientos del día</h2>
             <span className="text-xs text-gray-400">
-              · {filteredEntries.length}{vendorFilter ? ` de ${entries.length}` : ''} entrada{filteredEntries.length === 1 ? '' : 's'}
+              · {filteredEntries.length}{(vendorFilter || paymentMethodFilter || currencyFilter) ? ` de ${entries.length}` : ''} entrada{filteredEntries.length === 1 ? '' : 's'}
             </span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {sellers.length > 0 && (
+            {totalIncomeUsd > 0 && (
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium">
+                <button
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setCurrencyFilter(currencyFilter === 'PEN' ? null : 'PEN')}
+                  className={`px-3 py-2 transition-colors ${currencyFilter === 'PEN' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                >
+                  S/
+                </button>
+                <button
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setCurrencyFilter(currencyFilter === 'USD' ? null : 'USD')}
+                  className={`px-3 py-2 border-l border-gray-200 transition-colors ${currencyFilter === 'USD' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                >
+                  $
+                </button>
+              </div>
+            )}
+            {uniqueSellersInEntries.length > 0 && (
               <select
                 value={vendorFilter || ''}
                 onChange={(e) => setVendorFilter(e.target.value || null)}
-                className="px-3 py-2 border rounded-lg text-sm"
+                className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400"
               >
-                <option value="">Todos los responsables</option>
-                {sellers.map((s: any) => (
-                  <option key={s.id} value={s.id}>
-                    {(s.fullName || s.username) + (s.role === 'ADMIN' ? ' (Admin)' : '')}
-                  </option>
+                <option value="">Todos los vendedores</option>
+                {uniqueSellersInEntries.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
             )}
-            {paymentMethods.some((m: any) => m.isActive) && (
+            {uniqueMethodsInEntries.length > 0 && (
               <select
                 value={paymentMethodFilter}
                 onChange={(e) => setPaymentMethodFilter(e.target.value)}
-                className="px-3 py-2 border rounded-lg text-sm"
+                className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400"
               >
-                <option value="">Todos los métodos de pago</option>
-                {paymentMethods.filter((m: any) => m.isActive).map((m: any) => (
-                  <option key={m.id} value={m.name}>{m.name}</option>
+                <option value="">Todos los métodos</option>
+                {uniqueMethodsInEntries.map((m) => (
+                  <option key={m} value={m}>{m}</option>
                 ))}
               </select>
+            )}
+            {(vendorFilter || paymentMethodFilter || currencyFilter) && (
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); setCurrencyFilter(null); }}
+                className="px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors"
+              >
+                Limpiar filtros
+              </button>
             )}
           </div>
         </div>
 
-        {vendorFilter && filteredEntries.length > 0 && (
-          <div className="px-5 sm:px-6 py-2.5 bg-gray-50/70 border-b border-gray-100 flex items-center justify-between text-xs">
-            <span className="text-gray-500">
-              Filtrado por <strong className="text-gray-700">{userById[vendorFilter] || 'vendedor'}</strong>
+        {(vendorFilter || paymentMethodFilter || currencyFilter) && filteredEntries.length > 0 && (
+          <div className="px-5 sm:px-6 py-2.5 bg-primary-50/50 border-b border-primary-100 flex items-center justify-between text-xs gap-3 flex-wrap">
+            <span className="text-gray-500 flex items-center gap-1.5 flex-wrap">
+              Filtrado por
+              {currencyFilter && <strong className={currencyFilter === 'USD' ? 'text-emerald-700' : 'text-primary-700'}>{currencyFilter === 'USD' ? '$ USD' : 'S/ Soles'}</strong>}
+              {currencyFilter && (vendorFilter || paymentMethodFilter) && <span className="text-gray-400">·</span>}
+              {vendorFilter && <strong className="text-gray-700">{userById[vendorFilter] || 'vendedor'}</strong>}
+              {vendorFilter && paymentMethodFilter && <span className="text-gray-400">·</span>}
+              {paymentMethodFilter && <strong className="text-gray-700">{paymentMethodFilter}</strong>}
             </span>
             <span className="flex items-center gap-3 tabular-nums">
               <span className="text-primary-700 font-semibold">+ S/ {filteredIncome.toFixed(2)}</span>
@@ -572,12 +636,12 @@ export function CashRegisterPage() {
             <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-3">
               <AlertCircle size={22} className="text-gray-400" />
             </div>
-            {vendorFilter ? (
+            {(vendorFilter || paymentMethodFilter || currencyFilter) ? (
               <>
-                <p className="text-sm text-gray-500 font-medium">Sin movimientos para este vendedor</p>
+                <p className="text-sm text-gray-500 font-medium">Sin movimientos para el filtro seleccionado</p>
                 <button
                   type="button"
-                  onClick={() => setVendorFilter(null)}
+                  onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); setCurrencyFilter(null); }}
                   className="text-xs text-primary-600 hover:text-primary-700 font-medium mt-2"
                 >
                   Ver todos los movimientos
@@ -618,7 +682,7 @@ export function CashRegisterPage() {
                   const first = group.entries[0];
                   const total = group.total ?? group.entries.reduce((s, e) => s + e.amount, 0);
                   const isSaleGroup = first.referenceType === 'Sale' && !!first.referenceId;
-                  const baseRaw = first.description.replace(/\s*\(\d+ de \d+\)\s*$/, '');
+                  const baseRaw = sanitizeEntryDesc(first.description).replace(/\s*\(\d+ de \d+\)\s*$/, '');
                   const baseDesc = isSaleGroup ? clientFromSaleDescription(baseRaw) : stripMethod(baseRaw);
                   const method = methodFromDescription(first.description);
                   const vendor = first.createdBy ? (userById[first.createdBy] || 'Usuario') : '';
@@ -666,7 +730,7 @@ export function CashRegisterPage() {
                               return (
                                 <div className="flex flex-col items-end leading-tight">
                                   <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
-                                    C: {groupSym} {groupSale.total.toFixed(2)}
+                                    C: {groupSym} {(isGroupUsd && groupSale.totalUsd != null ? groupSale.totalUsd : groupSale.total).toFixed(2)}
                                   </span>
                                   <span className="text-primary-700">
                                     P: + {groupSym} {total.toFixed(2)}
@@ -693,9 +757,10 @@ export function CashRegisterPage() {
                                 </div>
                               );
                             }
+                            const groupDispAmt = isGroupUsd && groupSale?.totalUsd != null ? groupSale.totalUsd : total;
                             return (
                               <span className={isGroupUsd ? 'text-emerald-600' : ''}>
-                                {first.type === 'INCOME' ? '+' : '−'} {groupSym} {total.toFixed(2)}
+                                {first.type === 'INCOME' ? '+' : '−'} {groupSym} {groupDispAmt.toFixed(2)}
                                 {isGroupUsd && <span className="ml-1 text-[10px] font-bold">USD</span>}
                               </span>
                             );
@@ -717,7 +782,7 @@ export function CashRegisterPage() {
       </div>
 
       {/* --- Add modal --- */}
-      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title={addForm.type === 'INCOME' ? 'Nuevo ingreso' : 'Nuevo egreso'}>
+      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title={addForm.type === 'INCOME' ? 'Nuevo Ingreso' : 'Nuevo Egreso'}>
         <form onSubmit={handleAdd} className="space-y-4">
           <div className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold ${addForm.type === 'INCOME' ? 'bg-primary-50 text-primary-700' : 'bg-rose-50 text-rose-700'}`}>
             {addForm.type === 'INCOME' ? <ArrowUpCircle size={16} /> : <ArrowDownCircle size={16} />}
@@ -773,33 +838,68 @@ export function CashRegisterPage() {
             </div>
           )}
           {addForm.type === 'EXPENSE' && (
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
-                Empresa por RUC <span className="text-gray-400 font-normal normal-case">(opcional)</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  value={rucInput}
-                  onChange={(e) => { setRucInput(e.target.value.replace(/\D/g, '').slice(0, 11)); setRucFound(''); }}
-                  className="w-40 px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="RUC (11 dígitos)"
-                  maxLength={11}
-                />
-                <button
-                  type="button"
-                  onClick={handleRucLookup}
-                  disabled={rucInput.length !== 11 || rucLoading}
-                  className="px-3.5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 text-sm font-medium"
-                >
-                  {rucLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                  Buscar
-                </button>
-                {rucFound && (
-                  <div className="flex-1 min-w-0 px-3.5 py-2.5 bg-primary-50 border border-primary-200 rounded-xl text-sm text-primary-800 font-medium truncate">
-                    {rucFound}
-                  </div>
-                )}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Moneda</label>
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium w-fit">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setAddForm({ ...addForm, expenseCurrency: 'PEN', convertToSoles: false })}
+                    className={`px-4 py-2 transition-colors ${addForm.expenseCurrency === 'PEN' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >S/</button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setAddForm({ ...addForm, expenseCurrency: 'USD' })}
+                    className={`px-4 py-2 border-l border-gray-200 transition-colors ${addForm.expenseCurrency === 'USD' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >$</button>
+                </div>
               </div>
+              {addForm.expenseCurrency === 'USD' && (
+                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3.5 space-y-3">
+                  <div className="flex rounded-lg border border-emerald-200 overflow-hidden text-sm font-medium w-fit bg-white">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setAddForm({ ...addForm, convertToSoles: false })}
+                      className={`px-3.5 py-2 transition-colors ${!addForm.convertToSoles ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >Mantener en $</button>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setAddForm({ ...addForm, convertToSoles: true })}
+                      className={`px-3.5 py-2 border-l border-emerald-200 transition-colors ${addForm.convertToSoles ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >Convertir a S/</button>
+                  </div>
+                  {addForm.convertToSoles && (
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold uppercase tracking-wider text-emerald-700 mb-1">Tipo de cambio</label>
+                        <div className="relative w-28">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">S/</span>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={addForm.exchangeRate || ''}
+                            onChange={(e) => setAddForm({ ...addForm, exchangeRate: parseFloat(e.target.value) || 0 })}
+                            className="w-full pl-9 pr-2 py-2 border border-emerald-200 rounded-lg text-sm font-semibold tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                          />
+                        </div>
+                      </div>
+                      {addForm.amount > 0 && addForm.exchangeRate > 0 && (
+                        <div className="mt-4">
+                          <div className="text-[11px] text-emerald-600 font-semibold uppercase tracking-wider mb-0.5">Total en soles</div>
+                          <div className="text-lg font-bold text-emerald-700 tabular-nums">
+                            S/ {(addForm.amount * addForm.exchangeRate).toFixed(2)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
           <div>
@@ -810,7 +910,9 @@ export function CashRegisterPage() {
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Monto <span className="text-red-500 normal-case">*</span></label>
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">S/</span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">
+                  {addForm.type === 'EXPENSE' && addForm.expenseCurrency === 'USD' ? '$' : 'S/'}
+                </span>
                 <input type="number" min="0.01" step="0.01" value={addForm.amount || ''} onChange={(e) => setAddForm({ ...addForm, amount: parseFloat(e.target.value) || 0 })} className="w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500" required />
               </div>
             </div>
@@ -988,8 +1090,14 @@ export function CashRegisterPage() {
                 {totalIncomeUsd > 0 && (
                   <div className="flex justify-between text-emerald-600"><span>+ Ingresos (USD)</span><span className="font-semibold tabular-nums">$ {totalIncomeUsd.toFixed(2)}</span></div>
                 )}
-                <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">S/ {totalExpense.toFixed(2)}</span></div>
-                <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-200 mt-2"><span>Balance cierre (S/)</span><span className="tabular-nums">S/ {netBalance.toFixed(2)}</span></div>
+                <div className="flex justify-between text-rose-600"><span>− Egresos (S/)</span><span className="font-semibold tabular-nums">S/ {totalExpensePen.toFixed(2)}</span></div>
+                {totalExpenseUsd > 0 && (
+                  <div className="flex justify-between text-rose-500"><span>− Egresos (USD)</span><span className="font-semibold tabular-nums">$ {totalExpenseUsd.toFixed(2)}</span></div>
+                )}
+                <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-200 mt-2"><span>Balance cierre (S/)</span><span className="tabular-nums">S/ {netBalancePen.toFixed(2)}</span></div>
+                {netBalanceUsd !== 0 && (
+                  <div className="flex justify-between text-sm font-bold text-emerald-700"><span>Balance cierre (USD)</span><span className="tabular-nums">$ {netBalanceUsd.toFixed(2)}</span></div>
+                )}
               </div>
 
               {methods.length > 0 && (
@@ -1067,9 +1175,6 @@ export function CashRegisterPage() {
                       {sale.isCredit ? 'Total de la venta' : 'Total cobrado'}{isUsdSaleDetail ? ' (USD)' : ''}
                     </span>
                     <div className={`text-3xl font-bold mt-1 ${sale.isCancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{detailSym} {sale.total.toFixed(2)}</div>
-                    {isUsdSaleDetail && sale.exchangeRate && (
-                      <div className="text-xs text-emerald-600 mt-0.5">TC {sale.exchangeRate.toFixed(2)} · Equiv. S/ {(sale.total * sale.exchangeRate).toFixed(2)}</div>
-                    )}
                   </div>
                   <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${sale.isCancelled ? 'bg-red-100 text-red-700' : sale.isCredit ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
                     {sale.isCancelled ? 'Anulada' : sale.isCredit ? 'A crédito' : 'Completada'}
@@ -1366,13 +1471,14 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
       <td className={`px-4 py-3.5 text-right font-semibold tabular-nums ${entry.type === 'INCOME' ? 'text-primary-700' : 'text-rose-600'}`}>
         {(() => {
           const isUsdSale = isSale && sale?.currency === 'USD';
-          const saleSym = isUsdSale ? '$' : 'S/';
+          const isUsdExpense = entry.type === 'EXPENSE' && entry.currency === 'USD';
+          const saleSym = (isUsdSale || isUsdExpense) ? '$' : 'S/';
           const isCreditSale = isSale && !!sale?.isCredit;
           if (isCreditSale) {
             return (
               <div className="flex flex-col items-end leading-tight">
                 <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
-                  C: {saleSym} {sale!.total.toFixed(2)}
+                  C: {saleSym} {(isUsdSale && sale!.totalUsd != null ? sale!.totalUsd : sale!.total).toFixed(2)}
                 </span>
                 <span className="text-primary-700">
                   P: + {saleSym} {entry.amount.toFixed(2)}
@@ -1399,10 +1505,12 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
               </div>
             );
           }
+          const dispAmt = isUsdSale && sale?.totalUsd != null ? sale.totalUsd : entry.amount;
+          const isUsdEntry = isUsdSale || isUsdExpense;
           return (
-            <span className={isUsdSale ? 'text-emerald-600' : ''}>
-              {entry.type === 'INCOME' ? '+' : '−'} {saleSym} {entry.amount.toFixed(2)}
-              {isUsdSale && <span className="ml-1 text-[10px] font-bold">USD</span>}
+            <span className={isUsdEntry ? 'text-emerald-600' : ''}>
+              {entry.type === 'INCOME' ? '+' : '−'} {saleSym} {dispAmt.toFixed(2)}
+              {isUsdEntry && <span className="ml-1 text-[10px] font-bold">USD</span>}
             </span>
           );
         })()}

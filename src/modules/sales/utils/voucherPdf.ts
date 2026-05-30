@@ -39,7 +39,7 @@ function loadLogoDataUrl(): Promise<string | null> {
   return logoPromise;
 }
 
-export type VoucherFormat = 'TICKET' | 'A4';
+export type VoucherFormat = 'TICKET' | 'A4' | 'A5';
 
 export function shortVoucherNumber(id: string): string {
   return `NV-${(id || '').slice(-8).toUpperCase().padStart(8, '0')}`;
@@ -530,11 +530,17 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
   };
 }
 
+function buildA5DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
+  const def = buildA4DocDef(sale, logoDataUrl);
+  def.pageSize = 'A5';
+  def.pageMargins = [20, 20, 20, 20];
+  return def;
+}
+
 async function buildPdf(sale: VoucherSnapshot, format: VoucherFormat) {
   const [pdfMake, logoDataUrl] = await Promise.all([loadPdfMake(), loadLogoDataUrl()]);
-  if (format === 'A4') {
-    return pdfMake.createPdf(buildA4DocDef(sale, logoDataUrl));
-  }
+  if (format === 'A4') return pdfMake.createPdf(buildA4DocDef(sale, logoDataUrl));
+  if (format === 'A5') return pdfMake.createPdf(buildA5DocDef(sale, logoDataUrl));
   return pdfMake.createPdf(buildTicketDocDef(sale, logoDataUrl));
 }
 

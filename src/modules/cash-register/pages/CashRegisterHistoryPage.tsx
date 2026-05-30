@@ -64,13 +64,27 @@ function formatPrettyDate(date?: string) {
   } catch { return date; }
 }
 
+function sanitizeEntryDesc(desc: string): string {
+  return desc.replace(/\s*·\s*TC\s+[\d.]+/g, '');
+}
+
 function methodFromDescription(desc: string) {
-  const m = desc.match(/\[(.+?)\]$/);
+  const m = sanitizeEntryDesc(desc).match(/\[([^\]]+)\]$/);
   return m ? m[1] : null;
 }
 
 function stripMethod(desc: string) {
-  return desc.replace(/\s*\[.*?\]\s*$/, '');
+  return sanitizeEntryDesc(desc).replace(/\s*\[.*?\]\s*$/, '');
+}
+
+function legacyUsdAmount(desc: string): number | null {
+  const m = desc.match(/\[USD\s+\$\s*([\d.]+)/);
+  return m ? parseFloat(m[1]) : null;
+}
+
+function getEntryUsdAmount(e: { currency?: string; amountUsd?: number; description: string }): number | null {
+  if (e.currency === 'USD' && e.amountUsd != null) return e.amountUsd;
+  return legacyUsdAmount(e.description);
 }
 
 export function CashRegisterHistoryPage() {
@@ -84,6 +98,9 @@ export function CashRegisterHistoryPage() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeTarget, setCloseTarget] = useState<CashRegister | null>(null);
   const [closeNotes, setCloseNotes] = useState('');
+  const [methodFilter, setMethodFilter] = useState<string | null>(null);
+  const [vendorFilter, setVendorFilter] = useState<string | null>(null);
+  const [currencyFilter, setCurrencyFilter] = useState<'PEN' | 'USD' | null>(null);
 
   const { data, isLoading } = useCashRegisters({ page, limit: 20, startDate: startDate || undefined, endDate: endDate || undefined });
   const { data: detail } = useCashRegisterById(selectedId);
@@ -105,18 +122,59 @@ export function CashRegisterHistoryPage() {
   const total = data?.total || 0;
   const today = getTodayDateString();
 
+  const { uniqueMethods, uniqueVendors, hasUsdEntries } = useMemo(() => {
+    const methods = new Set<string>();
+    const vendors = new Set<string>();
+    let usd = false;
+    registers.forEach((r) => {
+      r.entries.filter((e) => !e.isDeleted).forEach((e) => {
+        const m = methodFromDescription(e.description);
+        if (m) methods.add(m);
+        if (e.createdBy) vendors.add(e.createdBy);
+        if (getEntryUsdAmount(e) != null) usd = true;
+      });
+    });
+    return { uniqueMethods: Array.from(methods).sort(), uniqueVendors: Array.from(vendors), hasUsdEntries: usd };
+  }, [registers]);
+
+  const passesFilter = (e: CashRegisterEntry): boolean => {
+    if (methodFilter && methodFromDescription(e.description) !== methodFilter) return false;
+    if (vendorFilter && e.createdBy !== vendorFilter) return false;
+    if (currencyFilter === 'USD' && getEntryUsdAmount(e) == null) return false;
+    if (currencyFilter === 'PEN' && getEntryUsdAmount(e) != null) return false;
+    return true;
+  };
+
   const summary = useMemo(() => {
     let income = 0;
     let expense = 0;
+    let incomeUsd = 0;
     let opens = 0;
+    const methodMap = new Map<string, number>();
     registers.forEach((r) => {
       const active = r.entries.filter((e) => !e.isDeleted);
-      income += active.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
-      expense += active.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
+      active.filter((e) => e.type === 'INCOME').forEach((e) => {
+        if (methodFilter && methodFromDescription(e.description) !== methodFilter) return;
+        if (vendorFilter && e.createdBy !== vendorFilter) return;
+        const usd = getEntryUsdAmount(e);
+        if (usd != null) {
+          incomeUsd += usd;
+        } else {
+          income += e.amount;
+          const m = methodFromDescription(e.description);
+          if (m) methodMap.set(m, (methodMap.get(m) || 0) + e.amount);
+        }
+      });
+      active.filter((e) => e.type === 'EXPENSE').forEach((e) => {
+        if (methodFilter && methodFromDescription(e.description) !== methodFilter) return;
+        if (vendorFilter && e.createdBy !== vendorFilter) return;
+        expense += e.amount;
+      });
       if (r.status === 'OPEN') opens += 1;
     });
-    return { income, expense, opens, count: registers.length };
-  }, [registers]);
+    const methodTotals = Array.from(methodMap.entries()).sort((a, b) => b[1] - a[1]);
+    return { income, expense, incomeUsd, opens, count: registers.length, methodTotals };
+  }, [registers, methodFilter, vendorFilter, currencyFilter]);
 
   const openDetail = (reg: CashRegister) => { setSelectedId(reg.id); setShowDetail(true); };
   const openClose = (reg: CashRegister) => { setCloseTarget(reg); setCloseNotes(''); setShowCloseModal(true); };
@@ -127,8 +185,28 @@ export function CashRegisterHistoryPage() {
   };
   const goToSale = (saleId: string) => navigate(`/sales?openSaleId=${saleId}`);
 
-  const detailEntries: CashRegisterEntry[] = (detail?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted);
+  const detailEntries: CashRegisterEntry[] = (detail?.entries || []).filter((e: CashRegisterEntry) => {
+    if (e.isDeleted) return false;
+    if (methodFilter && methodFromDescription(e.description) !== methodFilter) return false;
+    if (vendorFilter && e.createdBy !== vendorFilter) return false;
+    return true;
+  });
   const detailGroups = useMemo(() => groupEntries(detailEntries), [detailEntries]);
+
+  const detailMethodTotals = useMemo(() => {
+    const allActive = (detail?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted && e.type === 'INCOME');
+    const map = new Map<string, { pen: number; usd: number }>();
+    allActive.forEach((e: CashRegisterEntry) => {
+      const m = methodFromDescription(e.description) || 'Sin método';
+      const usd = getEntryUsdAmount(e);
+      const prev = map.get(m) || { pen: 0, usd: 0 };
+      if (usd != null) map.set(m, { ...prev, usd: prev.usd + usd });
+      else map.set(m, { ...prev, pen: prev.pen + e.amount });
+    });
+    return Array.from(map.entries())
+      .filter(([, v]) => v.pen > 0 || v.usd > 0)
+      .sort((a, b) => (b[1].pen + b[1].usd) - (a[1].pen + a[1].usd));
+  }, [detail]);
   const [expandedDetailGroups, setExpandedDetailGroups] = useState<Set<string>>(new Set());
   const toggleDetailGroup = (id: string) => setExpandedDetailGroups((prev) => {
     const next = new Set(prev);
@@ -137,10 +215,16 @@ export function CashRegisterHistoryPage() {
   });
 
   const renderDetailEntry = (e: CashRegisterEntry, nested: boolean, key: React.Key) => {
-    const description = stripMethod(e.description);
     const method = methodFromDescription(e.description);
     const vendor = e.createdBy ? (userById[e.createdBy] || 'Usuario') : '';
     const isSale = e.referenceType === 'Sale' && !!e.referenceId;
+    const descStripped = isSale ? stripMethod(e.description) : null;
+    const clientFromDesc = descStripped && /^Venta\s+a\s+/i.test(descStripped)
+      ? descStripped.replace(/^Venta\s+a\s+/i, '').trim()
+      : null;
+    const clientName = e.clientName || clientFromDesc;
+    const displayClient = clientName && !/^sin\s*cliente$/i.test(clientName) ? clientName : null;
+    const isUsdEntry = getEntryUsdAmount(e) != null;
     return (
       <tr key={key} className={`${e.isDeleted ? 'opacity-50' : ''} ${nested ? 'bg-gray-50/50' : ''}`}>
         <td className={`px-3 py-2.5 ${nested ? 'pl-9' : ''}`}>
@@ -156,8 +240,14 @@ export function CashRegisterHistoryPage() {
         </td>
         <td className="px-3 py-2.5 text-xs text-gray-600">{categoryLabels[e.category] || e.category}</td>
         <td className="px-3 py-2.5 text-xs text-gray-800">
-          <span className={e.isDeleted ? 'line-through text-gray-400' : ''}>{description}</span>
-          {method && <span className="ml-2 text-[10px] text-blue-700 font-medium">[{method}]</span>}
+          {displayClient
+            ? <span className={e.isDeleted ? 'line-through text-gray-400' : 'font-medium'}>{displayClient}</span>
+            : <span className="text-gray-400 italic">Sin cliente</span>}
+        </td>
+        <td className="px-3 py-2.5">
+          {method
+            ? <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">{method}</span>
+            : <span className="text-gray-300 text-xs">—</span>}
         </td>
         <td className="px-3 py-2.5">
           {vendor ? (
@@ -172,8 +262,14 @@ export function CashRegisterHistoryPage() {
             : e.voucherType === 'FACTURA' ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100"><FileText size={10} /> Factura</span>
             : <span className="text-gray-300 text-xs">—</span>}
         </td>
-        <td className={`px-3 py-2.5 text-right text-xs font-semibold tabular-nums ${e.type === 'INCOME' ? 'text-primary-700' : 'text-rose-600'}`}>
-          {e.type === 'INCOME' ? '+' : '−'} S/ {e.amount.toFixed(2)}
+        <td className={`px-3 py-2.5 text-right text-xs font-semibold tabular-nums ${e.type === 'INCOME' ? (isUsdEntry ? 'text-emerald-600' : 'text-primary-700') : 'text-rose-600'}`}>
+          {(() => {
+            const usdAmt = getEntryUsdAmount(e);
+            const isUsd = usdAmt != null;
+            return isUsd
+              ? <>{e.type === 'INCOME' ? '+' : '−'} $ {usdAmt!.toFixed(2)} <span className="text-[10px] font-bold">USD</span></>
+              : <>{e.type === 'INCOME' ? '+' : '−'} S/ {e.amount.toFixed(2)}</>;
+          })()}
         </td>
         <td className="px-3 py-2.5 text-center">
           {isSale && !nested && (
@@ -211,39 +307,108 @@ export function CashRegisterHistoryPage() {
       </div>
 
       {/* Filter card */}
-      <div className="bg-white rounded-2xl shadow-card p-5 flex flex-col sm:flex-row sm:items-end gap-4">
-        <div className="flex-1 grid grid-cols-2 gap-3 max-w-md">
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Desde</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+      <div className="bg-white rounded-2xl shadow-card p-5 flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+          <div className="flex-1 grid grid-cols-2 gap-3 max-w-md">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Desde</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Hasta</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Hasta</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+          <div className="flex flex-wrap gap-3 sm:items-end">
+            {hasUsdEntries && (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Moneda</label>
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium">
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setCurrencyFilter(currencyFilter === 'PEN' ? null : 'PEN')}
+                    className={`px-3 py-2 transition-colors ${currencyFilter === 'PEN' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >S/</button>
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setCurrencyFilter(currencyFilter === 'USD' ? null : 'USD')}
+                    className={`px-3 py-2 border-l border-gray-200 transition-colors ${currencyFilter === 'USD' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >$</button>
+                </div>
+              </div>
+            )}
+            {uniqueMethods.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Método de Pago</label>
+                <select
+                  value={methodFilter || ''}
+                  onChange={(e) => setMethodFilter(e.target.value || null)}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                >
+                  <option value="">Todos</option>
+                  {uniqueMethods.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            )}
+            {uniqueVendors.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Vendedor</label>
+                <select
+                  value={vendorFilter || ''}
+                  onChange={(e) => setVendorFilter(e.target.value || null)}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                >
+                  <option value="">Todos</option>
+                  {uniqueVendors.map((id) => <option key={id} value={id}>{userById[id] || id}</option>)}
+                </select>
+              </div>
+            )}
+            {(methodFilter || vendorFilter || currencyFilter) && (
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { setMethodFilter(null); setVendorFilter(null); setCurrencyFilter(null); }}
+                className="text-sm text-rose-500 hover:underline font-medium self-end pb-2"
+              >Limpiar filtros</button>
+            )}
           </div>
+          {(startDate !== monthRange.start || endDate !== monthRange.end) && (
+            <button
+              onClick={() => { setStartDate(monthRange.start); setEndDate(monthRange.end); setPage(1); }}
+              className="text-sm text-primary-600 hover:underline font-medium"
+            >Mes actual</button>
+          )}
         </div>
-        {(startDate !== monthRange.start || endDate !== monthRange.end) && (
-          <button
-            onClick={() => { setStartDate(monthRange.start); setEndDate(monthRange.end); setPage(1); }}
-            className="text-sm text-primary-600 hover:underline font-medium"
-          >Mes actual</button>
+        {(summary.methodTotals.length > 0 || summary.incomeUsd > 0) && (
+          <div className="flex flex-wrap gap-2 items-center pt-3 border-t border-gray-100">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mr-1">Ingresos del período</span>
+            {summary.methodTotals.map(([method, amount]) => (
+              <span key={method} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-100">
+                {method}: S/ {amount.toFixed(2)}
+              </span>
+            ))}
+            {summary.incomeUsd > 0 && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-100">
+                $ {summary.incomeUsd.toFixed(2)} USD
+              </span>
+            )}
+          </div>
         )}
       </div>
 
       {/* Period summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiTile icon={Calendar} label="Cajas" value={`${summary.count}`} accent="bg-gray-100 text-gray-700" />
-        <KpiTile icon={ArrowUpCircle} label="Ingresos" value={`S/ ${summary.income.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" />
+        <KpiTile icon={ArrowUpCircle} label="Ingresos" value={`S/ ${summary.income.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" subValue={summary.incomeUsd > 0 ? `+ $ ${summary.incomeUsd.toFixed(2)} USD` : undefined} />
         <KpiTile icon={ArrowDownCircle} label="Egresos" value={`S/ ${summary.expense.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" />
         <KpiTile icon={Lock} label="Abiertas" value={`${summary.opens}`} accent="bg-amber-100 text-amber-700" valueAccent="text-amber-700" />
       </div>
@@ -282,8 +447,10 @@ export function CashRegisterHistoryPage() {
               <tbody className="divide-y divide-gray-100">
                 {registers.map((reg) => {
                   const active = reg.entries.filter((e) => !e.isDeleted);
-                  const income = active.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
-                  const expense = active.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
+                  const filtered = active.filter(passesFilter);
+                  const income = filtered.filter((e) => e.type === 'INCOME' && getEntryUsdAmount(e) == null).reduce((s, e) => s + e.amount, 0);
+                  const incomeUsdRow = filtered.filter((e) => e.type === 'INCOME').reduce((s, e) => s + (getEntryUsdAmount(e) ?? 0), 0);
+                  const expense = filtered.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
                   return (
                     <tr key={reg.id} className="hover:bg-gray-50/60 transition-colors">
                       <td className="px-4 sm:px-6 py-3.5 whitespace-nowrap">
@@ -298,7 +465,10 @@ export function CashRegisterHistoryPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3.5 text-right tabular-nums text-gray-700">S/ {reg.openingBalance.toFixed(2)}</td>
-                      <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-primary-700">+ S/ {income.toFixed(2)}</td>
+                      <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-primary-700">
+                        <div>+ S/ {income.toFixed(2)}</div>
+                        {incomeUsdRow > 0 && <div className="text-emerald-600 text-[11px]">+ $ {incomeUsdRow.toFixed(2)}</div>}
+                      </td>
                       <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-rose-600">− S/ {expense.toFixed(2)}</td>
                       <td className="px-4 py-3.5 text-right tabular-nums font-bold text-gray-800">
                         {reg.closingBalance != null ? `S/ ${reg.closingBalance.toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
@@ -351,7 +521,16 @@ export function CashRegisterHistoryPage() {
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Ingresos</div>
-              <div className="font-bold tabular-nums text-primary-700 mt-1">+ S/ {detailEntries.filter(e => !e.isDeleted && e.type === 'INCOME').reduce((s, e) => s + e.amount, 0).toFixed(2)}</div>
+              {(() => {
+                const penIncome = detailEntries.filter(e => !e.isDeleted && e.type === 'INCOME' && getEntryUsdAmount(e) == null).reduce((s, e) => s + e.amount, 0);
+                const usdIncome = detailEntries.filter(e => !e.isDeleted && e.type === 'INCOME').reduce((s, e) => s + (getEntryUsdAmount(e) ?? 0), 0);
+                return (
+                  <>
+                    <div className="font-bold tabular-nums text-primary-700 mt-1">+ S/ {penIncome.toFixed(2)}</div>
+                    {usdIncome > 0 && <div className="font-bold tabular-nums text-emerald-600 text-xs mt-0.5">+ $ {usdIncome.toFixed(2)}</div>}
+                  </>
+                );
+              })()}
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Egresos</div>
@@ -363,6 +542,25 @@ export function CashRegisterHistoryPage() {
             </div>
           </div>
 
+          {detailMethodTotals.length > 0 && (
+            <div className="border border-gray-100 rounded-xl overflow-hidden">
+              <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Ingresos por método de pago</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {detailMethodTotals.map(([method, totals]) => (
+                  <div key={method} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">{method}</span>
+                    <div className="flex items-center gap-3 tabular-nums font-semibold">
+                      {totals.pen > 0 && <span className="text-primary-700">+ S/ {totals.pen.toFixed(2)}</span>}
+                      {totals.usd > 0 && <span className="text-emerald-600">+ $ {totals.usd.toFixed(2)}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="border border-gray-100 rounded-xl overflow-hidden max-h-96 overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-gray-50/95 backdrop-blur">
@@ -370,7 +568,8 @@ export function CashRegisterHistoryPage() {
                   <th className="px-3 py-2 text-left">Hora</th>
                   <th className="px-3 py-2 text-left">Tipo</th>
                   <th className="px-3 py-2 text-left">Categoría</th>
-                  <th className="px-3 py-2 text-left">Descripción</th>
+                  <th className="px-3 py-2 text-left">Cliente</th>
+                  <th className="px-3 py-2 text-left">Método de Pago</th>
                   <th className="px-3 py-2 text-left">Vendedor</th>
                   <th className="px-3 py-2 text-center">Comprobante</th>
                   <th className="px-3 py-2 text-right">Monto</th>
@@ -379,7 +578,7 @@ export function CashRegisterHistoryPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {detailGroups.length === 0 && (
-                  <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400 text-xs">Sin movimientos</td></tr>
+                  <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-400 text-xs">Sin movimientos</td></tr>
                 )}
                 {detailGroups.map((g, gi) => {
                   if (!g.groupId || g.entries.length === 1) {
@@ -414,6 +613,7 @@ export function CashRegisterHistoryPage() {
                           </span>
                           <span className="font-medium">{baseDesc}</span>
                         </td>
+                        <td className="px-3 py-2.5 text-center"><span className="text-gray-300 text-xs">—</span></td>
                         <td className="px-3 py-2.5">
                           {vendor ? (
                             <div className="inline-flex items-center gap-1.5">
@@ -466,7 +666,7 @@ export function CashRegisterHistoryPage() {
   );
 }
 
-function KpiTile({ icon: Icon, label, value, accent, valueAccent }: { icon: any; label: string; value: string; accent: string; valueAccent?: string }) {
+function KpiTile({ icon: Icon, label, value, accent, valueAccent, subValue }: { icon: any; label: string; value: string; accent: string; valueAccent?: string; subValue?: string }) {
   return (
     <div className="bg-white rounded-xl shadow-card p-5 hover:shadow-card-hover transition-shadow">
       <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
@@ -474,6 +674,7 @@ function KpiTile({ icon: Icon, label, value, accent, valueAccent }: { icon: any;
         {label}
       </div>
       <div className={`text-2xl font-bold tabular-nums ${valueAccent || 'text-gray-800'}`}>{value}</div>
+      {subValue && <div className="text-sm font-semibold tabular-nums text-emerald-600 mt-0.5">{subValue}</div>}
     </div>
   );
 }
