@@ -99,6 +99,8 @@ export function AccountsPayablePage() {
   const [activeTab, setActiveTab] = useState<'calendar' | 'agreements'>('calendar');
   const [supplierSearch, setSupplierSearch] = useState('');
   const [currencyFilter, setCurrencyFilter] = useState<'ALL' | 'PEN' | 'USD'>('ALL');
+  const [apPage, setApPage] = useState(1);
+  const AP_PAGE_SIZE = 5;
 
   // ── Calendar state ──
   const [selectedDate, setSelectedDate] = useState<string | null>(() => searchParams.get('date'));
@@ -203,6 +205,12 @@ export function AccountsPayablePage() {
         return a.earliestDate.localeCompare(b.earliestDate);
       });
   }, [allPending]);
+
+  // Reset page when filters change
+  useEffect(() => { setApPage(1); }, [normalizedSearch, currencyFilter]);
+
+  const apTotalPages = Math.ceil(pendingBySupplier.length / AP_PAGE_SIZE);
+  const pagedSuppliers = pendingBySupplier.slice((apPage - 1) * AP_PAGE_SIZE, apPage * AP_PAGE_SIZE);
 
   // Suppliers with active (non-CONSOLIDATED, non-PAID) APs for the create modal
   const supplierOptions = useMemo(() => {
@@ -620,8 +628,8 @@ export function AccountsPayablePage() {
                   </div>
                   <div className="text-[11px] text-gray-400 mt-1">Vencidos primero</div>
                 </div>
-                <div className="divide-y divide-gray-100 max-h-[640px] overflow-y-auto">
-                  {pendingBySupplier.map(({ supplier, items, hasOverdue, total }) => (
+                <div className="divide-y divide-gray-100">
+                  {pagedSuppliers.map(({ supplier, items, hasOverdue, total }) => (
                     <div key={supplier}>
                       <div className={`flex items-center justify-between px-4 py-2 ${hasOverdue ? 'bg-red-50' : 'bg-gray-50'} border-b border-gray-100`}>
                         <div className="flex items-center gap-2 min-w-0">
@@ -666,6 +674,38 @@ export function AccountsPayablePage() {
                     </div>
                   ))}
                 </div>
+                {apTotalPages > 1 && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50 rounded-b-xl">
+                    <span className="text-xs text-gray-500">
+                      Mostrando {(apPage - 1) * AP_PAGE_SIZE + 1}–{Math.min(apPage * AP_PAGE_SIZE, pendingBySupplier.length)} de {pendingBySupplier.length} proveedores
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setApPage(p => Math.max(1, p - 1))}
+                        disabled={apPage === 1}
+                        className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white hover:text-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <ChevronLeft size={14} />
+                      </button>
+                      {Array.from({ length: apTotalPages }, (_, i) => i + 1).map(n => (
+                        <button
+                          key={n}
+                          onClick={() => setApPage(n)}
+                          className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${apPage === n ? 'bg-primary-600 text-white' : 'border border-gray-200 text-gray-600 hover:bg-white'}`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setApPage(p => Math.min(apTotalPages, p + 1))}
+                        disabled={apPage === apTotalPages}
+                        className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-white hover:text-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
