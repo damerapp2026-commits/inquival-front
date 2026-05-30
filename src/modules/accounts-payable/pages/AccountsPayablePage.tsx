@@ -448,7 +448,7 @@ export function AccountsPayablePage() {
               onClick={() => setCurrencyFilter(c)}
               className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                 currencyFilter === c
-                  ? c === 'USD' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white text-gray-800 shadow-sm'
+                  ? c === 'USD' ? 'bg-emerald-600 text-white shadow-sm' : c === 'PEN' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-800 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
