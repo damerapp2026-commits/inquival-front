@@ -12,9 +12,12 @@ import { clientService } from '../services/clientService';
 import { ExportClientStatementButton } from '../../credits/components/ExportClientStatementButton';
 import { CreditsPage } from '../../credits/pages/CreditsPage';
 import { LocationFields } from '../components/LocationFields';
+import { useAuth } from '../../../app/providers/AuthProvider';
 import toast from 'react-hot-toast';
 
 export function ClientsPage() {
+  const { user } = useAuth();
+  const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') === 'creditos' ? 'creditos' : 'datos';
 
@@ -34,17 +37,18 @@ export function ClientsPage() {
   const rucLookup = useRucLookup();
 
   const [docType, setDocType] = useState<'DNI' | 'RUC'>('DNI');
-  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '' });
+  const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '', creditLimitCurrency: 'PEN' as 'PEN' | 'USD' });
   const [lookupLoading, setLookupLoading] = useState(false);
 
   const openCreate = () => {
     setEditing(null);
     setDocType('DNI');
-    setForm({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '' });
+    setForm({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '', creditLimitCurrency: 'PEN' });
     setShowModal(true);
   };
 
   const openEdit = (client: Client) => {
+    if (isSellerRole) return;
     setEditing(client);
     const dn = client.documentNumber || '';
     setDocType(dn.length === 11 ? 'RUC' : 'DNI');
@@ -59,6 +63,7 @@ export function ClientsPage() {
       district: client.district || client.city || '',
       hamlet: client.hamlet || '',
       creditLimit: typeof client.creditLimit === 'number' ? String(client.creditLimit) : '',
+      creditLimitCurrency: client.creditLimitCurrency || 'PEN',
     });
     setShowModal(true);
   };
@@ -89,6 +94,7 @@ export function ClientsPage() {
           district: localMatch.district || localMatch.city || '',
           hamlet: localMatch.hamlet || '',
           creditLimit: typeof localMatch.creditLimit === 'number' ? String(localMatch.creditLimit) : '',
+          creditLimitCurrency: localMatch.creditLimitCurrency || 'PEN',
         });
         toast.success('Cliente encontrado en el sistema');
         setLookupLoading(false);
@@ -128,6 +134,7 @@ export function ClientsPage() {
       if (Number.isFinite(parsed) && parsed >= 0) cleanForm.creditLimit = parsed;
       else delete cleanForm.creditLimit;
     }
+    cleanForm.creditLimitCurrency = form.creditLimitCurrency;
     if (cleanForm.district) cleanForm.city = cleanForm.district;
     if (editing) await updateClient.mutateAsync({ id: editing.id, data: cleanForm });
     else await createClient.mutateAsync(cleanForm);
@@ -152,8 +159,8 @@ export function ClientsPage() {
       key: 'creditLimit', header: 'Límite crédito',
       render: (item: Client) => typeof item.creditLimit === 'number' && item.creditLimit > 0
         ? (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100 tabular-nums">
-            <CreditCard size={12} /> S/ {item.creditLimit.toFixed(2)}
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border tabular-nums ${item.creditLimitCurrency === 'USD' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+            <CreditCard size={12} /> {item.creditLimitCurrency === 'USD' ? '$' : 'S/'} {item.creditLimit.toFixed(2)}
           </span>
         )
         : <span className="text-gray-300">—</span>,
@@ -191,8 +198,12 @@ export function ClientsPage() {
       render: (item: Client) => (
         <div className="flex items-center gap-1">
           <ExportClientStatementButton client={item} variant="icon" />
-          <button onClick={() => openEdit(item)} className="p-2 rounded-lg text-blue-600 hover:bg-blue-50" title="Editar"><Edit2 size={15} /></button>
-          <button onClick={() => openDelete(item)} className="p-2 rounded-lg text-red-600 hover:bg-red-50" title="Eliminar"><Trash2 size={15} /></button>
+          {!isSellerRole && (
+            <>
+              <button onClick={() => openEdit(item)} className="p-2 rounded-lg text-blue-600 hover:bg-blue-50" title="Editar"><Edit2 size={15} /></button>
+              <button onClick={() => openDelete(item)} className="p-2 rounded-lg text-red-600 hover:bg-red-50" title="Eliminar"><Trash2 size={15} /></button>
+            </>
+          )}
         </div>
       ),
     },
@@ -333,13 +344,26 @@ export function ClientsPage() {
           </div>
 
           <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <CreditCard size={13} className="text-primary-600" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Límite de crédito <span className="text-red-500 normal-case">*</span></span>
-              <span className="text-[11px] text-gray-400 normal-case font-normal">— en S/</span>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-2">
+                <CreditCard size={13} className="text-primary-600" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Límite de crédito <span className="text-red-500 normal-case">*</span></span>
+              </div>
+              <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+                <button type="button" onClick={() => setForm(prev => ({ ...prev, creditLimitCurrency: 'PEN' }))}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${form.creditLimitCurrency === 'PEN' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  S/ Soles
+                </button>
+                <button type="button" onClick={() => setForm(prev => ({ ...prev, creditLimitCurrency: 'USD' }))}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${form.creditLimitCurrency === 'USD' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  $ Dólares
+                </button>
+              </div>
             </div>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">S/</span>
+              <span className={`absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold ${form.creditLimitCurrency === 'USD' ? 'text-emerald-600' : 'text-blue-600'}`}>
+                {form.creditLimitCurrency === 'USD' ? '$' : 'S/'}
+              </span>
               <input
                 type="number"
                 min="0"

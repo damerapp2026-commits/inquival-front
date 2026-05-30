@@ -9,7 +9,7 @@ export interface ProductCommission { workerId: string; type: 'PERCENT' | 'AMOUNT
 export interface Company { id: string; name: string; ruc?: string; address?: string; phone?: string; isActive: boolean; }
 export interface PriceTier { id: string; name: string; description?: string; priority: number; isActive: boolean; }
 export interface Stock { id: string; productId: string; companyId: string; quantity: number; lastUpdated: string; productName?: string; productIsActive?: boolean; productMissing?: boolean; }
-export interface Client { id: string; name: string; documentNumber?: string; phone?: string; email?: string; address?: string; department?: string; province?: string; district?: string; city?: string; hamlet?: string; creditLimit?: number; isActive: boolean; }
+export interface Client { id: string; name: string; documentNumber?: string; phone?: string; email?: string; address?: string; department?: string; province?: string; district?: string; city?: string; hamlet?: string; creditLimit?: number; creditLimitCurrency?: 'PEN' | 'USD'; isActive: boolean; }
 
 export interface PaymentMethod { id: string; name: string; isActive: boolean; }
 export interface SalePayment { paymentMethodId: string; paymentMethodName: string; amount: number; }
