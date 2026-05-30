@@ -127,8 +127,6 @@ export function DashboardPage() {
   const [exchangeDays, setExchangeDays] = useState(7);
   const [profitRange, setProfitRange] = useState(last30Days);
 
-  const [profitRange, setProfitRange] = useState(last30Days);
-
   const { data: summary } = useDashboardSummary(period);
   const { data: creditsSummary } = useCreditsSummary();
   const { data: salesChart } = useSalesChart(salesRange.start, salesRange.end);

@@ -20,7 +20,7 @@ export function ClientHistoryPanel({ clientId }: { clientId: string }) {
   const [page, setPage] = useState(1);
 
   const allSales: Sale[] = useMemo(
-    () => (data?.data || []).slice().sort((a, b) => b.date.localeCompare(a.date)),
+    () => (data?.data || []).slice().sort((a: Sale, b: Sale) => b.date.localeCompare(a.date)),
     [data],
   );
 
