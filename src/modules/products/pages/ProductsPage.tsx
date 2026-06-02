@@ -505,13 +505,13 @@ export function ProductsPage() {
 
   const columns = [
     { key: 'name', header: 'Nombre' },
+    { key: 'unit', header: 'Unidad' },
     { key: 'categoryId', header: 'Categoría', render: (item: Product) => { const cat = cats.find((c: any) => c.id === item.categoryId); return cat?.name || item.categoryId; } },
     { key: 'laboratoryId', header: 'Laboratorio', render: (item: Product) => {
       const lab = item.laboratoryId ? labsById.get(item.laboratoryId) : null;
       return lab ? <span className="text-xs bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-medium">{lab.name}</span> : <span className="text-gray-300">—</span>;
     }},
     { key: 'activeIngredient', header: 'Ingrediente Activo', render: (item: Product) => item.activeIngredient ? <span className="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">{item.activeIngredient}</span> : <span className="text-gray-300">—</span> },
-    { key: 'unit', header: 'Unidad' },
     { key: 'taxType', header: 'IGV', render: (item: Product) => {
       const t = TAX_TYPES.find(tx => tx.value === (item.taxType || 'GRAVADO'));
       const colors = item.taxType === 'EXONERADO' ? 'bg-yellow-100 text-yellow-800' : item.taxType === 'INAFECTO' ? 'bg-gray-100 text-gray-800' : 'bg-blue-100 text-blue-800';
