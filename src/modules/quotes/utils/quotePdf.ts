@@ -156,7 +156,6 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
     const p = getProduct(it.productId);
     return [
       { text: idx + 1, alignment: 'center', fontSize: 8 },
-      { text: (p?.id || '').slice(-10).toUpperCase() || '—', alignment: 'center', fontSize: 8 },
       { text: p?.name || '—', alignment: 'left', fontSize: 8 },
       { text: it.quantity.toFixed(2), alignment: 'center', fontSize: 8 },
       { text: (p?.unit || 'UND').toUpperCase().slice(0, 4), alignment: 'center', fontSize: 8 },
@@ -167,7 +166,7 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
 
   while (itemsRows.length < 8) {
     itemsRows.push([
-      { text: ' ', alignment: 'center', fontSize: 8 }, { text: ' ', alignment: 'center', fontSize: 8 }, { text: ' ', alignment: 'left', fontSize: 8 },
+      { text: ' ', alignment: 'center', fontSize: 8 }, { text: ' ', alignment: 'left', fontSize: 8 },
       { text: ' ', alignment: 'center', fontSize: 8 }, { text: ' ', alignment: 'center', fontSize: 8 }, { text: ' ', alignment: 'right', fontSize: 8 }, { text: ' ', alignment: 'right', fontSize: 8 },
     ]);
   }
@@ -262,11 +261,10 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
       {
         table: {
           headerRows: 1,
-          widths: [25, 60, '*', 35, 30, 45, 50],
+          widths: [25, '*', 35, 30, 45, 50],
           body: [
             [
               { text: 'ÍTEM', style: 'thead' },
-              { text: 'CÓDIGO', style: 'thead' },
               { text: 'DESCRIPCIÓN', style: 'thead' },
               { text: 'CANT.', style: 'thead' },
               { text: 'U.M.', style: 'thead' },
