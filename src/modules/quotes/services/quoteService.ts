@@ -8,4 +8,5 @@ export const quoteService = {
     api.patch(`/quotes/${id}/status`, { status }).then((r) => r.data.data),
   convert: ({ id, payload }: { id: string; payload: any }) =>
     api.post(`/quotes/${id}/convert`, payload).then((r) => r.data.data),
+  delete: (id: string) => api.delete(`/quotes/${id}`),
 };

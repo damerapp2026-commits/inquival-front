@@ -28,6 +28,15 @@ export function useUpdateQuoteStatus() {
   });
 }
 
+export function useDeleteQuote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: quoteService.delete,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['quotes'] }); toast.success('Cotización eliminada'); },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al eliminar'),
+  });
+}
+
 export function useConvertQuote() {
   const qc = useQueryClient();
   return useMutation({

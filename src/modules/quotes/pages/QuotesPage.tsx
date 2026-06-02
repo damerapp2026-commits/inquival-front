@@ -7,10 +7,11 @@ import { useClients } from '../../clients/hooks/useClients';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
-import { ScrollText, Download, Printer, CheckCircle2, XCircle, ShoppingCart, Plus, Search, Calendar, Eye, X } from 'lucide-react';
+import { ScrollText, Download, Printer, CheckCircle2, XCircle, ShoppingCart, Plus, Search, Calendar, Eye, X, Trash2, AlertTriangle } from 'lucide-react';
 import type { Quote, QuoteStatus, Product, Company, Client } from '../../../shared/types';
 import { downloadQuotePdf, printQuotePdf } from '../utils/quotePdf';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
+import { useDeleteQuote } from '../hooks/useQuotes';
 
 const STATUS_LABELS: Record<QuoteStatus, { label: string; short: string; color: string; chip: string }> = {
   PENDING:   { label: 'Borrador',  short: 'borr.',  color: 'bg-yellow-100 text-yellow-800 border-yellow-300', chip: 'text-yellow-700' },
@@ -31,6 +32,7 @@ export function QuotesPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [viewQuote, setViewQuote] = useState<Quote | null>(null);
+  const [deleteQuote, setDeleteQuote] = useState<Quote | null>(null);
   const { user } = useAuth();
   const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
   const sellerScope = isSellerRole ? user?.id : undefined;
@@ -49,6 +51,7 @@ export function QuotesPage() {
   const { data: companiesData } = useCompanies();
   const { data: clientsData } = useClients();
   const updateStatus = useUpdateQuoteStatus();
+  const deleteMutation = useDeleteQuote();
 
   const quotes: Quote[] = data?.data || [];
   const total = data?.total || 0;
@@ -134,6 +137,9 @@ export function QuotesPage() {
         <div className="flex items-center gap-1">
           <button onClick={(e) => { e.stopPropagation(); setViewQuote(q); }} className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Ver detalle">
             <Eye size={15} />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); setDeleteQuote(q); }} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded" title="Eliminar cotización">
+            <Trash2 size={15} />
           </button>
           <button onClick={(e) => { e.stopPropagation(); printQuotePdf(pdfParams(q)); }} className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded" title="Ver / imprimir PDF">
             <Printer size={15} />
@@ -257,6 +263,43 @@ export function QuotesPage() {
 
       <DataTable columns={columns} data={quotes} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+
+      {/* Delete confirmation modal */}
+      {deleteQuote && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setDeleteQuote(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <AlertTriangle size={24} className="text-red-600" />
+              </div>
+              <h3 className="text-base font-bold text-gray-900">¿Eliminar cotización?</h3>
+              <p className="text-sm text-gray-500">
+                Se eliminará permanentemente la cotización{' '}
+                <span className="font-semibold text-gray-700">{deleteQuote.quoteNumber}</span>.
+                Esta acción no se puede deshacer.
+              </p>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setDeleteQuote(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  deleteMutation.mutate(deleteQuote.id, { onSuccess: () => setDeleteQuote(null) });
+                }}
+                disabled={deleteMutation.isPending}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {deleteMutation.isPending ? 'Eliminando...' : 'Sí, eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quote detail modal */}
       {viewQuote && (
