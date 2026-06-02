@@ -616,10 +616,7 @@ export function ProductsPage() {
           <option value="">Todas las categorías</option>
           {cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <select value={laboratoryFilter} onChange={(e) => { setLaboratoryFilter(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg text-sm bg-white">
-          <option value="">Todos los laboratorios</option>
-          {labs.filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
+        <LabCombobox labs={labs} value={laboratoryFilter} onChange={(id) => { setLaboratoryFilter(id); setPage(1); }} placeholder="Todos los laboratorios" emptyLabel="Todos los laboratorios" className="" />
       </div>
       {comps.filter((c: any) => c.isActive).length > 1 && (
         <div className="mb-4">
@@ -703,10 +700,7 @@ export function ProductsPage() {
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1"><FlaskConical size={12} /> Laboratorio</label>
-                <select value={form.laboratoryId} onChange={(e) => setForm({ ...form, laboratoryId: e.target.value })} className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
-                  <option value="">Sin laboratorio</option>
-                  {labs.filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
+                <LabCombobox labs={labs} value={form.laboratoryId} onChange={(id) => setForm({ ...form, laboratoryId: id })} placeholder="Buscar laboratorio…" />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Unidad <span className="text-red-500">*</span></label>
@@ -953,7 +947,7 @@ export function ProductsPage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Categoría *</label><select value={bp.categoryId} onChange={(e) => updateBulkProduct(idx, 'categoryId', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Seleccionar...</option>{cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Laboratorio</label><select value={bp.laboratoryId} onChange={(e) => updateBulkProduct(idx, 'laboratoryId', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">Sin laboratorio</option>{labs.filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Laboratorio</label><LabCombobox labs={labs} value={bp.laboratoryId} onChange={(id) => updateBulkProduct(idx, 'laboratoryId', id)} placeholder="Buscar laboratorio…" /></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label><select value={bp.unit} onChange={(e) => updateBulkProduct(idx, 'unit', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">{allUnits.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo IGV</label><select value={bp.taxType} onChange={(e) => updateBulkProduct(idx, 'taxType', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">{TAX_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
                   </div>
@@ -990,6 +984,97 @@ export function ProductsPage() {
           </button>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+// ===== COMBOBOX DE LABORATORIO =====
+
+interface LabComboboxProps {
+  labs: any[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder?: string;
+  className?: string;
+  allowEmpty?: boolean;
+  emptyLabel?: string;
+}
+
+function LabCombobox({ labs, value, onChange, placeholder = 'Buscar laboratorio…', className = '', allowEmpty = true, emptyLabel = 'Sin laboratorio' }: LabComboboxProps) {
+  const [inputText, setInputText] = React.useState('');
+  const [open, setOpen] = React.useState(false);
+
+  const selectedLab = labs.find((l: any) => l.id === value);
+
+  React.useEffect(() => {
+    setInputText(selectedLab ? selectedLab.name : '');
+  }, [value, selectedLab?.name]);
+
+  const activeLabs = labs.filter((l: any) => l.isActive !== false);
+  const filtered = !value && inputText.length >= 2
+    ? activeLabs.filter((l: any) => l.name.toLowerCase().includes(inputText.toLowerCase())).slice(0, 12)
+    : [];
+
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputText(e.target.value);
+    if (value) onChange('');
+    setOpen(true);
+  };
+
+  const handleSelect = (lab: any) => {
+    onChange(lab.id);
+    setInputText(lab.name);
+    setOpen(false);
+  };
+
+  const handleClear = () => {
+    onChange('');
+    setInputText('');
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <input
+          type="text"
+          value={inputText}
+          onChange={handleInput}
+          onFocus={() => { if (!value) setOpen(true); }}
+          onBlur={() => setTimeout(() => setOpen(false), 160)}
+          placeholder={placeholder}
+          className={`w-full pl-8 ${value ? 'pr-8' : 'pr-3'} py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white ${className}`}
+        />
+        {value && (
+          <button type="button" onMouseDown={(e) => { e.preventDefault(); handleClear(); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          {inputText.length < 2 ? (
+            <div className="px-3 py-2 text-xs text-gray-400 text-center">Escribí al menos 2 letras para buscar</div>
+          ) : filtered.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-gray-400 text-center">Sin resultados para "{inputText}"</div>
+          ) : (
+            <div className="max-h-56 overflow-y-auto">
+              {allowEmpty && (
+                <button type="button" onMouseDown={(e) => { e.preventDefault(); handleClear(); }} className="w-full text-left px-3 py-2 text-sm text-gray-400 italic hover:bg-gray-50 border-b border-gray-100">
+                  {emptyLabel}
+                </button>
+              )}
+              {filtered.map((l: any) => (
+                <button key={l.id} type="button" onMouseDown={(e) => { e.preventDefault(); handleSelect(l); }} className="w-full text-left px-3 py-2 text-sm text-gray-800 hover:bg-primary-50 border-b border-gray-50 last:border-0">
+                  {l.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
