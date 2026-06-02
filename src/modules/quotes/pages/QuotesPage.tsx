@@ -7,7 +7,7 @@ import { useClients } from '../../clients/hooks/useClients';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
-import { ScrollText, Download, Printer, CheckCircle2, XCircle, ShoppingCart, Plus, Search, Calendar, Eye, X, Trash2, AlertTriangle } from 'lucide-react';
+import { ScrollText, Download, Printer, CheckCircle2, XCircle, ShoppingCart, Plus, Search, Calendar, Eye, X, Trash2, AlertTriangle, List, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Quote, QuoteStatus, Product, Company, Client } from '../../../shared/types';
 import { downloadQuotePdf, printQuotePdf } from '../utils/quotePdf';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
@@ -23,6 +23,9 @@ const STATUS_LABELS: Record<QuoteStatus, { label: string; short: string; color: 
 
 const STATUS_ORDER: QuoteStatus[] = ['PENDING', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'CONVERTED'];
 
+const toDateKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 export function QuotesPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
@@ -33,6 +36,7 @@ export function QuotesPage() {
   const [dateTo, setDateTo] = useState('');
   const [viewQuote, setViewQuote] = useState<Quote | null>(null);
   const [deleteQuote, setDeleteQuote] = useState<Quote | null>(null);
+  const [calendarView, setCalendarView] = useState(false);
   const { user } = useAuth();
   const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
   const sellerScope = isSellerRole ? user?.id : undefined;
@@ -66,7 +70,6 @@ export function QuotesPage() {
     return Array.isArray(raw) ? raw : (raw?.data ?? []);
   }, [clientsData]);
 
-  // Stats over the whole history (fetched independently so they don't move with filters)
   const allQuotes: Quote[] = allQuotesData?.data || [];
   const stats = useMemo(() => {
     const counts: Record<QuoteStatus, number> = { PENDING: 0, ACCEPTED: 0, REJECTED: 0, EXPIRED: 0, CONVERTED: 0 };
@@ -190,12 +193,31 @@ export function QuotesPage() {
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">Gestiona tus cotizaciones y propuestas comerciales</p>
         </div>
-        <button
-          onClick={() => navigate('/quotes/new')}
-          className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold bg-primary-600 text-white hover:bg-primary-700 shadow-sm"
-        >
-          <Plus size={16} /> Nueva cotización
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Toggle lista / calendario */}
+          <div className="flex items-center p-1 bg-gray-100 rounded-xl gap-1">
+            <button
+              onClick={() => setCalendarView(false)}
+              title="Vista lista"
+              className={`p-2 rounded-lg transition-all ${!calendarView ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <List size={16} />
+            </button>
+            <button
+              onClick={() => setCalendarView(true)}
+              title="Vista calendario"
+              className={`p-2 rounded-lg transition-all ${calendarView ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <Calendar size={16} />
+            </button>
+          </div>
+          <button
+            onClick={() => navigate('/quotes/new')}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold bg-primary-600 text-white hover:bg-primary-700 shadow-sm"
+          >
+            <Plus size={16} /> Nueva cotización
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -222,47 +244,57 @@ export function QuotesPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4 space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto_auto] gap-3 items-end">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Buscar</label>
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                placeholder="Cliente, RUC/DNI, Nº de cotización"
-                className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
+      {calendarView ? (
+        <CreditCalendar
+          allQuotes={allQuotes}
+          clientById={clientById}
+          onSelectQuote={setViewQuote}
+        />
+      ) : (
+        <>
+          {/* Filters */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto_auto] gap-3 items-end">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Buscar</label>
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={search}
+                    onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                    placeholder="Cliente, RUC/DNI, Nº de cotización"
+                    className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1"><Calendar size={11} /> Desde</label>
+                <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1"><Calendar size={11} /> Hasta</label>
+                <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              </div>
+              {hasActiveFilters && (
+                <button onClick={clearFilters} className="px-3 py-2.5 text-sm text-gray-500 hover:text-gray-800">Limpiar</button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
+              <span className="text-xs text-gray-400 mr-1">Estado:</span>
+              <button onClick={() => { setStatusFilter(''); setPage(1); }} className={`px-3 py-1 rounded-full text-xs font-medium border ${statusFilter === '' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'}`}>Todas</button>
+              {STATUS_ORDER.map((s) => (
+                <button key={s} onClick={() => { setStatusFilter(s); setPage(1); }} className={`px-3 py-1 rounded-full text-xs font-medium border ${statusFilter === s ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'}`}>
+                  {STATUS_LABELS[s].label}
+                </button>
+              ))}
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1"><Calendar size={11} /> Desde</label>
-            <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1"><Calendar size={11} /> Hasta</label>
-            <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-          </div>
-          {hasActiveFilters && (
-            <button onClick={clearFilters} className="px-3 py-2.5 text-sm text-gray-500 hover:text-gray-800">Limpiar</button>
-          )}
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
-          <span className="text-xs text-gray-400 mr-1">Estado:</span>
-          <button onClick={() => { setStatusFilter(''); setPage(1); }} className={`px-3 py-1 rounded-full text-xs font-medium border ${statusFilter === '' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'}`}>Todas</button>
-          {STATUS_ORDER.map((s) => (
-            <button key={s} onClick={() => { setStatusFilter(s); setPage(1); }} className={`px-3 py-1 rounded-full text-xs font-medium border ${statusFilter === s ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'}`}>
-              {STATUS_LABELS[s].label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <DataTable columns={columns} data={quotes} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
-      <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+          <DataTable columns={columns} data={quotes} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
+          <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+        </>
+      )}
 
       {/* Delete confirmation modal */}
       {deleteQuote && (
@@ -316,6 +348,154 @@ export function QuotesPage() {
   );
 }
 
+// ===== CREDIT CALENDAR =====
+
+interface CreditCalendarProps {
+  allQuotes: Quote[];
+  clientById: Record<string, Client>;
+  onSelectQuote: (q: Quote) => void;
+}
+
+function CreditCalendar({ allQuotes, clientById, onSelectQuote }: CreditCalendarProps) {
+  const [month, setMonth] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+
+  const creditQuotes = useMemo(() => {
+    return allQuotes
+      .filter(q => q.paymentMethod === 'CRÉDITO' && q.creditDays)
+      .map(q => {
+        const issueParts = q.issueDate.slice(0, 10).split('-').map(Number);
+        const due = new Date(issueParts[0], issueParts[1] - 1, issueParts[2] + q.creditDays!);
+        return { ...q, dueDate: due, dueDateKey: toDateKey(due) };
+      });
+  }, [allQuotes]);
+
+  const byDate = useMemo(() => {
+    const m: Record<string, typeof creditQuotes[number][]> = {};
+    creditQuotes.forEach(q => {
+      if (!m[q.dueDateKey]) m[q.dueDateKey] = [];
+      m[q.dueDateKey].push(q);
+    });
+    return m;
+  }, [creditQuotes]);
+
+  const year = month.getFullYear();
+  const monthIdx = month.getMonth();
+  const firstDay = new Date(year, monthIdx, 1);
+  const lastDay = new Date(year, monthIdx + 1, 0);
+  const startOffset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+  const endOffset = lastDay.getDay() === 0 ? 0 : 7 - lastDay.getDay();
+  const totalCells = startOffset + lastDay.getDate() + endOffset;
+  const days = Array.from({ length: totalCells }, (_, i) =>
+    new Date(year, monthIdx, i - startOffset + 1)
+  );
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayKey = toDateKey(today);
+
+  const prevMonth = () => setMonth(new Date(year, monthIdx - 1, 1));
+  const nextMonth = () => setMonth(new Date(year, monthIdx + 1, 1));
+
+  const monthName = month.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+      {/* Calendar header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors">
+          <ChevronLeft size={18} />
+        </button>
+        <div className="text-center">
+          <h2 className="text-base font-semibold text-gray-900 capitalize">{monthName}</h2>
+          <p className="text-xs text-amber-600 mt-0.5">
+            {creditQuotes.filter(q => q.dueDate.getMonth() === monthIdx && q.dueDate.getFullYear() === year).length} créditos vencen este mes
+          </p>
+        </div>
+        <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors">
+          <ChevronRight size={18} />
+        </button>
+      </div>
+
+      {/* Day-of-week headers */}
+      <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50">
+        {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => (
+          <div key={d} className="py-2.5 text-center text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{d}</div>
+        ))}
+      </div>
+
+      {/* Day grid */}
+      <div className="grid grid-cols-7 divide-x divide-gray-100">
+        {days.map((day, i) => {
+          const key = toDateKey(day);
+          const dayQuotes = byDate[key] || [];
+          const isCurrentMonth = day.getMonth() === monthIdx;
+          const isToday = key === todayKey;
+          const isPast = day < today && !isToday;
+
+          return (
+            <div
+              key={i}
+              className={`min-h-[90px] p-2 border-b border-gray-100 transition-colors
+                ${isCurrentMonth ? (isPast ? 'bg-gray-50/40' : 'bg-white') : 'bg-gray-50/70'}
+              `}
+            >
+              <div className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-semibold mb-1
+                ${isToday ? 'bg-primary-600 text-white' : isCurrentMonth ? (isPast ? 'text-gray-400' : 'text-gray-700') : 'text-gray-300'}
+              `}>
+                {day.getDate()}
+              </div>
+              <div className="space-y-0.5">
+                {dayQuotes.slice(0, 3).map((q, j) => {
+                  const name = clientById[q.clientId || '']?.name || q.clientName || '—';
+                  const isOverdue = isPast && q.status !== 'CONVERTED' && q.status !== 'REJECTED';
+                  return (
+                    <button
+                      key={j}
+                      onClick={() => onSelectQuote(q)}
+                      title={`${name} — ${q.quoteNumber} (${q.creditDays}d)`}
+                      className={`w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate transition-colors
+                        ${isOverdue
+                          ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                          : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                        }
+                      `}
+                    >
+                      {name}
+                    </button>
+                  );
+                })}
+                {dayQuotes.length > 3 && (
+                  <p className="text-[10px] text-gray-400 px-1">+{dayQuotes.length - 3} más</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-4 px-6 py-3 border-t border-gray-100 bg-gray-50 text-xs text-gray-500">
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-amber-100 border border-amber-300" />
+          <span>Crédito pendiente</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-red-100 border border-red-300" />
+          <span>Plazo vencido</span>
+        </div>
+        <div className="ml-auto italic">Haz clic en un crédito para ver el detalle</div>
+      </div>
+    </div>
+  );
+}
+
+// ===== QUOTE DETAIL MODAL =====
+
 interface QuoteDetailModalProps {
   quote: Quote;
   products: Product[];
@@ -344,6 +524,13 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
   const opGravadas = Math.round((gravadoTotal / 1.18) * 100) / 100;
   const igv = Math.round((gravadoTotal - opGravadas) * 100) / 100;
   const solEquiv = quote.currency === 'USD' && (quote.exchangeRate || 0) > 0 ? Math.round(quote.total * quote.exchangeRate! * 100) / 100 : null;
+
+  const creditDueDate = useMemo(() => {
+    if (!quote.creditDays) return null;
+    const issueParts = quote.issueDate.slice(0, 10).split('-').map(Number);
+    const due = new Date(issueParts[0], issueParts[1] - 1, issueParts[2] + quote.creditDays);
+    return due.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }, [quote.issueDate, quote.creditDays]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -418,6 +605,12 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
                   </p>
                 )}
               </div>
+              {quote.paymentMethod === 'CRÉDITO' && creditDueDate && (
+                <div>
+                  <p className="text-[11px] font-semibold text-amber-500 uppercase tracking-wider">Vence crédito ({quote.creditDays}d)</p>
+                  <p className="text-sm font-semibold text-amber-700 mt-0.5">{creditDueDate}</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -441,7 +634,7 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
                       <tr key={i} className="hover:bg-gray-50">
                         <td className="px-3 py-2.5 text-gray-800 font-medium">
                           {prod?.name || item.productId}
-                          {prod?.code && <span className="ml-1.5 text-xs font-mono text-gray-400">{prod.code}</span>}
+                          {(prod as any)?.code && <span className="ml-1.5 text-xs font-mono text-gray-400">{(prod as any).code}</span>}
                         </td>
                         <td className="px-3 py-2.5 text-center text-gray-600">{item.quantity}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">S/ {item.unitPrice.toFixed(2)}</td>

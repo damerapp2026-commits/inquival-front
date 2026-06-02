@@ -114,6 +114,7 @@ export function NewQuotePage() {
   const [participantIds, setParticipantIds] = useState<string[]>([]);
   const [validityDays, setValidityDays] = useState(15);
   const [paymentTerm, setPaymentTerm] = useState('CONTADO');
+  const [creditDays, setCreditDays] = useState(30);
   const [deliveryTime, setDeliveryTime] = useState('INMEDIATO');
   const [deliveryPlace, setDeliveryPlace] = useState('');
   const [internalNotes, setInternalNotes] = useState('');
@@ -136,6 +137,12 @@ export function NewQuotePage() {
     d.setDate(d.getDate() + (Number.isFinite(validityDays) ? validityDays : 15));
     return d.toISOString().slice(0, 10);
   }, [validityDays]);
+
+  const creditDueDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + creditDays);
+    return d.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }, [creditDays]);
 
   const currSymbol = currency === 'USD' ? 'US$' : 'S/';
   const exchangeRateNum = parseFloat(exchangeRate) || 0;
@@ -274,6 +281,7 @@ export function NewQuotePage() {
         currency,
         exchangeRate: exchangeRateNum || undefined,
         paymentMethod: paymentTerm,
+        creditDays: paymentTerm === 'CRÉDITO' ? creditDays : undefined,
         items: lines.map((l) => ({
           productId: l.productId,
           companyId: l.sourceCompanyId || companyId,
@@ -602,20 +610,40 @@ export function NewQuotePage() {
                     {[5, 10, 15, 30, 45, 60, 90].map((d) => <option key={d} value={d}>{d} días</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Forma de pago</label>
-                  <div className="grid grid-cols-2 gap-1 p-1 bg-gray-100 rounded-xl">
-                    {(['CONTADO', 'CRÉDITO'] as const).map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => setPaymentTerm(opt)}
-                        className={`py-2 text-sm font-medium rounded-lg transition-all ${paymentTerm === opt ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                      >
-                        {opt}
-                      </button>
-                    ))}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Forma de pago</label>
+                    <div className="grid grid-cols-2 gap-1 p-1 bg-gray-100 rounded-xl">
+                      {(['CONTADO', 'CRÉDITO'] as const).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => setPaymentTerm(opt)}
+                          className={`py-2 text-sm font-medium rounded-lg transition-all ${paymentTerm === opt ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                  {paymentTerm === 'CRÉDITO' && (
+                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 space-y-2">
+                      <label className="block text-xs font-medium text-amber-700">Plazo del crédito</label>
+                      <div className="grid grid-cols-5 gap-1 p-1 bg-white/70 rounded-lg">
+                        {[15, 30, 45, 60, 90].map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setCreditDays(d)}
+                            className={`py-1.5 text-xs font-semibold rounded-md transition-all ${creditDays === d ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-700 hover:bg-amber-100'}`}
+                          >
+                            {d}d
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-amber-600">Vence el <span className="font-semibold">{creditDueDate}</span></p>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1.5">Tiempo de entrega</label>
