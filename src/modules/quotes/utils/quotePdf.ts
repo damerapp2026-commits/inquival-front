@@ -92,15 +92,15 @@ function buildPaymentMethodsBlock(): any[] {
   });
 
   const walletRows: any[] = [];
-  if (yape) walletRows.push([
+  if (yape?.number) walletRows.push([
     { text: 'Yape', bold: true, fontSize: 8, fillColor: '#f3e8ff' },
-    { text: yape.number, fontSize: 8 },
-    { text: yape.holder, fontSize: 8, color: '#6b7280' },
+    { text: yape.number || '—', fontSize: 8 },
+    { text: yape.holder || '—', fontSize: 8, color: '#6b7280' },
   ]);
-  if (plin) walletRows.push([
+  if (plin?.number) walletRows.push([
     { text: 'Plin', bold: true, fontSize: 8, fillColor: '#cffafe' },
-    { text: plin.number, fontSize: 8 },
-    { text: plin.holder, fontSize: 8, color: '#6b7280' },
+    { text: plin.number || '—', fontSize: 8 },
+    { text: plin.holder || '—', fontSize: 8, color: '#6b7280' },
   ]);
 
   return [
