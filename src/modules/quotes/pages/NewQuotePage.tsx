@@ -92,6 +92,18 @@ export function NewQuotePage() {
   const [clientAddress, setClientAddress] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
 
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientSearchOpen, setClientSearchOpen] = useState(false);
+  const debouncedClientSearch = useDebounce(clientSearch);
+  const canClientSearch = debouncedClientSearch.trim().length >= 2;
+  const { data: clientSearchRaw } = useClients(
+    { search: debouncedClientSearch.trim(), limit: 8 },
+    { enabled: canClientSearch },
+  );
+  const clientSearchResults: Client[] = canClientSearch
+    ? (Array.isArray(clientSearchRaw) ? clientSearchRaw : [])
+    : [];
+
   const [companyId, setCompanyId] = useState(preload?.companyId || '');
   const [tierId, setTierId] = useState(preload?.tierId || '');
   const [sellerId] = useState(preload?.sellerId || (isSellerRole ? user?.id : '') || '');
@@ -142,6 +154,29 @@ export function NewQuotePage() {
       .filter((p) => p.name.toLowerCase().includes(q) || (p.activeIngredient || '').toLowerCase().includes(q))
       .slice(0, 12);
   }, [productSearch, products]);
+
+  const pickClient = (c: Client) => {
+    setClientId(c.id);
+    setClientName(c.name);
+    setClientEmail(c.email || '');
+    setClientPhone(c.phone || '');
+    setClientAddress(c.address || '');
+    setDocNumber(c.documentNumber || '');
+    if (c.documentNumber?.length === 8) setDocType('DNI');
+    else if (c.documentNumber?.length === 11) setDocType('RUC');
+    setClientSearch(c.name);
+    setClientSearchOpen(false);
+  };
+
+  const clearClient = () => {
+    setClientId('');
+    setClientName('');
+    setClientEmail('');
+    setClientPhone('');
+    setClientAddress('');
+    setDocNumber('');
+    setClientSearch('');
+  };
 
   const handleLookup = async () => {
     const numero = docNumber.trim();
@@ -284,6 +319,73 @@ export function NewQuotePage() {
               </div>
             </header>
             <div className="p-6 space-y-4">
+
+              {/* ---- Buscador de clientes existentes ---- */}
+              <div className="relative">
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Buscar cliente existente</label>
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  <input
+                    value={clientSearch}
+                    onChange={(e) => {
+                      setClientSearch(e.target.value);
+                      if (clientId) setClientId('');
+                      setClientSearchOpen(true);
+                    }}
+                    onFocus={() => setClientSearchOpen(true)}
+                    onBlur={() => setTimeout(() => setClientSearchOpen(false), 180)}
+                    placeholder="Nombre, DNI o RUC del cliente…"
+                    className="w-full pl-9 pr-9 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                  {clientId && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); clearClient(); }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                      title="Limpiar cliente seleccionado"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Dropdown de resultados */}
+                {clientSearchOpen && clientSearchResults.length > 0 && (
+                  <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                    {clientSearchResults.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); pickClient(c); }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-primary-50 border-b border-gray-50 last:border-0 transition-colors"
+                      >
+                        <div className="text-sm font-medium text-gray-800">{c.name}</div>
+                        <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
+                          {c.documentNumber && <span className="font-mono">{c.documentNumber}</span>}
+                          {c.phone && <span>{c.phone}</span>}
+                          {c.city && <span>{c.city}</span>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Indicador de cliente seleccionado */}
+                {clientId && (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-emerald-700">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    Cliente registrado seleccionado — datos precargados
+                  </div>
+                )}
+              </div>
+
+              {/* Separador */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 border-t border-gray-100" />
+                <span className="text-[11px] text-gray-400 font-medium">o ingresa / busca por documento</span>
+                <div className="flex-1 border-t border-gray-100" />
+              </div>
+
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1.5">Tipo de documento</label>
                 <div className="grid grid-cols-4 gap-1 p-1 bg-gray-100 rounded-xl">
