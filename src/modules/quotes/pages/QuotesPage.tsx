@@ -386,6 +386,18 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
                   <p className="text-sm text-emerald-700 font-medium mt-0.5">{quote.sellerName}</p>
                 </div>
               )}
+              {quote.participantNames && quote.participantNames.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Participantes</p>
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {quote.participantNames.map((name, i) => (
+                      <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="space-y-3">
               <div>

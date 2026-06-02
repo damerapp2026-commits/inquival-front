@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { ArrowLeft, User, ShoppingCart, ClipboardList, Plus, Trash2, Search, Sparkles, Building2, Save, FileText, ScrollText } from 'lucide-react';
+import { ArrowLeft, User, ShoppingCart, ClipboardList, Plus, Trash2, Search, Sparkles, Building2, Save, FileText, ScrollText, Users, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useCreateQuote } from '../hooks/useQuotes';
 import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
@@ -9,6 +9,7 @@ import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useClients } from '../../clients/hooks/useClients';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useAuth } from '../../../app/providers/AuthProvider';
+import { useUsers } from '../../users/hooks/useUsers';
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import type { Product, ProductPrice, Company, Client, PriceTier } from '../../../shared/types';
 
@@ -53,6 +54,7 @@ export function NewQuotePage() {
   const { data: companiesData } = useCompanies();
   const { data: clientsData } = useClients({ limit: 500 });
   const { data: tiersData } = usePriceTiers();
+  const { data: usersData } = useUsers({ limit: 200, isActive: true });
   const createQuote = useCreateQuote();
   const dniLookup = useDniLookup();
   const rucLookup = useRucLookup();
@@ -93,6 +95,7 @@ export function NewQuotePage() {
   const [tierId, setTierId] = useState(preload?.tierId || '');
   const [sellerId] = useState(preload?.sellerId || (isSellerRole ? user?.id : '') || '');
 
+  const [participantIds, setParticipantIds] = useState<string[]>([]);
   const [validityDays, setValidityDays] = useState(15);
   const [paymentTerm, setPaymentTerm] = useState('CONTADO');
   const [deliveryTime, setDeliveryTime] = useState('INMEDIATO');
@@ -221,6 +224,7 @@ export function NewQuotePage() {
         validUntil: validUntilISO,
         notes: buildNotes() || undefined,
         sellerId: sellerId || undefined,
+        participantIds: participantIds.length ? participantIds : undefined,
         items: lines.map((l) => ({
           productId: l.productId,
           companyId: l.sourceCompanyId || companyId,
@@ -574,6 +578,44 @@ export function NewQuotePage() {
               <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Atendido por</h4>
               <p className="text-sm font-semibold text-gray-800">{user?.fullName || '—'}</p>
               {user?.email && <p className="text-xs text-gray-500">{user.email}</p>}
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Users size={13} className="text-gray-400" />
+                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider">Participantes adicionales</h4>
+              </div>
+              <select
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id && !participantIds.includes(id)) setParticipantIds(prev => [...prev, id]);
+                  e.target.value = '';
+                }}
+                className="w-full px-2.5 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                defaultValue=""
+              >
+                <option value="" disabled>Agregar empleado…</option>
+                {(Array.isArray(usersData) ? usersData : usersData?.data || [])
+                  .filter((u: any) => u.id !== user?.id && !participantIds.includes(u.id))
+                  .map((u: any) => (
+                    <option key={u.id} value={u.id}>{u.fullName || u.username}</option>
+                  ))}
+              </select>
+              {participantIds.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {participantIds.map(id => {
+                    const u = (Array.isArray(usersData) ? usersData : usersData?.data || []).find((u: any) => u.id === id);
+                    return (
+                      <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
+                        {u?.fullName || u?.username || id}
+                        <button type="button" onClick={() => setParticipantIds(prev => prev.filter(p => p !== id))} className="hover:text-indigo-900">
+                          <X size={11} />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </aside>

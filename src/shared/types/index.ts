@@ -23,7 +23,7 @@ export interface ProductLot { id: string; productId: string; productName?: strin
 
 export type QuoteStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'CONVERTED';
 export interface QuoteItem { productId: string; companyId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number; }
-export interface Quote { id: string; quoteNumber: string; series: string; number: number; companyId?: string; clientId?: string; clientName?: string; items: QuoteItem[]; total: number; notes?: string; status: QuoteStatus; issueDate: string; validUntil: string; convertedSaleId?: string; createdBy?: string; sellerId?: string; sellerName?: string; createdAt: string; }
+export interface Quote { id: string; quoteNumber: string; series: string; number: number; companyId?: string; clientId?: string; clientName?: string; items: QuoteItem[]; total: number; notes?: string; status: QuoteStatus; issueDate: string; validUntil: string; convertedSaleId?: string; createdBy?: string; sellerId?: string; sellerName?: string; participantIds?: string[]; participantNames?: string[]; createdAt: string; }
 
 export interface AccountPayableInstallment { id?: string; amount: number; dueDate: string; status: 'PENDING' | 'PAID'; paidDate?: string; numeroUnico?: string; }
 export interface AccountPayablePayment { id?: string; amount: number; paymentDate: string; codigoTransferencia?: string; notes?: string; registeredBy?: string; registeredByName?: string; }
