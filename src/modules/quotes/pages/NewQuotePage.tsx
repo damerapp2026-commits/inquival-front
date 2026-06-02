@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { ArrowLeft, User, ShoppingCart, ClipboardList, Plus, Trash2, Search, Sparkles, Building2, Save, FileText, ScrollText, Users, X } from 'lucide-react';
+import { ArrowLeft, User, ShoppingCart, ClipboardList, Plus, Trash2, Search, Sparkles, Building2, Save, FileText, ScrollText, Users, X, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useCreateQuote } from '../hooks/useQuotes';
 import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
@@ -16,6 +16,9 @@ import type { Product, ProductPrice, Company, Client, PriceTier } from '../../..
 
 const IGV_RATE = 0.18;
 type DocType = 'DNI' | 'RUC' | 'CE' | 'OTRO';
+
+const toDateKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 interface CartLine {
   productId: string;
@@ -114,7 +117,9 @@ export function NewQuotePage() {
   const [participantIds, setParticipantIds] = useState<string[]>([]);
   const [validityDays, setValidityDays] = useState(15);
   const [paymentTerm, setPaymentTerm] = useState('CONTADO');
-  const [creditDays, setCreditDays] = useState(30);
+  const [creditDueDate, setCreditDueDate] = useState<string>(() => {
+    const d = new Date(); d.setDate(d.getDate() + 30); return toDateKey(d);
+  });
   const [deliveryTime, setDeliveryTime] = useState('INMEDIATO');
   const [deliveryPlace, setDeliveryPlace] = useState('');
   const [internalNotes, setInternalNotes] = useState('');
@@ -138,11 +143,28 @@ export function NewQuotePage() {
     return d.toISOString().slice(0, 10);
   }, [validityDays]);
 
-  const creditDueDate = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + creditDays);
-    return d.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  }, [creditDays]);
+  const todayKey = toDateKey(new Date());
+
+  const creditDaysForApi = useMemo(() => {
+    const [y, m, d] = creditDueDate.split('-').map(Number);
+    const due = new Date(y, m - 1, d);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.max(1, Math.round((due.getTime() - today.getTime()) / 86400000));
+  }, [creditDueDate]);
+
+  const creditDueDateLabel = useMemo(() => {
+    const [y, m, d] = creditDueDate.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }, [creditDueDate]);
+
+  const isPresetActive = (days: number) => {
+    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + days);
+    return toDateKey(d) === creditDueDate;
+  };
+  const setPreset = (days: number) => {
+    const d = new Date(); d.setDate(d.getDate() + days);
+    setCreditDueDate(toDateKey(d));
+  };
 
   const currSymbol = currency === 'USD' ? 'US$' : 'S/';
   const exchangeRateNum = parseFloat(exchangeRate) || 0;
@@ -281,7 +303,7 @@ export function NewQuotePage() {
         currency,
         exchangeRate: exchangeRateNum || undefined,
         paymentMethod: paymentTerm,
-        creditDays: paymentTerm === 'CRÉDITO' ? creditDays : undefined,
+        creditDays: paymentTerm === 'CRÉDITO' ? creditDaysForApi : undefined,
         items: lines.map((l) => ({
           productId: l.productId,
           companyId: l.sourceCompanyId || companyId,
@@ -628,20 +650,20 @@ export function NewQuotePage() {
                   </div>
                   {paymentTerm === 'CRÉDITO' && (
                     <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 space-y-2">
-                      <label className="block text-xs font-medium text-amber-700">Plazo del crédito</label>
+                      <label className="block text-xs font-medium text-amber-700">Accesos rápidos</label>
                       <div className="grid grid-cols-5 gap-1 p-1 bg-white/70 rounded-lg">
                         {[15, 30, 45, 60, 90].map((d) => (
                           <button
                             key={d}
                             type="button"
-                            onClick={() => setCreditDays(d)}
-                            className={`py-1.5 text-xs font-semibold rounded-md transition-all ${creditDays === d ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-700 hover:bg-amber-100'}`}
+                            onClick={() => setPreset(d)}
+                            className={`py-1.5 text-xs font-semibold rounded-md transition-all ${isPresetActive(d) ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-700 hover:bg-amber-100'}`}
                           >
                             {d}d
                           </button>
                         ))}
                       </div>
-                      <p className="text-xs text-amber-600">Vence el <span className="font-semibold">{creditDueDate}</span></p>
+                      <p className="text-xs text-amber-600">Vence el <span className="font-semibold">{creditDueDateLabel}</span></p>
                     </div>
                   )}
                 </div>
@@ -801,6 +823,22 @@ export function NewQuotePage() {
               )}
             </div>
           </div>
+
+          {/* Mini calendario de crédito */}
+          {paymentTerm === 'CRÉDITO' && (
+            <div className="bg-white border border-amber-200 rounded-2xl shadow-sm p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                  <Calendar size={15} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Fecha de cobro</h3>
+                  <p className="text-[11px] text-gray-400">Selecciona el día límite de pago</p>
+                </div>
+              </div>
+              <CreditDatePicker value={creditDueDate} onChange={setCreditDueDate} todayKey={todayKey} />
+            </div>
+          )}
         </aside>
       </div>
 
@@ -827,6 +865,101 @@ export function NewQuotePage() {
             <Save size={15} /> {createQuote.isPending ? 'Guardando…' : 'Guardar cotización'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== MINI CALENDARIO DE CRÉDITO =====
+
+interface CreditDatePickerProps {
+  value: string;
+  todayKey: string;
+  onChange: (v: string) => void;
+}
+
+function CreditDatePicker({ value, todayKey, onChange }: CreditDatePickerProps) {
+  const initDate = () => { const d = new Date(value + 'T00:00:00'); d.setDate(1); return d; };
+  const [month, setMonth] = useState<Date>(initDate);
+
+  const year = month.getFullYear();
+  const monthIdx = month.getMonth();
+  const firstDay = new Date(year, monthIdx, 1);
+  const lastDay = new Date(year, monthIdx + 1, 0);
+  const startOffset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+  const endOffset = lastDay.getDay() === 0 ? 0 : 7 - lastDay.getDay();
+  const days = Array.from({ length: startOffset + lastDay.getDate() + endOffset }, (_, i) =>
+    new Date(year, monthIdx, i - startOffset + 1)
+  );
+
+  const monthLabel = month.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
+
+  return (
+    <div>
+      {/* Nav de mes */}
+      <div className="flex items-center justify-between mb-2">
+        <button
+          type="button"
+          onClick={() => setMonth(new Date(year, monthIdx - 1, 1))}
+          className="p-1 rounded-lg hover:bg-amber-50 text-gray-500 hover:text-amber-600 transition-colors"
+        >
+          <ChevronLeft size={14} />
+        </button>
+        <span className="text-xs font-semibold text-gray-700 capitalize">{monthLabel}</span>
+        <button
+          type="button"
+          onClick={() => setMonth(new Date(year, monthIdx + 1, 1))}
+          className="p-1 rounded-lg hover:bg-amber-50 text-gray-500 hover:text-amber-600 transition-colors"
+        >
+          <ChevronRight size={14} />
+        </button>
+      </div>
+
+      {/* Cabecera de días */}
+      <div className="grid grid-cols-7 mb-1">
+        {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(d => (
+          <div key={d} className="text-center text-[10px] font-semibold text-gray-400 py-0.5">{d}</div>
+        ))}
+      </div>
+
+      {/* Grilla de días */}
+      <div className="grid grid-cols-7 gap-0.5">
+        {days.map((day, i) => {
+          const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+          const isPast = key < todayKey;
+          const isSelected = key === value;
+          const isToday = key === todayKey;
+          const isCurrentMonth = day.getMonth() === monthIdx;
+
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={isPast}
+              onClick={() => onChange(key)}
+              className={[
+                'w-full aspect-square flex items-center justify-center text-[11px] font-medium rounded-lg transition-all',
+                isPast ? 'text-gray-200 cursor-not-allowed' : '',
+                !isCurrentMonth && !isPast ? 'text-gray-300' : '',
+                isSelected ? 'bg-amber-500 text-white font-bold shadow-sm' : '',
+                isToday && !isSelected ? 'ring-1 ring-amber-400 text-amber-700 font-semibold' : '',
+                !isPast && !isSelected && isCurrentMonth ? 'hover:bg-amber-50 text-gray-700' : '',
+              ].join(' ')}
+            >
+              {day.getDate()}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Fecha seleccionada */}
+      <div className="mt-3 pt-2 border-t border-amber-100 text-center">
+        <p className="text-[11px] text-amber-600 font-medium">
+          Vence el{' '}
+          <span className="font-bold">
+            {new Date(value + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' })}
+          </span>
+        </p>
       </div>
     </div>
   );
