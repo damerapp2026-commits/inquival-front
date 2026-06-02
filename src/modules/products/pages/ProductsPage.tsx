@@ -558,7 +558,7 @@ export function ProductsPage() {
       <div className="flex gap-2">
         <button onClick={() => setSuppliersTarget(item)} className="text-gray-500 hover:text-primary-600" title="Ver proveedores"><Truck size={16} /></button>
         <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={16} /></button>
-        <button onClick={() => setDeleteTarget(item)} className="text-red-600 hover:text-red-800" title="Desactivar"><Trash2 size={16} /></button>
+        <button onClick={() => setDeleteTarget(item)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 size={16} /></button>
       </div>
     )},
   ];
@@ -929,12 +929,12 @@ export function ProductsPage() {
           </div>
         </div>
       </Modal>
-      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Desactivar Producto">
+      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Eliminar Producto">
         <div className="space-y-4">
-          <p className="text-gray-600">¿Deseas desactivar el producto <strong>{deleteTarget?.name}</strong>? No volverá a aparecer en listados ni en nuevas ventas, pero su historial se mantiene intacto.</p>
+          <p className="text-gray-600">¿Estás seguro de que deseas eliminar <strong>{deleteTarget?.name}</strong>? Esta acción es permanente y no se puede deshacer.</p>
           <div className="flex gap-3 justify-end">
             <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancelar</button>
-            <button onClick={async () => { if (deleteTarget) { await deleteProduct.mutateAsync(deleteTarget.id); setDeleteTarget(null); } }} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Desactivar</button>
+            <button onClick={async () => { if (deleteTarget) { await deleteProduct.mutateAsync(deleteTarget.id); setDeleteTarget(null); } }} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Eliminar</button>
           </div>
         </div>
       </Modal>
