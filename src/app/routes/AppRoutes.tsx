@@ -49,6 +49,7 @@ const QuotesPage = lazy(() => import('../../modules/quotes/pages/QuotesPage').th
 const NewQuotePage = lazy(() => import('../../modules/quotes/pages/NewQuotePage').then(m => ({ default: m.NewQuotePage })));
 const MyCommissionsPage = lazy(() => import('../../modules/commissions/pages/MyCommissionsPage').then(m => ({ default: m.MyCommissionsPage })));
 const CommissionsReportPage = lazy(() => import('../../modules/commissions/pages/CommissionsReportPage').then(m => ({ default: m.CommissionsReportPage })));
+const PublicProductsPage = lazy(() => import('../../modules/products/pages/PublicProductsPage').then(m => ({ default: m.PublicProductsPage })));
 
 const Loading = () => <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" /></div>;
 
@@ -56,6 +57,7 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/lista-productos" element={<Suspense fallback={<Loading />}><PublicProductsPage /></Suspense>} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<IndexRedirect />} />
         <Route path="dashboard" element={<AdminOnly><Suspense fallback={<Loading />}><DashboardPage /></Suspense></AdminOnly>} />
