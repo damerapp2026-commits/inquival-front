@@ -87,7 +87,7 @@ export function ProductsPage() {
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [pricesTab, setPricesTab] = useState<string>('global');
+  const [pricesTab, setPricesTab] = useState<string>('');
   const imageInputRef = useRef<HTMLInputElement>(null);
   const allUnits: { value: string; label: string }[] = Array.isArray(unitsData)
     ? unitsData.filter((u: any) => u.isActive).map((u: any) => ({ value: u.name, label: u.abbreviation ? `${u.name} (${u.abbreviation})` : u.name }))
@@ -97,8 +97,8 @@ export function ProductsPage() {
   const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', laboratoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', prices: [], initialStocks: [], expanded: true });
 
 
-  const openCreate = () => { setEditing(null); setPricesTab('global'); setForm({ name: '', description: '', categoryId: '', laboratoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [], initialStocks: [], commissions: [] }); setShowModal(true); };
-  const openEdit = (product: Product) => { setEditing(product); setPricesTab('global'); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, laboratoryId: product.laboratoryId || '', unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, imageUrl: product.imageUrl || '', prices: product.prices || [], initialStocks: [], commissions: product.commissions || [] }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); const firstComp = comps.find((c: any) => c.isActive); setPricesTab(firstComp?.id || ''); setForm({ name: '', description: '', categoryId: '', laboratoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [], initialStocks: [], commissions: [] }); setShowModal(true); };
+  const openEdit = (product: Product) => { setEditing(product); const firstComp = comps.find((c: any) => c.isActive); setPricesTab(firstComp?.id || ''); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, laboratoryId: product.laboratoryId || '', unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, imageUrl: product.imageUrl || '', prices: product.prices || [], initialStocks: [], commissions: product.commissions || [] }); setShowModal(true); };
   const openBulk = () => { setBulkProducts([emptyBulkProduct()]); setShowBulkModal(true); };
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -483,21 +483,24 @@ export function ProductsPage() {
   const labsById = new Map<string, any>(labs.map((l: any) => [l.id, l]));
   const comps = Array.isArray(companies) ? companies : [];
 
+  // Auto-select first active company when data loads
+  React.useEffect(() => {
+    if (!priceCompanyFilter && comps.length > 0) {
+      const first = comps.find((c: any) => c.isActive);
+      if (first) setPriceCompanyFilter(first.id);
+    }
+  }, [comps, priceCompanyFilter]);
+
   const { data: stockSummaryData } = useStockByProductSummary();
   const stockByProduct = new Map(
     (stockSummaryData || []).map((s: any) => [s.productId, s])
   );
 
   const getPricesForDisplay = (product: Product) => {
-    if (!priceCompanyFilter) {
-      return product.prices?.filter(p => !p.companyId) || [];
-    }
-    return tiers.map((t: any) => {
-      const companyPrice = product.prices?.find(p => p.priceTierId === t.id && p.companyId === priceCompanyFilter);
-      if (companyPrice) return companyPrice;
-      const globalPrice = product.prices?.find(p => p.priceTierId === t.id && !p.companyId);
-      return globalPrice || null;
-    }).filter(Boolean) as typeof product.prices;
+    if (!priceCompanyFilter) return [];
+    return tiers.map((t: any) =>
+      product.prices?.find(p => p.priceTierId === t.id && p.companyId === priceCompanyFilter) || null
+    ).filter(Boolean) as typeof product.prices;
   };
 
   const columns = [
@@ -521,12 +524,10 @@ export function ProductsPage() {
         <div className="text-xs space-y-1">
           {displayPrices.map((p) => {
             const tier = tiers.find((t: any) => t.id === p.priceTierId);
-            const isCompanySpecific = !!p.companyId;
             return (
-              <div key={`${p.priceTierId}-${p.companyId || 'global'}`} className="whitespace-nowrap">
+              <div key={`${p.priceTierId}-${p.companyId}`} className="whitespace-nowrap">
                 {!single && <span className="font-medium">{tier?.name || 'N/A'}: </span>}
                 <span className={single ? 'font-semibold text-gray-800 text-sm tabular-nums' : 'tabular-nums'}>S/ {p.price.toFixed(2)}</span>
-                {priceCompanyFilter && !isCompanySpecific && <span className="text-gray-400 ml-1">(global)</span>}
               </div>
             );
           })}
@@ -620,10 +621,9 @@ export function ProductsPage() {
           {labs.filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
       </div>
-      {comps.length > 0 && (
+      {comps.filter((c: any) => c.isActive).length > 1 && (
         <div className="mb-4">
           <select value={priceCompanyFilter} onChange={(e) => setPriceCompanyFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm bg-white">
-            <option value="">Precios globales</option>
             {comps.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>Precios: {c.name}</option>)}
           </select>
         </div>
@@ -762,32 +762,24 @@ export function ProductsPage() {
 
               {comps.filter((c: any) => c.isActive).length > 0 ? (
                 <>
-                  <div className="flex flex-wrap gap-1.5 mb-3 border-b border-gray-200">
-                    <button type="button" onClick={() => setPricesTab('global')} className={`px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${pricesTab === 'global' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                      Global
-                    </button>
-                    {comps.filter((c: any) => c.isActive).map((c: any) => (
-                      <button key={c.id} type="button" onClick={() => setPricesTab(c.id)} className={`px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${pricesTab === c.id ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                        {c.name}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-500 mb-3">
-                    {pricesTab === 'global'
-                      ? 'Precios por defecto. Se aplican si no defines uno específico para un almacén.'
-                      : 'Precios específicos para este almacén. Si lo dejas vacío se usa el precio global.'}
-                  </p>
+                  {comps.filter((c: any) => c.isActive).length > 1 && (
+                    <div className="flex flex-wrap gap-1.5 mb-3 border-b border-gray-200">
+                      {comps.filter((c: any) => c.isActive).map((c: any) => (
+                        <button key={c.id} type="button" onClick={() => setPricesTab(c.id)} className={`px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${pricesTab === c.id ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {tiers.map((tier: any) => {
-                      const isGlobal = pricesTab === 'global';
-                      const value = form.prices.find((p) => p.priceTierId === tier.id && (isGlobal ? !p.companyId : p.companyId === pricesTab))?.price || '';
-                      const globalFallback = !isGlobal ? form.prices.find((p) => p.priceTierId === tier.id && !p.companyId)?.price : null;
+                      const value = form.prices.find((p) => p.priceTierId === tier.id && p.companyId === pricesTab)?.price || '';
                       return (
                         <div key={tier.id} className="flex items-center gap-3 px-3 py-2 border border-gray-200 rounded-xl bg-white">
                           <span className="text-sm flex-1 truncate text-gray-700">{tier.name}</span>
                           <div className="flex items-center gap-1">
                             <span className="text-xs text-gray-400">S/</span>
-                            <input type="number" step="0.01" min="0" placeholder={globalFallback ? globalFallback.toFixed(2) : '0.00'} value={value} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0, isGlobal ? undefined : pricesTab)} className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                            <input type="number" step="0.01" min="0" placeholder="0.00" value={value} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0, pricesTab)} className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500" />
                           </div>
                         </div>
                       );
@@ -795,16 +787,8 @@ export function ProductsPage() {
                   </div>
                 </>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {tiers.map((tier: any) => (
-                    <div key={tier.id} className="flex items-center gap-3 px-3 py-2 border border-gray-200 rounded-xl bg-white">
-                      <span className="text-sm flex-1 truncate text-gray-700">{tier.name}</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-gray-400">S/</span>
-                        <input type="number" step="0.01" min="0" placeholder="0.00" value={form.prices.find((p) => p.priceTierId === tier.id && !p.companyId)?.price || ''} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0)} className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                      </div>
-                    </div>
-                  ))}
+                <div className="px-4 py-3 border border-dashed border-gray-300 rounded-xl bg-gray-50 text-xs text-gray-500">
+                  Aún no hay almacenes activos. Creá un almacén para poder asignarle precios.
                 </div>
               )}
             </section>
