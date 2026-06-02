@@ -179,7 +179,7 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
       {
         columns: [
           ...(logoDataUrl
-            ? [{ image: logoDataUrl, width: 70, margin: [0, 4, 10, 0] } as any]
+            ? [{ image: logoDataUrl, width: 100, margin: [0, 0, 12, 0] } as any]
             : []),
           {
             width: '*',
