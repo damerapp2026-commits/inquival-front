@@ -8,6 +8,7 @@ interface DataTableProps<T> {
   onRowClick?: (item: T) => void;
   hoverClass?: string;
   rowClassName?: (item: T) => string;
+  compact?: boolean;
 }
 
 export function DataTable<T extends { id?: string }>({
@@ -17,6 +18,7 @@ export function DataTable<T extends { id?: string }>({
   onRowClick,
   hoverClass,
   rowClassName,
+  compact = false,
 }: DataTableProps<T>) {
   const tableWrapRef = useRef<HTMLDivElement>(null);
   const fixedBarRef = useRef<HTMLDivElement>(null);
@@ -94,7 +96,7 @@ export function DataTable<T extends { id?: string }>({
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  className="px-4 sm:px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider bg-gray-50/60"
+                  className={`${compact ? 'px-3 py-2' : 'px-4 sm:px-6 py-3'} text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider bg-gray-50/60`}
                 >
                   {col.header}
                 </th>
@@ -120,7 +122,7 @@ export function DataTable<T extends { id?: string }>({
                   {columns.map((col) => (
                     <td
                       key={col.key}
-                      className="px-4 sm:px-6 py-3.5 whitespace-nowrap text-sm text-gray-700"
+                      className={`${compact ? 'px-3 py-2' : 'px-4 sm:px-6 py-3.5'} whitespace-nowrap text-sm text-gray-700`}
                     >
                       {col.render ? col.render(item) : (item as any)[col.key]}
                     </td>

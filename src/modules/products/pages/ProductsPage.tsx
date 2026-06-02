@@ -628,7 +628,7 @@ export function ProductsPage() {
           </select>
         </div>
       )}
-      <DataTable columns={columns} data={products} isLoading={isLoading} />
+      <DataTable columns={columns} data={products} isLoading={isLoading} compact />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
       </>)}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar producto' : 'Nuevo producto'} size="xl">
