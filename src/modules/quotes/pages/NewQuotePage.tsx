@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { ArrowLeft, User, ShoppingCart, ClipboardList, Plus, Trash2, Search, Sparkles, Building2, Save, FileText, ScrollText, Users, X, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, User, ShoppingCart, ClipboardList, Plus, Trash2, Search, Sparkles, Building2, Save, FileText, ScrollText, Users, X, Calendar, ChevronLeft, ChevronRight, CreditCard } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useCreateQuote } from '../hooks/useQuotes';
 import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
@@ -10,9 +10,10 @@ import { useClients } from '../../clients/hooks/useClients';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { useUsers } from '../../users/hooks/useUsers';
+import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import type { Product, ProductPrice, Company, Client, PriceTier } from '../../../shared/types';
+import type { Product, ProductPrice, Company, Client, PriceTier, QuotePayment } from '../../../shared/types';
 
 const IGV_RATE = 0.18;
 type DocType = 'DNI' | 'RUC' | 'CE' | 'OTRO';
@@ -63,6 +64,7 @@ export function NewQuotePage() {
   const createQuote = useCreateQuote();
   const dniLookup = useDniLookup();
   const rucLookup = useRucLookup();
+  const { data: paymentMethodsData } = usePaymentMethods();
 
   const products: Product[] = useMemo(() => {
     const raw: any = productsData;
@@ -129,6 +131,11 @@ export function NewQuotePage() {
   const [productSearch, setProductSearch] = useState('');
   const [searchOpenForLine, setSearchOpenForLine] = useState<number | null>(null);
 
+  // Pagos a cuenta
+  const [payments, setPayments] = useState<QuotePayment[]>([]);
+  const [newPaymentMethod, setNewPaymentMethod] = useState('');
+  const [newPaymentAmount, setNewPaymentAmount] = useState('');
+
   // Defaults once data arrives
   useEffect(() => {
     if (!companyId && companies.length) setCompanyId(companies[0].id);
@@ -166,6 +173,23 @@ export function NewQuotePage() {
     setCreditDueDate(toDateKey(d));
   };
 
+  const paymentMethodNames: string[] = useMemo(() => {
+    const raw: any = paymentMethodsData;
+    const list = Array.isArray(raw) ? raw : raw?.data || [];
+    return list.filter((m: any) => m.isActive).map((m: any) => m.name as string);
+  }, [paymentMethodsData]);
+
+  const addPayment = () => {
+    const method = newPaymentMethod.trim();
+    const amount = parseFloat(newPaymentAmount);
+    if (!method || !amount || amount <= 0) return;
+    setPayments(prev => [...prev, { paymentMethodName: method, amount }]);
+    setNewPaymentMethod('');
+    setNewPaymentAmount('');
+  };
+
+  const removePayment = (idx: number) => setPayments(prev => prev.filter((_, i) => i !== idx));
+
   const currSymbol = currency === 'USD' ? 'US$' : 'S/';
   const exchangeRateNum = parseFloat(exchangeRate) || 0;
 
@@ -176,6 +200,8 @@ export function NewQuotePage() {
   const igv = Math.round((gravadoTotal - opGravadas) * 100) / 100;
   const total = gravadoTotal + exoneradoTotal;
   const solEquiv = currency === 'USD' && exchangeRateNum > 0 ? Math.round(total * exchangeRateNum * 100) / 100 : null;
+  const paidAmount = Math.round(payments.reduce((s, p) => s + p.amount, 0) * 100) / 100;
+  const saldoAmount = Math.round((total - paidAmount) * 100) / 100;
 
   const productOptions = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
@@ -304,6 +330,7 @@ export function NewQuotePage() {
         exchangeRate: exchangeRateNum || undefined,
         paymentMethod: paymentTerm,
         creditDays: paymentTerm === 'CRÉDITO' ? creditDaysForApi : undefined,
+        payments: payments.length ? payments : undefined,
         items: lines.map((l) => ({
           productId: l.productId,
           companyId: l.sourceCompanyId || companyId,
@@ -689,6 +716,91 @@ export function NewQuotePage() {
               </div>
             </div>
           </section>
+
+          {/* Pagos a cuenta */}
+          <section className="bg-white border border-gray-200 rounded-2xl shadow-sm">
+            <header className="px-6 py-4 border-b border-gray-100 flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center"><CreditCard size={17} /></div>
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Pagos a cuenta</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Registra los montos ya recibidos. El saldo se calculará automáticamente.</p>
+              </div>
+            </header>
+            <div className="p-6 space-y-4">
+              {/* Fila de ingreso */}
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Método de pago</label>
+                  <select
+                    value={newPaymentMethod}
+                    onChange={(e) => setNewPaymentMethod(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="">Seleccionar…</option>
+                    {paymentMethodNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="w-36">
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Monto ({currSymbol})</label>
+                  <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-primary-500">
+                    <span className="px-2 text-xs text-gray-400 bg-gray-50">{currSymbol}</span>
+                    <input
+                      type="number" min={0} step="0.01"
+                      value={newPaymentAmount}
+                      onChange={(e) => setNewPaymentAmount(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPayment(); } }}
+                      placeholder="0.00"
+                      className="w-full px-2 py-2.5 text-sm text-right focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={addPayment}
+                  disabled={!newPaymentMethod || !parseFloat(newPaymentAmount)}
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  <Plus size={14} /> Agregar
+                </button>
+              </div>
+
+              {/* Lista de pagos */}
+              {payments.length > 0 && (
+                <div className="space-y-1.5">
+                  {payments.map((p, i) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-xl">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                        <span className="font-medium text-gray-800">{p.paymentMethodName}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-semibold text-emerald-700">{currSymbol} {p.amount.toFixed(2)}</span>
+                        <button type="button" onClick={() => removePayment(i)} className="text-gray-400 hover:text-red-500 transition-colors">
+                          <X size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Resumen a cuenta / saldo */}
+              {payments.length > 0 && (
+                <div className="border-t border-gray-100 pt-3 space-y-1 text-sm">
+                  <div className="flex justify-between text-emerald-700 font-semibold">
+                    <span>A CUENTA</span>
+                    <span>{currSymbol} {paidAmount.toFixed(2)}</span>
+                  </div>
+                  <div className={`flex justify-between font-bold text-base ${saldoAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                    <span>SALDO</span>
+                    <span>{currSymbol} {saldoAmount.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
         </div>
 
         {/* ===================== SIDEBAR (todo el panel acompaña al scroll) ===================== */}
@@ -737,6 +849,18 @@ export function NewQuotePage() {
                 </div>
               )}
             </div>
+            {payments.length > 0 && (
+              <div className="border-t border-gray-100 mt-3 pt-3 space-y-1 text-sm">
+                <div className="flex justify-between text-emerald-700 font-medium">
+                  <dt>A cuenta</dt>
+                  <dd className="font-semibold">{currSymbol} {paidAmount.toFixed(2)}</dd>
+                </div>
+                <div className={`flex justify-between font-bold ${saldoAmount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  <dt>Saldo</dt>
+                  <dd>{currSymbol} {saldoAmount.toFixed(2)}</dd>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Datos del emisor (incluye cuentas bancarias inline, como PANCA) */}

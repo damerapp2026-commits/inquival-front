@@ -135,6 +135,44 @@ function buildPaymentMethodsBlock(): any[] {
   ];
 }
 
+function buildPaymentsBlock(quote: any, currencySymbol: string): any[] {
+  const payments: { paymentMethodName: string; amount: number }[] = quote.payments || [];
+  if (!payments.length) return [];
+
+  const paid = Math.round(payments.reduce((s: number, p: any) => s + p.amount, 0) * 100) / 100;
+  const saldo = Math.round((quote.total - paid) * 100) / 100;
+
+  const paymentRows = payments.map((p) => [
+    { text: p.paymentMethodName, fontSize: 8, color: '#374151' },
+    { text: `${currencySymbol} ${p.amount.toFixed(2)}`, fontSize: 8, alignment: 'right', color: '#374151' },
+  ]);
+
+  return [
+    { text: '', margin: [0, 6] },
+    {
+      table: {
+        widths: ['*', 120],
+        body: [
+          [
+            { text: 'A CUENTA', bold: true, color: 'white', fillColor: '#16a34a', fontSize: 9, margin: [4, 3] },
+            { text: `${currencySymbol} ${paid.toFixed(2)}`, bold: true, color: 'white', fillColor: '#16a34a', fontSize: 9, alignment: 'right', margin: [4, 3] },
+          ],
+          ...paymentRows,
+          [
+            { text: 'SALDO', bold: true, fontSize: 9, color: saldo > 0 ? '#dc2626' : '#16a34a', margin: [4, 3] },
+            { text: `${currencySymbol} ${saldo.toFixed(2)}`, bold: true, fontSize: 9, alignment: 'right', color: saldo > 0 ? '#dc2626' : '#16a34a', margin: [4, 3] },
+          ],
+        ],
+      },
+      layout: {
+        hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
+        hLineWidth: () => 1, vLineWidth: () => 1,
+        paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
+      },
+    },
+  ];
+}
+
 function buildDocDefinition({ quote, products, company, client, vendor, currency, logoDataUrl }: BuildParams) {
   const getProduct = (id: string) => products.find(p => p.id === id);
   const effectiveCurrency = quote.currency || currency || 'PEN';
@@ -369,6 +407,7 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
         ],
       },
 
+      ...buildPaymentsBlock(quote, currencySymbol),
       ...buildPaymentMethodsBlock(),
     ],
     styles: {

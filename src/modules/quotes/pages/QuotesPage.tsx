@@ -677,6 +677,38 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
             </div>
           </div>
 
+          {/* Pagos a cuenta / saldo */}
+          {quote.payments && quote.payments.length > 0 && (() => {
+            const paid = Math.round(quote.payments!.reduce((s, p) => s + p.amount, 0) * 100) / 100;
+            const saldo = Math.round((quote.total - paid) * 100) / 100;
+            return (
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3">
+                <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider mb-2">Pagos a cuenta</p>
+                <div className="space-y-1.5">
+                  {quote.payments!.map((p, i) => (
+                    <div key={i} className="flex justify-between text-sm">
+                      <span className="flex items-center gap-1.5 text-gray-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                        {p.paymentMethodName}
+                      </span>
+                      <span className="tabular-nums font-semibold text-emerald-700">{currSymbol} {p.amount.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 pt-2 border-t border-emerald-200 space-y-1">
+                  <div className="flex justify-between text-sm font-semibold text-emerald-700">
+                    <span>A CUENTA</span>
+                    <span className="tabular-nums">{currSymbol} {paid.toFixed(2)}</span>
+                  </div>
+                  <div className={`flex justify-between text-sm font-bold ${saldo > 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                    <span>SALDO</span>
+                    <span className="tabular-nums">{currSymbol} {saldo.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Notes */}
           {quote.notes && (
             <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
