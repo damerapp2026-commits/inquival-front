@@ -583,13 +583,37 @@ export function StockPage() {
     setImporting(true);
     let done = 0;
     let errors = 0;
+
+    // Obtener el stock LIVE al momento de aplicar (no el del Excel que puede estar desactualizado).
+    // Esto evita duplicar stock cuando el Excel fue exportado antes de registrar compras:
+    // el delta se calcula como (stockNuevo - stockActualLive), no (stockNuevo - stockActualExcel).
+    const companiesInvolved = [...new Set(importPreview.map(p => p.companyId))];
+    const liveStockByKey: Record<string, number> = {};
+    try {
+      for (const cid of companiesInvolved) {
+        const result: any = await stockService.getByCompany(cid, { limit: 9999 });
+        const list: any[] = Array.isArray(result) ? result : result?.data || [];
+        list.forEach((s: any) => {
+          const pid = s.productId || s.product?.id || s.product?._id || s.product;
+          if (pid) liveStockByKey[`${String(pid)}:${cid}`] = Number(s.quantity) || 0;
+        });
+      }
+    } catch {
+      toast.error('No se pudo verificar el stock actual. Intenta de nuevo.');
+      setImporting(false);
+      return;
+    }
+
     for (const change of importPreview) {
       try {
+        const liveQty = liveStockByKey[`${change.productId}:${change.companyId}`] ?? 0;
+        const liveDelta = Math.round((change.newQty - liveQty) * 100) / 100;
+        if (Math.abs(liveDelta) < 0.001) { done++; setImportProgress({ done: done + errors, total: importPreview.length, errors }); continue; }
         await stockAdjustmentService.create({
           productId: change.productId,
           companyId: change.companyId,
-          type: change.delta > 0 ? 'INCREASE' : 'DECREASE',
-          quantity: Math.abs(change.delta),
+          type: liveDelta > 0 ? 'INCREASE' : 'DECREASE',
+          quantity: Math.abs(liveDelta),
           reason: 'Carga masiva por Excel',
         });
         done++;
