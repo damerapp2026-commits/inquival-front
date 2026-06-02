@@ -22,6 +22,7 @@ interface CartLine {
   unit: string;
   quantity: number;
   unitPrice: number;
+  taxType?: string;
   tierOverride?: string;
   sourceCompanyId?: string;
 }
@@ -121,10 +122,12 @@ export function NewQuotePage() {
     return d.toISOString().slice(0, 10);
   }, [validityDays]);
 
-  const subtotal = useMemo(() => lines.reduce((acc, l) => acc + l.quantity * l.unitPrice, 0), [lines]);
-  const subtotalSinIgv = Math.round((subtotal / (1 + IGV_RATE)) * 100) / 100;
-  const igv = Math.round((subtotal - subtotalSinIgv) * 100) / 100;
-  const total = subtotal;
+  const isExonerado = (taxType?: string) => taxType === 'EXONERADO' || taxType === 'INAFECTO';
+  const gravadoTotal = useMemo(() => lines.filter(l => !isExonerado(l.taxType)).reduce((acc, l) => acc + l.quantity * l.unitPrice, 0), [lines]);
+  const exoneradoTotal = useMemo(() => lines.filter(l => isExonerado(l.taxType)).reduce((acc, l) => acc + l.quantity * l.unitPrice, 0), [lines]);
+  const opGravadas = Math.round((gravadoTotal / (1 + IGV_RATE)) * 100) / 100;
+  const igv = Math.round((gravadoTotal - opGravadas) * 100) / 100;
+  const total = gravadoTotal + exoneradoTotal;
 
   const productOptions = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
@@ -188,6 +191,7 @@ export function NewQuotePage() {
       name: p.name,
       unit: p.unit,
       unitPrice: price,
+      taxType: p.taxType,
       sourceCompanyId: companyId,
     });
     setSearchOpenForLine(null);
@@ -525,7 +529,8 @@ export function NewQuotePage() {
               <div className="flex justify-between text-gray-600"><dt>Items</dt><dd className="font-medium text-gray-800">{lines.length}</dd></div>
             </dl>
             <div className="border-t border-gray-100 mt-3 pt-3 space-y-1.5 text-sm">
-              <div className="flex justify-between text-gray-600"><dt>Subtotal</dt><dd>S/ {subtotalSinIgv.toFixed(2)}</dd></div>
+              <div className="flex justify-between text-gray-600"><dt>Op. Gravadas</dt><dd>S/ {opGravadas.toFixed(2)}</dd></div>
+              {exoneradoTotal > 0 && <div className="flex justify-between text-gray-600"><dt>Op. Exoneradas</dt><dd>S/ {exoneradoTotal.toFixed(2)}</dd></div>}
               <div className="flex justify-between text-gray-600"><dt>IGV (18%)</dt><dd>S/ {igv.toFixed(2)}</dd></div>
               <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                 <dt className="font-semibold text-gray-900">Total</dt>

@@ -337,8 +337,11 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
   const validUntil = new Date(quote.validUntil).toLocaleDateString('es-PE');
   const daysLeft = Math.ceil((new Date(quote.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
-  const subtotal = quote.total / 1.18;
-  const igv = quote.total - subtotal;
+  const isExonerado = (taxType?: string) => taxType === 'EXONERADO' || taxType === 'INAFECTO';
+  const gravadoTotal = quote.items.filter(it => !isExonerado(productById[it.productId]?.taxType)).reduce((s, it) => s + it.subtotal, 0);
+  const exoneradoTotal = quote.items.filter(it => isExonerado(productById[it.productId]?.taxType)).reduce((s, it) => s + it.subtotal, 0);
+  const opGravadas = Math.round((gravadoTotal / 1.18) * 100) / 100;
+  const igv = Math.round((gravadoTotal - opGravadas) * 100) / 100;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -451,11 +454,17 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
 
           {/* Totals */}
           <div className="flex justify-end">
-            <div className="w-56 space-y-1.5 text-sm">
+            <div className="w-64 space-y-1.5 text-sm">
               <div className="flex justify-between text-gray-500">
-                <span>Subtotal (sin IGV)</span>
-                <span className="tabular-nums">S/ {subtotal.toFixed(2)}</span>
+                <span>Op. Gravadas</span>
+                <span className="tabular-nums">S/ {opGravadas.toFixed(2)}</span>
               </div>
+              {exoneradoTotal > 0 && (
+                <div className="flex justify-between text-gray-500">
+                  <span>Op. Exoneradas</span>
+                  <span className="tabular-nums">S/ {exoneradoTotal.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-gray-500">
                 <span>IGV (18%)</span>
                 <span className="tabular-nums">S/ {igv.toFixed(2)}</span>

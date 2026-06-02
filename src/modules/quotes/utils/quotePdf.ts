@@ -144,8 +144,11 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
   const headerRuc = COMPANY_INFO.ruc || company?.ruc || '—';
   const headerEmail = COMPANY_INFO.email || '';
 
-  const subtotal = Math.round((quote.total / (1 + IGV_RATE)) * 100) / 100;
-  const igv = Math.round((quote.total - subtotal) * 100) / 100;
+  const isExonerado = (taxType?: string) => taxType === 'EXONERADO' || taxType === 'INAFECTO';
+  const gravadoTotal = quote.items.filter(it => !isExonerado(getProduct(it.productId)?.taxType)).reduce((s, it) => s + it.subtotal, 0);
+  const exoneradoTotal = quote.items.filter(it => isExonerado(getProduct(it.productId)?.taxType)).reduce((s, it) => s + it.subtotal, 0);
+  const opGravadas = Math.round((gravadoTotal / (1 + IGV_RATE)) * 100) / 100;
+  const igv = Math.round((gravadoTotal - opGravadas) * 100) / 100;
 
   const itemsRows = quote.items.map((it, idx) => {
     const p = getProduct(it.productId);
@@ -325,8 +328,13 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
                 [
                   { text: 'OP. GRAVADAS', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
                   { text: currencySymbol, fontSize: 9, alignment: 'center', margin: [0, 3] },
-                  { text: subtotal.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
+                  { text: opGravadas.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
                 ],
+                ...(exoneradoTotal > 0 ? [[
+                  { text: 'OP. EXONERADAS', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
+                  { text: currencySymbol, fontSize: 9, alignment: 'center', margin: [0, 3] },
+                  { text: exoneradoTotal.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
+                ]] : []),
                 [
                   { text: 'I.G.V. 18%', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
                   { text: currencySymbol, fontSize: 9, alignment: 'center', margin: [0, 3] },
