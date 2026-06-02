@@ -305,7 +305,7 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
               widths: ['auto', 5, '*'],
               body: [
                 [{ text: 'CONDICIONES COMERCIALES', colSpan: 3, bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, margin: [4, 3] }, {}, {}],
-                [{ text: 'Forma de pago', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: quote.paymentMethod || 'CONTADO', fontSize: 8 }],
+                [{ text: 'Condición de Venta', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: quote.paymentMethod || 'CONTADO', fontSize: 8 }],
                 [{ text: 'Tiempo de Entrega', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: 'INMEDIATO', fontSize: 8 }],
                 [{ text: 'Lugar de Entrega', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: client?.address || ' ', fontSize: 8 }],
                 [{ text: 'Nota', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: quote.notes || ' ', fontSize: 8 }],
