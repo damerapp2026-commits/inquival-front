@@ -11,6 +11,7 @@ import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { useUsers } from '../../users/hooks/useUsers';
 import { COMPANY_INFO } from '../../../config/companyInfo';
+import { useDebounce } from '../../../shared/hooks/useDebounce';
 import type { Product, ProductPrice, Company, Client, PriceTier } from '../../../shared/types';
 
 const IGV_RATE = 0.18;
