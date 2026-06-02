@@ -222,10 +222,10 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
           widths: ['auto', 5, '*', 'auto', 5, '*'],
           body: [
             [
-              { text: 'R.U.C. / D.N.I.', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: client?.documentNumber || '—', fontSize: 8, colSpan: 4 }, {}, {}, {},
+              { text: 'Cliente', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: (client?.name || quote.clientName || '—').toUpperCase(), fontSize: 8, colSpan: 4 }, {}, {}, {},
             ],
             [
-              { text: 'Cliente', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: (client?.name || quote.clientName || '—').toUpperCase(), fontSize: 8, colSpan: 4 }, {}, {}, {},
+              { text: 'R.U.C. / D.N.I.', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: client?.documentNumber || '—', fontSize: 8, colSpan: 4 }, {}, {}, {},
             ],
             [
               { text: 'Dirección', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: client?.address || '—', fontSize: 8, colSpan: 4 }, {}, {}, {},
