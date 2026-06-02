@@ -96,6 +96,8 @@ export function NewQuotePage() {
   const [tierId, setTierId] = useState(preload?.tierId || '');
   const [sellerId] = useState(preload?.sellerId || (isSellerRole ? user?.id : '') || '');
 
+  const [currency, setCurrency] = useState<'PEN' | 'USD'>('PEN');
+  const [exchangeRate, setExchangeRate] = useState('');
   const [participantIds, setParticipantIds] = useState<string[]>([]);
   const [validityDays, setValidityDays] = useState(15);
   const [paymentTerm, setPaymentTerm] = useState('CONTADO');
@@ -122,12 +124,16 @@ export function NewQuotePage() {
     return d.toISOString().slice(0, 10);
   }, [validityDays]);
 
+  const currSymbol = currency === 'USD' ? 'US$' : 'S/';
+  const exchangeRateNum = parseFloat(exchangeRate) || 0;
+
   const isExonerado = (taxType?: string) => taxType === 'EXONERADO' || taxType === 'INAFECTO';
   const gravadoTotal = useMemo(() => lines.filter(l => !isExonerado(l.taxType)).reduce((acc, l) => acc + l.quantity * l.unitPrice, 0), [lines]);
   const exoneradoTotal = useMemo(() => lines.filter(l => isExonerado(l.taxType)).reduce((acc, l) => acc + l.quantity * l.unitPrice, 0), [lines]);
   const opGravadas = Math.round((gravadoTotal / (1 + IGV_RATE)) * 100) / 100;
   const igv = Math.round((gravadoTotal - opGravadas) * 100) / 100;
   const total = gravadoTotal + exoneradoTotal;
+  const solEquiv = currency === 'USD' && exchangeRateNum > 0 ? Math.round(total * exchangeRateNum * 100) / 100 : null;
 
   const productOptions = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
@@ -229,6 +235,8 @@ export function NewQuotePage() {
         notes: buildNotes() || undefined,
         sellerId: sellerId || undefined,
         participantIds: participantIds.length ? participantIds : undefined,
+        currency,
+        exchangeRate: exchangeRateNum || undefined,
         items: lines.map((l) => ({
           productId: l.productId,
           companyId: l.sourceCompanyId || companyId,
@@ -421,7 +429,7 @@ export function NewQuotePage() {
                                 <div className="text-xs text-gray-400 flex items-center gap-2 mt-0.5">
                                   <span>{p.unit}</span>
                                   <span>·</span>
-                                  <span className="text-primary-600 font-medium">S/ {price.toFixed(2)}</span>
+                                  <span className="text-primary-600 font-medium">{currSymbol} {price.toFixed(2)}</span>
                                 </div>
                               </button>
                             );
@@ -448,9 +456,9 @@ export function NewQuotePage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-medium text-gray-500 mb-1">P. unit. (S/)</label>
+                        <label className="block text-[11px] font-medium text-gray-500 mb-1">P. unit. ({currSymbol})</label>
                         <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-primary-500">
-                          <span className="px-2 text-xs text-gray-400 bg-gray-50">S/</span>
+                          <span className="px-2 text-xs text-gray-400 bg-gray-50">{currSymbol}</span>
                           <input
                             type="number"
                             min={0}
@@ -463,7 +471,7 @@ export function NewQuotePage() {
                       </div>
                       <div className="text-right">
                         <div className="text-[11px] text-gray-500">Subtotal</div>
-                        <div className="text-lg font-semibold text-gray-800">S/ {(line.quantity * line.unitPrice).toFixed(2)}</div>
+                        <div className="text-lg font-semibold text-gray-800">{currSymbol} {(line.quantity * line.unitPrice).toFixed(2)}</div>
                       </div>
                     </div>
                   )}
@@ -523,19 +531,46 @@ export function NewQuotePage() {
           {/* Resumen */}
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Resumen</h3>
-            <dl className="space-y-1.5 text-sm">
-              <div className="flex justify-between text-gray-600"><dt>Moneda</dt><dd className="font-medium text-gray-800">S/ Soles</dd></div>
-              <div className="flex justify-between text-gray-600"><dt>Validez</dt><dd className="font-medium text-gray-800 flex items-center gap-1">{new Date(validUntilISO).toLocaleDateString('es-PE')}</dd></div>
+            <dl className="space-y-2 text-sm">
+              <div className="flex justify-between items-center text-gray-600">
+                <dt>Moneda</dt>
+                <dd className="flex gap-1">
+                  <button type="button" onClick={() => setCurrency('PEN')} className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${currency === 'PEN' ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-200 text-gray-600 hover:border-primary-300'}`}>S/ PEN</button>
+                  <button type="button" onClick={() => setCurrency('USD')} className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${currency === 'USD' ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-200 text-gray-600 hover:border-primary-300'}`}>$ USD</button>
+                </dd>
+              </div>
+              {currency === 'USD' && (
+                <div className="flex justify-between items-center text-gray-600">
+                  <dt>T.C. referencial</dt>
+                  <dd className="flex items-center gap-1">
+                    <span className="text-xs text-gray-400">S/</span>
+                    <input
+                      type="number" min={0} step="0.01"
+                      value={exchangeRate}
+                      onChange={(e) => setExchangeRate(e.target.value)}
+                      placeholder="3.75"
+                      className="w-20 text-right px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    />
+                  </dd>
+                </div>
+              )}
+              <div className="flex justify-between text-gray-600"><dt>Validez</dt><dd className="font-medium text-gray-800">{new Date(validUntilISO).toLocaleDateString('es-PE')}</dd></div>
               <div className="flex justify-between text-gray-600"><dt>Items</dt><dd className="font-medium text-gray-800">{lines.length}</dd></div>
             </dl>
             <div className="border-t border-gray-100 mt-3 pt-3 space-y-1.5 text-sm">
-              <div className="flex justify-between text-gray-600"><dt>Op. Gravadas</dt><dd>S/ {opGravadas.toFixed(2)}</dd></div>
-              {exoneradoTotal > 0 && <div className="flex justify-between text-gray-600"><dt>Op. Exoneradas</dt><dd>S/ {exoneradoTotal.toFixed(2)}</dd></div>}
-              <div className="flex justify-between text-gray-600"><dt>IGV (18%)</dt><dd>S/ {igv.toFixed(2)}</dd></div>
+              <div className="flex justify-between text-gray-600"><dt>Op. Gravadas</dt><dd>{currSymbol} {opGravadas.toFixed(2)}</dd></div>
+              {exoneradoTotal > 0 && <div className="flex justify-between text-gray-600"><dt>Op. Exoneradas</dt><dd>{currSymbol} {exoneradoTotal.toFixed(2)}</dd></div>}
+              <div className="flex justify-between text-gray-600"><dt>IGV (18%)</dt><dd>{currSymbol} {igv.toFixed(2)}</dd></div>
               <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                 <dt className="font-semibold text-gray-900">Total</dt>
-                <dd className="text-2xl font-bold text-primary-600">S/ {total.toFixed(2)}</dd>
+                <dd className="text-2xl font-bold text-primary-600">{currSymbol} {total.toFixed(2)}</dd>
               </div>
+              {solEquiv !== null && (
+                <div className="flex justify-between text-xs text-gray-400 pt-1 border-t border-gray-50">
+                  <dt>Equiv. en S/</dt>
+                  <dd>S/ {solEquiv.toFixed(2)}</dd>
+                </div>
+              )}
             </div>
           </div>
 
@@ -632,7 +667,7 @@ export function NewQuotePage() {
           <ScrollText size={15} className="text-gray-400" />
           <span>{lines.length} ítems</span>
           <span className="text-gray-300">·</span>
-          <span>Total <span className="font-semibold text-gray-800">S/ {total.toFixed(2)}</span></span>
+          <span>Total <span className="font-semibold text-gray-800">{currSymbol} {total.toFixed(2)}</span></span>
         </div>
         <div className="flex items-center gap-2">
           <button

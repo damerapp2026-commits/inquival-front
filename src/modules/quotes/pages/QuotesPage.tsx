@@ -337,11 +337,13 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
   const validUntil = new Date(quote.validUntil).toLocaleDateString('es-PE');
   const daysLeft = Math.ceil((new Date(quote.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
+  const currSymbol = quote.currency === 'USD' ? 'US$' : 'S/';
   const isExonerado = (taxType?: string) => taxType === 'EXONERADO' || taxType === 'INAFECTO';
   const gravadoTotal = quote.items.filter(it => !isExonerado(productById[it.productId]?.taxType)).reduce((s, it) => s + it.subtotal, 0);
   const exoneradoTotal = quote.items.filter(it => isExonerado(productById[it.productId]?.taxType)).reduce((s, it) => s + it.subtotal, 0);
   const opGravadas = Math.round((gravadoTotal / 1.18) * 100) / 100;
   const igv = Math.round((gravadoTotal - opGravadas) * 100) / 100;
+  const solEquiv = quote.currency === 'USD' && (quote.exchangeRate || 0) > 0 ? Math.round(quote.total * quote.exchangeRate! * 100) / 100 : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -457,22 +459,28 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
             <div className="w-64 space-y-1.5 text-sm">
               <div className="flex justify-between text-gray-500">
                 <span>Op. Gravadas</span>
-                <span className="tabular-nums">S/ {opGravadas.toFixed(2)}</span>
+                <span className="tabular-nums">{currSymbol} {opGravadas.toFixed(2)}</span>
               </div>
               {exoneradoTotal > 0 && (
                 <div className="flex justify-between text-gray-500">
                   <span>Op. Exoneradas</span>
-                  <span className="tabular-nums">S/ {exoneradoTotal.toFixed(2)}</span>
+                  <span className="tabular-nums">{currSymbol} {exoneradoTotal.toFixed(2)}</span>
                 </div>
               )}
               <div className="flex justify-between text-gray-500">
                 <span>IGV (18%)</span>
-                <span className="tabular-nums">S/ {igv.toFixed(2)}</span>
+                <span className="tabular-nums">{currSymbol} {igv.toFixed(2)}</span>
               </div>
               <div className="flex justify-between font-bold text-gray-900 text-base pt-1.5 border-t border-gray-200">
                 <span>Total</span>
-                <span className="tabular-nums text-primary-700">S/ {quote.total.toFixed(2)}</span>
+                <span className="tabular-nums text-primary-700">{currSymbol} {quote.total.toFixed(2)}</span>
               </div>
+              {solEquiv !== null && (
+                <div className="flex justify-between text-xs text-gray-400 pt-1 border-t border-gray-100">
+                  <span>Equiv. en S/ (T.C. {quote.exchangeRate?.toFixed(2)})</span>
+                  <span className="tabular-nums">S/ {solEquiv.toFixed(2)}</span>
+                </div>
+              )}
             </div>
           </div>
 

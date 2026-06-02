@@ -135,9 +135,11 @@ function buildPaymentMethodsBlock(): any[] {
   ];
 }
 
-function buildDocDefinition({ quote, products, company, client, vendor, currency = 'PEN', logoDataUrl }: BuildParams) {
+function buildDocDefinition({ quote, products, company, client, vendor, currency, logoDataUrl }: BuildParams) {
   const getProduct = (id: string) => products.find(p => p.id === id);
-  const currencySymbol = currency === 'USD' ? 'US$' : 'S/';
+  const effectiveCurrency = quote.currency || currency || 'PEN';
+  const currencySymbol = effectiveCurrency === 'USD' ? 'US$' : 'S/';
+  const tcRate = quote.exchangeRate || 0;
   const headerName = COMPANY_INFO.legalName || company?.name || 'EMPRESA';
   const headerAddress = COMPANY_INFO.address || company?.address || '';
   const headerPhone = COMPANY_INFO.phone || company?.phone || '';
@@ -345,6 +347,11 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
                   { text: currencySymbol, fontSize: 10, alignment: 'center', bold: true, margin: [0, 3] },
                   { text: quote.total.toFixed(2), fontSize: 10, alignment: 'right', bold: true, margin: [0, 3] },
                 ],
+                ...(effectiveCurrency === 'USD' && tcRate > 0 ? [[
+                  { text: `T.C. ${tcRate.toFixed(2)} — Equiv. S/`, fontSize: 8, color: '#6b7280', alignment: 'right', margin: [4, 2] },
+                  { text: 'S/', fontSize: 8, color: '#6b7280', alignment: 'center', margin: [0, 2] },
+                  { text: (quote.total * tcRate).toFixed(2), fontSize: 8, color: '#6b7280', alignment: 'right', margin: [0, 2] },
+                ]] : []),
               ],
             },
             layout: {
