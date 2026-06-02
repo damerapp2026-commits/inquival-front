@@ -7,7 +7,7 @@ import { useClients } from '../../clients/hooks/useClients';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
-import { ScrollText, Download, Printer, CheckCircle2, XCircle, ShoppingCart, Plus, Search, Calendar } from 'lucide-react';
+import { ScrollText, Download, Printer, CheckCircle2, XCircle, ShoppingCart, Plus, Search, Calendar, Eye, X } from 'lucide-react';
 import type { Quote, QuoteStatus, Product, Company, Client } from '../../../shared/types';
 import { downloadQuotePdf, printQuotePdf } from '../utils/quotePdf';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
@@ -30,6 +30,7 @@ export function QuotesPage() {
   const debouncedSearch = useDebounce(search);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [viewQuote, setViewQuote] = useState<Quote | null>(null);
   const { user } = useAuth();
   const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
   const sellerScope = isSellerRole ? user?.id : undefined;
@@ -131,6 +132,9 @@ export function QuotesPage() {
     {
       key: 'actions', header: '', render: (q: Quote) => (
         <div className="flex items-center gap-1">
+          <button onClick={(e) => { e.stopPropagation(); setViewQuote(q); }} className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Ver detalle">
+            <Eye size={15} />
+          </button>
           <button onClick={(e) => { e.stopPropagation(); printQuotePdf(pdfParams(q)); }} className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded" title="Ver / imprimir PDF">
             <Printer size={15} />
           </button>
@@ -253,6 +257,170 @@ export function QuotesPage() {
 
       <DataTable columns={columns} data={quotes} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+
+      {/* Quote detail modal */}
+      {viewQuote && (
+        <QuoteDetailModal
+          quote={viewQuote}
+          products={products}
+          client={getClient(viewQuote.clientId)}
+          onClose={() => setViewQuote(null)}
+          onPrint={() => printQuotePdf(pdfParams(viewQuote))}
+          onDownload={() => downloadQuotePdf(pdfParams(viewQuote))}
+        />
+      )}
+    </div>
+  );
+}
+
+interface QuoteDetailModalProps {
+  quote: Quote;
+  products: Product[];
+  client?: Client;
+  onClose: () => void;
+  onPrint: () => void;
+  onDownload: () => void;
+}
+
+function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownload }: QuoteDetailModalProps) {
+  const productById = useMemo(() => {
+    const m: Record<string, Product> = {};
+    products.forEach(p => { m[p.id] = p; });
+    return m;
+  }, [products]);
+
+  const meta = STATUS_LABELS[quote.status];
+  const issueDate = new Date(quote.issueDate).toLocaleDateString('es-PE');
+  const validUntil = new Date(quote.validUntil).toLocaleDateString('es-PE');
+  const daysLeft = Math.ceil((new Date(quote.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+
+  const subtotal = quote.total / 1.18;
+  const igv = quote.total - subtotal;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-100 flex items-center justify-center">
+              <ScrollText size={18} className="text-indigo-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-gray-900">{quote.quoteNumber}</h2>
+              <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium border ${meta.color}`}>{meta.label}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={onPrint} className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" title="Imprimir PDF">
+              <Printer size={16} />
+            </button>
+            <button onClick={onDownload} className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" title="Descargar PDF">
+              <Download size={16} />
+            </button>
+            <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+
+          {/* Info grid */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-3">
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Cliente</p>
+                <p className="text-sm font-semibold text-gray-800 mt-0.5">{client?.name || quote.clientName || '—'}</p>
+                {client?.documentNumber && <p className="text-xs font-mono text-gray-400">{client.documentNumber}</p>}
+                {client?.phone && <p className="text-xs text-gray-400">{client.phone}</p>}
+              </div>
+              {quote.sellerName && (
+                <div>
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Vendedor</p>
+                  <p className="text-sm text-emerald-700 font-medium mt-0.5">{quote.sellerName}</p>
+                </div>
+              )}
+            </div>
+            <div className="space-y-3">
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Emisión</p>
+                <p className="text-sm text-gray-700 mt-0.5">{issueDate}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Válido hasta</p>
+                <p className="text-sm text-gray-700 mt-0.5">{validUntil}</p>
+                {quote.status === 'PENDING' && (
+                  <p className={`text-xs mt-0.5 ${daysLeft < 0 ? 'text-red-500' : daysLeft <= 3 ? 'text-orange-500' : 'text-gray-400'}`}>
+                    {daysLeft < 0 ? `Venció hace ${Math.abs(daysLeft)}d` : `Vence en ${daysLeft}d`}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Items table */}
+          <div>
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Productos</p>
+            <div className="rounded-xl border border-gray-200 overflow-hidden">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Producto</th>
+                    <th className="px-3 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Cant.</th>
+                    <th className="px-3 py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">P. Unit.</th>
+                    <th className="px-3 py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {quote.items.map((item, i) => {
+                    const prod = productById[item.productId];
+                    return (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-3 py-2.5 text-gray-800 font-medium">
+                          {prod?.name || item.productId}
+                          {prod?.code && <span className="ml-1.5 text-xs font-mono text-gray-400">{prod.code}</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-center text-gray-600">{item.quantity}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">S/ {item.unitPrice.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-gray-800">S/ {item.subtotal.toFixed(2)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Totals */}
+          <div className="flex justify-end">
+            <div className="w-56 space-y-1.5 text-sm">
+              <div className="flex justify-between text-gray-500">
+                <span>Subtotal (sin IGV)</span>
+                <span className="tabular-nums">S/ {subtotal.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-gray-500">
+                <span>IGV (18%)</span>
+                <span className="tabular-nums">S/ {igv.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between font-bold text-gray-900 text-base pt-1.5 border-t border-gray-200">
+                <span>Total</span>
+                <span className="tabular-nums text-primary-700">S/ {quote.total.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Notes */}
+          {quote.notes && (
+            <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+              <p className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider mb-1">Observaciones</p>
+              <p className="text-sm text-amber-900">{quote.notes}</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
