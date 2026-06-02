@@ -273,6 +273,7 @@ export function NewQuotePage() {
         participantIds: participantIds.length ? participantIds : undefined,
         currency,
         exchangeRate: exchangeRateNum || undefined,
+        paymentMethod: paymentTerm,
         items: lines.map((l) => ({
           productId: l.productId,
           companyId: l.sourceCompanyId || companyId,
@@ -603,7 +604,18 @@ export function NewQuotePage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1.5">Forma de pago</label>
-                  <input value={paymentTerm} onChange={(e) => setPaymentTerm(e.target.value)} placeholder="CONTADO" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                  <div className="grid grid-cols-2 gap-1 p-1 bg-gray-100 rounded-xl">
+                    {(['CONTADO', 'CRÉDITO'] as const).map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setPaymentTerm(opt)}
+                        className={`py-2 text-sm font-medium rounded-lg transition-all ${paymentTerm === opt ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1.5">Tiempo de entrega</label>
