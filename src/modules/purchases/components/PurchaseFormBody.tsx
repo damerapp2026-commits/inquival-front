@@ -7,7 +7,6 @@ import { useCategories } from '../../categories/hooks/useCategories';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { useUnits } from '../../units/hooks/useUnits';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
-import { useTipoCambio } from '../../../shared/hooks/useLookup';
 import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
 import { useCashRegisterToday } from '../../cash-register/hooks/useCashRegister';
 import { Modal } from '../../../shared/components/Modal';
@@ -122,7 +121,6 @@ export function PurchaseFormBody({
   const { data: productsData } = useProducts({ limit: 10000 });
   const supplierByRuc = useSupplierByRuc();
   const createSupplier = useCreateSupplier();
-  const tipoCambioMutation = useTipoCambio();
   const { data: cashRegisterToday } = useCashRegisterToday();
   const { data: categoriesData } = useCategories();
   const { data: laboratoriesData } = useLaboratories();
@@ -225,15 +223,6 @@ export function PurchaseFormBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currency, exchangeRate]);
 
-  useEffect(() => {
-    if (mode === 'create' && currency === 'USD' && form.purchaseDate && exchangeRate == null) {
-      tipoCambioMutation.mutate(form.purchaseDate, {
-        onSuccess: (data) => { setExchangeRate(data.venta); setExchangeRateDate(data.fecha); },
-        onError: () => { setExchangeRate(null); setExchangeRateDate(''); },
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     if (scrollToLast) {
@@ -247,22 +236,10 @@ export function PurchaseFormBody({
 
   const handleDateChange = (date: string) => {
     setForm(prev => ({ ...prev, purchaseDate: date }));
-    if (date && currency === 'USD') {
-      tipoCambioMutation.mutate(date, {
-        onSuccess: (data) => { setExchangeRate(data.venta); setExchangeRateDate(data.fecha); },
-        onError: () => { setExchangeRate(null); setExchangeRateDate(''); },
-      });
-    }
   };
 
   const handleCurrencyChange = (cur: 'PEN' | 'USD') => {
     setCurrency(cur);
-    if (cur === 'USD' && form.purchaseDate) {
-      tipoCambioMutation.mutate(form.purchaseDate, {
-        onSuccess: (data) => { setExchangeRate(data.venta); setExchangeRateDate(data.fecha); },
-        onError: () => { setExchangeRate(null); setExchangeRateDate(''); },
-      });
-    }
   };
 
   const documentTotal = Math.round(form.items.reduce((s, i) => s + (i.quantity * i.unitPriceConIgv || 0), 0) * 100) / 100;
@@ -401,7 +378,6 @@ export function PurchaseFormBody({
     if (!form.supplier.trim()) { toast.error('Selecciona un laboratorio'); return; }
     const hasValidItems = form.items.some(i => i.productId && i.quantity > 0);
     if (!hasValidItems) { toast.error('Agrega al menos un producto con cantidad mayor a 0'); return; }
-    if (currency === 'USD' && !exchangeRate) { toast.error('Verifique el tipo de cambio'); return; }
     const missingCompany = form.items.find(i => !i.companyId);
     if (missingCompany) { toast.error('Selecciona el almacén destino para cada producto'); return; }
     const missingLot = form.items.find(i => {
@@ -693,7 +669,7 @@ export function PurchaseFormBody({
                               />
                             </div>
                             <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">P. Venta (S/)</label>
+                              <label className="block text-[11px] text-gray-500 mb-1">P. Venta ({sym})</label>
                               <input
                                 type="number" min="0" step="0.01"
                                 value={item.precioVenta || ''}
@@ -733,18 +709,10 @@ export function PurchaseFormBody({
                 <button type="button" onClick={() => handleCurrencyChange('PEN')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'PEN' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>S/ Soles</button>
                 <button type="button" onClick={() => handleCurrencyChange('USD')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>$ Dólares</button>
               </div>
-              {currency === 'USD' && (
+              {currency === 'USD' && exchangeRate != null && (
                 <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-2.5 flex items-center justify-between">
-                  <span className="text-xs text-blue-700">Tipo de cambio (venta)</span>
-                  <div className="flex items-center gap-2">
-                    {tipoCambioMutation.isPending && <Loader2 size={14} className="animate-spin text-blue-500" />}
-                    {exchangeRate != null && !tipoCambioMutation.isPending && (
-                      <span className="text-sm font-medium text-blue-800">S/ {exchangeRate.toFixed(4)}</span>
-                    )}
-                    {!exchangeRate && !tipoCambioMutation.isPending && (
-                      <span className="text-xs text-gray-400">Sin datos</span>
-                    )}
-                  </div>
+                  <span className="text-xs text-blue-700">Tipo de cambio referencial</span>
+                  <span className="text-sm font-medium text-blue-800">S/ {exchangeRate.toFixed(4)}</span>
                 </div>
               )}
             </div>
@@ -909,7 +877,7 @@ export function PurchaseFormBody({
             </div>
             <div className="flex gap-2 ml-auto">
               <Link to={onCancelHref} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">Cancelar</Link>
-              <button type="submit" disabled={(currency === 'USD' && !exchangeRate) || isSubmitting} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+              <button type="submit" disabled={isSubmitting} className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm">
                 {isSubmitting ? submittingLabel : submitLabel}
               </button>
             </div>

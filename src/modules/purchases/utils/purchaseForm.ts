@@ -62,12 +62,12 @@ export function recalcItem(
   let markupPercent = item.markupPercent;
 
   if (item.precioVentaMode === 'markup') {
-    precioVenta = costoEnSoles > 0
-      ? Math.round(costoEnSoles * (1 + markupPercent / 100) * 100) / 100
+    precioVenta = costoAdquisicion > 0
+      ? Math.round(costoAdquisicion * (1 + markupPercent / 100) * 100) / 100
       : 0;
   } else {
-    markupPercent = costoEnSoles > 0
-      ? Math.round(((precioVenta / costoEnSoles) - 1) * 10000) / 100
+    markupPercent = costoAdquisicion > 0
+      ? Math.round(((precioVenta / costoAdquisicion) - 1) * 10000) / 100
       : 0;
   }
 

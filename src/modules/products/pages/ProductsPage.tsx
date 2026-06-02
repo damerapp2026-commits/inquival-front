@@ -557,10 +557,12 @@ export function ProductsPage() {
     }},
     { key: 'lastCostPrice', header: 'Costo', render: (item: Product) => {
       if (!item.lastCostPrice) return <span className="text-gray-300 text-xs">—</span>;
+      const cSym = item.lastCostCurrency === 'USD' ? '$' : 'S/';
+      const sSym = item.lastSaleCurrency === 'USD' ? '$' : 'S/';
       return (
         <div className="text-xs">
-          <div className="font-semibold tabular-nums text-gray-800">S/ {item.lastCostPrice.toFixed(4).replace(/\.?0+$/, d => d === '.' ? '' : d)}</div>
-          {item.lastSalePrice ? <div className="text-gray-400 tabular-nums">P.V. S/ {item.lastSalePrice.toFixed(2)}</div> : null}
+          <div className="font-semibold tabular-nums text-gray-800">{cSym} {item.lastCostPrice.toFixed(4).replace(/\.?0+$/, d => d === '.' ? '' : d)}</div>
+          {item.lastSalePrice ? <div className="text-gray-400 tabular-nums">P.V. {sSym} {item.lastSalePrice.toFixed(2)}</div> : null}
         </div>
       );
     }},
