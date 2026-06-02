@@ -555,6 +555,15 @@ export function ProductsPage() {
         </div>
       );
     }},
+    { key: 'lastCostPrice', header: 'Costo', render: (item: Product) => {
+      if (!item.lastCostPrice) return <span className="text-gray-300 text-xs">—</span>;
+      return (
+        <div className="text-xs">
+          <div className="font-semibold tabular-nums text-gray-800">S/ {item.lastCostPrice.toFixed(4).replace(/\.?0+$/, d => d === '.' ? '' : d)}</div>
+          {item.lastSalePrice ? <div className="text-gray-400 tabular-nums">P.V. S/ {item.lastSalePrice.toFixed(2)}</div> : null}
+        </div>
+      );
+    }},
     { key: 'actions', header: 'Acciones', render: (item: Product) => (
       <div className="flex gap-2">
         <button onClick={() => setSuppliersTarget(item)} className="text-gray-500 hover:text-primary-600" title="Ver proveedores"><Truck size={16} /></button>
