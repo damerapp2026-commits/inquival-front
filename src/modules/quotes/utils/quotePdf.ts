@@ -146,6 +146,12 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
   const headerRuc = COMPANY_INFO.ruc || company?.ruc || '—';
   const headerEmail = COMPANY_INFO.email || '';
 
+  const creditDueDateStr = (() => {
+    if (quote.paymentMethod !== 'CRÉDITO' || !quote.creditDays) return null;
+    const p = (quote.issueDate as string).slice(0, 10).split('-').map(Number);
+    return formatDate(new Date(p[0], p[1] - 1, p[2] + quote.creditDays));
+  })();
+
   const isExonerado = (taxType?: string) => taxType === 'EXONERADO' || taxType === 'INAFECTO';
   const gravadoTotal = quote.items.filter(it => !isExonerado(getProduct(it.productId)?.taxType)).reduce((s, it) => s + it.subtotal, 0);
   const exoneradoTotal = quote.items.filter(it => isExonerado(getProduct(it.productId)?.taxType)).reduce((s, it) => s + it.subtotal, 0);
@@ -245,6 +251,9 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
               { text: 'Fecha Emisión', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: formatDate(quote.issueDate), fontSize: 8 },
               { text: 'Fecha Vencimiento', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: formatDate(quote.validUntil), fontSize: 8 },
             ],
+            ...(creditDueDateStr ? [[
+              { text: 'Venc. Crédito', bold: true, fontSize: 8, color: '#b45309' }, { text: ':', fontSize: 8 }, { text: creditDueDateStr, fontSize: 8, bold: true, color: '#b45309', colSpan: 4 }, {}, {}, {},
+            ]] : []),
           ],
         },
         layout: {
