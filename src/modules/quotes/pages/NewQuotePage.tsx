@@ -102,7 +102,7 @@ export function NewQuotePage() {
     { enabled: canClientSearch },
   );
   const clientSearchResults: Client[] = canClientSearch
-    ? (Array.isArray(clientSearchRaw) ? clientSearchRaw : [])
+    ? (Array.isArray(clientSearchRaw) ? clientSearchRaw : (clientSearchRaw as any)?.data || [])
     : [];
 
   const [companyId, setCompanyId] = useState(preload?.companyId || '');
