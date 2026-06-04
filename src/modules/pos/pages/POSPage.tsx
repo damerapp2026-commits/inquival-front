@@ -197,17 +197,6 @@ export function POSPage() {
     const ddStr = String(d.getDate()).padStart(2, '0');
     return `${yyyy}-${mmStr}-${ddStr}`;
   })();
-<<<<<<< HEAD
-=======
-  const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
-  const [sellerId, setSellerId] = useState<string>('');
-  const todayLocal = (() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.toISOString().slice(0, 10);
-  })();
-  const [saleDate, setSaleDate] = useState<string>(todayLocal);
->>>>>>> origin/feat/sale-correlative-and-date
   const searchRef = useRef<HTMLInputElement>(null);
   const [successSale, setSuccessSale] = useState<VoucherSnapshot | null>(null);
   const [voucherPreview, setVoucherPreview] = useState<VoucherSnapshot | null>(null);
@@ -637,7 +626,6 @@ export function POSPage() {
       total: saleTotal,
       voucherType: saleVoucherType as VoucherSnapshot['voucherType'],
       date: saleDateObj,
-<<<<<<< HEAD
       items: [
         ...cart.map((i) => ({
           name: i.name,
@@ -652,14 +640,6 @@ export function POSPage() {
           subtotal: 0,
         })),
       ],
-=======
-      items: cart.map((i) => ({
-        name: i.name,
-        quantity: i.quantity,
-        unitPrice: i.unitPrice,
-        subtotal: i.quantity * i.unitPrice,
-      })),
->>>>>>> origin/feat/sale-correlative-and-date
       payments: validPayments.map((p) => ({
         methodName: paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '',
         amount: p.amount,
@@ -718,12 +698,9 @@ export function POSPage() {
           ],
           payments: validPayments,
           date: saleDateObj.toISOString(),
-<<<<<<< HEAD
           isCourtesy: isCourtesy || undefined,
           currency: currency !== 'PEN' ? currency : undefined,
           exchangeRate: currency === 'USD' ? exchangeRate : undefined,
-=======
->>>>>>> origin/feat/sale-correlative-and-date
         } as any);
       }
       setCart([]);
@@ -735,12 +712,9 @@ export function POSPage() {
       setCreditName('');
       setCreditDueDays('');
       setSaleDate(todayLocal);
-<<<<<<< HEAD
       setIsCourtesy(false);
       setCurrency('PEN');
       setExchangeRate(3.75);
-=======
->>>>>>> origin/feat/sale-correlative-and-date
       setShowCheckout(false);
       if (sourceQuoteId) {
         setSourceQuoteId('');
@@ -749,10 +723,6 @@ export function POSPage() {
       const saleId = saleResult?.id || saleResult?.sale?.id || '';
       const saleNumber = saleResult?.saleNumber || saleResult?.sale?.saleNumber;
       setSuccessSale({ id: saleId, voucherNumber: saleNumber, ...saleSnapshotBase });
-<<<<<<< HEAD
-=======
-      setSuccessCountdown(5);
->>>>>>> origin/feat/sale-correlative-and-date
     } catch {
       // errors handled by mutation onError
     }
@@ -1302,11 +1272,7 @@ export function POSPage() {
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl flex flex-col max-h-[92vh]">
 
             {/* Header */}
-<<<<<<< HEAD
             <div className={`rounded-t-2xl px-6 py-6 text-white shrink-0 ${isCourtesy ? 'bg-violet-600' : currency === 'USD' ? 'bg-emerald-600' : 'bg-primary-600'}`}>
-=======
-            <div className="bg-primary-600 rounded-t-2xl px-6 py-6 text-white shrink-0">
->>>>>>> origin/feat/sale-correlative-and-date
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
                   <p className="text-white/70 text-sm mb-1">
@@ -1335,27 +1301,6 @@ export function POSPage() {
                     <X size={20} />
                   </button>
                 </div>
-<<<<<<< HEAD
-=======
-                <div className="flex items-start gap-2">
-                  <label className="flex items-center gap-2 bg-white/15 hover:bg-white/25 transition-colors rounded-xl px-3 py-2 cursor-pointer" title="Fecha de la venta">
-                    <Calendar size={16} className="text-white/90 shrink-0" />
-                    <div className="flex flex-col">
-                      <span className="text-[10px] uppercase tracking-wider text-white/70 leading-none">Fecha</span>
-                      <input
-                        type="date"
-                        value={saleDate}
-                        max={todayLocal}
-                        onChange={(e) => setSaleDate(e.target.value || todayLocal)}
-                        className="bg-transparent border-0 text-white text-sm font-semibold focus:outline-none [color-scheme:dark] cursor-pointer p-0 mt-0.5"
-                      />
-                    </div>
-                  </label>
-                  <button onClick={() => setShowCheckout(false)} className="p-2 rounded-xl hover:bg-white/20 transition-colors">
-                    <X size={20} />
-                  </button>
-                </div>
->>>>>>> origin/feat/sale-correlative-and-date
               </div>
               {/* Cart items summary */}
               <div className="bg-white/10 rounded-xl px-4 py-3 max-h-32 overflow-y-auto space-y-2">
@@ -1879,14 +1824,11 @@ export function POSPage() {
                 {(successSale.voucherNumber || successSale.id) && (
                   <span className="text-gray-400 font-mono">· {successSale.voucherNumber || `#${successSale.id.slice(-6).toUpperCase()}`}</span>
                 )}
-<<<<<<< HEAD
               </div>
               <div className="text-3xl font-bold text-gray-900 tabular-nums">
                 {successSale.currency === 'USD' && successSale.totalUsd != null
                   ? `$ ${successSale.totalUsd.toFixed(2)}`
                   : `S/ ${successSale.total.toFixed(2)}`}
-=======
->>>>>>> origin/feat/sale-correlative-and-date
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-1">
