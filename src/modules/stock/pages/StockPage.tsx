@@ -945,13 +945,37 @@ export function StockPage() {
                             <td></td>
                             <td colSpan={3} className="px-3 py-2">
                               <div className="text-xs text-gray-500 mb-1">Desglose por almacén</div>
-                              <div className="space-y-1">
-                                {breakdown.map(b => (
-                                  <div key={b.companyId} className="flex items-center gap-2 text-xs bg-white border border-gray-200 rounded px-2 py-1">
-                                    <span className="font-medium text-gray-700">{getCompanyName(b.companyId)}</span>
-                                    <span className={`ml-auto ${b.quantity === 0 ? 'text-gray-400' : b.quantity <= 10 ? 'text-red-600 font-semibold' : 'text-gray-700 font-medium'}`}>{b.quantity}</span>
-                                  </div>
-                                ))}
+                              <div className="space-y-1.5">
+                                {breakdown.map(b => {
+                                  const companyLots = (lotsByProduct[item.productId] || []).filter(l => l.companyId === b.companyId && l.currentQuantity > 0);
+                                  return (
+                                    <div key={b.companyId}>
+                                      <div className="flex items-center gap-2 text-xs bg-white border border-gray-200 rounded px-2 py-1">
+                                        <span className="font-medium text-gray-700">{getCompanyName(b.companyId)}</span>
+                                        <span className={`ml-auto ${b.quantity === 0 ? 'text-gray-400' : b.quantity <= 10 ? 'text-red-600 font-semibold' : 'text-gray-700 font-medium'}`}>{b.quantity}</span>
+                                      </div>
+                                      {companyLots.length > 0 && (
+                                        <div className="ml-3 mt-0.5 space-y-0.5">
+                                          {companyLots.map(l => {
+                                            const st = lotStatus(l);
+                                            return (
+                                              <div key={l.id} className="flex items-center gap-2 text-xs bg-gray-50 border border-gray-100 rounded px-2 py-0.5">
+                                                <span className="font-mono text-gray-500 text-[11px]">{l.lotNumber}</span>
+                                                <span className="text-gray-400">·</span>
+                                                <span className="text-gray-600">{l.currentQuantity}</span>
+                                                {l.expirationDate && <>
+                                                  <span className="text-gray-400">·</span>
+                                                  <span className="text-gray-500">Vence {new Date(l.expirationDate).toLocaleDateString('es-PE')}</span>
+                                                </>}
+                                                <span className={`ml-auto px-1.5 py-0.5 rounded border text-[10px] font-medium ${st.color}`}>{st.label}</span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </td>
                           </tr>
@@ -990,7 +1014,8 @@ export function StockPage() {
                 ) : stockItems.map((item: Stock) => {
                   const product = products.find((p: Product) => p.id === item.productId);
                   const productLots = lotsByProduct[item.productId] || [];
-                  const hasLots = product?.tracksLot && productLots.length > 0;
+                  const activeLots = productLots.filter(l => l.currentQuantity > 0);
+                  const hasLots = activeLots.length > 0;
                   const isExpanded = expandedStock[item.id];
                   const isOrphan = item.productMissing === true || (!product && !item.productName);
                   const isInactive = item.productIsActive === false || product?.isActive === false;
@@ -1019,7 +1044,7 @@ export function StockPage() {
                           <td colSpan={3} className="px-3 py-2">
                             <div className="text-xs text-gray-500 mb-1">Lotes activos</div>
                             <div className="space-y-1">
-                              {productLots.filter(l => l.currentQuantity > 0).map(l => {
+                              {activeLots.map(l => {
                                 const st = lotStatus(l);
                                 return (
                                   <div key={l.id} className="flex items-center gap-2 text-xs bg-white border border-gray-200 rounded px-2 py-1">
