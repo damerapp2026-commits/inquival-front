@@ -6,7 +6,7 @@ import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useStockByProductSummary } from '../../stock/hooks/useStock';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
-import { useExpiringLots } from '../../stock/hooks/useProductLots';
+import { useExpiringLots, useProductLotsByProduct } from '../../stock/hooks/useProductLots';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { ClipboardList, Search, ArrowUpCircle, ArrowDownCircle, X, Package, FileText, Download, Printer } from 'lucide-react';
@@ -150,6 +150,8 @@ function KardexTab({ products, companyList }: SubProps) {
   if (startDate) params.startDate = startDate;
   if (endDate) params.endDate = endDate;
 
+  const { data: productLots } = useProductLotsByProduct(productIdParam || undefined);
+
   const { data, isLoading } = useKardex(productIdParam ? params : undefined);
   const movementsRaw: StockMovement[] = productIdParam ? data?.data || [] : [];
   const movements: StockMovement[] = productIdParam
@@ -165,6 +167,14 @@ function KardexTab({ products, companyList }: SubProps) {
   const descFor = (m: StockMovement) => m.displayDescription || m.description;
 
   const isEntry = (m: StockMovement) => MOVEMENT_LABELS[m.movementType]?.isEntry;
+
+  const lotStatusKardex = (expirationDate?: Date | string | null): { label: string; color: string } => {
+    if (!expirationDate) return { label: 'Sin F.V.', color: 'text-gray-400 border-gray-200 bg-white' };
+    const days = Math.ceil((new Date(expirationDate).getTime() - Date.now()) / 86400000);
+    if (days < 0) return { label: `Vencido (${-days}d)`, color: 'text-red-700 border-red-200 bg-red-50' };
+    if (days <= 30) return { label: `Por vencer (${days}d)`, color: 'text-orange-700 border-orange-200 bg-orange-50' };
+    return { label: `Vigente (${days}d)`, color: 'text-green-700 border-green-200 bg-green-50' };
+  };
 
   const handleExportExcel = () => {
     if (!selectedProduct) return;
@@ -417,6 +427,58 @@ function KardexTab({ products, companyList }: SubProps) {
             </div>
           </div>
           <Pagination page={page} totalPages={Math.ceil(total / 500)} onPageChange={setPage} />
+
+          {Array.isArray(productLots) && productLots.length > 0 && (
+            <div className="mt-4 border border-gray-300 bg-white print:hidden">
+              <div className="bg-gray-50 px-3 py-2 border-b border-gray-300 flex items-center gap-2">
+                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Lotes del producto</span>
+                <span className="text-xs text-gray-400">({productLots.length} lote{productLots.length !== 1 ? 's' : ''})</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-300 px-2 py-1.5 text-left font-semibold text-gray-700 uppercase">N° Lote</th>
+                      <th className="border border-gray-300 px-2 py-1.5 text-left font-semibold text-gray-700 uppercase">Almacén</th>
+                      <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase">Cant. inicial</th>
+                      <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase">Cant. actual</th>
+                      <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase">F. Vencimiento</th>
+                      <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase">F. Recepción</th>
+                      <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(productLots as any[]).map((lot) => {
+                      const st = lotStatusKardex(lot.expirationDate);
+                      return (
+                        <tr key={lot.id} className="hover:bg-gray-50">
+                          <td className="border border-gray-300 px-2 py-1.5 font-mono font-medium text-gray-800">{lot.lotNumber}</td>
+                          <td className="border border-gray-300 px-2 py-1.5 text-gray-600">{lot.companyName || getCompanyName(lot.companyId)}</td>
+                          <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-700">{lot.initialQuantity}</td>
+                          <td className={`border border-gray-300 px-2 py-1.5 text-center font-bold ${lot.currentQuantity === 0 ? 'text-gray-400' : 'text-gray-900'}`}>
+                            {lot.currentQuantity}
+                          </td>
+                          <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-700">
+                            {lot.expirationDate
+                              ? new Date(lot.expirationDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                              : '—'}
+                          </td>
+                          <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-500">
+                            {lot.receivedAt
+                              ? new Date(lot.receivedAt).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                              : '—'}
+                          </td>
+                          <td className="border border-gray-300 px-2 py-1.5 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded border text-[10px] font-medium ${st.color}`}>{st.label}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
