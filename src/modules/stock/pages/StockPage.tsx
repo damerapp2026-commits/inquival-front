@@ -43,6 +43,8 @@ export function StockPage() {
   const [showExpiringDetail, setShowExpiringDetail] = useState(false);
   const initialLotFilter = (searchParams.get('filter') as 'all' | 'active' | 'expiring' | 'expired' | null) || 'all';
   const [lotFilter, setLotFilter] = useState<'all' | 'active' | 'expiring' | 'expired'>(initialLotFilter);
+  const [lotDateFilter, setLotDateFilter] = useState('');
+  const [lotDateDirection, setLotDateDirection] = useState<'before' | 'after'>('before');
   useEffect(() => {
     const t = searchParams.get('tab');
     if (t === 'inventory' || t === 'lots' || t === 'adjustments' || t === 'transfers') setActiveTab(t);
@@ -241,11 +243,19 @@ export function StockPage() {
   };
 
   const filteredLots = allLots.filter(l => {
-    if (lotFilter === 'all') return true;
-    const d = daysUntil(l.expirationDate);
-    if (lotFilter === 'active') return l.currentQuantity > 0 && d > 30;
-    if (lotFilter === 'expiring') return l.currentQuantity > 0 && d >= 0 && d <= 30;
-    if (lotFilter === 'expired') return d < 0;
+    if (lotFilter !== 'all') {
+      const d = daysUntil(l.expirationDate);
+      if (lotFilter === 'active' && !(l.currentQuantity > 0 && d > 30)) return false;
+      if (lotFilter === 'expiring' && !(l.currentQuantity > 0 && d >= 0 && d <= 30)) return false;
+      if (lotFilter === 'expired' && !(d < 0)) return false;
+    }
+    if (lotDateFilter) {
+      if (!l.expirationDate) return false;
+      const lotDate = new Date(l.expirationDate).getTime();
+      const cutoff = new Date(lotDateFilter).getTime();
+      if (lotDateDirection === 'before') return lotDate <= cutoff;
+      return lotDate >= cutoff;
+    }
     return true;
   }).sort((a, b) => daysUntil(a.expirationDate) - daysUntil(b.expirationDate));
 
@@ -1038,12 +1048,46 @@ export function StockPage() {
 
       {activeTab === 'lots' && (
         <>
-          <div className="flex gap-2 mb-3 flex-wrap">
+          <div className="flex gap-2 mb-3 flex-wrap items-center">
             {([{ id: 'all', label: 'Todos' }, { id: 'active', label: 'Activos' }, { id: 'expiring', label: 'Por vencer (30d)' }, { id: 'expired', label: 'Vencidos' }] as const).map(f => (
               <button key={f.id} onClick={() => setLotFilter(f.id)} className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${lotFilter === f.id ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'}`}>
                 {f.label}
               </button>
             ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className="text-sm text-gray-500 font-medium">F.V.:</span>
+            <button
+              onClick={() => setLotDateDirection('before')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${lotDateDirection === 'before' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300'}`}
+            >
+              Antes de
+            </button>
+            <button
+              onClick={() => setLotDateDirection('after')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${lotDateDirection === 'after' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}
+            >
+              Después de
+            </button>
+            <input
+              type="date"
+              value={lotDateFilter}
+              onChange={(e) => setLotDateFilter(e.target.value)}
+              className="px-3 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+            />
+            {lotDateFilter && (
+              <button
+                onClick={() => setLotDateFilter('')}
+                className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50"
+              >
+                Limpiar fecha
+              </button>
+            )}
+            {lotDateFilter && (
+              <span className="text-xs text-gray-400">
+                {filteredLots.length} resultado{filteredLots.length !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
           <div className="bg-white rounded-xl shadow-card overflow-hidden border border-gray-100">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
