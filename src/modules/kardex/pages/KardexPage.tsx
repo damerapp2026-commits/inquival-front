@@ -168,6 +168,13 @@ function KardexTab({ products, companyList }: SubProps) {
 
   const isEntry = (m: StockMovement) => MOVEMENT_LABELS[m.movementType]?.isEntry;
 
+  const lotByPurchaseId = new Map<string, any>();
+  if (Array.isArray(productLots)) {
+    for (const lot of productLots as any[]) {
+      if (lot.purchaseId) lotByPurchaseId.set(lot.purchaseId, lot);
+    }
+  }
+
   const lotStatusKardex = (expirationDate?: Date | string | null): { label: string; color: string } => {
     if (!expirationDate) return { label: 'Sin F.V.', color: 'text-gray-400 border-gray-200 bg-white' };
     const days = Math.ceil((new Date(expirationDate).getTime() - Date.now()) / 86400000);
@@ -395,6 +402,9 @@ function KardexTab({ products, companyList }: SubProps) {
                   ) : (
                     movements.map((m) => {
                       const entry = isEntry(m);
+                      const lot = m.movementType === 'PURCHASE' && m.referenceId
+                        ? lotByPurchaseId.get(m.referenceId)
+                        : undefined;
                       return (
                         <tr key={m.id} className="hover:bg-gray-50">
                           <td className="border border-gray-300 px-2 py-1 whitespace-nowrap text-gray-700">
@@ -402,6 +412,18 @@ function KardexTab({ products, companyList }: SubProps) {
                           </td>
                           <td className="border border-gray-300 px-2 py-1 text-gray-800">
                             <span className="block max-w-[320px] truncate" title={descFor(m)}>{descFor(m)}</span>
+                            {lot && (
+                              <span className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <span className="font-mono text-[11px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                                  Lote: {lot.lotNumber}
+                                </span>
+                                {lot.expirationDate && (
+                                  <span className={`text-[11px] px-1.5 py-0.5 rounded border font-medium ${lotStatusKardex(lot.expirationDate).color}`}>
+                                    F.V. {new Date(lot.expirationDate).toLocaleDateString('es-PE')}
+                                  </span>
+                                )}
+                              </span>
+                            )}
                           </td>
                           <td className="border border-gray-300 px-2 py-1 text-center font-semibold text-primary-700">
                             {entry ? m.quantity : ''}
