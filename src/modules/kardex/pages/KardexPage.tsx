@@ -115,6 +115,8 @@ function KardexTab({ products, companyList }: SubProps) {
   const [companyId, setCompanyId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [clienteFilter, setClienteFilter] = useState('');
+  const [precioVentaFilter, setPrecioVentaFilter] = useState('');
 
   const setSelectedProductId = (id: string) => {
     const sp = new URLSearchParams(searchParams);
@@ -159,6 +161,11 @@ function KardexTab({ products, companyList }: SubProps) {
     : movementsRaw;
   const total: number = productIdParam ? data?.total || 0 : 0;
 
+  React.useEffect(() => {
+    setClienteFilter('');
+    setPrecioVentaFilter('');
+  }, [productIdParam]);
+
   const selectedProduct = products.find((p) => p.id === productIdParam);
 
   const formatDate = (d: string) =>
@@ -174,6 +181,18 @@ function KardexTab({ products, companyList }: SubProps) {
       if (lot.purchaseId) lotByPurchaseId.set(lot.purchaseId, lot);
     }
   }
+
+  const displayMovements = movements.filter((m) => {
+    if (clienteFilter) {
+      const desc = (m.displayDescription || m.description || '').toLowerCase();
+      if (!desc.includes(clienteFilter.toLowerCase())) return false;
+    }
+    if (precioVentaFilter !== '') {
+      const p = parseFloat(precioVentaFilter);
+      if (!isNaN(p) && (typeof m.unitPrice !== 'number' || Math.abs(m.unitPrice - p) > 0.009)) return false;
+    }
+    return true;
+  });
 
   const lotStatusKardex = (expirationDate?: Date | string | null): { label: string; color: string } => {
     if (!expirationDate) return { label: 'Sin F.V.', color: 'text-gray-400 border-gray-200 bg-white' };
@@ -194,7 +213,7 @@ function KardexTab({ products, companyList }: SubProps) {
       ['FECHA', 'DESCRIPCION', 'INGRESO', 'SALIDA', 'SALDO', '', 'PRECIO', 'SUBTOTAL', 'ALMACEN'],
     ];
     // Their Excel is chronological ASC; our API returns DESC. Reverse for export.
-    const rows = [...movements].reverse();
+    const rows = [...displayMovements].reverse();
     for (const m of rows) {
       const ingreso = isEntry(m) ? m.quantity : '';
       const salida = !isEntry(m) ? m.quantity : '';
@@ -226,7 +245,7 @@ function KardexTab({ products, companyList }: SubProps) {
     <div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <div className="lg:col-span-2">
-          <label className="block text-xs font-medium text-gray-500 mb-1">Producto *</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Nombre</label>
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
@@ -330,6 +349,47 @@ function KardexTab({ products, companyList }: SubProps) {
         </div>
       </div>
 
+      {productIdParam && (
+        <div className="flex flex-wrap items-end gap-3 mb-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Cliente</label>
+            <input
+              type="text"
+              placeholder="Nombre del cliente..."
+              value={clienteFilter}
+              onChange={(e) => setClienteFilter(e.target.value)}
+              className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 w-52"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Precio Venta</label>
+            <input
+              type="number"
+              placeholder="Ej: 25.00"
+              value={precioVentaFilter}
+              onChange={(e) => setPrecioVentaFilter(e.target.value)}
+              min="0"
+              step="0.01"
+              className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 w-36"
+            />
+          </div>
+          {(clienteFilter || precioVentaFilter) && (
+            <div className="flex items-end gap-3 pb-0.5">
+              <span className="text-xs text-gray-500">
+                {displayMovements.length} de {movements.length} movimiento{movements.length !== 1 ? 's' : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setClienteFilter(''); setPrecioVentaFilter(''); }}
+                className="text-xs text-gray-500 hover:text-gray-700 underline"
+              >
+                Limpiar filtros
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {!productIdParam ? (
         <ProductsListView
           products={products}
@@ -402,8 +462,14 @@ function KardexTab({ products, companyList }: SubProps) {
                         Sin movimientos en el rango seleccionado.
                       </td>
                     </tr>
+                  ) : displayMovements.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="border border-gray-300 px-2 py-8 text-center text-gray-400">
+                        Sin resultados con los filtros aplicados.
+                      </td>
+                    </tr>
                   ) : (
-                    movements.map((m) => {
+                    displayMovements.map((m) => {
                       const entry = isEntry(m);
                       const lot = m.movementType === 'PURCHASE' && m.referenceId
                         ? lotByPurchaseId.get(m.referenceId)
