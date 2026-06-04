@@ -191,7 +191,7 @@ function KardexTab({ products, companyList }: SubProps) {
       [],
       ['PRODUCTO:', selectedProduct.name],
       [],
-      ['FECHA', 'DESCRIPCION', 'INGRESO', 'SALIDA', 'SALDO', '', 'PRECIO', 'ALMACEN'],
+      ['FECHA', 'DESCRIPCION', 'INGRESO', 'SALIDA', 'SALDO', '', 'PRECIO', 'SUBTOTAL', 'ALMACEN'],
     ];
     // Their Excel is chronological ASC; our API returns DESC. Reverse for export.
     const rows = [...movements].reverse();
@@ -199,6 +199,7 @@ function KardexTab({ products, companyList }: SubProps) {
       const ingreso = isEntry(m) ? m.quantity : '';
       const salida = !isEntry(m) ? m.quantity : '';
       const precio = typeof m.unitPrice === 'number' && m.unitPrice > 0 ? m.unitPrice : '';
+      const subtotalXls = precio !== '' ? (m.unitPrice as number) * m.quantity : '';
       aoa.push([
         formatDate(m.date),
         descFor(m),
@@ -207,12 +208,13 @@ function KardexTab({ products, companyList }: SubProps) {
         m.newStock,
         '',
         precio,
+        subtotalXls,
         getCompanyName(m.companyId),
       ]);
     }
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws['!cols'] = [
-      { wch: 12 }, { wch: 40 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 3 }, { wch: 10 }, { wch: 18 },
+      { wch: 12 }, { wch: 40 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 3 }, { wch: 10 }, { wch: 11 }, { wch: 18 },
     ];
     const wb = XLSX.utils.book_new();
     const sheetName = selectedProduct.name.substring(0, 31).replace(/[\\/?*[\]]/g, ' ');
@@ -383,19 +385,20 @@ function KardexTab({ products, companyList }: SubProps) {
                     <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase text-xs">Salida</th>
                     <th className="border border-gray-300 px-2 py-1.5 text-center font-semibold text-gray-700 uppercase text-xs">Saldo</th>
                     <th className="border border-gray-300 px-2 py-1.5 text-right font-semibold text-gray-700 uppercase text-xs">Precio</th>
+                    <th className="border border-gray-300 px-2 py-1.5 text-right font-semibold text-gray-700 uppercase text-xs">Subtotal</th>
                     <th className="border border-gray-300 px-2 py-1.5 text-left font-semibold text-gray-700 uppercase text-xs">Almacén</th>
                   </tr>
                 </thead>
                 <tbody>
                   {isLoading ? (
                     <tr>
-                      <td colSpan={7} className="border border-gray-300 px-2 py-8 text-center text-gray-400">
+                      <td colSpan={8} className="border border-gray-300 px-2 py-8 text-center text-gray-400">
                         Cargando...
                       </td>
                     </tr>
                   ) : movements.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="border border-gray-300 px-2 py-8 text-center text-gray-400">
+                      <td colSpan={8} className="border border-gray-300 px-2 py-8 text-center text-gray-400">
                         Sin movimientos en el rango seleccionado.
                       </td>
                     </tr>
@@ -405,6 +408,10 @@ function KardexTab({ products, companyList }: SubProps) {
                       const lot = m.movementType === 'PURCHASE' && m.referenceId
                         ? lotByPurchaseId.get(m.referenceId)
                         : undefined;
+                      const priceColor = m.movementType === 'PURCHASE' ? 'text-red-600' :
+                        m.movementType === 'SALE' ? 'text-green-600' : 'text-gray-700';
+                      const hasPrice = typeof m.unitPrice === 'number' && m.unitPrice > 0;
+                      const subtotal = hasPrice ? m.unitPrice! * m.quantity : undefined;
                       return (
                         <tr key={m.id} className="hover:bg-gray-50">
                           <td className="border border-gray-300 px-2 py-1 whitespace-nowrap text-gray-700">
@@ -434,8 +441,11 @@ function KardexTab({ products, companyList }: SubProps) {
                           <td className="border border-gray-300 px-2 py-1 text-center font-bold text-gray-900">
                             {m.newStock}
                           </td>
-                          <td className="border border-gray-300 px-2 py-1 text-right text-gray-700">
-                            {typeof m.unitPrice === 'number' && m.unitPrice > 0 ? m.unitPrice.toFixed(2) : ''}
+                          <td className={`border border-gray-300 px-2 py-1 text-right font-semibold ${priceColor}`}>
+                            {hasPrice ? m.unitPrice!.toFixed(2) : ''}
+                          </td>
+                          <td className={`border border-gray-300 px-2 py-1 text-right font-semibold ${priceColor}`}>
+                            {subtotal !== undefined ? subtotal.toFixed(2) : ''}
                           </td>
                           <td className="border border-gray-300 px-2 py-1 text-gray-600 text-xs">
                             {getCompanyName(m.companyId)}
