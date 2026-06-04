@@ -9,6 +9,7 @@ import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { stockService } from '../services/stockService';
 import { stockAdjustmentService } from '../services/stockAdjustmentService';
+import { productLotService } from '../services/productLotService';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
@@ -86,6 +87,7 @@ export function StockPage() {
   const [adjApplying, setAdjApplying] = useState(false);
   const [adjProgress, setAdjProgress] = useState({ done: 0, total: 0, errors: 0 });
   const [adjFlashProductId, setAdjFlashProductId] = useState<string | null>(null);
+  const [adjLotId, setAdjLotId] = useState<Record<string, string>>({});
 
   const makeRowKey = (productId: string, companyId: string) => `${productId}__${companyId}`;
   const parseRowKey = (key: string): { productId: string; companyId: string } => {
@@ -103,6 +105,17 @@ export function StockPage() {
     enabled: !!adjCompanyId && !adjAllWarehouses && showAdjustment,
   });
 
+  const { data: adjAllLotsData } = useQuery({
+    queryKey: ['product-lots-all', 'adj-modal'],
+    queryFn: () => productLotService.getExpiring(undefined, 3650),
+    enabled: adjAllWarehouses && showAdjustment,
+  });
+  const { data: adjSingleCompanyLotsData } = useQuery({
+    queryKey: ['product-lots', adjCompanyId, 'adj-modal'],
+    queryFn: () => productLotService.getByCompany(adjCompanyId),
+    enabled: !adjAllWarehouses && !!adjCompanyId && showAdjustment,
+  });
+
   const adjAllProducts: Product[] = useMemo(() => {
     const list: Product[] = (adjProductsData?.data || []).filter((p: Product) => p.isActive !== false);
     return list.sort((a, b) => a.name.localeCompare(b.name));
@@ -117,7 +130,7 @@ export function StockPage() {
     return map;
   }, [adjStockResponse]);
 
-  type AdjRow = { key: string; productId: string; productName: string; productUnit?: string; companyId: string; companyName: string; currentQty: number };
+  type AdjRow = { key: string; productId: string; productName: string; productUnit?: string; companyId: string; companyName: string; currentQty: number; tracksLot?: boolean };
 
   const adjRows: AdjRow[] = useMemo(() => {
     if (adjAllWarehouses) {
@@ -140,6 +153,7 @@ export function StockPage() {
             companyId: b.companyId,
             companyName: c.name,
             currentQty: b.quantity,
+            tracksLot: !!(p as any).tracksLot,
           });
         });
       });
@@ -154,6 +168,7 @@ export function StockPage() {
       companyId: adjCompanyId,
       companyName: c?.name || '',
       currentQty: adjStockByProductId[p.id] ?? 0,
+      tracksLot: !!(p as any).tracksLot,
     }));
   }, [adjAllWarehouses, allWarehousesSummary, adjAllProducts, companyList, adjCompanyId, adjStockByProductId]);
 
@@ -162,6 +177,19 @@ export function StockPage() {
     adjRows.forEach(r => map.set(r.key, r));
     return map;
   }, [adjRows]);
+
+  const adjLotsByRowKey = useMemo(() => {
+    const source: ProductLot[] = adjAllWarehouses
+      ? (Array.isArray(adjAllLotsData) ? adjAllLotsData as ProductLot[] : [])
+      : (Array.isArray(adjSingleCompanyLotsData) ? adjSingleCompanyLotsData as ProductLot[] : []);
+    const map = new Map<string, ProductLot[]>();
+    for (const lot of source) {
+      const key = makeRowKey(lot.productId, lot.companyId);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(lot);
+    }
+    return map;
+  }, [adjAllWarehouses, adjAllLotsData, adjSingleCompanyLotsData]);
 
   const adjVisibleRows = useMemo(() => {
     const q = debouncedAdjSearch.trim().toLowerCase();
@@ -176,25 +204,29 @@ export function StockPage() {
       .map(([key]) => {
         const row = adjRowsByKey.get(key);
         const { productId, companyId } = parseRowKey(key);
-        const current = row?.currentQty ?? 0;
+        const lotId = row?.tracksLot ? (adjLotId[key] || '') : undefined;
+        const selectedLot = lotId ? adjLotsByRowKey.get(key)?.find(l => l.id === lotId) : undefined;
+        const current = selectedLot ? selectedLot.currentQuantity : (row?.currentQty ?? 0);
         const raw = adjNewQty[key];
         const parsed = raw === undefined || raw === '' ? current : Number(raw);
         const next = isNaN(parsed) ? current : parsed;
         const delta = Math.round((next - current) * 100) / 100;
-        return { key, productId, companyId, current, next, delta };
+        return { key, productId, companyId, current, next, delta, lotId: lotId || undefined };
       })
       .filter(c => Math.abs(c.delta) > 0.0001 && c.next >= 0 && !!c.companyId);
-  }, [adjSelected, adjNewQty, adjRowsByKey]);
+  }, [adjSelected, adjNewQty, adjRowsByKey, adjLotId, adjLotsByRowKey]);
   const adjHasInvalid = useMemo(() => {
     return Object.entries(adjSelected)
       .filter(([, sel]) => sel)
       .some(([key]) => {
+        const row = adjRowsByKey.get(key);
+        if (row?.tracksLot && !adjLotId[key]) return true;
         const raw = adjNewQty[key];
         if (raw === undefined || raw === '') return false;
         const parsed = Number(raw);
         return isNaN(parsed) || parsed < 0;
       });
-  }, [adjSelected, adjNewQty]);
+  }, [adjSelected, adjNewQty, adjRowsByKey, adjLotId]);
   const adjCanApply = !adjApplying && (adjAllWarehouses || !!adjCompanyId) && !!adjReason && adjPendingChanges.length > 0 && !adjHasInvalid;
 
   // Bulk import state
@@ -295,6 +327,7 @@ export function StockPage() {
     setShowAdjustment(false);
     setAdjSelected({});
     setAdjNewQty({});
+    setAdjLotId({});
     setAdjSearch('');
     setAdjFlashProductId(null);
   };
@@ -306,6 +339,7 @@ export function StockPage() {
       // Toggling off discards the typed value so re-toggling shows the live current stock
       if (wasSelected) {
         setAdjNewQty(qty => { const n = { ...qty }; delete n[key]; return n; });
+        setAdjLotId(prev => { const n = { ...prev }; delete n[key]; return n; });
       }
       return next;
     });
@@ -317,7 +351,7 @@ export function StockPage() {
       return next;
     });
   };
-  const clearAdjSelection = () => { setAdjSelected({}); setAdjNewQty({}); };
+  const clearAdjSelection = () => { setAdjSelected({}); setAdjNewQty({}); setAdjLotId({}); };
 
   const addTransferItem = () => setTransferForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0, lotAllocations: [] }] }));
   const transferSourceLots = (productId: string): ProductLot[] => {
@@ -401,6 +435,7 @@ export function StockPage() {
           type: change.delta > 0 ? 'INCREASE' : 'DECREASE',
           quantity: Math.abs(change.delta),
           reason: adjReason,
+          ...(change.lotId ? { lotId: change.lotId } : {}),
         });
         done++;
       } catch {
@@ -412,6 +447,8 @@ export function StockPage() {
     queryClient.invalidateQueries({ queryKey: ['stock-adjustments'] });
     queryClient.invalidateQueries({ queryKey: ['stock-alerts'] });
     queryClient.invalidateQueries({ queryKey: ['stock-by-product-summary'] });
+    queryClient.invalidateQueries({ queryKey: ['product-lots'] });
+    queryClient.invalidateQueries({ queryKey: ['product-lots-by-product'] });
     setAdjApplying(false);
     if (errors === 0) {
       toast.success(`${done} ajuste${done !== 1 ? 's' : ''} aplicado${done !== 1 ? 's' : ''}`);
@@ -1326,12 +1363,15 @@ export function StockPage() {
                       </td>
                     </tr>
                   ) : adjVisibleRows.map(row => {
-                    const current = row.currentQty;
                     const isSelected = !!adjSelected[row.key];
+                    const selectedLotId = row.tracksLot ? (adjLotId[row.key] || '') : '';
+                    const selectedLot = selectedLotId ? adjLotsByRowKey.get(row.key)?.find(l => l.id === selectedLotId) : undefined;
+                    const current = selectedLot ? selectedLot.currentQuantity : row.currentQty;
                     const raw = adjNewQty[row.key];
                     const parsed = raw === undefined || raw === '' ? current : Number(raw);
-                    const isInvalid = isSelected && raw !== undefined && raw !== '' && (isNaN(parsed) || parsed < 0);
-                    const next = isInvalid ? current : (isNaN(parsed) ? current : parsed);
+                    const noLotSelected = isSelected && !!row.tracksLot && !selectedLotId;
+                    const isInvalid = isSelected && !noLotSelected && raw !== undefined && raw !== '' && (isNaN(parsed) || parsed < 0);
+                    const next = (isInvalid || noLotSelected) ? current : (isNaN(parsed) ? current : parsed);
                     const delta = Math.round((next - current) * 100) / 100;
                     const flash = adjFlashProductId === row.productId;
                     return (
@@ -1351,6 +1391,26 @@ export function StockPage() {
                         <td className="px-3 py-2">
                           <div className="font-medium text-gray-800">{row.productName}</div>
                           {row.productUnit && <div className="text-[11px] text-gray-400">{row.productUnit}</div>}
+                          {row.tracksLot && !isSelected && (
+                            <div className="text-[11px] text-orange-500 mt-0.5">Controlado por lotes</div>
+                          )}
+                          {row.tracksLot && isSelected && (
+                            <div className="mt-1.5">
+                              <select
+                                value={adjLotId[row.key] || ''}
+                                onChange={(e) => setAdjLotId(prev => ({ ...prev, [row.key]: e.target.value }))}
+                                disabled={adjApplying}
+                                className="w-full px-2 py-1 border border-orange-300 rounded text-xs focus:ring-1 focus:ring-orange-400 bg-white disabled:opacity-50"
+                              >
+                                <option value="">— Selecciona un lote —</option>
+                                {(adjLotsByRowKey.get(row.key) || []).map(lot => (
+                                  <option key={lot.id} value={lot.id}>
+                                    {lot.lotNumber} · {lot.currentQuantity} uds{lot.expirationDate ? ` · FV ${new Date(lot.expirationDate).toLocaleDateString('es-PE')}` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                         </td>
                         {adjAllWarehouses && (
                           <td className="px-3 py-2 text-gray-600 text-xs">{row.companyName}</td>
@@ -1364,7 +1424,7 @@ export function StockPage() {
                               step="0.01"
                               value={raw ?? String(current)}
                               onChange={(e) => setAdjNewQty(prev => ({ ...prev, [row.key]: e.target.value }))}
-                              disabled={adjApplying}
+                              disabled={adjApplying || noLotSelected}
                               className={`w-24 px-2 py-1 border rounded text-right text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${isInvalid ? 'border-red-400 bg-red-50' : 'border-gray-300'} disabled:opacity-50`}
                             />
                           ) : (
@@ -1374,6 +1434,8 @@ export function StockPage() {
                         <td className="px-3 py-2 text-right pr-4">
                           {!isSelected ? (
                             <span className="text-gray-300">—</span>
+                          ) : noLotSelected ? (
+                            <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">Elige lote</span>
                           ) : isInvalid ? (
                             <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">Inválido</span>
                           ) : delta === 0 ? (
