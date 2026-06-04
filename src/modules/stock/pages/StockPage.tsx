@@ -88,6 +88,8 @@ export function StockPage() {
   const [adjProgress, setAdjProgress] = useState({ done: 0, total: 0, errors: 0 });
   const [adjFlashProductId, setAdjFlashProductId] = useState<string | null>(null);
   const [adjLotId, setAdjLotId] = useState<Record<string, string>>({});
+  const [adjLotNumber, setAdjLotNumber] = useState<Record<string, string>>({});
+  const [adjLotExpDate, setAdjLotExpDate] = useState<Record<string, string>>({});
 
   const makeRowKey = (productId: string, companyId: string) => `${productId}__${companyId}`;
   const parseRowKey = (key: string): { productId: string; companyId: string } => {
@@ -204,29 +206,36 @@ export function StockPage() {
       .map(([key]) => {
         const row = adjRowsByKey.get(key);
         const { productId, companyId } = parseRowKey(key);
-        const lotId = row?.tracksLot ? (adjLotId[key] || '') : undefined;
-        const selectedLot = lotId ? adjLotsByRowKey.get(key)?.find(l => l.id === lotId) : undefined;
-        const current = selectedLot ? selectedLot.currentQuantity : (row?.currentQty ?? 0);
+        const rawLotId = row?.tracksLot ? (adjLotId[key] || '') : undefined;
+        const isNewLot = rawLotId === '__new__';
+        const selectedLot = (!isNewLot && rawLotId) ? adjLotsByRowKey.get(key)?.find(l => l.id === rawLotId) : undefined;
+        const current = isNewLot ? 0 : (selectedLot ? selectedLot.currentQuantity : (row?.currentQty ?? 0));
         const raw = adjNewQty[key];
         const parsed = raw === undefined || raw === '' ? current : Number(raw);
         const next = isNaN(parsed) ? current : parsed;
         const delta = Math.round((next - current) * 100) / 100;
-        return { key, productId, companyId, current, next, delta, lotId: lotId || undefined };
+        return {
+          key, productId, companyId, current, next, delta,
+          lotId: (!isNewLot && rawLotId) ? rawLotId : undefined,
+          lotNumber: isNewLot ? (adjLotNumber[key] || '') : undefined,
+          lotExpirationDate: isNewLot ? (adjLotExpDate[key] || undefined) : undefined,
+        };
       })
       .filter(c => Math.abs(c.delta) > 0.0001 && c.next >= 0 && !!c.companyId);
-  }, [adjSelected, adjNewQty, adjRowsByKey, adjLotId, adjLotsByRowKey]);
+  }, [adjSelected, adjNewQty, adjRowsByKey, adjLotId, adjLotsByRowKey, adjLotNumber, adjLotExpDate]);
   const adjHasInvalid = useMemo(() => {
     return Object.entries(adjSelected)
       .filter(([, sel]) => sel)
       .some(([key]) => {
         const row = adjRowsByKey.get(key);
         if (row?.tracksLot && !adjLotId[key]) return true;
+        if (adjLotId[key] === '__new__' && !adjLotNumber[key]?.trim()) return true;
         const raw = adjNewQty[key];
         if (raw === undefined || raw === '') return false;
         const parsed = Number(raw);
         return isNaN(parsed) || parsed < 0;
       });
-  }, [adjSelected, adjNewQty, adjRowsByKey, adjLotId]);
+  }, [adjSelected, adjNewQty, adjRowsByKey, adjLotId, adjLotNumber]);
   const adjCanApply = !adjApplying && (adjAllWarehouses || !!adjCompanyId) && !!adjReason && adjPendingChanges.length > 0 && !adjHasInvalid;
 
   // Bulk import state
@@ -328,6 +337,8 @@ export function StockPage() {
     setAdjSelected({});
     setAdjNewQty({});
     setAdjLotId({});
+    setAdjLotNumber({});
+    setAdjLotExpDate({});
     setAdjSearch('');
     setAdjFlashProductId(null);
   };
@@ -340,6 +351,8 @@ export function StockPage() {
       if (wasSelected) {
         setAdjNewQty(qty => { const n = { ...qty }; delete n[key]; return n; });
         setAdjLotId(prev => { const n = { ...prev }; delete n[key]; return n; });
+        setAdjLotNumber(prev => { const n = { ...prev }; delete n[key]; return n; });
+        setAdjLotExpDate(prev => { const n = { ...prev }; delete n[key]; return n; });
       }
       return next;
     });
@@ -351,7 +364,7 @@ export function StockPage() {
       return next;
     });
   };
-  const clearAdjSelection = () => { setAdjSelected({}); setAdjNewQty({}); setAdjLotId({}); };
+  const clearAdjSelection = () => { setAdjSelected({}); setAdjNewQty({}); setAdjLotId({}); setAdjLotNumber({}); setAdjLotExpDate({}); };
 
   const addTransferItem = () => setTransferForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0, lotAllocations: [] }] }));
   const transferSourceLots = (productId: string): ProductLot[] => {
@@ -436,6 +449,7 @@ export function StockPage() {
           quantity: Math.abs(change.delta),
           reason: adjReason,
           ...(change.lotId ? { lotId: change.lotId } : {}),
+          ...(change.lotNumber ? { lotNumber: change.lotNumber, ...(change.lotExpirationDate ? { expirationDate: change.lotExpirationDate } : {}) } : {}),
         });
         done++;
       } catch {
@@ -1395,7 +1409,7 @@ export function StockPage() {
                             <div className="text-[11px] text-orange-500 mt-0.5">Controlado por lotes</div>
                           )}
                           {row.tracksLot && isSelected && (
-                            <div className="mt-1.5">
+                            <div className="mt-1.5 space-y-1.5">
                               <select
                                 value={adjLotId[row.key] || ''}
                                 onChange={(e) => setAdjLotId(prev => ({ ...prev, [row.key]: e.target.value }))}
@@ -1403,12 +1417,33 @@ export function StockPage() {
                                 className="w-full px-2 py-1 border border-orange-300 rounded text-xs focus:ring-1 focus:ring-orange-400 bg-white disabled:opacity-50"
                               >
                                 <option value="">— Selecciona un lote —</option>
+                                <option value="__new__">➕ Crear lote nuevo</option>
                                 {(adjLotsByRowKey.get(row.key) || []).map(lot => (
                                   <option key={lot.id} value={lot.id}>
                                     {lot.lotNumber} · {lot.currentQuantity} uds{lot.expirationDate ? ` · FV ${new Date(lot.expirationDate).toLocaleDateString('es-PE')}` : ''}
                                   </option>
                                 ))}
                               </select>
+                              {adjLotId[row.key] === '__new__' && (
+                                <div className="flex gap-1.5">
+                                  <input
+                                    type="text"
+                                    placeholder="N° lote (ej: KZ-2025-001)"
+                                    value={adjLotNumber[row.key] || ''}
+                                    onChange={(e) => setAdjLotNumber(prev => ({ ...prev, [row.key]: e.target.value }))}
+                                    disabled={adjApplying}
+                                    className={`flex-1 px-2 py-1 border rounded text-xs focus:ring-1 focus:ring-orange-400 disabled:opacity-50 ${!adjLotNumber[row.key]?.trim() ? 'border-red-300 bg-red-50' : 'border-orange-300'}`}
+                                  />
+                                  <input
+                                    type="date"
+                                    title="Fecha de vencimiento (opcional)"
+                                    value={adjLotExpDate[row.key] || ''}
+                                    onChange={(e) => setAdjLotExpDate(prev => ({ ...prev, [row.key]: e.target.value }))}
+                                    disabled={adjApplying}
+                                    className="w-32 px-2 py-1 border border-orange-300 rounded text-xs focus:ring-1 focus:ring-orange-400 disabled:opacity-50"
+                                  />
+                                </div>
+                              )}
                             </div>
                           )}
                         </td>
@@ -1495,7 +1530,7 @@ export function StockPage() {
             <div className="text-xs flex items-center gap-1.5 min-h-[20px]">
               {adjHasInvalid ? (
                 <span className="text-red-600 font-medium flex items-center gap-1.5">
-                  <AlertTriangle size={14} /> Hay valores inválidos (negativos o no numéricos)
+                  <AlertTriangle size={14} /> {Object.entries(adjSelected).filter(([,s])=>s).some(([k])=>adjLotId[k]==='__new__'&&!adjLotNumber[k]?.trim()) ? 'Ingresa el número de lote para los lotes nuevos' : 'Selecciona el lote o completa los valores'}
                 </span>
               ) : adjSelectedCount > 0 && adjPendingChanges.length === 0 ? (
                 <span className="text-amber-700 flex items-center gap-1.5">
