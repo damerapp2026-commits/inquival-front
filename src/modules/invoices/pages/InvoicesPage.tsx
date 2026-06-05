@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Receipt, FileText, Wallet, Search, X, List, Layers, ChevronDown, ChevronRight, Eye } from 'lucide-react';
-import { usePurchases } from '../../purchases/hooks/usePurchases';
+import { usePurchases, useUpdatePurchaseMeta } from '../../purchases/hooks/usePurchases';
 import { useCashRegisters } from '../../cash-register/hooks/useCashRegister';
+import { Modal } from '../../../shared/components/Modal';
 import type { Purchase, CashRegister, CashRegisterEntry } from '../../../shared/types';
 
 type ActiveTab = 'purchases' | 'cash';
@@ -42,6 +43,26 @@ export function InvoicesPage() {
   const [endDate, setEndDate] = useState(todayKey);
   const [search, setSearch] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [grModal, setGrModal] = useState<{ purchaseId: string; grSeries: string; grNumber: string; grDate: string } | null>(null);
+  const updateMeta = useUpdatePurchaseMeta();
+
+  const openGrModal = (p: Purchase) => {
+    setGrModal({
+      purchaseId: p.id,
+      grSeries: p.grSeries || '',
+      grNumber: p.grNumber || '',
+      grDate: p.grDate ? p.grDate.slice(0, 10) : '',
+    });
+  };
+
+  const handleGrSave = async () => {
+    if (!grModal) return;
+    await updateMeta.mutateAsync({
+      id: grModal.purchaseId,
+      data: { grSeries: grModal.grSeries, grNumber: grModal.grNumber, grDate: grModal.grDate },
+    });
+    setGrModal(null);
+  };
 
   const { data: purchasesData, isLoading: purchasesLoading } = usePurchases({
     startDate, endDate, limit: 500, page: 1,
@@ -280,9 +301,18 @@ export function InvoicesPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <Link to={`/purchases/${p.id}`} state={{ from: '/invoices' }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium justify-center" title="Ver detalle">
-                            <Eye size={15} /> Ver
-                          </Link>
+                          <div className="flex items-center gap-2 justify-center">
+                            <Link to={`/purchases/${p.id}`} state={{ from: '/invoices' }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium" title="Ver detalle">
+                              <Eye size={15} /> Ver
+                            </Link>
+                            <button
+                              onClick={() => openGrModal(p)}
+                              title={p.grSeries || p.grNumber ? `GR: ${[p.grSeries, p.grNumber].filter(Boolean).join('-')}` : 'Añadir Guía de Remisión'}
+                              className={`p-1 rounded hover:bg-gray-100 ${p.grSeries || p.grNumber ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                              <FileText size={14} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -368,9 +398,18 @@ export function InvoicesPage() {
                                   </span>
                                 </td>
                                 <td className="px-4 py-2.5 text-center">
-                                  <Link to={`/purchases/${p.id}`} state={{ from: '/invoices' }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium justify-center" title="Ver detalle">
-                                    <Eye size={14} /> Ver
-                                  </Link>
+                                  <div className="flex items-center gap-2 justify-center">
+                                    <Link to={`/purchases/${p.id}`} state={{ from: '/invoices' }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium" title="Ver detalle">
+                                      <Eye size={14} /> Ver
+                                    </Link>
+                                    <button
+                                      onClick={() => openGrModal(p)}
+                                      title={p.grSeries || p.grNumber ? `GR: ${[p.grSeries, p.grNumber].filter(Boolean).join('-')}` : 'Añadir Guía de Remisión'}
+                                      className={`p-1 rounded hover:bg-gray-100 ${p.grSeries || p.grNumber ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-gray-600'}`}
+                                    >
+                                      <FileText size={14} />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))}
@@ -506,6 +545,55 @@ export function InvoicesPage() {
           )}
         </>
       )}
+
+      <Modal isOpen={!!grModal} onClose={() => setGrModal(null)} title="Guía de Remisión">
+        {grModal && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Serie</label>
+                <input
+                  value={grModal.grSeries}
+                  onChange={(e) => setGrModal({ ...grModal, grSeries: e.target.value.toUpperCase() })}
+                  placeholder="T001"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm uppercase"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Correlativo</label>
+                <input
+                  value={grModal.grNumber}
+                  onChange={(e) => setGrModal({ ...grModal, grNumber: e.target.value })}
+                  placeholder="00000001"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Fecha</label>
+                <input
+                  type="date"
+                  value={grModal.grDate}
+                  onChange={(e) => setGrModal({ ...grModal, grDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
+              <button type="button" onClick={() => setGrModal(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGrSave}
+                disabled={updateMeta.isPending}
+                className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+              >
+                {updateMeta.isPending ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
