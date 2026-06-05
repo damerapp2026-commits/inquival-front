@@ -11,6 +11,7 @@ export function LaboratoriesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Laboratory | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Laboratory | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [search, setSearch] = useState('');
 
   const { data: laboratories, isLoading } = useLaboratories();
@@ -22,7 +23,7 @@ export function LaboratoriesPage() {
   const emptyForm = { name: '', description: '', ruc: '', address: '', phone: '', email: '', isActive: true };
   const [form, setForm] = useState(emptyForm);
 
-  const openCreate = () => { setEditing(null); setForm(emptyForm); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm(emptyForm); setShowDeleteConfirm(false); setShowModal(true); };
   const openEdit = (lab: Laboratory) => {
     setEditing(lab);
     setForm({
@@ -34,6 +35,7 @@ export function LaboratoriesPage() {
       email: lab.email || '',
       isActive: lab.isActive,
     });
+    setShowDeleteConfirm(false);
     setShowModal(true);
   };
 
@@ -143,8 +145,34 @@ export function LaboratoriesPage() {
         </div>
       </Modal>
 
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar laboratorio' : 'Nuevo laboratorio'}>
+      <Modal
+        isOpen={showModal}
+        onClose={() => { setShowModal(false); setShowDeleteConfirm(false); }}
+        title={editing ? `Editar — ${editing.name}` : 'Nuevo laboratorio'}
+      >
         <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* Toggle de estado — solo al editar */}
+          {editing && (
+            <div className="flex items-center justify-between px-3.5 py-2.5 bg-gray-50 rounded-xl border border-gray-100">
+              <span className="text-sm font-medium text-gray-700">Estado del laboratorio</span>
+              <div className="flex items-center gap-2.5">
+                <span className={`text-xs font-semibold ${form.isActive ? 'text-primary-700' : 'text-gray-400'}`}>
+                  {form.isActive ? 'Activo' : 'Inactivo'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, isActive: !form.isActive })}
+                  title={form.isActive ? 'Click para desactivar' : 'Click para activar'}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.isActive ? 'bg-primary-600' : 'bg-gray-300'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.isActive ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Identificación principal */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">RUC <span className="text-gray-400 normal-case font-normal">— opcional pero recomendado</span></label>
             <div className="flex gap-2">
@@ -179,67 +207,111 @@ export function LaboratoriesPage() {
             />
             <p className="text-xs text-gray-400 mt-1">No se permiten duplicados (FARMEX = Farmex = farmex).</p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Teléfono <span className="text-gray-400 normal-case font-normal">— opcional</span></label>
-              <input
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                placeholder="999 888 777"
-              />
+
+          {/* Datos de contacto */}
+          <div className="border-t border-gray-100 pt-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Datos de contacto</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Teléfono <span className="text-gray-400 normal-case font-normal">— opcional</span></label>
+                  <input
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="999 888 777"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Email <span className="text-gray-400 normal-case font-normal">— opcional</span></label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="ventas@laboratorio.com"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Dirección <span className="text-gray-400 normal-case font-normal">— opcional</span></label>
+                <input
+                  value={form.address}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="Av. ..."
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Descripción <span className="text-gray-400 normal-case font-normal">— opcional</span></label>
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  rows={2}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                  placeholder="Notas o información adicional"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Email <span className="text-gray-400 normal-case font-normal">— opcional</span></label>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                placeholder="ventas@laboratorio.com"
-              />
+          </div>
+
+          {/* Footer */}
+          <div className="pt-2 border-t border-gray-100">
+            {editing && showDeleteConfirm && (
+              <div className="flex items-center justify-between px-3.5 py-2.5 bg-red-50 border border-red-200 rounded-xl mb-3">
+                <span className="text-sm text-red-800">
+                  ¿Eliminar <strong>{editing.name}</strong>? No se puede deshacer.
+                </span>
+                <div className="flex items-center gap-3 ml-4 shrink-0">
+                  <button type="button" onClick={() => setShowDeleteConfirm(false)} className="text-sm text-gray-600 hover:text-gray-800 underline">
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleteLaboratory.isPending}
+                    onClick={async () => {
+                      try {
+                        await deleteLaboratory.mutateAsync(editing.id);
+                        setShowModal(false);
+                        setShowDeleteConfirm(false);
+                      } catch { /* toast handled in hook */ }
+                    }}
+                    className="text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 px-3 py-1.5 rounded-lg"
+                  >
+                    {deleteLaboratory.isPending ? 'Eliminando...' : 'Sí, eliminar'}
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              {editing ? (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 font-medium"
+                >
+                  <Trash2 size={14} /> Eliminar
+                </button>
+              ) : <div />}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setShowModal(false); setShowDeleteConfirm(false); }}
+                  className="px-6 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-medium"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={editing ? updateLaboratory.isPending : createLaboratory.isPending}
+                  className="py-2.5 px-6 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 font-semibold shadow-sm"
+                >
+                  {editing
+                    ? (updateLaboratory.isPending ? 'Actualizando...' : 'Guardar cambios')
+                    : (createLaboratory.isPending ? 'Creando...' : 'Crear')}
+                </button>
+              </div>
             </div>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Dirección <span className="text-gray-400 normal-case font-normal">— opcional</span></label>
-            <input
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-              placeholder="Av. ..."
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Descripción <span className="text-gray-400 normal-case font-normal">— opcional</span></label>
-            <textarea
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              rows={2}
-              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-              placeholder="Notas o información adicional"
-            />
-          </div>
-          {editing && (
-            <label htmlFor="isActive" className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                id="isActive"
-                checked={form.isActive}
-                onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
-                className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
-              />
-              <span className="text-sm font-medium text-gray-700">Laboratorio activo</span>
-            </label>
-          )}
-          <div className="flex gap-3 pt-2 border-t border-gray-100">
-            <button type="button" onClick={() => setShowModal(false)} className="flex-1 sm:flex-none sm:px-6 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-medium">Cancelar</button>
-            <button
-              type="submit"
-              disabled={editing ? updateLaboratory.isPending : createLaboratory.isPending}
-              className="flex-1 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 font-semibold shadow-sm"
-            >
-              {editing ? (updateLaboratory.isPending ? 'Actualizando...' : 'Guardar cambios') : (createLaboratory.isPending ? 'Creando...' : 'Crear')}
-            </button>
           </div>
         </form>
       </Modal>
