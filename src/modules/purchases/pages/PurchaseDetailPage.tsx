@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
-import { usePurchases, useCancelPurchase } from '../hooks/usePurchases';
+import { usePurchases, useCancelPurchase, useUpdatePurchaseMeta } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { useAccountPayableByPurchaseId } from '../../accounts-payable/hooks/useAccountsPayable';
-import { ArrowLeft, ShoppingCart, Building2, CreditCard, Package, Pencil, Trash2, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Building2, CreditCard, Package, Pencil, Trash2, CheckCircle, Clock, AlertCircle, FileText } from 'lucide-react';
 import type { Purchase, Company, Product, AccountPayable } from '../../../shared/types';
 import { CancelPurchaseDialog } from '../components/CancelPurchaseDialog';
+import { Modal } from '../../../shared/components/Modal';
 import { formatDateEs } from '../../../shared/utils/date.util';
 
 function InfoCell({ label, children }: { label: string; children: React.ReactNode }) {
@@ -181,7 +182,9 @@ export function PurchaseDetailPage() {
   const { data: productsData } = useProducts({ limit: 10000 });
   const { data: accountPayable } = useAccountPayableByPurchaseId(id ?? null);
   const cancelPurchase = useCancelPurchase();
+  const updateMeta = useUpdatePurchaseMeta();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [grModal, setGrModal] = useState<{ grSeries: string; grNumber: string; grDate: string } | null>(null);
   const isAdmin = user?.role === 'ADMIN';
 
   const purchases: Purchase[] = data?.data || [];
@@ -228,6 +231,18 @@ export function PurchaseDetailPage() {
           </div>
           <h1 className="text-2xl font-bold text-gray-800">Detalle de Compra</h1>
         </div>
+        <button
+          type="button"
+          onClick={() => setGrModal({
+            grSeries: purchase.grSeries || '',
+            grNumber: purchase.grNumber || '',
+            grDate: purchase.grDate ? purchase.grDate.slice(0, 10) : '',
+          })}
+          className={`inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border rounded-lg text-sm font-semibold transition-colors ${purchase.grSeries || purchase.grNumber ? 'border-green-200 text-green-700 hover:bg-green-50 hover:border-green-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+          title={purchase.grSeries || purchase.grNumber ? 'Editar Guía de Remisión' : 'Añadir Guía de Remisión'}
+        >
+          <FileText size={14} /> GR
+        </button>
         <Link
           to={`/purchases/${purchase.id}/edit`}
           className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-primary-200 text-primary-700 rounded-lg hover:bg-primary-50 hover:border-primary-300 text-sm font-semibold transition-colors"
@@ -381,6 +396,61 @@ export function PurchaseDetailPage() {
           </div>
         </SectionCard>
       </div>
+
+      <Modal isOpen={!!grModal} onClose={() => setGrModal(null)} title="Guía de Remisión">
+        {grModal && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Serie</label>
+                <input
+                  value={grModal.grSeries}
+                  onChange={(e) => setGrModal({ ...grModal, grSeries: e.target.value.toUpperCase() })}
+                  placeholder="T001"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm uppercase"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Correlativo</label>
+                <input
+                  value={grModal.grNumber}
+                  onChange={(e) => setGrModal({ ...grModal, grNumber: e.target.value })}
+                  placeholder="00000001"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Fecha</label>
+                <input
+                  type="date"
+                  value={grModal.grDate}
+                  onChange={(e) => setGrModal({ ...grModal, grDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
+              <button type="button" onClick={() => setGrModal(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await updateMeta.mutateAsync({
+                    id: purchase.id,
+                    data: { grSeries: grModal.grSeries, grNumber: grModal.grNumber, grDate: grModal.grDate },
+                  });
+                  setGrModal(null);
+                }}
+                disabled={updateMeta.isPending}
+                className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+              >
+                {updateMeta.isPending ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
