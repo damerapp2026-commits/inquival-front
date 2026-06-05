@@ -12,6 +12,7 @@ import { CreditCard, DollarSign, Edit2, Trash2, ChevronDown, ChevronRight, Searc
 import { useNavigate, Link } from 'react-router-dom';
 import { RegisterHistoricalCreditModal } from '../components/RegisterHistoricalCreditModal';
 import type { CreditAccount, Client, CreditPayment } from '../../../shared/types';
+import { formatDateEs } from '../../../shared/utils/date.util';
 
 type Status = 'PENDING' | 'PARTIAL' | 'PAID';
 const STATUS_RANK: Record<Status, number> = { PENDING: 3, PARTIAL: 2, PAID: 1 };
@@ -612,7 +613,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                   {fullCredit.payments.map((p, idx) => (
                     <div key={idx} className="flex items-center justify-between bg-primary-50/60 rounded px-3 py-1.5 text-sm">
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-gray-500">{new Date(p.paymentDate).toLocaleDateString('es-PE')}</span>
+                        <span className="text-gray-500">{formatDateEs(p.paymentDate)}</span>
                         <span className="font-medium text-primary-700">S/ {p.amount.toFixed(2)}</span>
                         {p.paymentMethodName && (
                           <span className="text-xs bg-white border rounded px-1.5 py-0.5 text-gray-600">{p.paymentMethodName}</span>

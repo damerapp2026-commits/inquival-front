@@ -693,7 +693,6 @@ export function POSPage() {
               quantity: b.quantity,
               priceTier: tierId,
               unitPrice: 0,
-              isItemCourtesy: true,
             })),
           ],
           payments: validPayments,
