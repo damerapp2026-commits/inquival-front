@@ -10,7 +10,7 @@ export function useSaleById(id: string | null | undefined) {
 }
 export function useCreateSale() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: saleService.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['sales'] }); qc.invalidateQueries({ queryKey: ['stock'] }); qc.invalidateQueries({ queryKey: ['cash-register-today'] }); toast.success('Venta registrada'); }, onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error') });
+  return useMutation({ mutationFn: saleService.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['sales'] }); qc.invalidateQueries({ queryKey: ['stock'] }); qc.invalidateQueries({ queryKey: ['cash-register-today'] }); toast.success('Venta registrada'); }, onError: (err: any) => { const msg = err.response?.data?.message; const text = Array.isArray(msg) ? msg[0] : (msg || 'Error'); toast.error(text); } });
 }
 export function useUpdateVoucher() {
   const qc = useQueryClient();
