@@ -4,7 +4,7 @@ import { usePurchases, useUpdatePurchaseMeta } from '../hooks/usePurchases';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
-import { Plus, ShoppingCart, Eye, Wrench, Search, X, Truck } from 'lucide-react';
+import { Plus, ShoppingCart, Eye, Wrench, Search, X, FileText } from 'lucide-react';
 import type { Purchase } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
 
@@ -156,7 +156,7 @@ export function PurchasesPage() {
           title={item.grSeries || item.grNumber ? `GR: ${[item.grSeries, item.grNumber].filter(Boolean).join('-')}` : 'Añadir Guía de Remisión'}
           className={`p-1 rounded hover:bg-gray-100 ${item.grSeries || item.grNumber ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-gray-600'}`}
         >
-          <Truck size={14} />
+          <FileText size={14} />
         </button>
       </div>
     )},
