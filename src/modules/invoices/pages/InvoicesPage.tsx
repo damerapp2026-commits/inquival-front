@@ -263,7 +263,7 @@ export function InvoicesPage() {
                   <tbody className="divide-y">
                     {filteredPurchases.map((p) => (
                       <tr key={p.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{(p.issueDate || p.date)?.slice(0, 10)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{((d) => d ? `${d.slice(8,10)} - ${d.slice(5,7)} - ${d.slice(2,4)}` : '—')((p.issueDate || p.date)?.slice(0,10))}</td>
                         <td className="px-4 py-3 text-sm font-medium">{p.supplier}</td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${voucherBadge(p.documentType!)}`}>{p.documentType}</span>
@@ -352,7 +352,7 @@ export function InvoicesPage() {
                           <tbody className="divide-y divide-gray-100">
                             {g.items.map((p) => (
                               <tr key={p.id} className="hover:bg-gray-50">
-                                <td className="px-4 py-2.5 text-sm text-gray-600 whitespace-nowrap">{(p.issueDate || p.date)?.slice(0, 10)}</td>
+                                <td className="px-4 py-2.5 text-sm text-gray-600 whitespace-nowrap">{((d) => d ? `${d.slice(8,10)} - ${d.slice(5,7)} - ${d.slice(2,4)}` : '—')((p.issueDate || p.date)?.slice(0,10))}</td>
                                 <td className="px-4 py-2.5">
                                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${voucherBadge(p.documentType!)}`}>{p.documentType}</span>
                                 </td>
