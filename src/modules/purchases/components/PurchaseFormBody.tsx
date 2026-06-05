@@ -82,6 +82,9 @@ export interface PurchaseSubmitPayload {
   documentSeries?: string;
   documentNumber?: string;
   issueDate?: string;
+  grSeries?: string;
+  grNumber?: string;
+  grDate?: string;
   date: string;
   paymentType: 'CONTADO' | 'CREDITO';
   paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS';
@@ -419,6 +422,9 @@ export function PurchaseFormBody({
     if (form.documentSeries) payload.documentSeries = form.documentSeries;
     if (form.documentNumber) payload.documentNumber = form.documentNumber;
     if (form.issueDate) payload.issueDate = form.issueDate;
+    if (form.grSeries) payload.grSeries = form.grSeries;
+    if (form.grNumber) payload.grNumber = form.grNumber;
+    if (form.grDate) payload.grDate = form.grDate;
     if (currency === 'USD') {
       payload.totalCostUsd = documentTotal;
       payload.exchangeRate = exchangeRate;
@@ -515,6 +521,24 @@ export function PurchaseFormBody({
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-600 mb-1">F. Recepción</label>
                 <input type="date" value={form.purchaseDate} onChange={(e) => handleDateChange(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" required />
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* Guía de Remisión */}
+          <SectionCard title="Guía de Remisión" icon={FileText}>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Serie</label>
+                <input value={form.grSeries} onChange={(e) => setForm({ ...form, grSeries: e.target.value.toUpperCase() })} placeholder="T001" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm uppercase" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Correlativo</label>
+                <input value={form.grNumber} onChange={(e) => setForm({ ...form, grNumber: e.target.value })} placeholder="00000001" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Fecha</label>
+                <input type="date" value={form.grDate} onChange={(e) => setForm({ ...form, grDate: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
               </div>
             </div>
           </SectionCard>

@@ -107,6 +107,9 @@ export interface PurchaseFormState {
   documentSeries: string;
   documentNumber: string;
   issueDate: string;
+  grSeries: string;
+  grNumber: string;
+  grDate: string;
 }
 
 export interface PurchaseInitial {
@@ -172,6 +175,9 @@ export function purchaseToFormState(purchase: Purchase, products: Product[]): Pu
     documentSeries: purchase.documentSeries || '',
     documentNumber: purchase.documentNumber || '',
     issueDate: dateInputStr(purchase.issueDate),
+    grSeries: purchase.grSeries || '',
+    grNumber: purchase.grNumber || '',
+    grDate: dateInputStr(purchase.grDate),
   };
 
   return {
@@ -201,6 +207,9 @@ export function buildInitialCreate(today: string): PurchaseInitial {
       documentSeries: '',
       documentNumber: '',
       issueDate: today,
+      grSeries: '',
+      grNumber: '',
+      grDate: '',
     },
     currency: 'USD',
     exchangeRate: null,

@@ -298,6 +298,16 @@ export function PurchaseDetailPage() {
                 {formatDateEs(purchase.dueDate, { day: '2-digit', month: 'long', year: 'numeric' })}
               </InfoCell>
             )}
+            {(purchase.grSeries || purchase.grNumber) && (
+              <InfoCell label="Guía de Remisión">
+                {[purchase.grSeries, purchase.grNumber].filter(Boolean).join('-')}
+                {purchase.grDate && (
+                  <span className="block text-xs text-gray-500 mt-0.5">
+                    Fecha: {formatDateEs(purchase.grDate)}
+                  </span>
+                )}
+              </InfoCell>
+            )}
           </div>
         </SectionCard>
 
