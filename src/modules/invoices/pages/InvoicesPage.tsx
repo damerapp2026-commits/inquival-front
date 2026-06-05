@@ -563,8 +563,10 @@ export function InvoicesPage() {
                 <label className="block text-xs font-medium text-gray-600 mb-1">Correlativo</label>
                 <input
                   value={grModal.grNumber}
-                  onChange={(e) => setGrModal({ ...grModal, grNumber: e.target.value })}
+                  onChange={(e) => setGrModal({ ...grModal, grNumber: e.target.value.replace(/\D/g, '').slice(0, 8) })}
                   placeholder="00000001"
+                  maxLength={8}
+                  inputMode="numeric"
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                 />
               </div>
