@@ -55,6 +55,8 @@ export function PurchasesPage() {
   });
   const purchases = data?.data || [];
   const total = data?.total || 0;
+  const totalPen: number = (data as any)?.totalPen ?? 0;
+  const totalUsd: number = (data as any)?.totalUsd ?? 0;
 
   const handleSupplierChange = (val: string) => {
     setSupplierSearch(val);
@@ -191,6 +193,27 @@ export function PurchasesPage() {
           )}
         </div>
       </div>
+      {/* Resumen de totales */}
+      {!isLoading && total > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-3 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+          <span className="text-gray-500 text-xs font-medium uppercase tracking-wide">
+            {total} compra{total !== 1 ? 's' : ''}
+          </span>
+          <span className="text-gray-300">·</span>
+          <span className="font-semibold text-gray-800">
+            S/ {totalPen.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+          {totalUsd > 0 && (
+            <>
+              <span className="text-gray-300">·</span>
+              <span className="font-semibold text-blue-700">
+                $ {totalUsd.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       <DataTable columns={columns} data={purchases} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
     </div>
