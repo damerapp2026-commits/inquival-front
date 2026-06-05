@@ -57,6 +57,10 @@ export function PurchasesPage() {
   const total = data?.total || 0;
   const totalPen: number = (data as any)?.totalPen ?? 0;
   const totalUsd: number = (data as any)?.totalUsd ?? 0;
+  const totalPenContado: number = (data as any)?.totalPenContado ?? 0;
+  const totalUsdContado: number = (data as any)?.totalUsdContado ?? 0;
+  const totalPenCredito: number = (data as any)?.totalPenCredito ?? 0;
+  const totalUsdCredito: number = (data as any)?.totalUsdCredito ?? 0;
 
   const handleSupplierChange = (val: string) => {
     setSupplierSearch(val);
@@ -195,21 +199,53 @@ export function PurchasesPage() {
       </div>
       {/* Resumen de totales */}
       {!isLoading && total > 0 && (
-        <div className="flex flex-wrap items-center gap-3 mb-3 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm">
-          <span className="text-gray-500 text-xs font-medium uppercase tracking-wide">
-            {total} compra{total !== 1 ? 's' : ''}
-          </span>
-          <span className="text-gray-300">·</span>
-          <span className="font-semibold text-gray-800">
-            S/ {totalPen.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
-          {totalUsd > 0 && (
-            <>
-              <span className="text-gray-300">·</span>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {/* Total general */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+            <span className="text-xs text-gray-500 font-medium">{total} compra{total !== 1 ? 's' : ''}</span>
+            <span className="text-gray-300">|</span>
+            <span className="font-semibold text-gray-800">
+              S/ {totalPen.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            {totalUsd > 0 && (
               <span className="font-semibold text-blue-700">
-                $ {totalUsd.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                · $ {totalUsd.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
               </span>
-            </>
+            )}
+          </div>
+
+          {/* Contado */}
+          {(totalPenContado > 0 || totalUsdContado > 0) && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary-200 rounded-lg text-sm">
+              <span className="text-xs font-semibold text-primary-700 uppercase tracking-wide">Contado</span>
+              {totalPenContado > 0 && (
+                <span className="font-semibold text-gray-800">
+                  S/ {totalPenContado.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              )}
+              {totalUsdContado > 0 && (
+                <span className="font-semibold text-blue-700">
+                  {totalPenContado > 0 ? '· ' : ''}$ {totalUsdContado.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Crédito */}
+          {(totalPenCredito > 0 || totalUsdCredito > 0) && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-sm">
+              <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">Crédito</span>
+              {totalPenCredito > 0 && (
+                <span className="font-semibold text-gray-800">
+                  S/ {totalPenCredito.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              )}
+              {totalUsdCredito > 0 && (
+                <span className="font-semibold text-blue-700">
+                  {totalPenCredito > 0 ? '· ' : ''}$ {totalUsdCredito.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}
