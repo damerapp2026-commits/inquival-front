@@ -6,4 +6,5 @@ export const laboratoryService = {
   }),
   create: (data: any) => api.post('/laboratories', data).then((r) => r.data.data ?? r.data),
   update: (id: string, data: any) => api.put(`/laboratories/${id}`, data).then((r) => r.data.data ?? r.data),
+  remove: (id: string) => api.delete(`/laboratories/${id}`),
 };

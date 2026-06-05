@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
-import { useLaboratories, useCreateLaboratory, useUpdateLaboratory } from '../hooks/useLaboratories';
+import { useLaboratories, useCreateLaboratory, useUpdateLaboratory, useDeleteLaboratory } from '../hooks/useLaboratories';
 import { useRucLookup } from '../../../shared/hooks/useLookup';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
-import { Plus, Edit2, FlaskConical, Search, Loader2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, FlaskConical, Search, Loader2 } from 'lucide-react';
 import type { Laboratory } from '../../../shared/types';
 import toast from 'react-hot-toast';
 
 export function LaboratoriesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Laboratory | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Laboratory | null>(null);
   const [search, setSearch] = useState('');
 
   const { data: laboratories, isLoading } = useLaboratories();
   const createLaboratory = useCreateLaboratory();
   const updateLaboratory = useUpdateLaboratory();
+  const deleteLaboratory = useDeleteLaboratory();
   const rucLookup = useRucLookup();
 
   const emptyForm = { name: '', description: '', ruc: '', address: '', phone: '', email: '', isActive: true };
@@ -82,7 +84,10 @@ export function LaboratoriesPage() {
     { key: 'description', header: 'Descripción', render: (item: Laboratory) => item.description || <span className="text-gray-300">—</span> },
     { key: 'isActive', header: 'Estado', render: (item: Laboratory) => <span className={`px-2 py-1 rounded-full text-xs ${item.isActive ? 'bg-primary-100 text-primary-800' : 'bg-red-100 text-red-800'}`}>{item.isActive ? 'Activo' : 'Inactivo'}</span> },
     { key: 'actions', header: 'Acciones', render: (item: Laboratory) => (
-      <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={16} /></button>
+      <div className="flex items-center gap-3">
+        <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={16} /></button>
+        <button onClick={() => setDeleteTarget(item)} className="text-red-500 hover:text-red-700" title="Eliminar"><Trash2 size={16} /></button>
+      </div>
     )},
   ];
 
@@ -104,6 +109,39 @@ export function LaboratoriesPage() {
       </div>
 
       <DataTable columns={columns} data={filtered} isLoading={isLoading} />
+
+      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Eliminar laboratorio">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-700">
+            ¿Estás seguro de que deseas eliminar el laboratorio{' '}
+            <span className="font-semibold text-gray-900">{deleteTarget?.name}</span>?
+            Esta acción no se puede deshacer.
+          </p>
+          <div className="flex gap-3 pt-2 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setDeleteTarget(null)}
+              className="flex-1 sm:flex-none sm:px-6 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-medium"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={deleteLaboratory.isPending}
+              onClick={async () => {
+                if (!deleteTarget) return;
+                try {
+                  await deleteLaboratory.mutateAsync(deleteTarget.id);
+                  setDeleteTarget(null);
+                } catch { /* toast handled in hook */ }
+              }}
+              className="flex-1 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50 font-semibold shadow-sm"
+            >
+              {deleteLaboratory.isPending ? 'Eliminando...' : 'Eliminar'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar laboratorio' : 'Nuevo laboratorio'}>
         <form onSubmit={handleSubmit} className="space-y-4">

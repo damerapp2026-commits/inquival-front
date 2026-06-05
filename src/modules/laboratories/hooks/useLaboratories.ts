@@ -21,3 +21,11 @@ export function useUpdateLaboratory() {
     onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'Error al actualizar'),
   });
 }
+export function useDeleteLaboratory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => laboratoryService.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['laboratories'] }); toast.success('Laboratorio eliminado'); },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al eliminar laboratorio'),
+  });
+}
