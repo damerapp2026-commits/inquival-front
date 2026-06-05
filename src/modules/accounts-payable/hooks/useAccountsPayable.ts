@@ -15,7 +15,7 @@ export function useAccountPayableByPurchaseId(purchaseId: string | null) {
     queryKey: ['accounts-payable-by-purchase', purchaseId],
     queryFn: async () => {
       const result = await accountPayableService.getAll({ purchaseId, limit: 1, page: 1 });
-      return (result as any)?.[0] ?? null;
+      return (result as any)?.data?.[0] ?? null;
     },
     enabled: !!purchaseId,
   });
