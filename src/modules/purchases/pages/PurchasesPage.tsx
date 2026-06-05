@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePurchases } from '../hooks/usePurchases';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
@@ -39,17 +39,33 @@ const DATE_PRESETS = [
 
 export function PurchasesPage() {
   const navigate = useNavigate();
-  const [page, setPage] = useState(1);
-  const [supplierSearch, setSupplierSearch] = useState('');
-  const [debouncedSupplier, setDebouncedSupplier] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [activePreset, setActivePreset] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Todo el estado vive en la URL para que "Atrás" desde el detalle restaure la página y filtros
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+  const startDate = searchParams.get('startDate') || '';
+  const endDate = searchParams.get('endDate') || '';
+  const activePreset = searchParams.get('preset') || '';
+  const supplierParam = searchParams.get('supplier') || '';
+
+  // Estado local solo para el input (se escribe sin tocar la URL hasta el debounce)
+  const [supplierSearch, setSupplierSearch] = useState(supplierParam);
+
+  // Sincronizar el input si la URL cambia externamente (navegación con Atrás/Adelante)
+  useEffect(() => { setSupplierSearch(supplierParam); }, [supplierParam]);
+
+  const updateParams = (updates: Record<string, string | null>) => {
+    const sp = new URLSearchParams(searchParams);
+    for (const [k, v] of Object.entries(updates)) {
+      if (!v) sp.delete(k); else sp.set(k, v);
+    }
+    setSearchParams(sp, { replace: true });
+  };
 
   const { data, isLoading } = usePurchases({
     page,
     limit: 20,
-    supplier: debouncedSupplier || undefined,
+    supplier: supplierParam || undefined,
     startDate: startDate || undefined,
     endDate: endDate || undefined,
   });
@@ -65,30 +81,23 @@ export function PurchasesPage() {
   const handleSupplierChange = (val: string) => {
     setSupplierSearch(val);
     clearTimeout((handleSupplierChange as any)._t);
-    (handleSupplierChange as any)._t = setTimeout(() => { setDebouncedSupplier(val); setPage(1); }, 400);
+    (handleSupplierChange as any)._t = setTimeout(() => {
+      updateParams({ supplier: val || null, page: null });
+    }, 400);
   };
 
   const applyPreset = (preset: typeof DATE_PRESETS[number]) => {
     const { start, end } = preset.getRange();
-    setStartDate(start);
-    setEndDate(end);
-    setActivePreset(preset.id);
-    setPage(1);
+    updateParams({ startDate: start, endDate: end, preset: preset.id, page: null });
   };
 
-  const clearDates = () => {
-    setStartDate('');
-    setEndDate('');
-    setActivePreset('');
-    setPage(1);
-  };
+  const clearDates = () => updateParams({ startDate: null, endDate: null, preset: null, page: null });
 
   const handleCustomDate = (field: 'start' | 'end', val: string) => {
-    if (field === 'start') setStartDate(val);
-    else setEndDate(val);
-    setActivePreset('custom');
-    setPage(1);
+    updateParams({ [field === 'start' ? 'startDate' : 'endDate']: val || null, preset: 'custom', page: null });
   };
+
+  const setPage = (p: number) => updateParams({ page: p > 1 ? String(p) : null });
 
   const columns = [
     { key: 'date', header: 'Fecha', render: (item: Purchase) => formatDateEs(item.date) },
