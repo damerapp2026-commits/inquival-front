@@ -14,7 +14,7 @@ import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { SmartSearchSelect } from '../../../shared/components/SmartSearchSelect';
 import {
   Trash2, Loader2, DollarSign, PackagePlus, FileText, CopyIcon, Dices, Wand2,
-  Building2, CreditCard, Package, FlaskConical,
+  Building2, CreditCard, Package, FlaskConical, CheckCircle,
 } from 'lucide-react';
 import type { Company, Product, Category, Laboratory } from '../../../shared/types';
 import toast from 'react-hot-toast';
@@ -91,7 +91,7 @@ export interface PurchaseSubmitPayload {
   totalCost?: number;
   totalCostUsd?: number;
   dueDate?: string;
-  installments?: { amount: number; dueDate: string }[];
+  installments?: { amount: number; dueDate: string; status?: 'PENDING' | 'PAID' }[];
   items: Array<{
     companyId: string;
     productId: string;
@@ -800,7 +800,13 @@ export function PurchaseFormBody({
                           <>Total {installmentGen.count * installmentGen.intervalDays + installmentGen.firstDaysFromPurchase - installmentGen.intervalDays} días (última cuota)</>
                         )}
                       </div>
-                      <button type="button" onClick={generateInstallments} className="px-3 py-1.5 bg-orange-600 text-white rounded text-xs font-medium hover:bg-orange-700 inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={generateInstallments}
+                        disabled={form.installments.some(i => i.status === 'PAID')}
+                        title={form.installments.some(i => i.status === 'PAID') ? 'No se puede regenerar: hay cuotas ya pagadas' : undefined}
+                        className="px-3 py-1.5 bg-orange-600 text-white rounded text-xs font-medium hover:bg-orange-700 inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
                         <Wand2 size={12} /> Generar
                       </button>
                     </div>
@@ -826,20 +832,46 @@ export function PurchaseFormBody({
                     </label>
                     <button type="button" onClick={() => setForm({ ...form, installments: [...form.installments, { amount: 0, dueDate: '' }] })} className="text-xs text-orange-600 hover:text-orange-800 font-medium">+ Agregar cuota</button>
                   </div>
-                  {form.installments.map((inst, idx) => (
-                    <div key={idx} className="flex gap-2 mb-2 items-end">
-                      <div className="w-10 pb-2 text-xs text-gray-400 font-medium text-right">#{idx + 1}</div>
-                      <div className="flex-1">
-                        <label className="block text-xs text-gray-500 mb-1">Monto ({creditSymbol})</label>
-                        <input type="number" min="0.01" step="0.01" value={inst.amount || ''} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], amount: parseFloat(e.target.value) || 0 }; setForm({ ...form, installments }); }} onWheel={blurOnWheel} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                  {form.installments.map((inst, idx) => {
+                    const isPaid = inst.status === 'PAID';
+                    return (
+                      <div key={idx} className={`flex gap-2 mb-2 items-end ${isPaid ? 'opacity-80' : ''}`}>
+                        <div className="w-10 pb-2 text-xs text-gray-400 font-medium text-right">#{idx + 1}</div>
+                        <div className="flex-1">
+                          <label className="block text-xs text-gray-500 mb-1">Monto ({creditSymbol})</label>
+                          <input
+                            type="number" min="0.01" step="0.01"
+                            value={inst.amount || ''}
+                            readOnly={isPaid}
+                            onChange={isPaid ? undefined : (e) => { const next = [...form.installments]; next[idx] = { ...next[idx], amount: parseFloat(e.target.value) || 0 }; setForm({ ...form, installments: next }); }}
+                            onWheel={blurOnWheel}
+                            className={`w-full px-2 py-1.5 border rounded text-sm ${isPaid ? 'bg-green-50 border-green-200 text-gray-600 cursor-default' : ''}`}
+                            required
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-xs text-gray-500 mb-1">Fecha</label>
+                          <input
+                            type="date"
+                            value={inst.dueDate}
+                            readOnly={isPaid}
+                            onChange={isPaid ? undefined : (e) => { const next = [...form.installments]; next[idx] = { ...next[idx], dueDate: e.target.value }; setForm({ ...form, installments: next }); }}
+                            className={`w-full px-2 py-1.5 border rounded text-sm ${isPaid ? 'bg-green-50 border-green-200 text-gray-600 cursor-default' : ''}`}
+                            required
+                          />
+                        </div>
+                        {isPaid ? (
+                          <div className="pb-1 flex-shrink-0">
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 whitespace-nowrap">
+                              <CheckCircle size={11} /> Pagada
+                            </span>
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => setForm({ ...form, installments: form.installments.filter((_, i) => i !== idx) })} className="text-red-400 hover:text-red-600 pb-1"><Trash2 size={14} /></button>
+                        )}
                       </div>
-                      <div className="flex-1">
-                        <label className="block text-xs text-gray-500 mb-1">Fecha</label>
-                        <input type="date" value={inst.dueDate} onChange={(e) => { const installments = [...form.installments]; installments[idx] = { ...installments[idx], dueDate: e.target.value }; setForm({ ...form, installments }); }} className="w-full px-2 py-1.5 border rounded text-sm" required />
-                      </div>
-                      <button type="button" onClick={() => setForm({ ...form, installments: form.installments.filter((_, i) => i !== idx) })} className="text-red-400 hover:text-red-600 pb-1"><Trash2 size={14} /></button>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {form.installments.length === 0 && <p className="text-xs text-gray-400">Usa el generador arriba o agrega cuotas manualmente</p>}
                 </div>
               )}

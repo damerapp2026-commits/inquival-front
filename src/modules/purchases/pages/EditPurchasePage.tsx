@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { ArrowLeft, ShoppingCart, AlertTriangle } from 'lucide-react';
 import { usePurchaseById, useUpdatePurchaseFull } from '../hooks/usePurchases';
 import { useProducts } from '../../products/hooks/useProducts';
+import { useAccountPayableByPurchaseId } from '../../accounts-payable/hooks/useAccountsPayable';
 import { PurchaseFormBody, type PurchaseSubmitPayload } from '../components/PurchaseFormBody';
 import { purchaseToFormState } from '../utils/purchaseForm';
 import type { Purchase, Product } from '../../../shared/types';
@@ -28,6 +29,7 @@ export function EditPurchasePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: purchaseData, isLoading } = usePurchaseById(id);
+  const { data: accountPayable, isLoading: apLoading } = useAccountPayableByPurchaseId(id ?? null);
   const { data: productsData } = useProducts({ limit: 10000 });
   const updateFull = useUpdatePurchaseFull();
 
@@ -38,7 +40,7 @@ export function EditPurchasePage() {
     return Array.isArray(raw) ? raw : raw?.data || [];
   }, [productsData]);
 
-  if (isLoading) {
+  if (isLoading || apLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
@@ -62,6 +64,15 @@ export function EditPurchasePage() {
   }
 
   const initial = purchaseToFormState(purchase, products);
+
+  // Pre-poblar cuotas desde AccountPayable si existe y tiene cuotas
+  if (accountPayable?.paymentScheduleType === 'INSTALLMENTS' && (accountPayable?.installments?.length ?? 0) > 0) {
+    initial.state.installments = accountPayable.installments.map((i) => ({
+      amount: i.amount,
+      dueDate: i.dueDate ? i.dueDate.slice(0, 10) : '',
+      status: i.status as 'PENDING' | 'PAID',
+    }));
+  }
 
   const handleSubmit = async (payload: PurchaseSubmitPayload) => {
     if (!payload.reason) return;

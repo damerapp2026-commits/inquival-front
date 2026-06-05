@@ -100,7 +100,7 @@ export interface PurchaseFormState {
   paymentType: 'CONTADO' | 'CREDITO';
   paymentScheduleType: 'SINGLE_DATE' | 'INSTALLMENTS';
   dueDate: string;
-  installments: { amount: number; dueDate: string }[];
+  installments: { amount: number; dueDate: string; status?: 'PENDING' | 'PAID' }[];
   items: PurchaseFormItem[];
   purchaseDate: string;
   documentType: 'FACTURA' | 'BOLETA' | 'GUIA' | 'NOTA_CREDITO' | 'OTRO';
