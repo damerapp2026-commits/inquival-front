@@ -280,7 +280,7 @@ export function InvoicesPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <Link to={`/purchases/${p.id}`} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium justify-center" title="Ver detalle">
+                          <Link to={`/purchases/${p.id}`} state={{ from: '/invoices' }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium justify-center" title="Ver detalle">
                             <Eye size={15} /> Ver
                           </Link>
                         </td>
@@ -368,7 +368,7 @@ export function InvoicesPage() {
                                   </span>
                                 </td>
                                 <td className="px-4 py-2.5 text-center">
-                                  <Link to={`/purchases/${p.id}`} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium justify-center" title="Ver detalle">
+                                  <Link to={`/purchases/${p.id}`} state={{ from: '/invoices' }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium justify-center" title="Ver detalle">
                                     <Eye size={14} /> Ver
                                   </Link>
                                 </td>

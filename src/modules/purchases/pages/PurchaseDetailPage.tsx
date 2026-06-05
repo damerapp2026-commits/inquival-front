@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { usePurchases, useCancelPurchase } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
@@ -173,6 +173,8 @@ function AccountPayableSection({ ap, sym }: { ap: AccountPayable | null | undefi
 export function PurchaseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const backTo: string = (location.state as any)?.from ?? '/purchases';
   const { user } = useAuth();
   const { data, isLoading } = usePurchases({ limit: 500 });
   const { data: companies } = useCompanies();
@@ -200,12 +202,12 @@ export function PurchaseDetailPage() {
     return (
       <div>
         <div className="flex items-center gap-3 mb-6">
-          <Link to="/purchases" className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"><ArrowLeft size={18} /></Link>
+          <Link to={backTo} className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"><ArrowLeft size={18} /></Link>
           <h1 className="text-2xl font-bold text-gray-800">Compra no encontrada</h1>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
           <p className="text-sm text-gray-500">La compra que buscas no existe o fue eliminada.</p>
-          <Link to="/purchases" className="inline-block mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium">Volver a compras</Link>
+          <Link to={backTo} className="inline-block mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium">Volver</Link>
         </div>
       </div>
     );
@@ -217,7 +219,7 @@ export function PurchaseDetailPage() {
     <div>
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <Link to="/purchases" className="p-2 rounded-lg hover:bg-gray-100 text-gray-600" title="Volver">
+        <Link to={backTo} className="p-2 rounded-lg hover:bg-gray-100 text-gray-600" title="Volver">
           <ArrowLeft size={18} />
         </Link>
         <div className="flex-1">
