@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { usePurchases } from '../hooks/usePurchases';
+import { usePurchases, useUpdatePurchaseMeta } from '../hooks/usePurchases';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
-import { Plus, ShoppingCart, Eye, Wrench, Search, X } from 'lucide-react';
+import { Modal } from '../../../shared/components/Modal';
+import { Plus, ShoppingCart, Eye, Wrench, Search, X, Truck } from 'lucide-react';
 import type { Purchase } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
 
@@ -40,6 +41,8 @@ const DATE_PRESETS = [
 export function PurchasesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [grModal, setGrModal] = useState<{ purchaseId: string; grSeries: string; grNumber: string; grDate: string } | null>(null);
+  const updateMeta = useUpdatePurchaseMeta();
 
   // Todo el estado vive en la URL para que "Atrás" desde el detalle restaure la página y filtros
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
@@ -99,6 +102,28 @@ export function PurchasesPage() {
 
   const setPage = (p: number) => updateParams({ page: p > 1 ? String(p) : null });
 
+  const openGrModal = (item: Purchase) => {
+    setGrModal({
+      purchaseId: item.id,
+      grSeries: item.grSeries || '',
+      grNumber: item.grNumber || '',
+      grDate: item.grDate ? item.grDate.slice(0, 10) : '',
+    });
+  };
+
+  const handleGrSave = async () => {
+    if (!grModal) return;
+    await updateMeta.mutateAsync({
+      id: grModal.purchaseId,
+      data: {
+        grSeries: grModal.grSeries,
+        grNumber: grModal.grNumber,
+        grDate: grModal.grDate,
+      },
+    });
+    setGrModal(null);
+  };
+
   const columns = [
     { key: 'date', header: 'Fecha', render: (item: Purchase) => formatDateEs(item.date) },
     { key: 'supplier', header: 'Proveedor' },
@@ -124,7 +149,16 @@ export function PurchasesPage() {
       </span>
     )},
     { key: 'actions', header: '', render: (item: Purchase) => (
-      <button onClick={(e) => { e.stopPropagation(); navigate(`/purchases/${item.id}`); }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
+      <div className="flex items-center gap-2">
+        <button onClick={(e) => { e.stopPropagation(); navigate(`/purchases/${item.id}`); }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
+        <button
+          onClick={(e) => { e.stopPropagation(); openGrModal(item); }}
+          title={item.grSeries || item.grNumber ? `GR: ${[item.grSeries, item.grNumber].filter(Boolean).join('-')}` : 'Añadir Guía de Remisión'}
+          className={`p-1 rounded hover:bg-gray-100 ${item.grSeries || item.grNumber ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-gray-600'}`}
+        >
+          <Truck size={14} />
+        </button>
+      </div>
     )},
   ];
 
@@ -261,6 +295,55 @@ export function PurchasesPage() {
 
       <DataTable columns={columns} data={purchases} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+
+      <Modal isOpen={!!grModal} onClose={() => setGrModal(null)} title="Guía de Remisión">
+        {grModal && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Serie</label>
+                <input
+                  value={grModal.grSeries}
+                  onChange={(e) => setGrModal({ ...grModal, grSeries: e.target.value.toUpperCase() })}
+                  placeholder="T001"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm uppercase"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Correlativo</label>
+                <input
+                  value={grModal.grNumber}
+                  onChange={(e) => setGrModal({ ...grModal, grNumber: e.target.value })}
+                  placeholder="00000001"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Fecha</label>
+                <input
+                  type="date"
+                  value={grModal.grDate}
+                  onChange={(e) => setGrModal({ ...grModal, grDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
+              <button type="button" onClick={() => setGrModal(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGrSave}
+                disabled={updateMeta.isPending}
+                className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+              >
+                {updateMeta.isPending ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -48,6 +48,9 @@ export const purchaseService = {
       documentSeries?: string | null;
       documentNumber?: string | null;
       issueDate?: string | null;
+      grSeries?: string;
+      grNumber?: string;
+      grDate?: string;
     },
   ) => api.patch(`/purchases/${id}`, data).then((r) => r.data.data),
   updateFull: (id: string, data: UpdatePurchaseFullPayload) =>

@@ -55,6 +55,22 @@ export function useUpdatePurchase() {
     },
   });
 }
+export function useUpdatePurchaseMeta() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof purchaseService.update>[1] }) =>
+      purchaseService.update(id, data),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['purchase', id] });
+      toast.success('Guía de remisión guardada');
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg[0] : msg || 'Error al guardar');
+    },
+  });
+}
 export function useUpdatePurchaseFull() {
   const qc = useQueryClient();
   return useMutation({
