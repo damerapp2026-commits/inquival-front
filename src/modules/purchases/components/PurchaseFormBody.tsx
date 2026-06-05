@@ -600,7 +600,7 @@ export function PurchaseFormBody({
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label className="block text-[11px] text-gray-500 mb-1">P.U. sin IGV ({sym}) <span className="text-gray-400 font-normal">— hasta 4 dec.</span></label>
-                              <input type="number" min="0" step="0.0001" value={item.unitPriceSinIgv || ''} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', parseFloat(e.target.value) || 0)} onWheel={blurOnWheel} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0.0000" />
+                              <input type="number" min="0" step="0.0001" value={item.unitPriceSinIgv == null ? '' : item.unitPriceSinIgv} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)} onWheel={blurOnWheel} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0.0000" />
                             </div>
                             <div>
                               <label className="block text-[11px] text-gray-500 mb-1">{appliesIgv ? `+ IGV (${sym})` : `Total (${sym})`}</label>
