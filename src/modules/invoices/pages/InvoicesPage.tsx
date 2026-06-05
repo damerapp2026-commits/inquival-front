@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Receipt, FileText, Wallet, Search, X, List, Layers, ChevronDown, ChevronRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Receipt, FileText, Wallet, Search, X, List, Layers, ChevronDown, ChevronRight, Eye } from 'lucide-react';
 import { usePurchases } from '../../purchases/hooks/usePurchases';
 import { useCashRegisters } from '../../cash-register/hooks/useCashRegister';
 import type { Purchase, CashRegister, CashRegisterEntry } from '../../../shared/types';
@@ -256,6 +257,7 @@ export function InvoicesPage() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Serie - N°</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Pago</th>
+                      <th className="px-4 py-3" />
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -277,6 +279,11 @@ export function InvoicesPage() {
                             {p.paymentType}
                           </span>
                         </td>
+                        <td className="px-4 py-3 text-center">
+                          <Link to={`/purchases/${p.id}`} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium justify-center" title="Ver detalle">
+                            <Eye size={15} /> Ver
+                          </Link>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -284,7 +291,7 @@ export function InvoicesPage() {
                     <tr>
                       <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-gray-600">Total ({filteredPurchases.length} comprobantes)</td>
                       <td className="px-4 py-3 text-sm text-right font-bold text-gray-800">S/ {totalPurchases.toFixed(2)}</td>
-                      <td />
+                      <td colSpan={2} />
                     </tr>
                   </tfoot>
                 </table>
@@ -339,6 +346,7 @@ export function InvoicesPage() {
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase">Serie - N°</th>
                               <th className="px-4 py-2 text-right text-xs font-medium text-gray-400 uppercase">Total</th>
                               <th className="px-4 py-2 text-center text-xs font-medium text-gray-400 uppercase">Pago</th>
+                              <th className="px-4 py-2" />
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
@@ -358,6 +366,11 @@ export function InvoicesPage() {
                                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${p.paymentType === 'CONTADO' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                                     {p.paymentType}
                                   </span>
+                                </td>
+                                <td className="px-4 py-2.5 text-center">
+                                  <Link to={`/purchases/${p.id}`} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium justify-center" title="Ver detalle">
+                                    <Eye size={14} /> Ver
+                                  </Link>
                                 </td>
                               </tr>
                             ))}

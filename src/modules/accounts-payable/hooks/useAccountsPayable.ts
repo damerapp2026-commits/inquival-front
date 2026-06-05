@@ -10,6 +10,17 @@ export function useAccountPayableById(id: string | null) {
   return useQuery({ queryKey: ['accounts-payable', id], queryFn: () => accountPayableService.getById(id!), enabled: !!id });
 }
 
+export function useAccountPayableByPurchaseId(purchaseId: string | null) {
+  return useQuery({
+    queryKey: ['accounts-payable-by-purchase', purchaseId],
+    queryFn: async () => {
+      const result = await accountPayableService.getAll({ purchaseId, limit: 1, page: 1 });
+      return (result as any)?.[0] ?? null;
+    },
+    enabled: !!purchaseId,
+  });
+}
+
 export function useAPAlerts(days?: number) {
   return useQuery({ queryKey: ['accounts-payable-alerts', days], queryFn: () => accountPayableService.getAlerts(days) });
 }

@@ -4,8 +4,9 @@ import { usePurchases, useCancelPurchase } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useAuth } from '../../../app/providers/AuthProvider';
-import { ArrowLeft, ShoppingCart, Building2, FileText, CreditCard, Package, Pencil, Trash2 } from 'lucide-react';
-import type { Purchase, Company, Product } from '../../../shared/types';
+import { useAccountPayableByPurchaseId } from '../../accounts-payable/hooks/useAccountsPayable';
+import { ArrowLeft, ShoppingCart, Building2, CreditCard, Package, Pencil, Trash2, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import type { Purchase, Company, Product, AccountPayable } from '../../../shared/types';
 import { CancelPurchaseDialog } from '../components/CancelPurchaseDialog';
 import { formatDateEs } from '../../../shared/utils/date.util';
 
@@ -30,6 +31,145 @@ function SectionCard({ title, icon: Icon, children }: { title: string; icon: any
   );
 }
 
+const apStatusConfig = {
+  PENDING:      { label: 'Pendiente',   cls: 'bg-orange-100 text-orange-700', icon: Clock },
+  PARTIAL:      { label: 'Parcial',     cls: 'bg-blue-100 text-blue-700',     icon: AlertCircle },
+  PAID:         { label: 'Pagado',      cls: 'bg-green-100 text-green-700',   icon: CheckCircle },
+  CONSOLIDATED: { label: 'Consolidado', cls: 'bg-purple-100 text-purple-700', icon: CheckCircle },
+} as const;
+
+function AccountPayableSection({ ap, sym }: { ap: AccountPayable | null | undefined; sym: string }) {
+  if (!ap) return null;
+
+  const cfg = apStatusConfig[ap.status as keyof typeof apStatusConfig] ?? apStatusConfig.PENDING;
+  const StatusIcon = cfg.icon;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  const isOverdue = (dateStr?: string) => {
+    if (!dateStr) return false;
+    return new Date(dateStr.slice(0, 10) + 'T00:00:00') < today;
+  };
+
+  return (
+    <SectionCard title="Cuenta por Pagar" icon={CreditCard}>
+      {/* Resumen general */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold ${cfg.cls}`}>
+          <StatusIcon size={14} />
+          {cfg.label}
+        </span>
+        <div className="flex flex-wrap gap-2 text-sm">
+          <span className="px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-200">
+            <span className="text-gray-500 text-xs">Total </span>
+            <span className="font-semibold text-gray-800">{sym} {ap.totalAmount.toFixed(2)}</span>
+          </span>
+          {ap.paidAmount > 0 && (
+            <span className="px-3 py-1.5 bg-green-50 rounded-lg border border-green-200">
+              <span className="text-green-600 text-xs">Pagado </span>
+              <span className="font-semibold text-green-700">{sym} {ap.paidAmount.toFixed(2)}</span>
+            </span>
+          )}
+          {ap.pendingAmount > 0 && (
+            <span className="px-3 py-1.5 bg-orange-50 rounded-lg border border-orange-200">
+              <span className="text-orange-600 text-xs">Pendiente </span>
+              <span className="font-semibold text-orange-700">{sym} {ap.pendingAmount.toFixed(2)}</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Pago único */}
+      {ap.paymentScheduleType === 'SINGLE_DATE' && (
+        <div className={`flex items-center justify-between px-4 py-3 rounded-lg border ${ap.status === 'PAID' ? 'bg-green-50 border-green-200' : isOverdue(ap.dueDate) ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-200'}`}>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Fecha de pago</p>
+            <p className="text-sm font-medium text-gray-800">
+              {ap.dueDate ? formatDateEs(ap.dueDate, { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}
+            </p>
+            {ap.status !== 'PAID' && isOverdue(ap.dueDate) && (
+              <p className="text-xs text-red-600 font-medium mt-0.5">Vencido</p>
+            )}
+          </div>
+          {ap.status === 'PAID' ? (
+            <CheckCircle size={22} className="text-green-600" />
+          ) : (
+            <Clock size={22} className={isOverdue(ap.dueDate) ? 'text-red-500' : 'text-orange-500'} />
+          )}
+        </div>
+      )}
+
+      {/* Cuotas */}
+      {ap.paymentScheduleType === 'INSTALLMENTS' && ap.installments.length > 0 && (
+        <div className="border rounded-lg overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">#</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Vencimiento</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Monto</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Estado</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Fecha de Pago</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {ap.installments.map((inst, idx) => {
+                const paid = inst.status === 'PAID';
+                const overdue = !paid && isOverdue(inst.dueDate);
+                return (
+                  <tr key={idx} className={paid ? 'bg-green-50/40' : overdue ? 'bg-red-50/40' : ''}>
+                    <td className="px-3 py-2 text-gray-500">#{idx + 1}</td>
+                    <td className="px-3 py-2">
+                      <span className={overdue ? 'text-red-600 font-medium' : ''}>
+                        {inst.dueDate ? formatDateEs(inst.dueDate, { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}
+                      </span>
+                      {overdue && <span className="ml-1 text-xs text-red-500">(vencida)</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium">{sym} {inst.amount.toFixed(2)}</td>
+                    <td className="px-3 py-2">
+                      {paid ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                          <CheckCircle size={11} /> Pagada
+                        </span>
+                      ) : (
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${overdue ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                          <Clock size={11} /> {overdue ? 'Vencida' : 'Pendiente'}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-sm text-gray-500">
+                      {inst.paidDate ? formatDateEs(inst.paidDate, { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Historial de pagos */}
+      {ap.payments && ap.payments.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Historial de pagos</p>
+          <div className="space-y-2">
+            {ap.payments.map((pmt, idx) => (
+              <div key={idx} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-sm">
+                <div>
+                  <span className="font-medium text-gray-800">{sym} {pmt.amount.toFixed(2)}</span>
+                  {pmt.notes && <span className="ml-2 text-xs text-gray-500">{pmt.notes}</span>}
+                </div>
+                <span className="text-xs text-gray-400">
+                  {pmt.paymentDate ? formatDateEs(pmt.paymentDate, { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 export function PurchaseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -37,6 +177,7 @@ export function PurchaseDetailPage() {
   const { data, isLoading } = usePurchases({ limit: 500 });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
+  const { data: accountPayable } = useAccountPayableByPurchaseId(id ?? null);
   const cancelPurchase = useCancelPurchase();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const isAdmin = user?.role === 'ADMIN';
@@ -71,7 +212,6 @@ export function PurchaseDetailPage() {
   }
 
   const sym = purchase.totalCostUsd ? '$' : 'S/';
-  const installments = purchase.installments;
 
   return (
     <div>
@@ -202,36 +342,9 @@ export function PurchaseDetailPage() {
           </div>
         </SectionCard>
 
-        {/* Cuotas */}
-        {purchase.paymentType === 'CREDITO' && purchase.paymentScheduleType === 'INSTALLMENTS' && installments && installments.length > 0 && (
-          <SectionCard title={`Cronograma de cuotas (${installments.length})`} icon={CreditCard}>
-            <div className="border rounded-lg overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">#</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Vencimiento</th>
-                    <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Monto</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Estado</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {installments.map((inst, idx) => (
-                    <tr key={idx}>
-                      <td className="px-3 py-2 text-gray-500">#{idx + 1}</td>
-                      <td className="px-3 py-2">{inst.dueDate ? formatDateEs(inst.dueDate, { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}</td>
-                      <td className="px-3 py-2 text-right font-medium">{sym} {inst.amount.toFixed(2)}</td>
-                      <td className="px-3 py-2">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${inst.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                          {inst.status === 'PAID' ? 'Pagada' : 'Pendiente'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </SectionCard>
+        {/* Cuenta por Pagar (solo crédito) */}
+        {purchase.paymentType === 'CREDITO' && (
+          <AccountPayableSection ap={accountPayable as AccountPayable | null | undefined} sym={sym} />
         )}
 
         {/* Totales */}
