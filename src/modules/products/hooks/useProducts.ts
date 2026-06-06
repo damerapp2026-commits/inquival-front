@@ -17,3 +17,6 @@ export function useDeleteProduct() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: productService.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ['products'] }); toast.success('Producto desactivado'); } });
 }
+export function useProductCountsByCategory() {
+  return useQuery({ queryKey: ['product-counts-by-category'], queryFn: productService.getCountsByCategory });
+}

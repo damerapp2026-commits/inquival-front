@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories';
+import { useProductCountsByCategory } from '../../products/hooks/useProducts';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
-import { Plus, Edit2, Trash2, PowerOff, FolderTree, Search, CheckCircle2, XCircle, AlertTriangle, Tag } from 'lucide-react';
+import { Plus, Edit2, Trash2, PowerOff, FolderTree, Search, CheckCircle2, XCircle, AlertTriangle, Tag, Package } from 'lucide-react';
 import type { Category } from '../../../shared/types';
 
 type StatusFilter = 'all' | 'active' | 'inactive';
@@ -16,6 +17,7 @@ export function CategoriesPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const { data: categories, isLoading } = useCategories();
+  const { data: productCounts } = useProductCountsByCategory();
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
   const deleteCategory = useDeleteCategory();
@@ -66,6 +68,18 @@ export function CategoriesPage() {
       render: (item: Category) => item.description
         ? <span className="text-gray-600">{item.description}</span>
         : <span className="text-gray-300">—</span>,
+    },
+    {
+      key: 'productCount', header: 'Productos',
+      render: (item: Category) => {
+        const count = productCounts?.[item.id] ?? 0;
+        return (
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${count > 0 ? 'bg-purple-50 text-purple-700' : 'bg-gray-100 text-gray-400'}`}>
+            <Package size={11} />
+            {count}
+          </span>
+        );
+      },
     },
     {
       key: 'isActive', header: 'Estado',

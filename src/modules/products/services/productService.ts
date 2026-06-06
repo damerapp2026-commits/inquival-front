@@ -5,6 +5,7 @@ export const productService = {
   create: (data: any) => api.post('/products', data).then((r) => r.data.data),
   update: (id: string, data: any) => api.put(`/products/${id}`, data).then((r) => r.data.data),
   delete: (id: string) => api.delete(`/products/${id}`).then((r) => r.data.data),
+  getCountsByCategory: (): Promise<Record<string, number>> => api.get('/products/counts-by-category').then((r) => r.data.data),
   uploadImage: (file: File): Promise<{ url: string }> => {
     const fd = new FormData();
     fd.append('file', file);
