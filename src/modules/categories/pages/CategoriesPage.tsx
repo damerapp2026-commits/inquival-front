@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
-import { Plus, Edit2, Trash2, FolderTree, Search, CheckCircle2, XCircle, AlertTriangle, Tag } from 'lucide-react';
+import { Plus, Edit2, Trash2, PowerOff, FolderTree, Search, CheckCircle2, XCircle, AlertTriangle, Tag } from 'lucide-react';
 import type { Category } from '../../../shared/types';
 
 type StatusFilter = 'all' | 'active' | 'inactive';
@@ -11,6 +11,7 @@ export function CategoriesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
+  const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
@@ -23,6 +24,15 @@ export function CategoriesPage() {
 
   const openCreate = () => { setEditing(null); setForm({ name: '', description: '', isActive: true }); setShowModal(true); };
   const openEdit = (category: Category) => { setEditing(category); setForm({ name: category.name, description: category.description || '', isActive: category.isActive }); setShowModal(true); };
+
+  const handleDeactivate = async (item: Category) => {
+    setDeactivatingId(item.id);
+    try {
+      await updateCategory.mutateAsync({ id: item.id, data: { isActive: false } });
+    } finally {
+      setDeactivatingId(null);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,7 +81,24 @@ export function CategoriesPage() {
       render: (item: Category) => (
         <div className="flex items-center gap-1">
           <button onClick={() => openEdit(item)} className="p-2 rounded-lg text-blue-600 hover:bg-blue-50" title="Editar"><Edit2 size={15} /></button>
-          <button onClick={() => setDeleteTarget(item)} className="p-2 rounded-lg text-red-600 hover:bg-red-50" title="Eliminar"><Trash2 size={15} /></button>
+          {item.isActive ? (
+            <button
+              onClick={() => handleDeactivate(item)}
+              disabled={deactivatingId === item.id}
+              className="p-2 rounded-lg text-amber-600 hover:bg-amber-50 disabled:opacity-40"
+              title="Desactivar"
+            >
+              <PowerOff size={15} />
+            </button>
+          ) : (
+            <button
+              onClick={() => setDeleteTarget(item)}
+              className="p-2 rounded-lg text-red-600 hover:bg-red-50"
+              title="Eliminar definitivamente"
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
         </div>
       ),
     },
@@ -179,12 +206,12 @@ export function CategoriesPage() {
       </Modal>
 
       {/* Delete confirmation */}
-      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Eliminar categoría">
+      <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Eliminar categoría definitivamente">
         <div className="space-y-4">
           <div className="flex gap-3 p-4 bg-red-50 border border-red-100 rounded-xl">
             <AlertTriangle className="text-red-500 flex-shrink-0 mt-0.5" size={20} />
             <div className="text-sm text-red-700">
-              Esta acción es <strong>permanente</strong>. Se eliminará la categoría <strong>{deleteTarget?.name}</strong>. Si tiene productos asignados, el sistema podría rechazar la operación.
+              Esta acción es <strong>irreversible</strong>. La categoría <strong>{deleteTarget?.name}</strong> se eliminará permanentemente de la base de datos.
             </div>
           </div>
           <div className="flex gap-3 justify-end">
