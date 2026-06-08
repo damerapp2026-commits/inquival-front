@@ -206,11 +206,9 @@ export function PurchaseFormBody({
     if (field === 'markupPercent') item.precioVentaMode = 'markup';
     if (field === 'precioVenta') item.precioVentaMode = 'direct';
     if (field === 'productId') {
-      const seeded = seedPrecioVentaFromProduct(value);
-      if (seeded > 0) {
-        item.precioVenta = seeded;
-        item.precioVentaMode = 'direct';
-      }
+      item.precioVenta = 0;
+      item.markupPercent = 0;
+      item.precioVentaMode = 'markup';
     }
     const costoFields = ['unitPriceSinIgv', 'markupPercent', 'precioVenta', 'productId'];
     if (costoFields.includes(field)) item = recalcItem(item, currency, exchangeRate, itemAppliesIgv(item.productId, products));
@@ -684,6 +682,11 @@ export function PurchaseFormBody({
                             </div>
                           </div>
                           <div className="text-[10px] text-gray-400 mt-1.5">El campo en azul es el que controla al otro automáticamente.</div>
+                          {item.productId && (() => {
+                            const ref = seedPrecioVentaFromProduct(item.productId);
+                            if (!ref) return null;
+                            return <div className="text-[10px] text-indigo-600 mt-1">Precio actual en catálogo: {sym} {ref.toFixed(2)}</div>;
+                          })()}
                         </div>
                       </div>
                     );

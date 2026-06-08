@@ -284,7 +284,12 @@ export function PurchaseDetailPage() {
         {/* Info general */}
         <SectionCard title="Información general" icon={Building2}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <InfoCell label="Fecha">
+            <InfoCell label="F. Emisión">
+              {purchase.issueDate
+                ? formatDateEs(purchase.issueDate, { day: '2-digit', month: 'long', year: 'numeric' })
+                : <span className="text-gray-400">—</span>}
+            </InfoCell>
+            <InfoCell label="F. Recepción">
               {formatDateEs(purchase.date, { day: '2-digit', month: 'long', year: 'numeric' })}
             </InfoCell>
             <InfoCell label="Almacén">{getCompanyName(purchase.companyId)}</InfoCell>
@@ -296,11 +301,6 @@ export function PurchaseDetailPage() {
               <InfoCell label="Comprobante">
                 {purchase.documentType} {purchase.documentSeries || ''}
                 {purchase.documentNumber ? `-${purchase.documentNumber}` : ''}
-                {purchase.issueDate && (
-                  <span className="block text-xs text-gray-500 mt-0.5">
-                    Emisión: {formatDateEs(purchase.issueDate)}
-                  </span>
-                )}
               </InfoCell>
             )}
             <InfoCell label="Tipo de Pago">

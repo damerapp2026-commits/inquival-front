@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePurchases, useUpdatePurchaseMeta } from '../hooks/usePurchases';
 import { DataTable } from '../../../shared/components/DataTable';
@@ -53,9 +53,14 @@ export function PurchasesPage() {
 
   // Estado local solo para el input (se escribe sin tocar la URL hasta el debounce)
   const [supplierSearch, setSupplierSearch] = useState(supplierParam);
+  const [localStartDate, setLocalStartDate] = useState(startDate);
+  const [localEndDate, setLocalEndDate] = useState(endDate);
+  const supplierDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sincronizar el input si la URL cambia externamente (navegación con Atrás/Adelante)
   useEffect(() => { setSupplierSearch(supplierParam); }, [supplierParam]);
+  useEffect(() => { setLocalStartDate(startDate); }, [startDate]);
+  useEffect(() => { setLocalEndDate(endDate); }, [endDate]);
 
   const updateParams = (updates: Record<string, string | null>) => {
     const sp = new URLSearchParams(searchParams);
@@ -83,8 +88,8 @@ export function PurchasesPage() {
 
   const handleSupplierChange = (val: string) => {
     setSupplierSearch(val);
-    clearTimeout((handleSupplierChange as any)._t);
-    (handleSupplierChange as any)._t = setTimeout(() => {
+    if (supplierDebounceRef.current) clearTimeout(supplierDebounceRef.current);
+    supplierDebounceRef.current = setTimeout(() => {
       updateParams({ supplier: val || null, page: null });
     }, 400);
   };
@@ -94,10 +99,20 @@ export function PurchasesPage() {
     updateParams({ startDate: start, endDate: end, preset: preset.id, page: null });
   };
 
-  const clearDates = () => updateParams({ startDate: null, endDate: null, preset: null, page: null });
+  const clearDates = () => {
+    setLocalStartDate('');
+    setLocalEndDate('');
+    updateParams({ startDate: null, endDate: null, preset: null, page: null });
+  };
 
   const handleCustomDate = (field: 'start' | 'end', val: string) => {
-    updateParams({ [field === 'start' ? 'startDate' : 'endDate']: val || null, preset: 'custom', page: null });
+    if (field === 'start') {
+      setLocalStartDate(val);
+      if (val) updateParams({ startDate: val, preset: 'custom', page: null });
+    } else {
+      setLocalEndDate(val);
+      if (val) updateParams({ endDate: val, preset: 'custom', page: null });
+    }
   };
 
   const setPage = (p: number) => updateParams({ page: p > 1 ? String(p) : null });
@@ -125,7 +140,7 @@ export function PurchasesPage() {
   };
 
   const columns = [
-    { key: 'date', header: 'Fecha', render: (item: Purchase) => formatDateEs(item.date) },
+    { key: 'date', header: 'F. Emisión', render: (item: Purchase) => formatDateEs(item.issueDate || item.date, { day: '2-digit', month: '2-digit', year: 'numeric' }) },
     { key: 'supplier', header: 'Proveedor' },
     { key: 'items', header: 'Items', render: (item: Purchase) => `${item.items.length} producto(s)` },
     { key: 'totalCost', header: 'Total', render: (item: Purchase) => {
@@ -214,14 +229,14 @@ export function PurchasesPage() {
             <span className="text-xs text-gray-500">Desde</span>
             <input
               type="date"
-              value={startDate}
+              value={localStartDate}
               onChange={(e) => handleCustomDate('start', e.target.value)}
               className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
             />
             <span className="text-xs text-gray-500">Hasta</span>
             <input
               type="date"
-              value={endDate}
+              value={localEndDate}
               onChange={(e) => handleCustomDate('end', e.target.value)}
               className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
             />
