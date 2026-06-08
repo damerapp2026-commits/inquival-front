@@ -3,6 +3,8 @@ import { X, FileText, Smartphone, FileText as FileIcon, Printer, ExternalLink, M
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import { downloadVoucherPdf, openVoucherPdf } from '../utils/voucherPdf';
 import { numberToWords } from '../../quotes/utils/numberToWords';
+import { saleService } from '../services/saleService';
+import toast from 'react-hot-toast';
 
 export interface VoucherSnapshot {
   id: string;
@@ -473,7 +475,7 @@ interface Props {
 
 export function VoucherPreviewModal({ sale, onClose }: Props) {
   const [format, setFormat] = useState<Format>('TICKET');
-  const [pdfBusy, setPdfBusy] = useState<null | 'download' | 'open'>(null);
+  const [pdfBusy, setPdfBusy] = useState<null | 'download' | 'open' | 'whatsapp'>(null);
   const [showWaModal, setShowWaModal] = useState(false);
   const [waPhone, setWaPhone] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -533,14 +535,24 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
     setShowWaModal(true);
   };
 
-  const handleSendWhatsapp = () => {
-    const text = buildWhatsappText(sale);
-    const digits = waPhone.replace(/\D/g, '');
-    const fullPhone = digits.length === 9 ? `51${digits}` : digits;
-    const encodedText = encodeURIComponent(text);
-    const waUrl = fullPhone ? `https://wa.me/${fullPhone}?text=${encodedText}` : `https://wa.me/?text=${encodedText}`;
-    window.open(waUrl, '_blank');
-    setShowWaModal(false);
+  const handleSendWhatsapp = async () => {
+    setPdfBusy('whatsapp');
+    try {
+      const result = sale.id ? await saleService.getVoucherPdf(sale.id) : null;
+      const text = result?.pdfUrl
+        ? `Hola, te comparto tu ${voucherTitle(sale.voucherType).toLowerCase()} ${number} por ${sale.currency === 'USD' ? '$' : 'S/'} ${sale.total.toFixed(2)}: ${result.pdfUrl}`
+        : buildWhatsappText(sale);
+      const digits = waPhone.replace(/\D/g, '');
+      const fullPhone = digits.length === 9 ? `51${digits}` : digits;
+      const encodedText = encodeURIComponent(text);
+      const waUrl = fullPhone ? `https://wa.me/${fullPhone}?text=${encodedText}` : `https://wa.me/?text=${encodedText}`;
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+      setShowWaModal(false);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'No se pudo generar el PDF para WhatsApp');
+    } finally {
+      setPdfBusy(null);
+    }
   };
 
   return (
@@ -655,9 +667,10 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
           <button
             type="button"
             onClick={handleWhatsapp}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#25D366] text-white rounded-xl hover:bg-[#1ebe57] text-sm font-semibold transition-colors shadow-sm"
+            disabled={pdfBusy !== null}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#25D366] text-white rounded-xl hover:bg-[#1ebe57] disabled:opacity-60 disabled:cursor-wait text-sm font-semibold transition-colors shadow-sm"
           >
-            <MessageCircle size={15} /> WhatsApp
+            {pdfBusy === 'whatsapp' ? <Loader2 size={15} className="animate-spin" /> : <MessageCircle size={15} />} WhatsApp
           </button>
           <button
             type="button"
@@ -729,10 +742,11 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
             <button
               type="button"
               onClick={handleSendWhatsapp}
-              disabled={waPhone.length > 0 && waPhone.length !== 9}
+              disabled={(waPhone.length > 0 && waPhone.length !== 9) || pdfBusy === 'whatsapp'}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#25D366] text-white rounded-xl hover:bg-[#1ebe57] disabled:opacity-40 text-sm font-semibold transition-colors"
             >
-              <MessageCircle size={15} /> Enviar
+              {pdfBusy === 'whatsapp' ? <Loader2 size={15} className="animate-spin" /> : <MessageCircle size={15} />}
+              {pdfBusy === 'whatsapp' ? 'Generando...' : 'Enviar'}
             </button>
           </div>
         </div>
