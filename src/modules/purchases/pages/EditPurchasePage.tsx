@@ -6,7 +6,7 @@ import { useProducts } from '../../products/hooks/useProducts';
 import { useAccountPayableByPurchaseId } from '../../accounts-payable/hooks/useAccountsPayable';
 import { PurchaseFormBody, type PurchaseSubmitPayload } from '../components/PurchaseFormBody';
 import { purchaseToFormState } from '../utils/purchaseForm';
-import type { Purchase, Product } from '../../../shared/types';
+import type { Purchase, Product, AccountPayableInstallment } from '../../../shared/types';
 
 function WarningBanner({ purchaseRef, totalLabel }: { purchaseRef: string; totalLabel: string }) {
   return (
@@ -67,7 +67,7 @@ export function EditPurchasePage() {
 
   // Pre-poblar cuotas desde AccountPayable si existe y tiene cuotas
   if (accountPayable?.paymentScheduleType === 'INSTALLMENTS' && (accountPayable?.installments?.length ?? 0) > 0) {
-    initial.state.installments = accountPayable.installments.map((i) => ({
+    initial.state.installments = accountPayable.installments.map((i: AccountPayableInstallment) => ({
       amount: i.amount,
       dueDate: i.dueDate ? i.dueDate.slice(0, 10) : '',
       status: i.status as 'PENDING' | 'PAID',
