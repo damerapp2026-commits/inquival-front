@@ -26,6 +26,12 @@ export interface QuoteItem { productId: string; companyId: string; quantity: num
 export interface QuotePayment { paymentMethodName: string; amount: number; }
 export interface Quote { id: string; quoteNumber: string; series: string; number: number; companyId?: string; clientId?: string; clientName?: string; items: QuoteItem[]; total: number; notes?: string; status: QuoteStatus; issueDate: string; validUntil: string; convertedSaleId?: string; createdBy?: string; sellerId?: string; sellerName?: string; participantIds?: string[]; participantNames?: string[]; currency?: 'PEN' | 'USD'; exchangeRate?: number; paymentMethod?: string; creditDays?: number; payments?: QuotePayment[]; createdAt: string; }
 
+export type WorkerExpenseCategory = 'ALOJAMIENTO' | 'TRANSPORTE' | 'COMBUSTIBLE' | 'ALIMENTACION' | 'OTROS';
+export type WorkerExpenseReportStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+export interface WorkerExpenseBudget { id?: string; workerId: string; alojamiento: number; transporte: number; combustible: number; alimentacion: number; otros: number; updatedAt?: string; }
+export interface WorkerExpenseEntry { date: string; description?: string; invoiceNumber?: string; category: WorkerExpenseCategory; amount: number; }
+export interface WorkerExpenseReport { id: string; workerId: string; workerName?: string; month: number; year: number; depositedAmount?: number; status: WorkerExpenseReportStatus; entries: WorkerExpenseEntry[]; reviewedBy?: string; reviewNotes?: string; submittedAt?: string; reviewedAt?: string; createdAt?: string; updatedAt?: string; }
+
 export interface AccountPayableInstallment { id?: string; amount: number; dueDate: string; status: 'PENDING' | 'PAID'; paidDate?: string; numeroUnico?: string; }
 export interface AccountPayablePayment { id?: string; amount: number; paymentDate: string; codigoTransferencia?: string; notes?: string; registeredBy?: string; registeredByName?: string; }
 export interface AccountPayable { id: string; purchaseId: string; purchaseRef?: string; agreementId?: string; supplier: string; totalAmount: number; paidAmount: number; pendingAmount: number; status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CONSOLIDATED'; paymentScheduleType: 'SINGLE_DATE' | 'INSTALLMENTS'; dueDate?: string; installments: AccountPayableInstallment[]; payments: AccountPayablePayment[]; numeroUnico?: string; currency?: 'PEN' | 'USD'; totalAmountPen?: number; createdBy?: string; createdAt: string; }

@@ -1,15 +1,21 @@
-import { Construction } from 'lucide-react';
+import { useAuth } from '../../../app/providers/AuthProvider';
+import { WorkerExpenseAdminView } from '../components/WorkerExpenseAdminView';
+import { WorkerExpenseWorkerView } from '../components/WorkerExpenseWorkerView';
 
 export function WorkerExpensesPage() {
+  const { user } = useAuth();
+
   return (
-    <div className="bg-white rounded-2xl shadow-card p-12 flex flex-col items-center text-center">
-      <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-4">
-        <Construction size={28} />
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-800">Viáticos</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          {user?.role === 'ADMIN'
+            ? 'Configura los topes mensuales por categoría y revisa los reportes enviados por el equipo.'
+            : 'Registra tus gastos de viaje del mes y envíalos para revisión.'}
+        </p>
       </div>
-      <h2 className="text-lg font-bold text-gray-800 mb-2">Viáticos en construcción</h2>
-      <p className="text-sm text-gray-500 max-w-md">
-        Próximamente: los vendedores podrán registrar sus gastos de viaje y el admin podrá aprobar/rechazar al cierre de mes.
-      </p>
+      {user?.role === 'ADMIN' ? <WorkerExpenseAdminView /> : <WorkerExpenseWorkerView />}
     </div>
   );
 }

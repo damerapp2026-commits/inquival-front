@@ -361,15 +361,14 @@ function buildDetailed({ credits, clients, filters, title, subtitle }: ExportPar
               fontSize: 7,
               color: GRAY,
               italics: true,
-              colSpan: 5,
+              colSpan: 4,
               fillColor: '#f9fafb',
             },
-            {}, {}, {}, {},
+            {}, {}, {},
           ]);
           for (const item of sale.items) {
             itemRows.push([
               { text: item.productName, fontSize: 7.5 },
-              { text: item.companyName, fontSize: 7.5, color: GRAY },
               { text: item.quantity.toString(), fontSize: 7.5, alignment: 'right' },
               { text: money(item.unitPrice), fontSize: 7.5, alignment: 'right' },
               { text: money(item.subtotal), fontSize: 7.5, alignment: 'right', bold: true },
@@ -379,11 +378,10 @@ function buildDetailed({ credits, clients, filters, title, subtitle }: ExportPar
         sections.push({
           table: {
             headerRows: 1,
-            widths: ['*', 80, 40, 50, 50],
+            widths: ['*', 40, 50, 50],
             body: [
               [
                 { text: 'Producto', style: 'itemHead' },
-                { text: 'Almacén', style: 'itemHead' },
                 { text: 'Cant.', style: 'itemHead', alignment: 'right' },
                 { text: 'P.U.', style: 'itemHead', alignment: 'right' },
                 { text: 'Subtotal', style: 'itemHead', alignment: 'right' },

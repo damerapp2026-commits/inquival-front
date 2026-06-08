@@ -1,13 +1,17 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { Receipt, Wallet, Users as UsersIcon, BarChart3 } from 'lucide-react';
+import { useAuth } from '../../../app/providers/AuthProvider';
 
-const tabs = [
-  { to: '/expenses/cash',      label: 'Gastos de Caja',      icon: Wallet },
-  { to: '/expenses/workers',   label: 'Viáticos',            icon: UsersIcon },
-  { to: '/expenses/analytics', label: 'Analítica',           icon: BarChart3 },
+const allTabs = [
+  { to: '/expenses/cash',      label: 'Gastos de Caja',      icon: Wallet,      adminOnly: true },
+  { to: '/expenses/workers',   label: 'Viáticos',            icon: UsersIcon,   adminOnly: false },
+  { to: '/expenses/analytics', label: 'Analítica',           icon: BarChart3,   adminOnly: true },
 ];
 
 export function ExpensesLayout() {
+  const { user } = useAuth();
+  const tabs = allTabs.filter((t) => !t.adminOnly || user?.role === 'ADMIN');
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">

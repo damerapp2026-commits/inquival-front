@@ -11,6 +11,11 @@ function IndexRedirect() {
   return <Navigate to={defaultHomeForRole(user?.role || 'VENDEDOR')} replace />;
 }
 
+function ExpensesIndexRedirect() {
+  const { user } = useAuth();
+  return <Navigate to={user?.role === 'ADMIN' ? 'cash' : 'workers'} replace />;
+}
+
 const AdminOnly = ({ children }: { children: React.ReactNode }) => (
   <RoleGate allowedRoles={['ADMIN']}>{children}</RoleGate>
 );
@@ -74,11 +79,11 @@ export function AppRoutes() {
         <Route path="cash-register" element={<AdminOnly><Suspense fallback={<Loading />}><CashRegisterPage /></Suspense></AdminOnly>} />
         <Route path="cash-register/history" element={<AdminOnly><Suspense fallback={<Loading />}><CashRegisterHistoryPage /></Suspense></AdminOnly>} />
         <Route path="cash-register/migrate" element={<AdminOnly><Suspense fallback={<Loading />}><MigrateMisplacedPage /></Suspense></AdminOnly>} />
-        <Route path="expenses" element={<AdminOnly><Suspense fallback={<Loading />}><ExpensesLayout /></Suspense></AdminOnly>}>
-          <Route index element={<Navigate to="cash" replace />} />
-          <Route path="cash" element={<Suspense fallback={<Loading />}><CashExpensesPage /></Suspense>} />
-          <Route path="workers" element={<Suspense fallback={<Loading />}><WorkerExpensesPage /></Suspense>} />
-          <Route path="analytics" element={<Suspense fallback={<Loading />}><ExpensesAnalyticsPage /></Suspense>} />
+        <Route path="expenses" element={<RoleGate allowedRoles={['ADMIN', 'VENDEDOR', 'VENDEDOR_CAMPO']}><Suspense fallback={<Loading />}><ExpensesLayout /></Suspense></RoleGate>}>
+          <Route index element={<ExpensesIndexRedirect />} />
+          <Route path="cash" element={<AdminOnly><Suspense fallback={<Loading />}><CashExpensesPage /></Suspense></AdminOnly>} />
+          <Route path="workers" element={<RoleGate allowedRoles={['ADMIN', 'VENDEDOR', 'VENDEDOR_CAMPO']}><Suspense fallback={<Loading />}><WorkerExpensesPage /></Suspense></RoleGate>} />
+          <Route path="analytics" element={<AdminOnly><Suspense fallback={<Loading />}><ExpensesAnalyticsPage /></Suspense></AdminOnly>} />
         </Route>
         <Route path="credits" element={<Suspense fallback={<Loading />}><CreditsPage /></Suspense>} />
         <Route path="credits/client/:clientId" element={<Suspense fallback={<Loading />}><ClientCreditDetailPage /></Suspense>} />

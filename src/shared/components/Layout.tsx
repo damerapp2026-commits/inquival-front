@@ -28,6 +28,7 @@ const navSections: NavSection[] = [
       { path: '/sales', label: 'Mis Ventas', icon: ShoppingCart, roles: ['VENDEDOR_CAMPO', 'VENDEDOR'] },
       { path: '/quotes', label: 'Mis Cotizaciones', icon: ScrollText, roles: ['VENDEDOR_CAMPO', 'VENDEDOR'] },
       { path: '/my-commissions', label: 'Mis Comisiones', icon: Percent, roles: ['VENDEDOR_CAMPO', 'VENDEDOR'] },
+      { path: '/expenses/workers', label: 'Mis Viáticos', icon: Wallet, roles: ['VENDEDOR_CAMPO', 'VENDEDOR'] },
     ],
   },
   {
