@@ -667,8 +667,30 @@ export function POSPage() {
             clientId: clientId || undefined,
             voucherType,
             isCredit,
+            creditName: isCredit && creditName.trim() ? creditName.trim() : undefined,
+            creditDueDate: isCredit && computedDueDate ? computedDueDate : undefined,
             payments: validPayments,
             sellerId: effectiveSellerId,
+            items: [
+              ...cart.map((i) => ({
+                productId: i.productId,
+                companyId: i.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : ''),
+                quantity: i.quantity,
+                priceTier: i.tierOverride || tierId,
+                unitPrice: i.unitPrice,
+              })),
+              ...bonusItems.map((b) => ({
+                productId: b.productId,
+                companyId: b.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : ''),
+                quantity: b.quantity,
+                priceTier: tierId,
+                unitPrice: 0,
+              })),
+            ],
+            date: saleDateObj.toISOString(),
+            isCourtesy: isCourtesy || undefined,
+            currency: currency !== 'PEN' ? currency : undefined,
+            exchangeRate: currency === 'USD' ? exchangeRate : undefined,
           },
         });
       } else {
