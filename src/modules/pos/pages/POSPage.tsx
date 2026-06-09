@@ -84,7 +84,10 @@ function resolvePrice(product: Product, tierId: string, companyId: string): numb
   const byCompany = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && p.companyId === companyId);
   if (byCompany) return byCompany.price;
   const global = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId);
-  return global?.price;
+  if (global) return global.price;
+  // Fallback: any price for this tier regardless of company
+  const anyForTier = product.prices.find((p: ProductPrice) => p.priceTierId === tierId);
+  return anyForTier?.price;
 }
 
 export function POSPage() {
