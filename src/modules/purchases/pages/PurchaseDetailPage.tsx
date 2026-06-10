@@ -377,21 +377,23 @@ export function PurchaseDetailPage() {
         {/* Totales */}
         <SectionCard title="Totales" icon={CreditCard}>
           <div className="space-y-2">
-            {purchase.totalCostUsd && purchase.exchangeRate && (
+            {purchase.totalCostUsd && (
               <div className="bg-primary-50 p-3 rounded-lg space-y-1 border border-primary-200">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-primary-700">Monto USD</span>
                   <span className="text-lg font-bold text-primary-800">$ {purchase.totalCostUsd.toFixed(2)}</span>
                 </div>
-                <div className="flex items-center justify-between text-xs text-primary-600">
-                  <span>Tipo de cambio (venta)</span>
-                  <span>S/ {purchase.exchangeRate.toFixed(4)}</span>
-                </div>
+                {purchase.exchangeRate && (
+                  <div className="flex items-center justify-between text-xs text-primary-600">
+                    <span>Tipo de cambio (venta)</span>
+                    <span>S/ {purchase.exchangeRate.toFixed(4)}</span>
+                  </div>
+                )}
               </div>
             )}
             <div className="bg-blue-50 p-3 rounded-lg flex items-center justify-between">
               <span className="text-sm font-medium text-blue-800">Total en Soles</span>
-              <span className="text-xl font-bold text-blue-700">S/ {purchase.totalCost.toFixed(2)}</span>
+              <span className="text-xl font-bold text-blue-700">S/ {(purchase.totalCost ?? 0).toFixed(2)}</span>
             </div>
           </div>
         </SectionCard>
