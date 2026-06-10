@@ -383,6 +383,10 @@ export function PurchaseFormBody({
       return p?.tracksLot && !i.lotNumber;
     });
     if (missingLot) { toast.error('Hay productos que requieren número de lote'); return; }
+    if (currency === 'USD' && !(exchangeRate && exchangeRate > 0)) {
+      toast.error('Ingresa el tipo de cambio para compras en dólares');
+      return;
+    }
     if (mode === 'edit' && reason.trim().length < 5) {
       toast.error('Indica el motivo del cambio (mínimo 5 caracteres)');
       return;
