@@ -84,7 +84,10 @@ function resolvePrice(product: Product, tierId: string, companyId: string): numb
   const byCompany = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && p.companyId === companyId);
   if (byCompany) return byCompany.price;
   const global = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId);
-  return global?.price;
+  if (global) return global.price;
+  // Fallback: any price for this tier regardless of company
+  const anyForTier = product.prices.find((p: ProductPrice) => p.priceTierId === tierId);
+  return anyForTier?.price;
 }
 
 export function POSPage() {
@@ -667,6 +670,8 @@ export function POSPage() {
             clientId: clientId || undefined,
             voucherType,
             isCredit,
+            creditName: isCredit && creditName.trim() ? creditName.trim() : undefined,
+            creditDueDate: isCredit && computedDueDate ? computedDueDate : undefined,
             payments: validPayments,
             sellerId: effectiveSellerId,
             items: [
@@ -685,6 +690,10 @@ export function POSPage() {
                 unitPrice: 0,
               })),
             ],
+            date: saleDateObj.toISOString(),
+            isCourtesy: isCourtesy || undefined,
+            currency: currency !== 'PEN' ? currency : undefined,
+            exchangeRate: currency === 'USD' ? exchangeRate : undefined,
           },
         });
       } else {
