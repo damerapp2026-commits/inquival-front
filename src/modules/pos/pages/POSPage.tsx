@@ -669,6 +669,22 @@ export function POSPage() {
             isCredit,
             payments: validPayments,
             sellerId: effectiveSellerId,
+            items: [
+              ...cart.map((i) => ({
+                productId: i.productId,
+                companyId: i.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : ''),
+                quantity: i.quantity,
+                priceTier: i.tierOverride || tierId,
+                unitPrice: i.unitPrice,
+              })),
+              ...bonusItems.map((b) => ({
+                productId: b.productId,
+                companyId: b.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : ''),
+                quantity: b.quantity,
+                priceTier: tierId,
+                unitPrice: 0,
+              })),
+            ],
           },
         });
       } else {
