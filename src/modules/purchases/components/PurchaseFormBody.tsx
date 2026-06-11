@@ -383,6 +383,10 @@ export function PurchaseFormBody({
       return p?.tracksLot && !i.lotNumber;
     });
     if (missingLot) { toast.error('Hay productos que requieren número de lote'); return; }
+    if (currency === 'USD' && !(exchangeRate && exchangeRate > 0)) {
+      toast.error('Ingresa el tipo de cambio para compras en dólares');
+      return;
+    }
     if (mode === 'edit' && reason.trim().length < 5) {
       toast.error('Indica el motivo del cambio (mínimo 5 caracteres)');
       return;
@@ -713,10 +717,23 @@ export function PurchaseFormBody({
                 <button type="button" onClick={() => handleCurrencyChange('PEN')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'PEN' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>S/ Soles</button>
                 <button type="button" onClick={() => handleCurrencyChange('USD')} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${currency === 'USD' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>$ Dólares</button>
               </div>
-              {currency === 'USD' && exchangeRate != null && (
-                <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-2.5 flex items-center justify-between">
-                  <span className="text-xs text-blue-700">Tipo de cambio referencial</span>
-                  <span className="text-sm font-medium text-blue-800">S/ {exchangeRate.toFixed(4)}</span>
+              {currency === 'USD' && (
+                <div className="mt-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Tipo de cambio (S/ por $) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.0001"
+                    value={exchangeRate ?? ''}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      setExchangeRate(isNaN(v) || v <= 0 ? null : v);
+                    }}
+                    placeholder="Ej: 3.7500"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
                 </div>
               )}
             </div>
