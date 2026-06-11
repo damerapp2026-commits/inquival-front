@@ -36,3 +36,20 @@ export function useUpdateSaleItems() {
     },
   });
 }
+export function useUpdateSaleDate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: saleService.updateDate,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      qc.invalidateQueries({ queryKey: ['credit-accounts'] });
+      toast.success('Fecha de venta actualizada');
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg[0] : msg || 'Error al cambiar la fecha de la venta');
+    },
+  });
+}

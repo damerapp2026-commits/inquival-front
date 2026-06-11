@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Modal } from '../../../shared/components/Modal';
-import { useUpdateSaleItems } from '../hooks/useSales';
+import { useUpdateSaleItems, useUpdateSaleDate } from '../hooks/useSales';
+import { getTodayDateString, toLocalDateString } from '../../../shared/utils/date.util';
 import type { Sale, Product, Company, PriceTier, PaymentMethod } from '../../../shared/types';
 
 interface EditSaleItemsModalProps {
@@ -43,7 +44,10 @@ export function EditSaleItemsModal({
   const [items, setItems] = useState<DraftItem[]>([]);
   const [reason, setReason] = useState('');
   const [payments, setPayments] = useState<DraftPayment[]>([]);
+  const [dateValue, setDateValue] = useState('');
+  const [dateReason, setDateReason] = useState('');
   const updateMutation = useUpdateSaleItems();
+  const updateDateMutation = useUpdateSaleDate();
 
   useEffect(() => {
     if (sale) {
@@ -59,6 +63,8 @@ export function EditSaleItemsModal({
         amount: p.amount,
       })));
       setReason('');
+      setDateValue(toLocalDateString(sale.date));
+      setDateReason('');
     }
   }, [sale?.id]);
 
@@ -199,11 +205,78 @@ export function EditSaleItemsModal({
     }
   };
 
+  const currentDateValue = toLocalDateString(sale.date);
+  const dateChanged = dateValue !== currentDateValue;
+  const todayLocal = getTodayDateString();
+
+  const handleDateSubmit = async () => {
+    if (!dateValue) {
+      toast.error('Selecciona una fecha');
+      return;
+    }
+    if (dateValue > todayLocal) {
+      toast.error('La fecha de la venta no puede ser futura');
+      return;
+    }
+    if (dateReason.trim().length < 5) {
+      toast.error('El motivo debe tener al menos 5 caracteres');
+      return;
+    }
+    try {
+      const updated = await updateDateMutation.mutateAsync({
+        id: sale.id,
+        date: dateValue,
+        reason: dateReason.trim(),
+      });
+      onUpdated?.(updated);
+    } catch {
+      // toast ya disparado por el hook
+    }
+  };
+
   return (
     <Modal isOpen={!!sale} onClose={onClose} title={`Editar venta ${sale.saleNumber || ''}`} size="xl">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
           Ajusta precio, cantidad y opcionalmente la distribución de pagos. Stock y caja se actualizan automáticamente; en ventas a crédito el adelanto en caja no se modifica.
+        </div>
+
+        <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+          <div className="text-sm font-semibold text-gray-800">Fecha de la venta</div>
+          <div className="text-xs text-gray-500">
+            Si la venta se digitó hoy pero corresponde a otro día, cámbiala aquí. El ingreso de caja se moverá a la caja de esa fecha (se crea cerrada si no existe).
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Nueva fecha</label>
+              <input
+                type="date"
+                value={dateValue}
+                max={todayLocal}
+                onChange={(e) => setDateValue(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+              />
+            </div>
+            <div className="flex-[2]">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Motivo del cambio de fecha</label>
+              <input
+                type="text"
+                value={dateReason}
+                onChange={(e) => setDateReason(e.target.value)}
+                minLength={5}
+                placeholder="Ej: la venta corresponde al 08/06, se digitó tarde"
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleDateSubmit}
+              disabled={!dateChanged || updateDateMutation.isPending}
+              className="px-4 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-900 text-sm font-semibold disabled:opacity-50 whitespace-nowrap"
+            >
+              {updateDateMutation.isPending ? 'Guardando...' : 'Cambiar fecha'}
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-gray-200">

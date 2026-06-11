@@ -1,4 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef } from 'react';
+import { FixedScrollbar } from './FixedScrollbar';
 
 interface Column<T> { key: string; header: string; render?: (item: T) => React.ReactNode; }
 interface DataTableProps<T> {
@@ -21,62 +22,6 @@ export function DataTable<T extends { id?: string }>({
   compact = false,
 }: DataTableProps<T>) {
   const tableWrapRef = useRef<HTMLDivElement>(null);
-  const fixedBarRef = useRef<HTMLDivElement>(null);
-  const [hasOverflow, setHasOverflow] = useState(false);
-  const [barLeft, setBarLeft] = useState(0);
-  const [barWidth, setBarWidth] = useState(0);
-  const [innerWidth, setInnerWidth] = useState(0);
-
-  const syncGeometry = () => {
-    const el = tableWrapRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setBarLeft(rect.left);
-    setBarWidth(rect.width);
-    setInnerWidth(el.scrollWidth);
-    setHasOverflow(el.scrollWidth > el.clientWidth + 1);
-  };
-
-  useEffect(() => {
-    const el = tableWrapRef.current;
-    if (!el) return;
-
-    syncGeometry();
-
-    const ro = new ResizeObserver(syncGeometry);
-    ro.observe(el);
-
-    // Reposicionar cuando el sidebar se colapsa/expande o la ventana cambia
-    let raf = 0;
-    const onAnyScroll = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(syncGeometry); };
-    window.addEventListener('resize', syncGeometry);
-    window.addEventListener('scroll', onAnyScroll, true);
-
-    return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', syncGeometry);
-      window.removeEventListener('scroll', onAnyScroll, true);
-      cancelAnimationFrame(raf);
-    };
-  }, []);
-
-  useEffect(() => { syncGeometry(); }, [data, columns]);
-
-  // Scroll bidireccional — se re-engancha cada vez que la barra fija monta/desmonta
-  useEffect(() => {
-    const tableEl = tableWrapRef.current;
-    const barEl = fixedBarRef.current;
-    if (!tableEl || !barEl) return;
-    let lock = false;
-    const onTable = () => { if (!lock) { lock = true; barEl.scrollLeft = tableEl.scrollLeft; lock = false; } };
-    const onBar   = () => { if (!lock) { lock = true; tableEl.scrollLeft = barEl.scrollLeft; lock = false; } };
-    tableEl.addEventListener('scroll', onTable);
-    barEl.addEventListener('scroll', onBar);
-    return () => {
-      tableEl.removeEventListener('scroll', onTable);
-      barEl.removeEventListener('scroll', onBar);
-    };
-  }, [hasOverflow]);
 
   if (isLoading)
     return (
@@ -134,16 +79,7 @@ export function DataTable<T extends { id?: string }>({
         </table>
       </div>
 
-      {/* Scrollbar horizontal fija al fondo del viewport — solo desktop con overflow */}
-      {hasOverflow && (
-        <div
-          ref={fixedBarRef}
-          className="hidden lg:block fixed bottom-0 overflow-x-auto z-40 bg-white border-t border-gray-200"
-          style={{ left: barLeft, width: barWidth }}
-        >
-          <div style={{ width: innerWidth, height: '1px' }} />
-        </div>
-      )}
+      <FixedScrollbar targetRef={tableWrapRef} />
     </>
   );
 }

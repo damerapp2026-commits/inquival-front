@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients';
 import { Modal } from '../../../shared/components/Modal';
@@ -12,6 +12,7 @@ import { ExportClientStatementButton } from '../../credits/components/ExportClie
 import { CreditsPage } from '../../credits/pages/CreditsPage';
 import { LocationFields } from '../components/LocationFields';
 import { ClientHistoryPanel } from '../components/ClientHistoryPanel';
+import { FixedScrollbar } from '../../../shared/components/FixedScrollbar';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import toast from 'react-hot-toast';
 
@@ -36,6 +37,8 @@ export function ClientsPage() {
   const deleteClient = useDeleteClient();
   const dniLookup = useDniLookup();
   const rucLookup = useRucLookup();
+
+  const tableWrapRef = useRef<HTMLDivElement>(null);
 
   const [docType, setDocType] = useState<'DNI' | 'RUC'>('DNI');
   const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '', creditLimitCurrency: 'PEN' as 'PEN' | 'USD' });
@@ -227,7 +230,7 @@ export function ClientsPage() {
           {[...Array(5)].map((_, i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}
         </div>
       ) : (
-        <div className="overflow-x-auto bg-white rounded-xl shadow-card">
+        <div ref={tableWrapRef} className="overflow-x-auto bg-white rounded-xl shadow-card">
           <table className="min-w-full">
             <thead>
               <tr className="border-b border-gray-100">
@@ -320,6 +323,7 @@ export function ClientsPage() {
           </table>
         </div>
       )}
+      <FixedScrollbar targetRef={tableWrapRef} />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={(p) => { setPage(p); setExpandedClientId(null); }} />
 
       {/* Create/Edit modal */}

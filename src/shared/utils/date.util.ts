@@ -5,6 +5,21 @@ export function getTodayDateString(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: TIMEZONE });
 }
 
+/**
+ * Converts an ISO date string to its Peru-local YYYY-MM-DD representation,
+ * for use as the value of an `<input type="date">`.
+ *
+ * Treats midnight-UTC datetimes ("YYYY-MM-DDT00:00:00.000Z") as the logical
+ * date they represent, without shifting back a day in Lima.
+ */
+export function toLocalDateString(input: string): string {
+  const dateOnly = /^(\d{4}-\d{2}-\d{2})$/.exec(input);
+  if (dateOnly) return dateOnly[1];
+  const midnightUtc = /^(\d{4}-\d{2}-\d{2})T00:00:00(?:\.0+)?Z$/.exec(input);
+  if (midnightUtc) return midnightUtc[1];
+  return new Date(input).toLocaleDateString('en-CA', { timeZone: TIMEZONE });
+}
+
 /** Returns start and end dates of current month in Peru timezone */
 export function getMonthRange(): { start: string; end: string } {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: TIMEZONE }));

@@ -20,6 +20,7 @@ export const saleService = {
   create: (data: any) => api.post('/sales', data).then((r) => r.data.data),
   updateVoucher: ({ id, voucherType }: { id: string; voucherType: string }) => api.patch(`/sales/${id}/voucher`, { voucherType }).then((r) => r.data.data),
   updateItems: ({ id, items, payments, reason }: UpdateSaleItemsPayload) => api.patch(`/sales/${id}/items`, { items, payments, reason }).then((r) => r.data.data),
+  updateDate: ({ id, date, reason }: { id: string; date: string; reason: string }) => api.patch(`/sales/${id}/date`, { date, reason }).then((r) => r.data.data),
   cancel: ({ id, reason }: { id: string; reason: string }) => api.delete(`/sales/${id}`, { data: { reason } }).then((r) => r.data.data),
   getVoucherPdf: (id: string, opts: { force?: boolean } = {}): Promise<VoucherPdfResult> =>
     api.get(`/sales/${id}/voucher-pdf`, { params: opts.force ? { force: 'true' } : undefined }).then((r) => r.data.data),
