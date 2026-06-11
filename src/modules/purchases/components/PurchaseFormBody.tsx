@@ -8,6 +8,7 @@ import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { useUnits } from '../../units/hooks/useUnits';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
+import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import { useCashRegisterToday } from '../../cash-register/hooks/useCashRegister';
 import { Modal } from '../../../shared/components/Modal';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
@@ -138,6 +139,18 @@ export function PurchaseFormBody({
   const [form, setForm] = useState(initial.state);
   const [exchangeRate, setExchangeRate] = useState<number | null>(initial.exchangeRate);
   const [exchangeRateDate, setExchangeRateDate] = useState(initial.exchangeRateDate);
+  const [exchangeRateFromSunat, setExchangeRateFromSunat] = useState(false);
+
+  // Al registrar una compra nueva en USD, sugerir el tipo de cambio SUNAT del día
+  const { data: tipoCambioData } = useTodayTipoCambio(mode === 'create' && currency === 'USD');
+  useEffect(() => {
+    if (mode === 'create' && currency === 'USD' && exchangeRate == null && tipoCambioData?.venta) {
+      setExchangeRate(tipoCambioData.venta);
+      setExchangeRateDate(tipoCambioData.fecha);
+      setExchangeRateFromSunat(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipoCambioData, currency, mode]);
   const [labResolving, setLabResolving] = useState(false);
   const [installmentGen, setInstallmentGen] = useState({ count: 6, intervalDays: 30, firstDaysFromPurchase: 30 });
   const [scrollToLast, setScrollToLast] = useState(false);
@@ -203,12 +216,18 @@ export function PurchaseFormBody({
   const updateItem = (idx: number, field: string, value: any) => setForm(prev => {
     const items = [...prev.items];
     let item = { ...items[idx], [field]: value };
+    if (field === 'unitPriceSinIgv') {
+      const raw = String(value);
+      item.unitPriceSinIgvInput = raw;
+      item.unitPriceSinIgv = raw === '' ? 0 : (parseFloat(raw) || 0);
+    }
     if (field === 'markupPercent') item.precioVentaMode = 'markup';
     if (field === 'precioVenta') item.precioVentaMode = 'direct';
     if (field === 'productId') {
-      item.precioVenta = 0;
+      const catalogPrice = seedPrecioVentaFromProduct(value);
+      item.precioVenta = catalogPrice;
       item.markupPercent = 0;
-      item.precioVentaMode = 'markup';
+      item.precioVentaMode = catalogPrice > 0 ? 'direct' : 'markup';
     }
     const costoFields = ['unitPriceSinIgv', 'markupPercent', 'precioVenta', 'productId'];
     if (costoFields.includes(field)) item = recalcItem(item, currency, exchangeRate, itemAppliesIgv(item.productId, products));
@@ -603,7 +622,7 @@ export function PurchaseFormBody({
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label className="block text-[11px] text-gray-500 mb-1">P.U. sin IGV ({sym}) <span className="text-gray-400 font-normal">— hasta 4 dec.</span></label>
-                              <input type="number" min="0" step="0.0001" value={item.unitPriceSinIgv == null ? '' : item.unitPriceSinIgv} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)} onWheel={blurOnWheel} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0.0000" />
+                              <input type="number" min="0" step="0.0001" value={item.unitPriceSinIgvInput} onChange={(e) => updateItem(idx, 'unitPriceSinIgv', e.target.value)} onWheel={blurOnWheel} className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-400" placeholder="0.0000" />
                             </div>
                             <div>
                               <label className="block text-[11px] text-gray-500 mb-1">{appliesIgv ? `+ IGV (${sym})` : `Total (${sym})`}</label>
@@ -672,7 +691,7 @@ export function PurchaseFormBody({
                               />
                             </div>
                             <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">P. Venta ({sym})</label>
+                              <label className="block text-[11px] text-gray-500 mb-1">P. Venta (S/)</label>
                               <input
                                 type="number" min="0" step="0.01"
                                 value={item.precioVenta || ''}
@@ -689,7 +708,7 @@ export function PurchaseFormBody({
                           {item.productId && (() => {
                             const ref = seedPrecioVentaFromProduct(item.productId);
                             if (!ref) return null;
-                            return <div className="text-[10px] text-indigo-600 mt-1">Precio actual en catálogo: {sym} {ref.toFixed(2)}</div>;
+                            return <div className="text-[10px] text-indigo-600 mt-1">Precio actual en catálogo: S/ {ref.toFixed(2)}</div>;
                           })()}
                         </div>
                       </div>
@@ -721,6 +740,9 @@ export function PurchaseFormBody({
                 <div className="mt-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     Tipo de cambio (S/ por $) <span className="text-red-500">*</span>
+                    {exchangeRateFromSunat && (
+                      <span className="ml-1 text-[10px] font-normal text-blue-600">(SUNAT {exchangeRateDate})</span>
+                    )}
                   </label>
                   <input
                     type="number"
@@ -730,6 +752,8 @@ export function PurchaseFormBody({
                     onChange={(e) => {
                       const v = parseFloat(e.target.value);
                       setExchangeRate(isNaN(v) || v <= 0 ? null : v);
+                      setExchangeRateFromSunat(false);
+                      setExchangeRateDate('');
                     }}
                     placeholder="Ej: 3.7500"
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"

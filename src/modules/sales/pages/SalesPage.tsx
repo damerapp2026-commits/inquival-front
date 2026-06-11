@@ -601,6 +601,43 @@ export function SalesPage() {
   };
 
 
+  const handleExportSales = async () => {
+    try {
+      if (periodSales.length === 0) { toast.error('No hay datos para exportar'); return; }
+      const XLSX = await import('xlsx');
+
+      const rows = periodSales.map((sale) => {
+        const companyIds = [...new Set(sale.items.map((i: any) => i.companyId))];
+        const almacen = companyIds.length === 1 ? getCompanyName(companyIds[0]) : 'Mixto';
+        const productosStr = sale.items.map((i: any) => `${getProductName(i.productId)} x${i.quantity}`).join(', ');
+        const paymentLabel = sale.isCredit ? 'Crédito' : sale.payments?.map(p => p.paymentMethodName).join(' + ') || 'Efectivo';
+
+        return {
+          'Fecha': formatDateEs(sale.date),
+          'N°': sale.saleNumber || '',
+          'Cliente': getClientName(sale.clientId, sale.clientName),
+          'Vendedor': getSellerName(sale),
+          'Almacén': almacen,
+          'Productos': productosStr,
+          'Tipo': sale.isCredit ? 'Crédito' : 'Contado',
+          'Comprobante': sale.voucherType === 'BOLETA' ? 'Boleta' : sale.voucherType === 'FACTURA' ? 'Factura' : '-',
+          'Método de Pago': paymentLabel,
+          'Moneda': sale.currency || 'PEN',
+          'Total': Math.round(saleDispTotal(sale) * 100) / 100,
+          'Estado': sale.isCancelled ? 'Anulada' : 'Activa',
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Ventas');
+      XLSX.writeFile(wb, `ventas_${startDate}_a_${endDate}.xlsx`);
+      toast.success(`${rows.length} venta(s) exportada(s)`);
+    } catch {
+      toast.error('Error al exportar');
+    }
+  };
+
   const getPaymentLabel = (sale: Sale) => {
     if (sale.isCredit) return <span className="text-orange-600 font-medium">Crédito</span>;
     if (sale.payments && sale.payments.length > 0) {
@@ -874,8 +911,13 @@ export function SalesPage() {
         const fullPeriodTotal = periodSales.reduce((s, sale) => s + sale.total, 0);
         const showSplit = isMethodPortionFilter && Math.abs(fullPeriodTotal - totalAmount) > 0.005;
         return (
-          <div className="mb-4 bg-primary-50 border border-primary-200 rounded-lg px-4 py-2 flex items-center justify-between">
-            <span className="text-sm text-primary-700">{total} venta(s) en el período</span>
+          <div className="mb-4 bg-primary-50 border border-primary-200 rounded-lg px-4 py-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-primary-700">{total} venta(s) en el período</span>
+              <button onClick={handleExportSales} className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary-700 bg-primary-100 border border-primary-300 rounded hover:bg-primary-200 transition-colors">
+                <Download size={14} /> Excel
+              </button>
+            </div>
             <div className="text-right">
               <div className="text-lg font-bold text-primary-700">
                 {filterMethodName ? `Cobrado en ${filterMethodName}: ` : 'Total: '}

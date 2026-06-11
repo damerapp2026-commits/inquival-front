@@ -1,12 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePurchases, useUpdatePurchaseMeta } from '../hooks/usePurchases';
+import { purchaseService } from '../services/purchaseService';
+import { useCompanies } from '../../companies/hooks/useCompanies';
+import { useProducts } from '../../products/hooks/useProducts';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
-import { Plus, ShoppingCart, Eye, Wrench, Search, X, FileText } from 'lucide-react';
-import type { Purchase } from '../../../shared/types';
+import { Plus, ShoppingCart, Eye, Wrench, Search, X, FileText, Download } from 'lucide-react';
+import type { Purchase, Company, Product } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
+import toast from 'react-hot-toast';
 
 const DATE_PRESETS = [
   {
@@ -79,6 +83,13 @@ export function PurchasesPage() {
   });
   const purchases = data?.data || [];
   const total = data?.total || 0;
+
+  const { data: companiesData } = useCompanies();
+  const { data: productsData } = useProducts({ limit: 10000 });
+  const companies: Company[] = Array.isArray(companiesData) ? companiesData : [];
+  const products: Product[] = productsData?.data || [];
+  const companyMap = useMemo(() => new Map<string, Company>(companies.map((c) => [c.id, c])), [companies]);
+  const productMap = useMemo(() => new Map<string, Product>(products.map((p) => [p.id, p])), [products]);
   const totalPen: number = (data as any)?.totalPen ?? 0;
   const totalUsd: number = (data as any)?.totalUsd ?? 0;
   const totalPenContado: number = (data as any)?.totalPenContado ?? 0;
@@ -116,6 +127,47 @@ export function PurchasesPage() {
   };
 
   const setPage = (p: number) => updateParams({ page: p > 1 ? String(p) : null });
+
+  const handleExportPurchases = async () => {
+    try {
+      const result = await purchaseService.getAll({
+        limit: 9999,
+        supplier: supplierParam || undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+      });
+      const allPurchases: Purchase[] = result?.data || [];
+      if (allPurchases.length === 0) { toast.error('No hay datos para exportar'); return; }
+
+      const XLSX = await import('xlsx');
+      const rows = allPurchases.map((p) => {
+        const productosStr = p.items.map((i) => `${productMap.get(i.productId)?.name || i.productId} x${i.quantity}`).join(', ');
+        return {
+          'Fecha': formatDateEs(p.issueDate || p.date, { day: '2-digit', month: '2-digit', year: 'numeric' }),
+          'Proveedor': p.supplier,
+          'RUC': p.supplierRuc || '',
+          'Almacén': companyMap.get(p.companyId)?.name || p.companyId,
+          'Productos': productosStr,
+          'Tipo': p.paymentType === 'CREDITO' ? 'Crédito' : 'Contado',
+          'Moneda': p.totalCostUsd ? 'USD' : 'PEN',
+          'Total': Math.round((p.totalCostUsd ?? p.totalCost) * 100) / 100,
+          'Total (S/)': Math.round(p.totalCost * 100) / 100,
+          'Tipo de Cambio': p.exchangeRate || '',
+          'Comprobante': [p.documentType, p.documentSeries, p.documentNumber].filter(Boolean).join(' '),
+          'Guía Remisión': [p.grSeries, p.grNumber].filter(Boolean).join('-'),
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Compras');
+      const range = startDate && endDate ? `${startDate}_a_${endDate}` : 'todas';
+      XLSX.writeFile(wb, `compras_${range}.xlsx`);
+      toast.success(`${rows.length} compra(s) exportada(s)`);
+    } catch {
+      toast.error('Error al exportar');
+    }
+  };
 
   const openGrModal = (item: Purchase) => {
     setGrModal({
@@ -257,7 +309,10 @@ export function PurchasesPage() {
       </div>
       {/* Resumen de totales */}
       {!isLoading && total > 0 && (
-        <div className="flex flex-wrap gap-2 mb-3">
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <button onClick={handleExportPurchases} className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-primary-700 bg-primary-100 border border-primary-300 rounded-lg hover:bg-primary-200 transition-colors">
+            <Download size={14} /> Excel
+          </button>
           {/* Total general */}
           <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
             <span className="text-xs text-gray-500 font-medium">{total} compra{total !== 1 ? 's' : ''}</span>

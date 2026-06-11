@@ -21,6 +21,7 @@ export interface PurchaseFormItem {
   lotNumber?: string;
   expirationDate?: string;
   unitPriceSinIgv: number;
+  unitPriceSinIgvInput: string;
   unitPriceConIgv: number;
   costoAdquisicion: number;
   costoEnSoles: number;
@@ -36,6 +37,7 @@ export const emptyItem = (): PurchaseFormItem => ({
   lotNumber: '',
   expirationDate: '',
   unitPriceSinIgv: 0,
+  unitPriceSinIgvInput: '',
   unitPriceConIgv: 0,
   costoAdquisicion: 0,
   costoEnSoles: 0,
@@ -58,16 +60,19 @@ export function recalcItem(
     ? (exchangeRate ? unitPriceConIgv * exchangeRate : 0)
     : costoAdquisicion;
 
+  // El precio de venta del catálogo siempre está en soles, independientemente
+  // de la moneda de la compra, por lo que el margen se calcula sobre el costo
+  // convertido a soles (costoEnSoles == costoAdquisicion cuando la compra es en PEN).
   let precioVenta = item.precioVenta;
   let markupPercent = item.markupPercent;
 
   if (item.precioVentaMode === 'markup') {
-    precioVenta = costoAdquisicion > 0
-      ? Math.round(costoAdquisicion * (1 + markupPercent / 100) * 100) / 100
+    precioVenta = costoEnSoles > 0
+      ? Math.round(costoEnSoles * (1 + markupPercent / 100) * 100) / 100
       : 0;
   } else {
-    markupPercent = costoAdquisicion > 0
-      ? Math.round(((precioVenta / costoAdquisicion) - 1) * 10000) / 100
+    markupPercent = costoEnSoles > 0
+      ? Math.round(((precioVenta / costoEnSoles) - 1) * 10000) / 100
       : 0;
   }
 
@@ -144,6 +149,7 @@ export function purchaseToFormState(purchase: Purchase, products: Product[]): Pu
       lotNumber: pi.lotNumber || '',
       expirationDate: dateInputStr(pi.expirationDate),
       unitPriceSinIgv: sinIgv,
+      unitPriceSinIgvInput: sinIgv ? String(sinIgv) : '',
       unitPriceConIgv: conIgv,
       costoAdquisicion: costoAdq,
       costoEnSoles: costoSoles,
