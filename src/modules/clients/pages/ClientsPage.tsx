@@ -323,7 +323,7 @@ export function ClientsPage() {
           </table>
         </div>
       )}
-      <FixedScrollbar targetRef={tableWrapRef} />
+      <FixedScrollbar targetRef={tableWrapRef} deps={[isLoading, clients]} />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={(p) => { setPage(p); setExpandedClientId(null); }} />
 
       {/* Create/Edit modal */}

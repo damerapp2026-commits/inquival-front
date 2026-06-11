@@ -79,7 +79,7 @@ export function DataTable<T extends { id?: string }>({
         </table>
       </div>
 
-      <FixedScrollbar targetRef={tableWrapRef} />
+      <FixedScrollbar targetRef={tableWrapRef} deps={[isLoading, data, columns]} />
     </>
   );
 }

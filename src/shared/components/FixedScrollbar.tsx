@@ -1,11 +1,13 @@
-import { useRef, useEffect, useState, RefObject } from 'react';
+import { useRef, useEffect, useState, RefObject, DependencyList } from 'react';
 
 interface FixedScrollbarProps {
   targetRef: RefObject<HTMLElement | null>;
+  /** Dependencias que, al cambiar, fuerzan a re-medir el target (p.ej. cuando termina de cargar y el elemento recién se monta) */
+  deps?: DependencyList;
 }
 
 /** Barra de scroll horizontal fija al fondo del viewport — solo desktop, cuando el target tiene overflow */
-export function FixedScrollbar({ targetRef }: FixedScrollbarProps) {
+export function FixedScrollbar({ targetRef, deps = [] }: FixedScrollbarProps) {
   const fixedBarRef = useRef<HTMLDivElement>(null);
   const [hasOverflow, setHasOverflow] = useState(false);
   const [barLeft, setBarLeft] = useState(0);
@@ -41,7 +43,8 @@ export function FixedScrollbar({ targetRef }: FixedScrollbarProps) {
       window.removeEventListener('scroll', onAnyScroll, true);
       cancelAnimationFrame(raf);
     };
-  }, [targetRef]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetRef, ...deps]);
 
   // Scroll bidireccional — se re-engancha cada vez que la barra fija monta/desmonta
   useEffect(() => {
