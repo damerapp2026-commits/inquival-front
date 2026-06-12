@@ -655,16 +655,20 @@ export function SalesPage() {
       const name = getSellerName(item);
       return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
     }}] : []),
-    { key: 'clientId', header: 'Cliente', render: (item: Sale) => item.clientId ? (
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); setClientHistoryId(item.clientId!); }}
-        className="text-primary-700 hover:text-primary-900 hover:underline text-left"
-        title="Ver todas las ventas de este cliente"
-      >
-        {getClientName(item.clientId, item.clientName)}
-      </button>
-    ) : <span className="text-gray-400">Sin cliente</span> },
+    { key: 'clientId', header: 'Cliente', render: (item: Sale) => (
+      <div className="max-w-[130px] truncate">
+        {item.clientId ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setClientHistoryId(item.clientId!); }}
+            className="text-primary-700 hover:text-primary-900 hover:underline text-left truncate w-full"
+            title={getClientName(item.clientId, item.clientName)}
+          >
+            {getClientName(item.clientId, item.clientName)}
+          </button>
+        ) : <span className="text-gray-400">Sin cliente</span>}
+      </div>
+    ) },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'total', header: isMethodPortionFilter ? 'Cobrado' : 'Total', render: (item: Sale) => {
       const sym = saleSym(item);
@@ -702,16 +706,20 @@ export function SalesPage() {
       const name = getSellerName(item);
       return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
     }}] : []),
-    { key: 'clientId', header: 'Cliente', render: (item: Sale) => item.clientId ? (
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); setClientHistoryId(item.clientId!); }}
-        className="text-primary-700 hover:text-primary-900 hover:underline text-left"
-        title="Ver todas las ventas de este cliente"
-      >
-        {getClientName(item.clientId, item.clientName)}
-      </button>
-    ) : <span className="text-gray-400">Sin cliente</span> },
+    { key: 'clientId', header: 'Cliente', render: (item: Sale) => (
+      <div className="max-w-[130px] truncate">
+        {item.clientId ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setClientHistoryId(item.clientId!); }}
+            className="text-primary-700 hover:text-primary-900 hover:underline text-left truncate w-full"
+            title={getClientName(item.clientId, item.clientName)}
+          >
+            {getClientName(item.clientId, item.clientName)}
+          </button>
+        ) : <span className="text-gray-400">Sin cliente</span>}
+      </div>
+    ) },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'baseAmount', header: 'Valor Venta', render: (item: Sale) => {
       const base = getSaleBaseAmount(item);

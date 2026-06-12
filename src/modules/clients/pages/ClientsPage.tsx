@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useClients, useCreateClient, useUpdateClient, useDeleteClient } from '../hooks/useClients';
 import { Modal } from '../../../shared/components/Modal';
@@ -22,6 +22,8 @@ export function ClientsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') === 'creditos' ? 'creditos' : 'datos';
 
+  const tableWrapRef = useRef<HTMLDivElement>(null);
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search);
@@ -37,8 +39,6 @@ export function ClientsPage() {
   const deleteClient = useDeleteClient();
   const dniLookup = useDniLookup();
   const rucLookup = useRucLookup();
-
-  const tableWrapRef = useRef<HTMLDivElement>(null);
 
   const [docType, setDocType] = useState<'DNI' | 'RUC'>('DNI');
   const [form, setForm] = useState({ name: '', documentNumber: '', phone: '', email: '', address: '', department: '', province: '', district: '', hamlet: '', creditLimit: '', creditLimitCurrency: 'PEN' as 'PEN' | 'USD' });
