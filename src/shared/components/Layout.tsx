@@ -105,8 +105,8 @@ export function Layout() {
     const processAP = (ap: AccountPayable, isOverdue: boolean) => {
       if (ap.paymentScheduleType === 'INSTALLMENTS') {
         (ap.installments || []).forEach((inst: any) => {
-          if (inst.status !== 'PENDING') return;
-          const dateStr = inst.dueDate.slice(0, 10);
+          if (inst.status !== 'PENDING' || !inst.dueDate) return;
+          const dateStr = String(inst.dueDate).slice(0, 10);
           const dueDate = new Date(dateStr + 'T00:00:00');
           if (isOverdue && dueDate >= today) return;
           if (!isOverdue && dueDate > maxDate) return;
@@ -115,7 +115,7 @@ export function Layout() {
           byDate[dateStr].total += inst.amount;
         });
       } else if (ap.dueDate) {
-        const dateStr = ap.dueDate.slice(0, 10);
+        const dateStr = String(ap.dueDate).slice(0, 10);
         const dueDate = new Date(dateStr + 'T00:00:00');
         if (isOverdue && dueDate >= today) return;
         if (!isOverdue && dueDate > maxDate) return;
