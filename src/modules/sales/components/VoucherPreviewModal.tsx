@@ -31,6 +31,8 @@ export interface VoucherSnapshot {
   exchangeRate?: number;
   /** Total en USD original (solo si currency='USD'). */
   totalUsd?: number;
+  /** Ubicación del cliente: caserío > distrito > provincia > departamento */
+  clientLocation?: string;
 }
 
 type Format = 'TICKET' | 'A4' | 'A5';
@@ -46,6 +48,10 @@ function shortVoucherNumber(id: string): string {
 
 function displayVoucherNumber(sale: VoucherSnapshot): string {
   return sale.voucherNumber || shortVoucherNumber(sale.id);
+}
+
+export function resolveClientLocation(client?: { hamlet?: string; district?: string; province?: string; department?: string } | null): string | undefined {
+  return client?.hamlet || client?.district || client?.province || client?.department || undefined;
 }
 
 function voucherTitle(_type: string): string {
@@ -149,7 +155,8 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   <div class="hr"></div>
   ${sale.clientName ? `<div class="kv"><span class="bold">Cliente:</span><span>${escapeHtml(sale.clientName)}</span></div>` : ''}
   ${sale.clientDocument ? `<div class="kv"><span class="bold">Doc:</span><span>${escapeHtml(sale.clientDocument)}</span></div>` : ''}
-  <div class="kv"><span class="bold">Vendedor:</span><span>${escapeHtml(sale.sellerName)}</span></div>
+  ${sale.clientLocation ? `<div class="kv"><span class="bold">Ubicación:</span><span>${escapeHtml(sale.clientLocation)}</span></div>` : ''}
+  <div class="kv"><span class="bold">R. Comercial:</span><span>${escapeHtml(sale.sellerName)}</span></div>
   <div class="hr"></div>
   <table class="items">
     <thead>
@@ -354,9 +361,13 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
       <tr>
         <td class="lbl">Teléfono</td><td class="sep">:</td>
         <td>${escapeHtml(sale.clientPhone || ' ')}</td>
-        <td class="lbl-r">Vendedor</td><td class="sep">:</td>
+        <td class="lbl-r">R. Comercial</td><td class="sep">:</td>
         <td>${escapeHtml((sale.sellerName || '—').toUpperCase())}</td>
       </tr>
+      ${sale.clientLocation ? `<tr>
+        <td class="lbl">Ubicación</td><td class="sep">:</td>
+        <td colspan="4">${escapeHtml(sale.clientLocation.toUpperCase())}</td>
+      </tr>` : ''}
       <tr>
         <td class="lbl">Fecha Emisión</td><td class="sep">:</td>
         <td colspan="4">${formatDate(sale.date)}</td>
@@ -445,7 +456,8 @@ function buildWhatsappText(sale: VoucherSnapshot): string {
   lines.push(`🏢 ${COMPANY_INFO.legalName}`);
   lines.push(`📅 ${formatDate(sale.date)}`);
   if (sale.clientName) lines.push(`👤 Cliente: ${sale.clientName}`);
-  lines.push(`🧑‍💼 Vendedor: ${sale.sellerName}`);
+  if (sale.clientLocation) lines.push(`📍 Ubicación: ${sale.clientLocation}`);
+  lines.push(`🧑‍💼 R. Comercial: ${sale.sellerName}`);
   if (isUsd && sale.exchangeRate) lines.push(`💱 Moneda: USD · TC ${sale.exchangeRate.toFixed(2)}`);
   lines.push('');
   lines.push('*Productos:*');

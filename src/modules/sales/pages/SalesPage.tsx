@@ -18,7 +18,7 @@ import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download, FileText, X, CheckCircle2, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { VoucherPreviewModal, type VoucherSnapshot } from '../components/VoucherPreviewModal';
+import { VoucherPreviewModal, type VoucherSnapshot, resolveClientLocation } from '../components/VoucherPreviewModal';
 import { EditSaleItemsModal } from '../components/EditSaleItemsModal';
 import { ClientSalesHistoryModal } from '../components/ClientSalesHistoryModal';
 import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod, Stock } from '../../../shared/types';
@@ -372,6 +372,7 @@ export function SalesPage() {
       sellerName: sellerUser?.fullName || sellerUser?.username || 'Sin asignar',
       clientName: client?.name,
       clientPhone: client?.phone,
+      clientLocation: resolveClientLocation(client),
     };
     setSuccessSale(snapshot);
   };
@@ -1261,6 +1262,7 @@ export function SalesPage() {
             clientName: client?.name,
             clientDocument: client?.documentNumber,
             clientPhone: client?.phone,
+            clientLocation: resolveClientLocation(client),
             igv,
             baseImponible,
             voucherNumber: sale.saleNumber,
