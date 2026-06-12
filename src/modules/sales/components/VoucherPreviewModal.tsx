@@ -48,9 +48,7 @@ function displayVoucherNumber(sale: VoucherSnapshot): string {
   return sale.voucherNumber || shortVoucherNumber(sale.id);
 }
 
-function voucherTitle(type: string): string {
-  if (type === 'BOLETA') return 'Boleta de venta';
-  if (type === 'FACTURA') return 'Factura';
+function voucherTitle(_type: string): string {
   return 'Nota de venta';
 }
 

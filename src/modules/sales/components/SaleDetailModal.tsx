@@ -424,15 +424,13 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
                 Editar items
               </button>
             )}
-            {!sale.isCancelled && (
-              <button
-                type="button"
-                onClick={() => { setCancelling(true); setCancelReason(''); }}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors text-sm font-semibold"
-              >
-                <XCircle size={16} /> Anular
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+            >
+              Cancelar
+            </button>
             </div>
           </div>
         </div>
