@@ -1391,7 +1391,7 @@ export function SalesPage() {
                     )}
                   </div>
                   <div className="border border-gray-200 rounded-xl p-3">
-                    <span className="block text-xs text-gray-500 mb-0.5">Vendedor</span>
+                    <span className="block text-xs text-gray-500 mb-0.5">R. de Venta</span>
                     <div className="text-sm font-medium text-gray-900 truncate">{getSellerName(sale)}</div>
                   </div>
                 </div>

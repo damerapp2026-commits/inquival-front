@@ -307,7 +307,7 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
                 <div className={`text-sm font-medium truncate ${sale.clientId ? 'text-gray-900' : 'text-gray-400 italic'}`}>{getClientName(sale.clientId)}</div>
               </div>
               <div className="border border-gray-200 rounded-xl p-3">
-                <span className="block text-xs text-gray-500 mb-0.5">Vendedor</span>
+                <span className="block text-xs text-gray-500 mb-0.5">R. de Venta</span>
                 <div className="text-sm font-medium text-gray-900 truncate">{sellerName}</div>
               </div>
             </div>
