@@ -558,6 +558,22 @@ export async function openVoucherPdf(sale: VoucherSnapshot, format: VoucherForma
   pdf.open();
 }
 
+export async function printVoucherPdf(sale: VoucherSnapshot, format: VoucherFormat = 'TICKET') {
+  const blob = await buildVoucherPdfBlob(sale, format);
+  const url = URL.createObjectURL(blob);
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;width:0;height:0;opacity:0;border:none;';
+  document.body.appendChild(iframe);
+  iframe.src = url;
+  iframe.onload = () => {
+    iframe.contentWindow?.print();
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  };
+}
+
 export async function buildVoucherPdfBlob(sale: VoucherSnapshot, format: VoucherFormat = 'TICKET'): Promise<Blob> {
   const pdf = await buildPdf(sale, format);
   return new Promise((resolve, reject) => {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, FileText, Smartphone, FileText as FileIcon, Printer, ExternalLink, MessageCircle, Download, Loader2 } from 'lucide-react';
 import { COMPANY_INFO } from '../../../config/companyInfo';
-import { downloadVoucherPdf, openVoucherPdf } from '../utils/voucherPdf';
+import { downloadVoucherPdf, openVoucherPdf, printVoucherPdf } from '../utils/voucherPdf';
 import { numberToWords } from '../../quotes/utils/numberToWords';
 import { saleService } from '../services/saleService';
 import toast from 'react-hot-toast';
@@ -485,7 +485,7 @@ interface Props {
 
 export function VoucherPreviewModal({ sale, onClose }: Props) {
   const [format, setFormat] = useState<Format>('TICKET');
-  const [pdfBusy, setPdfBusy] = useState<null | 'download' | 'open' | 'whatsapp'>(null);
+  const [pdfBusy, setPdfBusy] = useState<null | 'download' | 'open' | 'print' | 'whatsapp'>(null);
   const [showWaModal, setShowWaModal] = useState(false);
   const [waPhone, setWaPhone] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -509,11 +509,16 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
   const number = displayVoucherNumber(sale);
   const title = voucherTitle(sale.voucherType);
 
-  const handlePrint = () => {
-    const w = iframeRef.current?.contentWindow;
-    if (!w) return;
-    w.focus();
-    w.print();
+  const handlePrint = async () => {
+    if (!sale) return;
+    setPdfBusy('print');
+    try {
+      await printVoucherPdf(sale, format);
+    } catch (err) {
+      console.error('No se pudo imprimir', err);
+    } finally {
+      setPdfBusy(null);
+    }
   };
 
   const handleOpenInNewTab = async () => {
@@ -685,9 +690,10 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
           <button
             type="button"
             onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 text-sm font-semibold transition-colors shadow-sm"
+            disabled={pdfBusy === 'print'}
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 text-sm font-semibold transition-colors shadow-sm disabled:opacity-50"
           >
-            <Printer size={15} /> Imprimir
+            {pdfBusy === 'print' ? <Loader2 size={15} className="animate-spin" /> : <Printer size={15} />} Imprimir
           </button>
         </div>
       </div>
