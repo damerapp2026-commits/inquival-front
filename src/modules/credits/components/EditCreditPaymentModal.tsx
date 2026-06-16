@@ -4,6 +4,7 @@ import { AlertCircle, CalendarDays, DollarSign, History } from 'lucide-react';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useEditCreditPayment } from '../hooks/useCredits';
 import type { CreditAccount, CreditPayment, PaymentMethod } from '../../../shared/types';
+import { formatMoney, moneySymbol } from '../utils/money';
 
 interface Props {
   isOpen: boolean;
@@ -45,12 +46,14 @@ export function EditCreditPaymentModal({ isOpen, onClose, credit, payment }: Pro
   if (!credit || !payment) return null;
 
   const isHistorical = !!paymentDate && paymentDate !== todayLocal;
+  const currency = credit.currency || 'PEN';
+  const symbol = moneySymbol(currency);
   // Tope: lo pendiente (ya redondeado en backend) + lo que este abono ya cubría.
   const maxAmount = round2(credit.pendingAmount + payment.amount);
 
   const errors: string[] = [];
   if (!amount || amount <= 0) errors.push('El monto debe ser mayor a 0');
-  if (amount > maxAmount + 0.001) errors.push(`El monto excede el total. Máximo: S/ ${maxAmount.toFixed(2)}`);
+  if (amount > maxAmount + 0.001) errors.push(`El monto excede el total. Máximo: ${formatMoney(maxAmount, currency)}`);
   if (!paymentMethodId) errors.push('Selecciona un método de pago');
 
   const noChange =
@@ -83,11 +86,11 @@ export function EditCreditPaymentModal({ isOpen, onClose, credit, payment }: Pro
           </div>
           <div className="flex justify-between mt-1">
             <span className="text-gray-500">Pendiente actual</span>
-            <span className="font-medium text-red-600">S/ {credit.pendingAmount.toFixed(2)}</span>
+            <span className="font-medium text-red-600">{formatMoney(credit.pendingAmount, currency)}</span>
           </div>
           <div className="flex justify-between mt-1">
             <span className="text-gray-500">Máx. para este abono</span>
-            <span className="font-medium text-gray-800">S/ {maxAmount.toFixed(2)}</span>
+            <span className="font-medium text-gray-800">{formatMoney(maxAmount, currency)}</span>
           </div>
         </div>
 
@@ -95,7 +98,7 @@ export function EditCreditPaymentModal({ isOpen, onClose, credit, payment }: Pro
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">S/</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">{symbol}</span>
               <input
                 type="number"
                 step="0.01"

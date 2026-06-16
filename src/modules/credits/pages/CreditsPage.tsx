@@ -13,6 +13,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { RegisterHistoricalCreditModal } from '../components/RegisterHistoricalCreditModal';
 import type { CreditAccount, Client, CreditPayment } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
+import { creditCurrency, formatMoney } from '../utils/money';
 
 type Status = 'PENDING' | 'PARTIAL' | 'PAID';
 const STATUS_RANK: Record<Status, number> = { PENDING: 3, PARTIAL: 2, PAID: 1 };
@@ -25,6 +26,7 @@ interface ClientGroup {
   paidAmount: number;
   pendingAmount: number;
   worstStatus: Status;
+  currencies: Array<'PEN' | 'USD'>;
 }
 
 const statusLabels: Record<Status, { label: string; class: string }> = {
@@ -92,6 +94,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
       const totalAmount = clientCredits.reduce((s, c) => s + c.totalAmount, 0);
       const paidAmount = clientCredits.reduce((s, c) => s + c.paidAmount, 0);
       const pendingAmount = clientCredits.reduce((s, c) => s + c.pendingAmount, 0);
+      const currencies = Array.from(new Set(clientCredits.map((c) => creditCurrency(c.currency))));
       const worstStatus = clientCredits.reduce<Status>(
         (worst, c) => (STATUS_RANK[c.status as Status] > STATUS_RANK[worst] ? (c.status as Status) : worst),
         'PAID',
@@ -110,6 +113,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
         paidAmount,
         pendingAmount,
         worstStatus,
+        currencies,
       });
     }
 
@@ -139,6 +143,8 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
     if (openCredits.length === 0) return;
     setBatchClient({ id: group.clientId, name: group.clientName, credits: openCredits });
   };
+  const groupMoney = (group: ClientGroup, amount: number) =>
+    group.currencies.length === 1 ? formatMoney(amount, group.currencies[0]) : 'Mixto';
   const openDetail = (credit: CreditAccount) => {
     setSelectedCredit(credit);
     setShowDetailModal(true);
@@ -376,15 +382,15 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                     </div>
                     <div className="hidden md:block text-right">
                       <div className="text-xs text-gray-500">Total</div>
-                      <div className="text-sm font-medium text-gray-700">S/ {group.totalAmount.toFixed(2)}</div>
+                      <div className="text-sm font-medium text-gray-700">{groupMoney(group, group.totalAmount)}</div>
                     </div>
                     <div className="hidden md:block text-right">
                       <div className="text-xs text-gray-500">Pagado</div>
-                      <div className="text-sm font-medium text-primary-600">S/ {group.paidAmount.toFixed(2)}</div>
+                      <div className="text-sm font-medium text-primary-600">{groupMoney(group, group.paidAmount)}</div>
                     </div>
                     <div className="text-right">
                       <div className="text-xs text-gray-500">Pendiente</div>
-                      <div className="text-base font-bold text-red-600">S/ {group.pendingAmount.toFixed(2)}</div>
+                      <div className="text-base font-bold text-red-600">{groupMoney(group, group.pendingAmount)}</div>
                     </div>
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${st.class}`}>{st.label}</span>
                     {group.pendingAmount > 0 && (
@@ -480,9 +486,9 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                                       {dueState.label}
                                     </button>
                                   </td>
-                                  <td className="py-2 pr-3 text-gray-700">S/ {c.totalAmount.toFixed(2)}</td>
-                                  <td className="py-2 pr-3 text-primary-600">S/ {c.paidAmount.toFixed(2)}</td>
-                                  <td className="py-2 pr-3 text-red-600 font-medium">S/ {c.pendingAmount.toFixed(2)}</td>
+                                  <td className="py-2 pr-3 text-gray-700">{formatMoney(c.totalAmount, c.currency)}</td>
+                                  <td className="py-2 pr-3 text-primary-600">{formatMoney(c.paidAmount, c.currency)}</td>
+                                  <td className="py-2 pr-3 text-red-600 font-medium">{formatMoney(c.pendingAmount, c.currency)}</td>
                                   <td className="py-2 pr-3">
                                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cst.class}`}>{cst.label}</span>
                                   </td>
@@ -556,11 +562,11 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
               </div>
               <div className="bg-primary-50 rounded-lg p-3">
                 <div className="text-xs text-primary-700">Pagado</div>
-                <div className="text-sm font-bold text-primary-700">S/ {fullCredit.paidAmount.toFixed(2)}</div>
+                <div className="text-sm font-bold text-primary-700">{formatMoney(fullCredit.paidAmount, fullCredit.currency)}</div>
               </div>
               <div className="bg-red-50 rounded-lg p-3">
                 <div className="text-xs text-red-600">Pendiente</div>
-                <div className="text-sm font-bold text-red-600">S/ {fullCredit.pendingAmount.toFixed(2)}</div>
+                <div className="text-sm font-bold text-red-600">{formatMoney(fullCredit.pendingAmount, fullCredit.currency)}</div>
               </div>
             </div>
 
@@ -569,7 +575,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                 {fullCredit.saleDetails.map((sale, sIdx) => (
                   <div key={sIdx} className="bg-gray-50 rounded-lg p-3">
                     <div className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
-                      <ShoppingBag size={12} /> Venta {sIdx + 1} — {new Date(sale.date).toLocaleDateString('es-PE')} · S/ {sale.total.toFixed(2)}
+                      <ShoppingBag size={12} /> Venta {sIdx + 1} — {new Date(sale.date).toLocaleDateString('es-PE')} · {formatMoney(sale.currency === 'USD' && sale.totalUsd != null ? sale.totalUsd : sale.total, sale.currency)}
                     </div>
                     <div className="border border-gray-200 rounded overflow-hidden bg-white">
                       <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -588,8 +594,8 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                               <td className="px-3 py-1.5 font-medium">{item.productName}</td>
                               <td className="px-3 py-1.5 text-gray-600">{item.companyName}</td>
                               <td className="px-3 py-1.5 text-right">{item.quantity}</td>
-                              <td className="px-3 py-1.5 text-right">S/ {item.unitPrice.toFixed(2)}</td>
-                              <td className="px-3 py-1.5 text-right font-medium">S/ {item.subtotal.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right">{formatMoney(sale.currency === 'USD' && item.unitPriceUsd != null ? item.unitPriceUsd : item.unitPrice, sale.currency)}</td>
+                              <td className="px-3 py-1.5 text-right font-medium">{formatMoney(sale.currency === 'USD' && item.subtotalUsd != null ? item.subtotalUsd : item.subtotal, sale.currency)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -614,7 +620,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                     <div key={idx} className="flex items-center justify-between bg-primary-50/60 rounded px-3 py-1.5 text-sm">
                       <div className="flex items-center gap-3 min-w-0">
                         <span className="text-gray-500">{formatDateEs(p.paymentDate)}</span>
-                        <span className="font-medium text-primary-700">S/ {p.amount.toFixed(2)}</span>
+                        <span className="font-medium text-primary-700">{formatMoney(p.amount, p.currency || fullCredit.currency)}</span>
                         {p.paymentMethodName && (
                           <span className="text-xs bg-white border rounded px-1.5 py-0.5 text-gray-600">{p.paymentMethodName}</span>
                         )}
@@ -656,7 +662,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
         <div className="space-y-4">
           <div className="bg-gray-50 p-3 rounded-lg text-sm">
             <div>Cuenta: <span className="font-medium">{editDueCredit?.name || '—'}</span></div>
-            <div>Pendiente: <span className="text-red-600 font-medium">S/ {editDueCredit?.pendingAmount.toFixed(2)}</span></div>
+            <div>Pendiente: <span className="text-red-600 font-medium">{editDueCredit ? formatMoney(editDueCredit.pendingAmount, editDueCredit.currency) : '—'}</span></div>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Fecha límite</label>
@@ -694,9 +700,9 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
           </div>
           <div className="bg-gray-50 p-3 rounded-lg text-sm">
             <div>Cliente: <span className="font-medium">{selectedCredit ? getClientName(selectedCredit.clientId) : ''}</span></div>
-            <div>Total: <span className="font-medium">S/ {selectedCredit?.totalAmount.toFixed(2)}</span></div>
-            <div>Pagado: <span className="text-primary-600">S/ {selectedCredit?.paidAmount.toFixed(2)}</span></div>
-            <div>Pendiente: <span className="text-red-600 font-medium">S/ {selectedCredit?.pendingAmount.toFixed(2)}</span></div>
+            <div>Total: <span className="font-medium">{selectedCredit ? formatMoney(selectedCredit.totalAmount, selectedCredit.currency) : '—'}</span></div>
+            <div>Pagado: <span className="text-primary-600">{selectedCredit ? formatMoney(selectedCredit.paidAmount, selectedCredit.currency) : '—'}</span></div>
+            <div>Pendiente: <span className="text-red-600 font-medium">{selectedCredit ? formatMoney(selectedCredit.pendingAmount, selectedCredit.currency) : '—'}</span></div>
           </div>
           <div className="flex gap-3">
             <button onClick={() => setShowDeleteModal(false)} className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">Cancelar</button>

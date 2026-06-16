@@ -7,6 +7,7 @@ import { BatchPaymentModal } from '../components/BatchPaymentModal';
 import { ArrowLeft, DollarSign, ShoppingBag, Layers } from 'lucide-react';
 import type { CreditAccount, CreditPayment, Client } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
+import { creditCurrency, formatMoney } from '../utils/money';
 
 interface TransactionGroup {
   groupId: string;
@@ -15,7 +16,8 @@ interface TransactionGroup {
   notes?: string;
   receivedByName?: string;
   total: number;
-  breakdown: Array<{ creditId: string; creditName: string; amount: number }>;
+  currency?: 'PEN' | 'USD';
+  breakdown: Array<{ creditId: string; creditName: string; amount: number; currency?: 'PEN' | 'USD' }>;
 }
 
 export function ClientCreditDetailPage() {
@@ -35,6 +37,8 @@ export function ClientCreditDetailPage() {
   const totalPending = credits.reduce((sum, c) => sum + c.pendingAmount, 0);
   const totalDebt = credits.reduce((sum, c) => sum + c.totalAmount, 0);
   const totalPaid = credits.reduce((sum, c) => sum + c.paidAmount, 0);
+  const currencies = Array.from(new Set(credits.map((c) => creditCurrency(c.currency))));
+  const pageMoney = (amount: number) => currencies.length === 1 ? formatMoney(amount, currencies[0]) : 'Mixto';
   const openCredits = credits.filter((c) => c.status !== 'PAID');
 
   const transactionGroups: TransactionGroup[] = useMemo(() => {
@@ -47,6 +51,7 @@ export function ClientCreditDetailPage() {
           creditId: credit.id,
           creditName: credit.name || 'Sin nombre',
           amount: payment.amount,
+          currency: payment.currency || credit.currency,
         };
         if (existing) {
           existing.total += payment.amount;
@@ -59,6 +64,7 @@ export function ClientCreditDetailPage() {
             notes: payment.notes,
             receivedByName: payment.receivedByName,
             total: payment.amount,
+            currency: payment.currency || credit.currency,
             breakdown: [slice],
           });
         }
@@ -106,9 +112,9 @@ export function ClientCreditDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <div className="bg-gray-50 p-4 rounded-lg"><div className="text-sm text-gray-500">Total en Creditos</div><div className="text-lg font-bold">S/ {totalDebt.toFixed(2)}</div></div>
-        <div className="bg-primary-50 p-4 rounded-lg"><div className="text-sm text-primary-600">Total Pagado</div><div className="text-lg font-bold text-primary-600">S/ {totalPaid.toFixed(2)}</div></div>
-        <div className="bg-red-50 p-4 rounded-lg"><div className="text-sm text-red-600">Total Pendiente</div><div className="text-lg font-bold text-red-600">S/ {totalPending.toFixed(2)}</div></div>
+        <div className="bg-gray-50 p-4 rounded-lg"><div className="text-sm text-gray-500">Total en Creditos</div><div className="text-lg font-bold">{pageMoney(totalDebt)}</div></div>
+        <div className="bg-primary-50 p-4 rounded-lg"><div className="text-sm text-primary-600">Total Pagado</div><div className="text-lg font-bold text-primary-600">{pageMoney(totalPaid)}</div></div>
+        <div className="bg-red-50 p-4 rounded-lg"><div className="text-sm text-red-600">Total Pendiente</div><div className="text-lg font-bold text-red-600">{pageMoney(totalPending)}</div></div>
       </div>
 
       {transactionGroups.length > 0 && (
@@ -131,14 +137,14 @@ export function ClientCreditDetailPage() {
                       <Layers size={10} /> {g.breakdown.length} cuentas
                     </span>
                   </div>
-                  <div className="text-lg font-bold text-primary-700">S/ {g.total.toFixed(2)}</div>
+                  <div className="text-lg font-bold text-primary-700">{formatMoney(g.total, g.currency)}</div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {g.breakdown.map((b, i) => (
                     <span key={i} className="text-xs bg-gray-100 text-gray-700 rounded-md px-2 py-1">
                       <span className="font-medium">{b.creditName}</span>
                       <span className="text-gray-400 mx-1">·</span>
-                      <span className="text-primary-700 font-semibold">S/ {b.amount.toFixed(2)}</span>
+                      <span className="text-primary-700 font-semibold">{formatMoney(b.amount, b.currency || g.currency)}</span>
                     </span>
                   ))}
                 </div>
@@ -178,8 +184,8 @@ export function ClientCreditDetailPage() {
                   })()}
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="text-sm">Total: <span className="font-bold">S/ {credit.totalAmount.toFixed(2)}</span></span>
-                  <span className="text-sm text-red-600">Pendiente: <span className="font-bold">S/ {credit.pendingAmount.toFixed(2)}</span></span>
+                  <span className="text-sm">Total: <span className="font-bold">{formatMoney(credit.totalAmount, credit.currency)}</span></span>
+                  <span className="text-sm text-red-600">Pendiente: <span className="font-bold">{formatMoney(credit.pendingAmount, credit.currency)}</span></span>
                 </div>
               </div>
 
@@ -188,7 +194,7 @@ export function ClientCreditDetailPage() {
                   {credit.saleDetails.map((sale, sIdx) => (
                     <div key={sIdx} className="bg-gray-50 rounded-lg p-3">
                       <div className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
-                        <ShoppingBag size={12} /> Venta {sIdx + 1} — {new Date(sale.date).toLocaleDateString('es-PE')} · S/ {sale.total.toFixed(2)}
+                        <ShoppingBag size={12} /> Venta {sIdx + 1} — {new Date(sale.date).toLocaleDateString('es-PE')} · {formatMoney(sale.currency === 'USD' && sale.totalUsd != null ? sale.totalUsd : sale.total, sale.currency || credit.currency)}
                       </div>
                       <div className="border rounded overflow-hidden">
                         <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -207,8 +213,8 @@ export function ClientCreditDetailPage() {
                                 <td className="px-3 py-1.5 font-medium">{item.productName}</td>
                                 <td className="px-3 py-1.5 text-gray-600">{item.companyName}</td>
                                 <td className="px-3 py-1.5 text-right">{item.quantity}</td>
-                                <td className="px-3 py-1.5 text-right">S/ {item.unitPrice.toFixed(2)}</td>
-                                <td className="px-3 py-1.5 text-right font-medium">S/ {item.subtotal.toFixed(2)}</td>
+                                <td className="px-3 py-1.5 text-right">{formatMoney(sale.currency === 'USD' && item.unitPriceUsd != null ? item.unitPriceUsd : item.unitPrice, sale.currency || credit.currency)}</td>
+                                <td className="px-3 py-1.5 text-right font-medium">{formatMoney(sale.currency === 'USD' && item.subtotalUsd != null ? item.subtotalUsd : item.subtotal, sale.currency || credit.currency)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -229,7 +235,7 @@ export function ClientCreditDetailPage() {
                         <div key={idx} className="flex items-center justify-between bg-primary-50 rounded px-3 py-1.5 text-sm">
                           <div className="flex items-center gap-3">
                             <span className="text-gray-500">{formatDateEs(p.paymentDate)}</span>
-                            <span className="font-medium text-primary-700">S/ {p.amount.toFixed(2)}</span>
+                            <span className="font-medium text-primary-700">{formatMoney(p.amount, p.currency || credit.currency)}</span>
                             {p.paymentMethodName && (
                               <span className="text-xs bg-white border rounded px-1.5 py-0.5 text-gray-600">{p.paymentMethodName}</span>
                             )}

@@ -19,6 +19,7 @@ import toast from 'react-hot-toast';
 import type { CashRegisterEntry, Sale, Client, CreditAccount } from '../../../shared/types';
 import { groupEntries } from '../utils/groupEntries';
 import { EXPENSE_CATEGORIES } from '../utils/expenseCategories';
+import { formatMoney } from '../../credits/utils/money';
 
 // --- Helpers --------------------------------------------------------------
 
@@ -736,13 +737,16 @@ export function CashRegisterPage() {
                             const isGroupUsd = groupSale?.currency === 'USD';
                             const groupSym = isGroupUsd ? '$' : 'S/';
                             if (groupSale?.isCredit) {
+                              const groupSalePayment = isGroupUsd
+                                ? group.entries.reduce((s, e) => s + (e.amountUsd || 0), 0)
+                                : total;
                               return (
                                 <div className="flex flex-col items-end leading-tight">
                                   <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
                                     C: {groupSym} {(isGroupUsd && groupSale.totalUsd != null ? groupSale.totalUsd : groupSale.total).toFixed(2)}
                                   </span>
                                   <span className="text-primary-700">
-                                    P: + {groupSym} {total.toFixed(2)}
+                                    P: + {groupSym} {groupSalePayment.toFixed(2)}
                                   </span>
                                   {isGroupUsd && <span className="text-[10px] text-emerald-600 font-semibold">USD</span>}
                                 </div>
@@ -750,14 +754,19 @@ export function CashRegisterPage() {
                             }
                             if (groupCredit) {
                               const cleared = isPaymentThatClears(groupCredit, group.entries.map((e) => e.id!));
+                              const isUsdCredit = groupCredit.currency === 'USD';
+                              const groupCreditPayment = isUsdCredit
+                                ? group.entries.reduce((s, e) => s + (e.amountUsd || 0), 0)
+                                : total;
                               return (
                                 <div className="flex flex-col items-end leading-tight">
                                   <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
-                                    C: S/ {groupCredit.totalAmount.toFixed(2)}
+                                    C: {formatMoney(groupCredit.totalAmount, groupCredit.currency)}
                                   </span>
-                                  <span className="text-primary-700">
-                                    P: + S/ {total.toFixed(2)}
+                                  <span className={isUsdCredit ? 'text-emerald-600' : 'text-primary-700'}>
+                                    P: + {formatMoney(groupCreditPayment, groupCredit.currency)}
                                   </span>
+                                  {isUsdCredit && <span className="text-[10px] text-emerald-600 font-semibold">USD</span>}
                                   {cleared && (
                                     <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">
                                       <CheckCircle2 size={10} /> Cancelado
@@ -1484,13 +1493,14 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
           const saleSym = (isUsdSale || isUsdExpense) ? '$' : 'S/';
           const isCreditSale = isSale && !!sale?.isCredit;
           if (isCreditSale) {
+            const creditSalePayment = isUsdSale && entry.amountUsd != null ? entry.amountUsd : entry.amount;
             return (
               <div className="flex flex-col items-end leading-tight">
                 <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
                   C: {saleSym} {(isUsdSale && sale!.totalUsd != null ? sale!.totalUsd : sale!.total).toFixed(2)}
                 </span>
                 <span className="text-primary-700">
-                  P: + {saleSym} {entry.amount.toFixed(2)}
+                  P: + {saleSym} {creditSalePayment.toFixed(2)}
                 </span>
                 {isUsdSale && <span className="text-[10px] text-emerald-600 font-semibold">USD</span>}
               </div>
@@ -1498,14 +1508,17 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
           }
           if (credit) {
             const cleared = isPaymentThatClears(credit, [entry.id!]);
+            const isUsdCredit = credit.currency === 'USD';
+            const creditPaymentAmount = isUsdCredit && entry.amountUsd != null ? entry.amountUsd : entry.amount;
             return (
               <div className="flex flex-col items-end leading-tight">
                 <span className="text-xs uppercase tracking-wider text-orange-600 font-semibold">
-                  C: S/ {credit.totalAmount.toFixed(2)}
+                  C: {formatMoney(credit.totalAmount, credit.currency)}
                 </span>
-                <span className="text-primary-700">
-                  P: + S/ {entry.amount.toFixed(2)}
+                <span className={isUsdCredit ? 'text-emerald-600' : 'text-primary-700'}>
+                  P: + {formatMoney(creditPaymentAmount, credit.currency)}
                 </span>
+                {isUsdCredit && <span className="text-[10px] text-emerald-600 font-semibold">USD</span>}
                 {cleared && (
                   <span className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">
                     <CheckCircle2 size={10} /> Cancelado
