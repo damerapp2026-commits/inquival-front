@@ -20,6 +20,7 @@ import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, D
 import { ProductSuppliersModal } from '../components/ProductSuppliersModal';
 import { PriceCatalogView } from '../components/PriceCatalogView';
 import { downloadProductCatalogPdf, openCatalogWindow } from '../utils/productCatalogPdf';
+import { useAuth } from '../../../app/providers/AuthProvider';
 import toast from 'react-hot-toast';
 import type { Product, ProductCommission } from '../../../shared/types';
 
@@ -43,6 +44,8 @@ interface BulkProduct {
 }
 
 export function ProductsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [searchParams, setSearchParams] = useSearchParams();
   const view: 'list' | 'catalog' = searchParams.get('view') === 'catalog' ? 'catalog' : 'list';
   const setView = (v: 'list' | 'catalog') => {
@@ -568,7 +571,7 @@ export function ProductsPage() {
         </div>
       );
     }},
-    { key: 'lastCostPrice', header: 'Costo', render: (item: Product) => {
+    ...(isAdmin ? [{ key: 'lastCostPrice', header: 'Costo', render: (item: Product) => {
       if (!item.lastCostPrice) return <span className="text-gray-300 text-xs">—</span>;
       const cSym = item.lastCostCurrency === 'USD' ? '$' : 'S/';
       const sSym = item.lastSaleCurrency === 'USD' ? '$' : 'S/';
@@ -578,7 +581,7 @@ export function ProductsPage() {
           {item.lastSalePrice ? <div className="text-gray-400 tabular-nums">P.V. {sSym} {item.lastSalePrice.toFixed(2)}</div> : null}
         </div>
       );
-    }},
+    }}] : []),
     { key: 'actions', header: 'Acciones', render: (item: Product) => (
       <div className="flex gap-2">
         <button onClick={() => setSuppliersTarget(item)} className="text-gray-500 hover:text-primary-600" title="Ver proveedores"><Truck size={16} /></button>
