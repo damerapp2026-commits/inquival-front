@@ -409,6 +409,7 @@ function KardexTab({ products, companyList }: SubProps) {
         <ProductsListView
           products={products}
           companyList={companyList}
+          companyId={companyId}
           productSearch={productSearch}
           onSelect={setSelectedProductId}
         />
@@ -601,11 +602,12 @@ function KardexTab({ products, companyList }: SubProps) {
 interface ProductsListViewProps {
   products: Product[];
   companyList: Company[];
+  companyId: string;
   productSearch: string;
   onSelect: (id: string) => void;
 }
 
-function ProductsListView({ products, companyList, productSearch, onSelect }: ProductsListViewProps) {
+function ProductsListView({ products, companyList, companyId, productSearch, onSelect }: ProductsListViewProps) {
   const { data: stockSummary, isLoading: stockLoading } = useStockByProductSummary();
   const { data: laboratories } = useLaboratories();
   // Fetch all active lots with stock to find earliest upcoming expiration per product.
@@ -621,20 +623,28 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
     for (const l of laboratories as any[]) labById.set(l.id, l.name);
   }
 
-  const stockByProductId = new Map<string, number>();
   const stockByProductCompany = new Map<string, Map<string, number>>();
   for (const s of stockSummary || []) {
-    stockByProductId.set(s.productId, s.totalQuantity);
     const m = new Map<string, number>();
     for (const b of s.byCompany) m.set(b.companyId, b.quantity);
     stockByProductCompany.set(s.productId, m);
   }
+
+  const stockForProduct = (productId: string): number => {
+    const byCompany = stockByProductCompany.get(productId);
+    if (!byCompany) return 0;
+    if (companyId) return byCompany.get(companyId) ?? 0;
+    let total = 0;
+    for (const qty of byCompany.values()) total += qty;
+    return total;
+  };
 
   // Earliest (closest) upcoming expiration date per product.
   const earliestExpiryByProduct = new Map<string, string>();
   if (Array.isArray(lotsData)) {
     for (const lot of lotsData as any[]) {
       if (!lot.expirationDate || !lot.productId) continue;
+      if (companyId && lot.companyId !== companyId) continue;
       const prev = earliestExpiryByProduct.get(lot.productId);
       if (!prev || new Date(lot.expirationDate).getTime() < new Date(prev).getTime()) {
         earliestExpiryByProduct.set(lot.productId, lot.expirationDate);
@@ -643,11 +653,12 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
   }
 
   // Reset page when search/filter/sort changes.
-  React.useEffect(() => { setPage(1); }, [productSearch, sortBy, pageSize, labFilter]);
+  React.useEffect(() => { setPage(1); }, [productSearch, sortBy, pageSize, labFilter, companyId]);
 
   const filtered = products
     .filter((p) => {
       if (labFilter && (p as any).laboratoryId !== labFilter) return false;
+      if (companyId && stockForProduct(p.id) <= 0) return false;
       if (!productSearch) return true;
       const q = productSearch.toLowerCase();
       const labName = labById.get((p as any).laboratoryId || '') || '';
@@ -666,8 +677,8 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
         const lb = labById.get((b as any).laboratoryId || '') || '';
         return la.localeCompare(lb, 'es', { sensitivity: 'base' }) || (a.name || '').localeCompare(b.name || '', 'es');
       }
-      const sa = stockByProductId.get(a.id) ?? 0;
-      const sb = stockByProductId.get(b.id) ?? 0;
+      const sa = stockForProduct(a.id);
+      const sb = stockForProduct(b.id);
       return sortBy === 'saldo_desc' ? sb - sa : sa - sb;
     });
 
@@ -681,11 +692,31 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
     if (!m) return '';
     const parts: string[] = [];
     for (const [cid, qty] of m.entries()) {
+      if (companyId && cid !== companyId) continue;
       if (qty <= 0) continue;
       const cname = companyList.find((c) => c.id === cid)?.name || cid;
       parts.push(`${cname} (${qty})`);
     }
     return parts.join(' · ');
+  };
+
+  const exportProducts = () => {
+    const rows = filtered.map((p) => ({
+      Producto: p.name,
+      Saldo: stockForProduct(p.id),
+      Laboratorio: labById.get((p as any).laboratoryId || '') || '',
+      Almacenes: formatWarehouses(p.id),
+      Unidad: p.unit || '',
+      Vencimiento: earliestExpiryByProduct.get(p.id)
+        ? new Date(earliestExpiryByProduct.get(p.id)!).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        : '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{ wch: 36 }, { wch: 10 }, { wch: 24 }, { wch: 42 }, { wch: 12 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Productos Kardex');
+    const warehouse = companyId ? companyList.find((c) => c.id === companyId)?.name || companyId : 'todos_almacenes';
+    XLSX.writeFile(wb, `kardex_productos_${warehouse.replace(/[^\w.-]+/g, '_')}.xlsx`);
   };
 
   return (
@@ -732,7 +763,15 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          <button
+            type="button"
+            onClick={exportProducts}
+            disabled={stockLoading}
+            className="flex items-center gap-1 px-2 py-1 border border-primary-200 bg-primary-50 text-primary-700 rounded text-xs font-medium hover:bg-primary-100 disabled:opacity-60"
+          >
+            <Download size={13} /> Excel
+          </button>
           <div className="flex items-center gap-1">
             <span className="text-gray-500">Ordenar:</span>
             <select
@@ -783,7 +822,7 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
               </tr>
             ) : (
               pageItems.map((p) => {
-                const saldo = stockByProductId.get(p.id) ?? 0;
+                const saldo = stockForProduct(p.id);
                 const labName = labById.get((p as any).laboratoryId || '') || '';
                 const expiry = earliestExpiryByProduct.get(p.id);
                 const expiryDays = expiry
