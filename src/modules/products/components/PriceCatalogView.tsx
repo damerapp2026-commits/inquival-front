@@ -160,6 +160,15 @@ export function PriceCatalogView({ enabled }: Props) {
     [priceTiers],
   );
 
+  const preferredSaleTiers = useMemo(() => {
+    const tierName = (tier: any) => String(tier?.name || '').toLowerCase();
+    const distributor = sortedTiers.filter((tier: any) => tierName(tier).includes('distribuidor'));
+    const farmer = sortedTiers.filter((tier: any) => tierName(tier).includes('agricultor'));
+    const prioritized = new Set([...distributor, ...farmer].map((tier: any) => tier.id));
+    const others = sortedTiers.filter((tier: any) => !prioritized.has(tier.id));
+    return [...distributor, ...farmer, ...others];
+  }, [sortedTiers]);
+
   const tiersById = useMemo(
     () => new Map(priceTiers.map((t: any) => [t.id, t])),
     [priceTiers],
@@ -167,19 +176,15 @@ export function PriceCatalogView({ enabled }: Props) {
 
   const lookupStoredPrice = (p: Product): { price?: number; tierName?: string } => {
     if (!p.prices?.length) return {};
-    for (const t of sortedTiers) {
-      const found = p.prices.find((px: any) => px.priceTierId === t.id && !px.companyId && px.price > 0);
+    for (const t of preferredSaleTiers) {
+      const tierPrices = p.prices.filter((px: any) => px.priceTierId === t.id && px.price > 0);
+      const found = tierPrices.find((px: any) => !px.companyId);
       if (found) return { price: found.price, tierName: t.name };
     }
     const anyGlobal = p.prices.find((px: any) => !px.companyId && px.price > 0);
     if (anyGlobal) {
       const tier: any = tiersById.get(anyGlobal.priceTierId);
       return { price: anyGlobal.price, tierName: tier?.name };
-    }
-    const anyPrice = p.prices.find((px: any) => px.price > 0);
-    if (anyPrice) {
-      const tier: any = tiersById.get(anyPrice.priceTierId);
-      return { price: anyPrice.price, tierName: tier?.name };
     }
     return {};
   };
@@ -235,7 +240,7 @@ export function PriceCatalogView({ enabled }: Props) {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, catalogByProduct, labsById, sortedTiers, tiersById, stockByProduct]);
+  }, [products, catalogByProduct, labsById, preferredSaleTiers, tiersById, stockByProduct]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -430,20 +435,24 @@ export function PriceCatalogView({ enabled }: Props) {
     const hasEdit = editedRaw !== undefined;
     const hasSaved = row.precioMinorista != null;
 
-    const fallbackPrice = row.storedSellPrice ?? row.precioVenta;
+    const fallbackPrice = row.precioMinorista ?? row.precioVenta;
     const fallbackSource = row.storedSellPrice != null
       ? `${row.storedSellPriceTier ?? 'precio guardado'}`
-      : row.precioVenta != null
+      : row.precioMinorista != null
+        ? 'catálogo'
+        : row.precioVenta != null
         ? 'última compra'
         : null;
 
     const value = hasEdit
       ? editedRaw!
-      : hasSaved
-        ? fmt(row.precioMinorista)
-        : fallbackPrice != null ? fmt(fallbackPrice) : '';
+      : row.storedSellPrice != null
+        ? fmt(row.storedSellPrice)
+        : hasSaved
+          ? fmt(row.precioMinorista)
+          : fallbackPrice != null ? fmt(fallbackPrice) : '';
 
-    const isFromFallback = !hasEdit && !hasSaved && fallbackPrice != null;
+    const isFromFallback = !hasEdit && (row.storedSellPrice != null || (!hasSaved && fallbackPrice != null));
     const bgClass = isFromFallback
       ? 'bg-cyan-50/40 text-cyan-700 italic'
       : 'bg-cyan-50 text-cyan-900';

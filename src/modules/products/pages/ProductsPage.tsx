@@ -30,7 +30,6 @@ const TAX_TYPES = [
   { value: 'EXONERADO', label: 'Exonerado' },
   { value: 'INAFECTO', label: 'Inafecto' },
 ];
-
 interface BulkProduct {
   name: string;
   description: string;
@@ -43,6 +42,26 @@ interface BulkProduct {
   initialStocks: { companyId: string; quantity: number }[];
   expanded: boolean;
 }
+
+type DisplayProductPrice = { priceTierId: string; companyId?: string; price: number; companyName?: string };
+
+const globalPricesOnly = (prices: { priceTierId: string; companyId?: string; price: number }[] = []) => {
+  const byTier = new Map<string, { priceTierId: string; price: number }>();
+  for (const price of prices) {
+    if (!price.priceTierId) continue;
+    const current = byTier.get(price.priceTierId);
+    if (!current || !price.companyId) {
+      byTier.set(price.priceTierId, { priceTierId: price.priceTierId, price: Number(price.price) || 0 });
+    }
+  }
+  return Array.from(byTier.values());
+};
+
+const productCategoryId = (product: Product) =>
+  product.categoryId || (product as any).category?.id || (product as any).category?._id || '';
+
+const productLaboratoryId = (product: Product) =>
+  product.laboratoryId || (product as any).laboratory?.id || (product as any).laboratory?._id || '';
 
 export function ProductsPage() {
   const { user } = useAuth();
@@ -69,10 +88,13 @@ export function ProductsPage() {
   const debouncedIngredient = useDebounce(activeIngredientFilter);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
-  const [priceCompanyFilter, setPriceCompanyFilter] = useState('');
 
   const queryClient = useQueryClient();
-  const { data, isLoading } = useProducts({ page, limit: 20, search: debouncedSearch, activeIngredient: debouncedIngredient || undefined, laboratoryId: laboratoryFilter || undefined, category: categoryFilter || undefined });
+  const hasProductFilters = !!(debouncedSearch || debouncedIngredient || laboratoryFilter || categoryFilter);
+  const { data, isLoading } = useProducts({
+    page: hasProductFilters ? 1 : page,
+    limit: hasProductFilters ? 10000 : 20,
+  });
   const { data: priceTiers } = usePriceTiers();
   const { data: categories } = useCategories();
   const { data: laboratories } = useLaboratories();
@@ -96,7 +118,6 @@ export function ProductsPage() {
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [pricesTab, setPricesTab] = useState<string>('');
   const imageInputRef = useRef<HTMLInputElement>(null);
   const allUnits: { value: string; label: string }[] = Array.isArray(unitsData)
     ? unitsData.filter((u: any) => u.isActive).map((u: any) => ({ value: u.name, label: u.abbreviation ? `${u.name} (${u.abbreviation})` : u.name }))
@@ -106,8 +127,8 @@ export function ProductsPage() {
   const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', laboratoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', prices: [], initialStocks: [], expanded: true });
 
 
-  const openCreate = () => { setEditing(null); const firstComp = comps.find((c: any) => c.isActive); setPricesTab(firstComp?.id || ''); setForm({ name: '', description: '', categoryId: '', laboratoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [], initialStocks: [], commissions: [] }); setShowModal(true); };
-  const openEdit = (product: Product) => { setEditing(product); const firstComp = comps.find((c: any) => c.isActive); setPricesTab(firstComp?.id || ''); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, laboratoryId: product.laboratoryId || '', unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, imageUrl: product.imageUrl || '', prices: product.prices || [], initialStocks: [], commissions: product.commissions || [] }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', laboratoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [], initialStocks: [], commissions: [] }); setShowModal(true); };
+  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, laboratoryId: product.laboratoryId || '', unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, imageUrl: product.imageUrl || '', prices: globalPricesOnly(product.prices || []), initialStocks: [], commissions: product.commissions || [] }); setShowModal(true); };
   const openBulk = () => { setBulkProducts([emptyBulkProduct()]); setShowBulkModal(true); };
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -133,10 +154,10 @@ export function ProductsPage() {
     const cleanCommissions = form.commissions.filter((c) => c.workerId && c.value > 0);
     if (editing) {
       const { initialStocks, ...editData } = form;
-      const editPayload: any = { ...editData, commissions: cleanCommissions, imageUrl: form.imageUrl || null, laboratoryId: form.laboratoryId || null };
+      const editPayload: any = { ...editData, prices: globalPricesOnly(form.prices), commissions: cleanCommissions, imageUrl: form.imageUrl || null, laboratoryId: form.laboratoryId || null };
       await updateProduct.mutateAsync({ id: editing.id, data: editPayload });
     } else {
-      const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, activeIngredient: form.activeIngredient || undefined, taxType: form.taxType, tracksLot: form.tracksLot, prices: form.prices };
+      const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, activeIngredient: form.activeIngredient || undefined, taxType: form.taxType, tracksLot: form.tracksLot, prices: globalPricesOnly(form.prices) };
       if (cleanCommissions.length > 0) payload.commissions = cleanCommissions;
       if (form.laboratoryId) payload.laboratoryId = form.laboratoryId;
       if (form.imageUrl) payload.imageUrl = form.imageUrl;
@@ -497,32 +518,38 @@ export function ProductsPage() {
     XLSX.writeFile(wb, 'plantilla_productos.xlsx');
   };
 
-  const products = data?.data || [];
-  const total = data?.total || 0;
+  const rawProducts: Product[] = data?.data || [];
   const tiers = Array.isArray(priceTiers) ? priceTiers : [];
   const cats = Array.isArray(categories) ? categories : [];
   const labs = Array.isArray(laboratories) ? laboratories : [];
   const labsById = new Map<string, any>(labs.map((l: any) => [l.id, l]));
   const comps = Array.isArray(companies) ? companies : [];
 
-  // Auto-select first active company when data loads
-  React.useEffect(() => {
-    if (!priceCompanyFilter && comps.length > 0) {
-      const first = comps.find((c: any) => c.isActive);
-      if (first) setPriceCompanyFilter(first.id);
-    }
-  }, [comps, priceCompanyFilter]);
+  const products = React.useMemo(() => {
+    const q = debouncedSearch.trim().toLowerCase();
+    const ingredient = debouncedIngredient.trim().toLowerCase();
+    return rawProducts.filter((p) => {
+      if (q && !p.name.toLowerCase().includes(q)) return false;
+      if (ingredient && !(p.activeIngredient || '').toLowerCase().includes(ingredient)) return false;
+      if (categoryFilter && productCategoryId(p) !== categoryFilter) return false;
+      if (laboratoryFilter && productLaboratoryId(p) !== laboratoryFilter) return false;
+      return true;
+    });
+  }, [rawProducts, debouncedSearch, debouncedIngredient, categoryFilter, laboratoryFilter]);
+  const total = hasProductFilters ? products.length : (data?.total || 0);
 
   const { data: stockSummaryData } = useStockByProductSummary();
   const stockByProduct = new Map(
     (stockSummaryData || []).map((s: any) => [s.productId, s])
   );
 
-  const getPricesForDisplay = (product: Product) => {
-    if (!priceCompanyFilter) return [];
+  const getPricesForDisplay = (product: Product): DisplayProductPrice[] => {
     return tiers.map((t: any) =>
-      product.prices?.find(p => p.priceTierId === t.id && p.companyId === priceCompanyFilter) || null
-    ).filter(Boolean) as typeof product.prices;
+      product.prices?.find(p => p.priceTierId === t.id && !p.companyId)
+      || null
+    )
+      .filter((p): p is DisplayProductPrice => p != null)
+      .map((p) => ({ ...p, companyName: 'Global' }));
   };
 
   const columns = [
@@ -577,17 +604,6 @@ export function ProductsPage() {
         </div>
       );
     }},
-    ...(isAdmin ? [{ key: 'lastCostPrice', header: 'Costo', render: (item: Product) => {
-      if (!item.lastCostPrice) return <span className="text-gray-300 text-xs">—</span>;
-      const cSym = item.lastCostCurrency === 'USD' ? '$' : 'S/';
-      const sSym = item.lastSaleCurrency === 'USD' ? '$' : 'S/';
-      return (
-        <div className="text-xs">
-          <div className="font-semibold tabular-nums text-gray-800">{cSym} {item.lastCostPrice.toFixed(4).replace(/\.?0+$/, d => d === '.' ? '' : d)}</div>
-          {item.lastSalePrice ? <div className="text-gray-400 tabular-nums">P.V. {sSym} {item.lastSalePrice.toFixed(2)}</div> : null}
-        </div>
-      );
-    }}] : []),
     { key: 'actions', header: 'Acciones', render: (item: Product) => (
       <div className="flex gap-2">
         <button onClick={() => setSuppliersTarget(item)} className="text-gray-500 hover:text-primary-600" title="Ver proveedores"><Truck size={16} /></button>
@@ -665,15 +681,8 @@ export function ProductsPage() {
         </select>
         <LabCombobox labs={labs} value={laboratoryFilter} onChange={(id) => { setLaboratoryFilter(id); setPage(1); }} placeholder="Todos los laboratorios" emptyLabel="Todos los laboratorios" className="" />
       </div>
-      {comps.filter((c: any) => c.isActive).length > 1 && (
-        <div className="mb-4">
-          <select value={priceCompanyFilter} onChange={(e) => setPriceCompanyFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm bg-white">
-            {comps.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>Precios: {c.name}</option>)}
-          </select>
-        </div>
-      )}
       <DataTable columns={columns} data={products} isLoading={isLoading} compact />
-      <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+      <Pagination page={page} totalPages={hasProductFilters ? 1 : Math.ceil(total / 20)} onPageChange={setPage} />
       </>)}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar producto' : 'Nuevo producto'} size="xl">
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -801,37 +810,20 @@ export function ProductsPage() {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Precios</h3>
               </div>
 
-              {comps.filter((c: any) => c.isActive).length > 0 ? (
-                <>
-                  {comps.filter((c: any) => c.isActive).length > 1 && (
-                    <div className="flex flex-wrap gap-1.5 mb-3 border-b border-gray-200">
-                      {comps.filter((c: any) => c.isActive).map((c: any) => (
-                        <button key={c.id} type="button" onClick={() => setPricesTab(c.id)} className={`px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${pricesTab === c.id ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                          {c.name}
-                        </button>
-                      ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {tiers.map((tier: any) => {
+                  const value = form.prices.find((p) => p.priceTierId === tier.id && !p.companyId)?.price || '';
+                  return (
+                    <div key={tier.id} className="flex items-center gap-3 px-3 py-2 border border-gray-200 rounded-xl bg-white">
+                      <span className="text-sm flex-1 truncate text-gray-700">{tier.name}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-400">S/</span>
+                        <input type="number" step="0.01" min="0" placeholder="0.00" value={value} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0)} className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                      </div>
                     </div>
-                  )}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {tiers.map((tier: any) => {
-                      const value = form.prices.find((p) => p.priceTierId === tier.id && p.companyId === pricesTab)?.price || '';
-                      return (
-                        <div key={tier.id} className="flex items-center gap-3 px-3 py-2 border border-gray-200 rounded-xl bg-white">
-                          <span className="text-sm flex-1 truncate text-gray-700">{tier.name}</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-400">S/</span>
-                            <input type="number" step="0.01" min="0" placeholder="0.00" value={value} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0, pricesTab)} className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              ) : (
-                <div className="px-4 py-3 border border-dashed border-gray-300 rounded-xl bg-gray-50 text-xs text-gray-500">
-                  Aún no hay almacenes activos. Creá un almacén para poder asignarle precios.
-                </div>
-              )}
+                  );
+                })}
+              </div>
             </section>
           )}
 

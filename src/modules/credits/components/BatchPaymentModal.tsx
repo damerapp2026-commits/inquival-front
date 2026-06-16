@@ -4,6 +4,7 @@ import { AlertCircle, CalendarDays, DollarSign, History, Layers } from 'lucide-r
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useBatchPayment } from '../hooks/useCredits';
 import type { CreditAccount, PaymentMethod } from '../../../shared/types';
+import { creditCurrency, formatMoney, moneySymbol, type MoneyCurrency } from '../utils/money';
 
 type Mode = 'EXPLICIT' | 'FIFO';
 type PaymentMode = 'SINGLE' | 'MIXED';
@@ -51,23 +52,39 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
   const [paymentDate, setPaymentDate] = useState<string>(todayLocal);
   const [rows, setRows] = useState<ExplicitRow[]>([]);
   const [fifoAmount, setFifoAmount] = useState<number>(0);
+  const availableCurrencies = useMemo(
+    () => Array.from(new Set(openCredits.map((c) => creditCurrency(c.currency)))),
+    [openCredits],
+  );
+  const [currency, setCurrency] = useState<MoneyCurrency>('PEN');
+  const [paymentCurrency, setPaymentCurrency] = useState<MoneyCurrency>('PEN');
+  const [exchangeRate, setExchangeRate] = useState<number>(3.7);
+  const payableCredits = useMemo(
+    () => openCredits.filter((c) => creditCurrency(c.currency) === currency),
+    [openCredits, currency],
+  );
+  const symbol = moneySymbol(currency);
+  const paymentSymbol = moneySymbol(paymentCurrency);
 
   const isHistorical = !!paymentDate && paymentDate !== todayLocal;
 
   const totalPending = useMemo(
-    () => round2(openCredits.reduce((s, c) => s + c.pendingAmount, 0)),
-    [openCredits],
+    () => round2(payableCredits.reduce((s, c) => s + c.pendingAmount, 0)),
+    [payableCredits],
   );
 
   const orderedByAge = useMemo(
-    () => [...openCredits].sort(
+    () => [...payableCredits].sort(
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
     ),
-    [openCredits],
+    [payableCredits],
   );
 
   useEffect(() => {
     if (isOpen) {
+      setCurrency(availableCurrencies.includes('USD') ? 'USD' : (availableCurrencies[0] || 'PEN'));
+      setPaymentCurrency(availableCurrencies.includes('USD') ? 'USD' : (availableCurrencies[0] || 'PEN'));
+      setExchangeRate(3.7);
       setMode('EXPLICIT');
       setPaymentMode('SINGLE');
       setPaymentMethodId(paymentMethods[0]?.id || '');
@@ -78,9 +95,16 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
       setNotes('');
       setPaymentDate(todayLocal);
       setFifoAmount(0);
-      setRows(openCredits.map((c) => ({ creditId: c.id, selected: false, amount: 0 })));
+      setRows(payableCredits.map((c) => ({ creditId: c.id, selected: false, amount: 0 })));
     }
-  }, [isOpen, openCredits.length, paymentMethods]);
+  }, [isOpen, openCredits.length, paymentMethods, availableCurrencies.length]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setRows(payableCredits.map((c) => ({ creditId: c.id, selected: false, amount: 0 })));
+    setFifoAmount(0);
+    setPaymentCurrency(currency);
+  }, [currency, isOpen, payableCredits.length]);
 
   const explicitTotal = useMemo(
     () => round2(rows.filter((r) => r.selected).reduce((s, r) => s + (r.amount || 0), 0)),
@@ -92,15 +116,15 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
     const selected = rows.filter((r) => r.selected);
     if (selected.length === 0) errs.push('Selecciona al menos una cuenta');
     for (const row of selected) {
-      const credit = openCredits.find((c) => c.id === row.creditId);
+      const credit = payableCredits.find((c) => c.id === row.creditId);
       if (!credit) continue;
       if (row.amount <= 0) errs.push(`Monto inválido para "${credit.name || 'sin nombre'}"`);
       if (row.amount > credit.pendingAmount) {
-        errs.push(`"${credit.name || 'sin nombre'}" excede el pendiente (S/ ${credit.pendingAmount.toFixed(2)})`);
+        errs.push(`"${credit.name || 'sin nombre'}" excede el pendiente (${formatMoney(credit.pendingAmount, currency)})`);
       }
     }
     return errs;
-  }, [rows, openCredits]);
+  }, [rows, payableCredits, currency]);
 
   const fifoPreview = useMemo(() => {
     if (mode !== 'FIFO' || !fifoAmount || fifoAmount <= 0) return [];
@@ -122,7 +146,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
   const fifoErrors = useMemo(() => {
     const errs: string[] = [];
     if (!fifoAmount || fifoAmount <= 0) errs.push('Ingresa un monto mayor a 0');
-    else if (fifoAmount > totalPending) errs.push(`El monto excede la deuda total (S/ ${totalPending.toFixed(2)})`);
+    else if (fifoAmount > totalPending) errs.push(`El monto excede la deuda total (${formatMoney(totalPending, currency)})`);
     return errs;
   }, [fifoAmount, totalPending]);
 
@@ -134,6 +158,9 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
 
   const paymentErrors = useMemo(() => {
     const errs: string[] = [];
+    if (paymentCurrency !== currency && (!exchangeRate || exchangeRate <= 0)) {
+      errs.push('Ingresa un tipo de cambio mayor a 0');
+    }
     if (paymentMode === 'SINGLE') {
       if (!paymentMethodId) errs.push('Selecciona un método de pago');
       return errs;
@@ -144,10 +171,10 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
     const ids = validSplits.map((p) => p.paymentMethodId);
     if (new Set(ids).size !== ids.length) errs.push('No repitas el mismo método en el pago mixto');
     if (paymentTotal > 0 && Math.abs(splitTotal - paymentTotal) > 0.01) {
-      errs.push(`La suma del pago mixto (S/ ${splitTotal.toFixed(2)}) debe ser S/ ${paymentTotal.toFixed(2)}`);
+      errs.push(`La suma del pago mixto (${formatMoney(splitTotal, currency)}) debe ser ${formatMoney(paymentTotal, currency)}`);
     }
     return errs;
-  }, [paymentMethodId, paymentMode, paymentSplits, paymentTotal, splitTotal]);
+  }, [currency, exchangeRate, paymentCurrency, paymentMethodId, paymentMode, paymentSplits, paymentTotal, splitTotal]);
 
   const disabled =
     batchPayment.isPending ||
@@ -159,7 +186,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
       prev.map((r) => {
         if (r.creditId !== creditId) return r;
         if (selected) {
-          const credit = openCredits.find((c) => c.id === creditId);
+          const credit = payableCredits.find((c) => c.id === creditId);
           return { ...r, selected: true, amount: r.amount > 0 ? r.amount : (credit?.pendingAmount || 0) };
         }
         return { ...r, selected: false, amount: 0 };
@@ -170,7 +197,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
     setRows((prev) => prev.map((r) => (r.creditId === creditId ? { ...r, amount } : r)));
   };
   const fillRow = (creditId: string) => {
-    const credit = openCredits.find((c) => c.id === creditId);
+    const credit = payableCredits.find((c) => c.id === creditId);
     if (!credit) return;
     setRows((prev) => prev.map((r) => (r.creditId === creditId ? { ...r, selected: true, amount: credit.pendingAmount } : r)));
   };
@@ -200,6 +227,19 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
       return prev.map((p, i) => (i === prev.length - 1 ? { ...p, amount: round2((p.amount || 0) + remaining) } : p));
     });
   };
+  const receivedTotal = useMemo(() => {
+    if (paymentCurrency === currency) return paymentTotal;
+    if (!exchangeRate || exchangeRate <= 0) return 0;
+    return currency === 'PEN'
+      ? round2(paymentTotal / exchangeRate)
+      : round2(paymentTotal * exchangeRate);
+  }, [currency, exchangeRate, paymentCurrency, paymentTotal]);
+
+  const paymentCurrencyPayload = paymentCurrency !== currency
+    ? { paymentCurrency, exchangeRate }
+    : paymentCurrency === 'USD'
+      ? { paymentCurrency, exchangeRate }
+      : { paymentCurrency };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -213,6 +253,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
         ...(paymentMode === 'SINGLE'
           ? { paymentMethodId }
           : { payments: paymentSplits.filter((p) => p.paymentMethodId && p.amount > 0).map((p) => ({ ...p, amount: round2(p.amount) })) }),
+        ...paymentCurrencyPayload,
         mode: 'EXPLICIT',
         allocations,
         notes: notes || undefined,
@@ -224,6 +265,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
         ...(paymentMode === 'SINGLE'
           ? { paymentMethodId }
           : { payments: paymentSplits.filter((p) => p.paymentMethodId && p.amount > 0).map((p) => ({ ...p, amount: round2(p.amount) })) }),
+        ...paymentCurrencyPayload,
         mode: 'FIFO',
         totalAmount: round2(fifoAmount),
         notes: notes || undefined,
@@ -239,13 +281,30 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
         <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
           <div>
             <div className="text-xs uppercase tracking-wide text-gray-500">Pendiente total</div>
-            <div className="text-2xl font-bold text-red-600">S/ {totalPending.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-red-600">{formatMoney(totalPending, currency)}</div>
           </div>
           <div className="text-right">
             <div className="text-xs uppercase tracking-wide text-gray-500">Cuentas abiertas</div>
-            <div className="text-xl font-semibold text-gray-800">{openCredits.length}</div>
+            <div className="text-xl font-semibold text-gray-800">{payableCredits.length}</div>
           </div>
         </div>
+
+        {availableCurrencies.length > 1 && (
+          <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
+            {availableCurrencies.map((cur) => (
+              <button
+                key={cur}
+                type="button"
+                onClick={() => setCurrency(cur)}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  currency === cur ? 'bg-white shadow-sm text-primary-700' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {cur === 'USD' ? 'Dólares' : 'Soles'}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
           <button
@@ -270,10 +329,10 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
 
         {mode === 'EXPLICIT' ? (
           <div className="space-y-2 max-h-80 overflow-y-auto scrollbar-thin pr-1">
-            {openCredits.length === 0 ? (
+            {payableCredits.length === 0 ? (
               <div className="text-center text-gray-400 py-6">No hay cuentas abiertas</div>
             ) : (
-              openCredits.map((credit) => {
+              payableCredits.map((credit) => {
                 const row = rows.find((r) => r.creditId === credit.id);
                 const selected = !!row?.selected;
                 const amount = row?.amount || 0;
@@ -296,7 +355,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
                           {credit.name || <span className="italic text-gray-400">Sin nombre</span>}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {new Date(credit.createdAt).toLocaleDateString('es-PE')} · Pendiente S/ {credit.pendingAmount.toFixed(2)}
+                          {new Date(credit.createdAt).toLocaleDateString('es-PE')} · Pendiente {formatMoney(credit.pendingAmount, currency)}
                         </div>
                         {credit.saleDetails && credit.saleDetails.length > 0 && (
                           <div className="text-xs text-gray-400 truncate mt-0.5" title={
@@ -312,7 +371,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="relative">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">S/</span>
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">{symbol}</span>
                           <input
                             type="number"
                             step="0.01"
@@ -339,7 +398,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
             )}
             <div className="flex items-center justify-between pt-3 border-t border-gray-100">
               <span className="text-sm text-gray-500">Total a pagar</span>
-              <span className="text-xl font-bold text-primary-700">S/ {explicitTotal.toFixed(2)}</span>
+              <span className="text-xl font-bold text-primary-700">{formatMoney(explicitTotal, currency)}</span>
             </div>
           </div>
         ) : (
@@ -347,7 +406,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">S/</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">{symbol}</span>
                 <input
                   type="number"
                   step="0.01"
@@ -378,7 +437,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
                             </span>
                           )}
                         </span>
-                        <span className="font-medium text-primary-700">S/ {p.amount.toFixed(2)}</span>
+                        <span className="font-medium text-primary-700">{formatMoney(p.amount, currency)}</span>
                       </div>
                     );
                   })}
@@ -468,11 +527,49 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
           </div>
         </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Moneda recibida</label>
+            <div className="flex gap-1 p-1 bg-white rounded-lg border border-gray-200">
+              {(['PEN', 'USD'] as MoneyCurrency[]).map((cur) => (
+                <button
+                  key={cur}
+                  type="button"
+                  onClick={() => setPaymentCurrency(cur)}
+                  className={`flex-1 py-1.5 rounded-md text-sm font-semibold transition-colors ${
+                    paymentCurrency === cur ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {cur === 'USD' ? '$' : 'S/'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Tipo de cambio</label>
+            <input
+              type="number"
+              min="0.01"
+              step="0.001"
+              value={exchangeRate || ''}
+              onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
+              disabled={paymentCurrency === 'PEN' && currency === 'PEN'}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-semibold tabular-nums disabled:bg-gray-100 disabled:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Total recibido</div>
+            <div className="px-3 py-2 rounded-lg bg-white border border-gray-200 font-bold tabular-nums text-gray-800">
+              {paymentSymbol} {receivedTotal.toFixed(2)}
+            </div>
+          </div>
+        </div>
+
         {paymentMode === 'MIXED' && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
               <span className="text-xs font-semibold text-blue-800">
-                Total mixto: S/ {splitTotal.toFixed(2)} de S/ {paymentTotal.toFixed(2)}
+                Total mixto: {formatMoney(splitTotal, currency)} de {formatMoney(paymentTotal, currency)}
               </span>
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={fillSplitRemaining} className="text-xs px-2.5 py-1 rounded-md bg-white border border-blue-200 text-blue-700 hover:bg-blue-100 font-medium">
@@ -498,7 +595,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
                     ))}
                   </select>
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">S/</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">{symbol}</span>
                     <input
                       type="number"
                       step="0.01"

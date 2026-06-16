@@ -46,6 +46,78 @@ function getToday() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+function daysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function monthRange(year: number, month: number) {
+  const mm = String(month).padStart(2, '0');
+  return {
+    start: `${year}-${mm}-01`,
+    end: `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, '0')}`,
+  };
+}
+
+function isoToDisplayDate(value: string) {
+  const [year, month, day] = value.split('-');
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function formatDateDraft(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function displayToIsoDate(value: string) {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length !== 8) return null;
+  const day = Number(digits.slice(0, 2));
+  const month = Number(digits.slice(2, 4));
+  const year = Number(digits.slice(4, 8));
+  if (year < 2000 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function DateTextInput({ value, onChange, ariaLabel }: { value: string; onChange: (value: string) => void; ariaLabel: string }) {
+  const [draft, setDraft] = useState(isoToDisplayDate(value));
+
+  useEffect(() => {
+    setDraft(isoToDisplayDate(value));
+  }, [value]);
+
+  const commit = () => {
+    const next = displayToIsoDate(draft);
+    if (!next) {
+      setDraft(isoToDisplayDate(value));
+      toast.error(`Fecha inválida en ${ariaLabel.toLowerCase()}`);
+      return;
+    }
+    onChange(next);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      placeholder="dd/mm/aaaa"
+      value={draft}
+      onChange={(e) => setDraft(formatDateDraft(e.target.value))}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+          e.currentTarget.blur();
+        }
+      }}
+      className="px-3 py-2 border rounded-lg text-sm w-[132px]"
+      aria-label={ariaLabel}
+    />
+  );
+}
+
 interface PaymentSplit {
   paymentMethodId: string;
   amount: number;
@@ -122,6 +194,13 @@ export function SalesPage() {
   const setEndDate = (v: string) => updateParams({ endDate: v !== getToday() ? v : null, page: null, bPage: null, fPage: null, lPage: null });
   const setLoanStatusFilter = (v: string) => updateParams({ loanStatus: v || null, lPage: null });
   const resetDateFilter = () => updateParams({ startDate: null, endDate: null, page: null, bPage: null, fPage: null, lPage: null });
+  const selectedYear = Number((startDate || getToday()).slice(0, 4));
+  const selectedMonth = Number((startDate || getToday()).slice(5, 7));
+  const yearOptions = Array.from({ length: 8 }, (_, i) => new Date().getFullYear() - i);
+  const setDatePeriod = (year: number, month: number) => {
+    const range = monthRange(year, month);
+    updateParams({ startDate: range.start, endDate: range.end, page: null, bPage: null, fPage: null, lPage: null });
+  };
 
   const effectiveSellerId = isSellerRole ? user?.id : (sellerFilter || undefined);
   const [showModal, setShowModal] = useState(false);
@@ -267,8 +346,6 @@ export function SalesPage() {
 
   const getUnitPrice = (product: Product | undefined, tierId: string, companyId: string): number | undefined => {
     if (!product?.prices?.length) return undefined;
-    const companyPrice = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && p.companyId === companyId);
-    if (companyPrice) return companyPrice.price;
     const globalPrice = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId);
     return globalPrice?.price;
   };
@@ -933,9 +1010,36 @@ export function SalesPage() {
             <option value="RETURNED">Devuelto</option>
           </select>
         )}
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="px-3 py-2 border rounded-lg" />
+        <select
+          value={selectedYear}
+          onChange={(e) => setDatePeriod(Number(e.target.value), selectedMonth)}
+          className="px-3 py-2 border rounded-lg text-sm bg-white"
+          title="Año"
+        >
+          {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+        </select>
+        <select
+          value={selectedMonth}
+          onChange={(e) => setDatePeriod(selectedYear, Number(e.target.value))}
+          className="px-3 py-2 border rounded-lg text-sm bg-white"
+          title="Mes"
+        >
+          <option value={1}>Enero</option>
+          <option value={2}>Febrero</option>
+          <option value={3}>Marzo</option>
+          <option value={4}>Abril</option>
+          <option value={5}>Mayo</option>
+          <option value={6}>Junio</option>
+          <option value={7}>Julio</option>
+          <option value={8}>Agosto</option>
+          <option value={9}>Septiembre</option>
+          <option value={10}>Octubre</option>
+          <option value={11}>Noviembre</option>
+          <option value={12}>Diciembre</option>
+        </select>
+        <DateTextInput value={startDate} onChange={setStartDate} ariaLabel="Desde" />
         <span className="text-gray-500 text-sm">hasta</span>
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="px-3 py-2 border rounded-lg" />
+        <DateTextInput value={endDate} onChange={setEndDate} ariaLabel="Hasta" />
         {(startDate !== getMonthStart() || endDate !== getToday()) && (
           <button onClick={resetDateFilter} className="flex items-center gap-1 px-3 py-2 text-sm text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100">
             <CalendarDays size={14} /> Este mes

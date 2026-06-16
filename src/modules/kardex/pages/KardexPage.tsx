@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { useKardex } from '../hooks/useKardex';
+import { kardexService } from '../services/kardexService';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useStockByProductSummary } from '../../stock/hooks/useStock';
@@ -166,7 +167,7 @@ function KardexTab({ products, companyList }: SubProps) {
   if (startDate) params.startDate = startDate;
   if (endDate) params.endDate = endDate;
 
-  const { data: productLots } = useProductLotsByProduct(productIdParam || undefined);
+  const { data: productLots } = useProductLotsByProduct(productIdParam || undefined, companyId || undefined);
 
   const { data, isLoading } = useKardex(productIdParam ? params : undefined);
   const movementsRaw: StockMovement[] = productIdParam ? data?.data || [] : [];
@@ -408,6 +409,7 @@ function KardexTab({ products, companyList }: SubProps) {
         <ProductsListView
           products={products}
           companyList={companyList}
+          companyId={companyId}
           productSearch={productSearch}
           onSelect={setSelectedProductId}
         />
@@ -600,11 +602,12 @@ function KardexTab({ products, companyList }: SubProps) {
 interface ProductsListViewProps {
   products: Product[];
   companyList: Company[];
+  companyId: string;
   productSearch: string;
   onSelect: (id: string) => void;
 }
 
-function ProductsListView({ products, companyList, productSearch, onSelect }: ProductsListViewProps) {
+function ProductsListView({ products, companyList, companyId, productSearch, onSelect }: ProductsListViewProps) {
   const { data: stockSummary, isLoading: stockLoading } = useStockByProductSummary();
   const { data: laboratories } = useLaboratories();
   // Fetch all active lots with stock to find earliest upcoming expiration per product.
@@ -620,20 +623,28 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
     for (const l of laboratories as any[]) labById.set(l.id, l.name);
   }
 
-  const stockByProductId = new Map<string, number>();
   const stockByProductCompany = new Map<string, Map<string, number>>();
   for (const s of stockSummary || []) {
-    stockByProductId.set(s.productId, s.totalQuantity);
     const m = new Map<string, number>();
     for (const b of s.byCompany) m.set(b.companyId, b.quantity);
     stockByProductCompany.set(s.productId, m);
   }
+
+  const stockForProduct = (productId: string): number => {
+    const byCompany = stockByProductCompany.get(productId);
+    if (!byCompany) return 0;
+    if (companyId) return byCompany.get(companyId) ?? 0;
+    let total = 0;
+    for (const qty of byCompany.values()) total += qty;
+    return total;
+  };
 
   // Earliest (closest) upcoming expiration date per product.
   const earliestExpiryByProduct = new Map<string, string>();
   if (Array.isArray(lotsData)) {
     for (const lot of lotsData as any[]) {
       if (!lot.expirationDate || !lot.productId) continue;
+      if (companyId && lot.companyId !== companyId) continue;
       const prev = earliestExpiryByProduct.get(lot.productId);
       if (!prev || new Date(lot.expirationDate).getTime() < new Date(prev).getTime()) {
         earliestExpiryByProduct.set(lot.productId, lot.expirationDate);
@@ -642,11 +653,12 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
   }
 
   // Reset page when search/filter/sort changes.
-  React.useEffect(() => { setPage(1); }, [productSearch, sortBy, pageSize, labFilter]);
+  React.useEffect(() => { setPage(1); }, [productSearch, sortBy, pageSize, labFilter, companyId]);
 
   const filtered = products
     .filter((p) => {
       if (labFilter && (p as any).laboratoryId !== labFilter) return false;
+      if (companyId && stockForProduct(p.id) <= 0) return false;
       if (!productSearch) return true;
       const q = productSearch.toLowerCase();
       const labName = labById.get((p as any).laboratoryId || '') || '';
@@ -665,8 +677,8 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
         const lb = labById.get((b as any).laboratoryId || '') || '';
         return la.localeCompare(lb, 'es', { sensitivity: 'base' }) || (a.name || '').localeCompare(b.name || '', 'es');
       }
-      const sa = stockByProductId.get(a.id) ?? 0;
-      const sb = stockByProductId.get(b.id) ?? 0;
+      const sa = stockForProduct(a.id);
+      const sb = stockForProduct(b.id);
       return sortBy === 'saldo_desc' ? sb - sa : sa - sb;
     });
 
@@ -680,11 +692,31 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
     if (!m) return '';
     const parts: string[] = [];
     for (const [cid, qty] of m.entries()) {
+      if (companyId && cid !== companyId) continue;
       if (qty <= 0) continue;
       const cname = companyList.find((c) => c.id === cid)?.name || cid;
       parts.push(`${cname} (${qty})`);
     }
     return parts.join(' · ');
+  };
+
+  const exportProducts = () => {
+    const rows = filtered.map((p) => ({
+      Producto: p.name,
+      Saldo: stockForProduct(p.id),
+      Laboratorio: labById.get((p as any).laboratoryId || '') || '',
+      Almacenes: formatWarehouses(p.id),
+      Unidad: p.unit || '',
+      Vencimiento: earliestExpiryByProduct.get(p.id)
+        ? new Date(earliestExpiryByProduct.get(p.id)!).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        : '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{ wch: 36 }, { wch: 10 }, { wch: 24 }, { wch: 42 }, { wch: 12 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Productos Kardex');
+    const warehouse = companyId ? companyList.find((c) => c.id === companyId)?.name || companyId : 'todos_almacenes';
+    XLSX.writeFile(wb, `kardex_productos_${warehouse.replace(/[^\w.-]+/g, '_')}.xlsx`);
   };
 
   return (
@@ -731,7 +763,15 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          <button
+            type="button"
+            onClick={exportProducts}
+            disabled={stockLoading}
+            className="flex items-center gap-1 px-2 py-1 border border-primary-200 bg-primary-50 text-primary-700 rounded text-xs font-medium hover:bg-primary-100 disabled:opacity-60"
+          >
+            <Download size={13} /> Excel
+          </button>
           <div className="flex items-center gap-1">
             <span className="text-gray-500">Ordenar:</span>
             <select
@@ -782,7 +822,7 @@ function ProductsListView({ products, companyList, productSearch, onSelect }: Pr
               </tr>
             ) : (
               pageItems.map((p) => {
-                const saldo = stockByProductId.get(p.id) ?? 0;
+                const saldo = stockForProduct(p.id);
                 const labName = labById.get((p as any).laboratoryId || '') || '';
                 const expiry = earliestExpiryByProduct.get(p.id);
                 const expiryDays = expiry
@@ -883,6 +923,7 @@ function MovementsTab({ products, companyList }: SubProps) {
   const [movementType, setMovementType] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   const params: any = { page, limit: 25 };
   if (companyId) params.companyId = companyId;
@@ -920,6 +961,55 @@ function MovementsTab({ products, companyList }: SubProps) {
     setStartDate('');
     setEndDate('');
     setPage(1);
+  };
+
+  const handleExportAllKardex = async () => {
+    setExporting(true);
+    try {
+      const exportParams: any = { ...params, page: 1, limit: 100000 };
+      const result = await kardexService.getMovements(exportParams);
+      const rows: StockMovement[] = result?.data || [];
+      const exportRows = rows.map((item) => {
+        const info = MOVEMENT_LABELS[item.movementType];
+        const isEntry = info?.isEntry;
+        const unitPrice = typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : undefined;
+        return {
+          Fecha: new Date(item.date).toLocaleString('es-PE', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          Producto: getProductName(item.productId),
+          Almacen: getCompanyName(item.companyId),
+          Tipo: info?.label || item.movementType,
+          Entrada: isEntry ? item.quantity : '',
+          Salida: !isEntry ? item.quantity : '',
+          'Stock anterior': item.previousStock,
+          'Stock nuevo': item.newStock,
+          Precio: unitPrice ?? '',
+          Subtotal: unitPrice ? unitPrice * item.quantity : '',
+          Descripcion: item.displayDescription || item.description,
+        };
+      });
+      const ws = XLSX.utils.json_to_sheet(exportRows);
+      ws['!cols'] = [
+        { wch: 18 }, { wch: 36 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 10 },
+        { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 48 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Kardex');
+      const suffix = [
+        companyId ? getCompanyName(companyId) : 'todos_almacenes',
+        selectedProductId ? getProductName(selectedProductId) : 'todos_productos',
+        startDate || 'inicio',
+        endDate || 'hoy',
+      ].join('_').replace(/[^\w.-]+/g, '_');
+      XLSX.writeFile(wb, `kardex_${suffix}.xlsx`);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const columns = [
@@ -1140,7 +1230,15 @@ function MovementsTab({ products, companyList }: SubProps) {
           />
         </div>
       </div>
-      <div className="flex justify-end mb-2">
+      <div className="flex items-center justify-end gap-2 mb-2">
+        <button
+          type="button"
+          onClick={handleExportAllKardex}
+          disabled={exporting}
+          className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100 disabled:opacity-60"
+        >
+          <Download size={14} /> {exporting ? 'Generando...' : 'Descargar Kardex Excel'}
+        </button>
         <button onClick={resetFilters} className="text-sm text-gray-500 hover:text-gray-700 underline">
           Limpiar filtros
         </button>
