@@ -47,6 +47,12 @@ interface BulkProduct {
 
 type DisplayProductPrice = { priceTierId: string; companyId?: string; price: number; companyName?: string };
 
+const productCategoryId = (product: Product) =>
+  product.categoryId || (product as any).category?.id || (product as any).category?._id || '';
+
+const productLaboratoryId = (product: Product) =>
+  product.laboratoryId || (product as any).laboratory?.id || (product as any).laboratory?._id || '';
+
 export function ProductsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
@@ -79,11 +85,6 @@ export function ProductsPage() {
   const { data, isLoading } = useProducts({
     page: hasProductFilters ? 1 : page,
     limit: hasProductFilters ? 10000 : 20,
-    search: debouncedSearch || undefined,
-    activeIngredient: debouncedIngredient || undefined,
-    laboratoryId: laboratoryFilter || undefined,
-    categoryId: categoryFilter || undefined,
-    category: categoryFilter || undefined,
   });
   const { data: priceTiers } = usePriceTiers();
   const { data: categories } = useCategories();
@@ -525,8 +526,8 @@ export function ProductsPage() {
     return rawProducts.filter((p) => {
       if (q && !p.name.toLowerCase().includes(q)) return false;
       if (ingredient && !(p.activeIngredient || '').toLowerCase().includes(ingredient)) return false;
-      if (categoryFilter && p.categoryId !== categoryFilter) return false;
-      if (laboratoryFilter && (p.laboratoryId || '') !== laboratoryFilter) return false;
+      if (categoryFilter && productCategoryId(p) !== categoryFilter) return false;
+      if (laboratoryFilter && productLaboratoryId(p) !== laboratoryFilter) return false;
       return true;
     });
   }, [rawProducts, debouncedSearch, debouncedIngredient, categoryFilter, laboratoryFilter]);
