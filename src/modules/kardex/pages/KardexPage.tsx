@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { useKardex } from '../hooks/useKardex';
+import { kardexService } from '../services/kardexService';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useStockByProductSummary } from '../../stock/hooks/useStock';
@@ -166,7 +167,7 @@ function KardexTab({ products, companyList }: SubProps) {
   if (startDate) params.startDate = startDate;
   if (endDate) params.endDate = endDate;
 
-  const { data: productLots } = useProductLotsByProduct(productIdParam || undefined);
+  const { data: productLots } = useProductLotsByProduct(productIdParam || undefined, companyId || undefined);
 
   const { data, isLoading } = useKardex(productIdParam ? params : undefined);
   const movementsRaw: StockMovement[] = productIdParam ? data?.data || [] : [];
@@ -883,6 +884,7 @@ function MovementsTab({ products, companyList }: SubProps) {
   const [movementType, setMovementType] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   const params: any = { page, limit: 25 };
   if (companyId) params.companyId = companyId;
@@ -920,6 +922,55 @@ function MovementsTab({ products, companyList }: SubProps) {
     setStartDate('');
     setEndDate('');
     setPage(1);
+  };
+
+  const handleExportAllKardex = async () => {
+    setExporting(true);
+    try {
+      const exportParams: any = { ...params, page: 1, limit: 100000 };
+      const result = await kardexService.getMovements(exportParams);
+      const rows: StockMovement[] = result?.data || [];
+      const exportRows = rows.map((item) => {
+        const info = MOVEMENT_LABELS[item.movementType];
+        const isEntry = info?.isEntry;
+        const unitPrice = typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : undefined;
+        return {
+          Fecha: new Date(item.date).toLocaleString('es-PE', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          Producto: getProductName(item.productId),
+          Almacen: getCompanyName(item.companyId),
+          Tipo: info?.label || item.movementType,
+          Entrada: isEntry ? item.quantity : '',
+          Salida: !isEntry ? item.quantity : '',
+          'Stock anterior': item.previousStock,
+          'Stock nuevo': item.newStock,
+          Precio: unitPrice ?? '',
+          Subtotal: unitPrice ? unitPrice * item.quantity : '',
+          Descripcion: item.displayDescription || item.description,
+        };
+      });
+      const ws = XLSX.utils.json_to_sheet(exportRows);
+      ws['!cols'] = [
+        { wch: 18 }, { wch: 36 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 10 },
+        { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 48 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Kardex');
+      const suffix = [
+        companyId ? getCompanyName(companyId) : 'todos_almacenes',
+        selectedProductId ? getProductName(selectedProductId) : 'todos_productos',
+        startDate || 'inicio',
+        endDate || 'hoy',
+      ].join('_').replace(/[^\w.-]+/g, '_');
+      XLSX.writeFile(wb, `kardex_${suffix}.xlsx`);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const columns = [
@@ -1140,7 +1191,15 @@ function MovementsTab({ products, companyList }: SubProps) {
           />
         </div>
       </div>
-      <div className="flex justify-end mb-2">
+      <div className="flex items-center justify-end gap-2 mb-2">
+        <button
+          type="button"
+          onClick={handleExportAllKardex}
+          disabled={exporting}
+          className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100 disabled:opacity-60"
+        >
+          <Download size={14} /> {exporting ? 'Generando...' : 'Descargar Kardex Excel'}
+        </button>
         <button onClick={resetFilters} className="text-sm text-gray-500 hover:text-gray-700 underline">
           Limpiar filtros
         </button>

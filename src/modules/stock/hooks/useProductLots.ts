@@ -9,10 +9,10 @@ export function useProductLots(companyId: string, productId?: string) {
   });
 }
 
-export function useProductLotsByProduct(productId?: string) {
+export function useProductLotsByProduct(productId?: string, companyId?: string) {
   return useQuery({
-    queryKey: ['product-lots-by-product', productId],
-    queryFn: () => productLotService.getByProduct(productId!),
+    queryKey: ['product-lots-by-product', productId, companyId || null],
+    queryFn: () => productLotService.getByProduct(productId!, companyId),
     enabled: !!productId,
   });
 }
