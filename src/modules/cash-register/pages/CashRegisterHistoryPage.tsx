@@ -56,6 +56,12 @@ function formatTime(iso?: string) {
   catch { return '—'; }
 }
 
+function formatDDMMYYYY(date?: string) {
+  if (!date) return '';
+  const [y, m, d] = date.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 function formatPrettyDate(date?: string) {
   if (!date) return '';
   try {
@@ -185,12 +191,7 @@ export function CashRegisterHistoryPage() {
   };
   const goToSale = (saleId: string) => navigate(`/sales?openSaleId=${saleId}`);
 
-  const detailEntries: CashRegisterEntry[] = (detail?.entries || []).filter((e: CashRegisterEntry) => {
-    if (e.isDeleted) return false;
-    if (methodFilter && methodFromDescription(e.description) !== methodFilter) return false;
-    if (vendorFilter && e.createdBy !== vendorFilter) return false;
-    return true;
-  });
+  const detailEntries: CashRegisterEntry[] = (detail?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted);
   const detailGroups = useMemo(() => groupEntries(detailEntries), [detailEntries]);
 
   const detailMethodTotals = useMemo(() => {
@@ -501,7 +502,7 @@ export function CashRegisterHistoryPage() {
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
 
       {/* Detail modal */}
-      <Modal isOpen={showDetail} onClose={() => setShowDetail(false)} title={`Detalle · ${detail?.date || ''}`} size="xl">
+      <Modal isOpen={showDetail} onClose={() => setShowDetail(false)} title={`Detalle · ${formatDDMMYYYY(detail?.date)}`} size="xl">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${detail?.status === 'CLOSED' ? 'bg-gray-100 text-gray-600' : 'bg-emerald-100 text-emerald-700'}`}>
