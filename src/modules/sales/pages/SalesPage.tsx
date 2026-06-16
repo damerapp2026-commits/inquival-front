@@ -58,6 +58,66 @@ function monthRange(year: number, month: number) {
   };
 }
 
+function isoToDisplayDate(value: string) {
+  const [year, month, day] = value.split('-');
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function formatDateDraft(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function displayToIsoDate(value: string) {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length !== 8) return null;
+  const day = Number(digits.slice(0, 2));
+  const month = Number(digits.slice(2, 4));
+  const year = Number(digits.slice(4, 8));
+  if (year < 2000 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function DateTextInput({ value, onChange, ariaLabel }: { value: string; onChange: (value: string) => void; ariaLabel: string }) {
+  const [draft, setDraft] = useState(isoToDisplayDate(value));
+
+  useEffect(() => {
+    setDraft(isoToDisplayDate(value));
+  }, [value]);
+
+  const commit = () => {
+    const next = displayToIsoDate(draft);
+    if (!next) {
+      setDraft(isoToDisplayDate(value));
+      toast.error(`Fecha inválida en ${ariaLabel.toLowerCase()}`);
+      return;
+    }
+    onChange(next);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      placeholder="dd/mm/aaaa"
+      value={draft}
+      onChange={(e) => setDraft(formatDateDraft(e.target.value))}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+          e.currentTarget.blur();
+        }
+      }}
+      className="px-3 py-2 border rounded-lg text-sm w-[132px]"
+      aria-label={ariaLabel}
+    />
+  );
+}
+
 interface PaymentSplit {
   paymentMethodId: string;
   amount: number;
@@ -977,9 +1037,9 @@ export function SalesPage() {
           <option value={11}>Noviembre</option>
           <option value={12}>Diciembre</option>
         </select>
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="px-3 py-2 border rounded-lg text-sm min-w-[150px]" aria-label="Desde" />
+        <DateTextInput value={startDate} onChange={setStartDate} ariaLabel="Desde" />
         <span className="text-gray-500 text-sm">hasta</span>
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="px-3 py-2 border rounded-lg text-sm min-w-[150px]" aria-label="Hasta" />
+        <DateTextInput value={endDate} onChange={setEndDate} ariaLabel="Hasta" />
         {(startDate !== getMonthStart() || endDate !== getToday()) && (
           <button onClick={resetDateFilter} className="flex items-center gap-1 px-3 py-2 text-sm text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100">
             <CalendarDays size={14} /> Este mes
