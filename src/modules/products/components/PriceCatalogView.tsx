@@ -178,18 +178,13 @@ export function PriceCatalogView({ enabled }: Props) {
     if (!p.prices?.length) return {};
     for (const t of preferredSaleTiers) {
       const tierPrices = p.prices.filter((px: any) => px.priceTierId === t.id && px.price > 0);
-      const found = tierPrices.find((px: any) => px.companyId) || tierPrices.find((px: any) => !px.companyId);
+      const found = tierPrices.find((px: any) => !px.companyId);
       if (found) return { price: found.price, tierName: t.name };
     }
     const anyGlobal = p.prices.find((px: any) => !px.companyId && px.price > 0);
     if (anyGlobal) {
       const tier: any = tiersById.get(anyGlobal.priceTierId);
       return { price: anyGlobal.price, tierName: tier?.name };
-    }
-    const anyPrice = p.prices.find((px: any) => px.price > 0);
-    if (anyPrice) {
-      const tier: any = tiersById.get(anyPrice.priceTierId);
-      return { price: anyPrice.price, tierName: tier?.name };
     }
     return {};
   };

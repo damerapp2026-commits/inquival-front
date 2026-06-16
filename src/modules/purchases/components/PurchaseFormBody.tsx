@@ -238,9 +238,6 @@ export function PurchaseFormBody({
     for (const tier of sortedActivePriceTiers) {
       if (prices.some((p: any) => p.priceTierId === tier.id && !p.companyId && p.price > 0)) return tier.id;
     }
-    for (const tier of sortedActivePriceTiers) {
-      if (prices.some((p: any) => p.priceTierId === tier.id && p.price > 0)) return tier.id;
-    }
     return sortedActivePriceTiers[0]?.id || '';
   };
 
@@ -281,8 +278,7 @@ export function PurchaseFormBody({
     }
     const anyGlobal = prod.prices.find((px: any) => !px.companyId && px.price > 0);
     if (anyGlobal) return anyGlobal.price;
-    const anyPrice = prod.prices.find((px: any) => px.price > 0);
-    return anyPrice?.price || 0;
+    return 0;
   };
 
   const updateItem = (idx: number, field: string, value: any) => setForm(prev => {

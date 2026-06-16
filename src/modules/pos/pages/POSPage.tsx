@@ -127,13 +127,8 @@ function productInitials(name: string): string {
 
 function resolvePrice(product: Product, tierId: string, companyId: string): number | undefined {
   if (!product.prices?.length) return undefined;
-  const byCompany = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && p.companyId === companyId);
-  if (byCompany) return byCompany.price;
   const global = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId);
-  if (global) return global.price;
-  // Fallback: any price for this tier regardless of company
-  const anyForTier = product.prices.find((p: ProductPrice) => p.priceTierId === tierId);
-  return anyForTier?.price;
+  return global?.price;
 }
 
 export function POSPage() {

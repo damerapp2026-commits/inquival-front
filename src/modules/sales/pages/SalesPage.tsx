@@ -267,8 +267,6 @@ export function SalesPage() {
 
   const getUnitPrice = (product: Product | undefined, tierId: string, companyId: string): number | undefined => {
     if (!product?.prices?.length) return undefined;
-    const companyPrice = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && p.companyId === companyId);
-    if (companyPrice) return companyPrice.price;
     const globalPrice = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId);
     return globalPrice?.price;
   };

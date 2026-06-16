@@ -41,10 +41,7 @@ interface CartPreload {
 
 function resolvePrice(product: Product, tierId: string): number | undefined {
   if (!product.prices?.length) return undefined;
-  return (
-    product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId)?.price ??
-    product.prices.find((p: ProductPrice) => p.priceTierId === tierId)?.price
-  );
+  return product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId)?.price;
 }
 
 export function NewQuotePage() {

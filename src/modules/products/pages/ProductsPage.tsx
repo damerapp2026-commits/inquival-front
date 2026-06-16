@@ -30,8 +30,6 @@ const TAX_TYPES = [
   { value: 'EXONERADO', label: 'Exonerado' },
   { value: 'INAFECTO', label: 'Inafecto' },
 ];
-const ALL_PRICE_COMPANIES = '__ALL__';
-
 interface BulkProduct {
   name: string;
   description: string;
@@ -46,6 +44,18 @@ interface BulkProduct {
 }
 
 type DisplayProductPrice = { priceTierId: string; companyId?: string; price: number; companyName?: string };
+
+const globalPricesOnly = (prices: { priceTierId: string; companyId?: string; price: number }[] = []) => {
+  const byTier = new Map<string, { priceTierId: string; price: number }>();
+  for (const price of prices) {
+    if (!price.priceTierId) continue;
+    const current = byTier.get(price.priceTierId);
+    if (!current || !price.companyId) {
+      byTier.set(price.priceTierId, { priceTierId: price.priceTierId, price: Number(price.price) || 0 });
+    }
+  }
+  return Array.from(byTier.values());
+};
 
 const productCategoryId = (product: Product) =>
   product.categoryId || (product as any).category?.id || (product as any).category?._id || '';
@@ -78,7 +88,6 @@ export function ProductsPage() {
   const debouncedIngredient = useDebounce(activeIngredientFilter);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
-  const [priceCompanyFilter, setPriceCompanyFilter] = useState(ALL_PRICE_COMPANIES);
 
   const queryClient = useQueryClient();
   const hasProductFilters = !!(debouncedSearch || debouncedIngredient || laboratoryFilter || categoryFilter);
@@ -109,7 +118,6 @@ export function ProductsPage() {
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [pricesTab, setPricesTab] = useState<string>('');
   const imageInputRef = useRef<HTMLInputElement>(null);
   const allUnits: { value: string; label: string }[] = Array.isArray(unitsData)
     ? unitsData.filter((u: any) => u.isActive).map((u: any) => ({ value: u.name, label: u.abbreviation ? `${u.name} (${u.abbreviation})` : u.name }))
@@ -119,8 +127,8 @@ export function ProductsPage() {
   const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', laboratoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', prices: [], initialStocks: [], expanded: true });
 
 
-  const openCreate = () => { setEditing(null); const firstComp = comps.find((c: any) => c.isActive); setPricesTab(firstComp?.id || ''); setForm({ name: '', description: '', categoryId: '', laboratoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [], initialStocks: [], commissions: [] }); setShowModal(true); };
-  const openEdit = (product: Product) => { setEditing(product); const firstComp = comps.find((c: any) => c.isActive); setPricesTab(firstComp?.id || ''); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, laboratoryId: product.laboratoryId || '', unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, imageUrl: product.imageUrl || '', prices: product.prices || [], initialStocks: [], commissions: product.commissions || [] }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', laboratoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [], initialStocks: [], commissions: [] }); setShowModal(true); };
+  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, laboratoryId: product.laboratoryId || '', unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, imageUrl: product.imageUrl || '', prices: globalPricesOnly(product.prices || []), initialStocks: [], commissions: product.commissions || [] }); setShowModal(true); };
   const openBulk = () => { setBulkProducts([emptyBulkProduct()]); setShowBulkModal(true); };
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -146,10 +154,10 @@ export function ProductsPage() {
     const cleanCommissions = form.commissions.filter((c) => c.workerId && c.value > 0);
     if (editing) {
       const { initialStocks, ...editData } = form;
-      const editPayload: any = { ...editData, commissions: cleanCommissions, imageUrl: form.imageUrl || null, laboratoryId: form.laboratoryId || null };
+      const editPayload: any = { ...editData, prices: globalPricesOnly(form.prices), commissions: cleanCommissions, imageUrl: form.imageUrl || null, laboratoryId: form.laboratoryId || null };
       await updateProduct.mutateAsync({ id: editing.id, data: editPayload });
     } else {
-      const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, activeIngredient: form.activeIngredient || undefined, taxType: form.taxType, tracksLot: form.tracksLot, prices: form.prices };
+      const payload: any = { name: form.name, description: form.description, categoryId: form.categoryId, unit: form.unit, activeIngredient: form.activeIngredient || undefined, taxType: form.taxType, tracksLot: form.tracksLot, prices: globalPricesOnly(form.prices) };
       if (cleanCommissions.length > 0) payload.commissions = cleanCommissions;
       if (form.laboratoryId) payload.laboratoryId = form.laboratoryId;
       if (form.imageUrl) payload.imageUrl = form.imageUrl;
@@ -516,9 +524,6 @@ export function ProductsPage() {
   const labs = Array.isArray(laboratories) ? laboratories : [];
   const labsById = new Map<string, any>(labs.map((l: any) => [l.id, l]));
   const comps = Array.isArray(companies) ? companies : [];
-  const activeComps = comps.filter((c: any) => c.isActive);
-  const activeCompIds = new Set(activeComps.map((c: any) => c.id));
-  const compNameById = new Map<string, string>(activeComps.map((c: any) => [c.id, c.name]));
 
   const products = React.useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
@@ -539,20 +544,12 @@ export function ProductsPage() {
   );
 
   const getPricesForDisplay = (product: Product): DisplayProductPrice[] => {
-    if (priceCompanyFilter === ALL_PRICE_COMPANIES) {
-      return tiers.flatMap((t: any) =>
-        (product.prices || [])
-          .filter((p) => p.priceTierId === t.id && (!p.companyId || activeCompIds.has(p.companyId)))
-          .map((p) => ({ ...p, companyName: p.companyId ? compNameById.get(p.companyId) : 'Global' })),
-      );
-    }
     return tiers.map((t: any) =>
-      product.prices?.find(p => p.priceTierId === t.id && p.companyId === priceCompanyFilter)
-      || product.prices?.find(p => p.priceTierId === t.id && !p.companyId)
+      product.prices?.find(p => p.priceTierId === t.id && !p.companyId)
       || null
     )
       .filter((p): p is DisplayProductPrice => p != null)
-      .map((p) => ({ ...p, companyName: p.companyId ? compNameById.get(p.companyId) : 'Global' }));
+      .map((p) => ({ ...p, companyName: 'Global' }));
   };
 
   const columns = [
@@ -572,7 +569,6 @@ export function ProductsPage() {
     { key: 'prices', header: 'Precio', render: (item: Product) => {
       const displayPrices = getPricesForDisplay(item);
       const single = displayPrices.length === 1;
-      const showCompany = priceCompanyFilter === ALL_PRICE_COMPANIES;
       return (
         <div className="text-xs space-y-1">
           {displayPrices.map((p) => {
@@ -580,7 +576,6 @@ export function ProductsPage() {
             return (
               <div key={`${p.priceTierId}-${p.companyId}`} className="whitespace-nowrap">
                 {!single && <span className="font-medium">{tier?.name || 'N/A'}: </span>}
-                {showCompany && <span className="text-gray-400">{p.companyName ? `${p.companyName}: ` : ''}</span>}
                 <span className={single ? 'font-semibold text-gray-800 text-sm tabular-nums' : 'tabular-nums'}>S/ {p.price.toFixed(2)}</span>
               </div>
             );
@@ -697,14 +692,6 @@ export function ProductsPage() {
         </select>
         <LabCombobox labs={labs} value={laboratoryFilter} onChange={(id) => { setLaboratoryFilter(id); setPage(1); }} placeholder="Todos los laboratorios" emptyLabel="Todos los laboratorios" className="" />
       </div>
-      {activeComps.length > 1 && (
-        <div className="mb-4">
-          <select value={priceCompanyFilter} onChange={(e) => setPriceCompanyFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm bg-white">
-            <option value={ALL_PRICE_COMPANIES}>Precios: Todos los almacenes</option>
-            {activeComps.map((c: any) => <option key={c.id} value={c.id}>Precios: {c.name}</option>)}
-          </select>
-        </div>
-      )}
       <DataTable columns={columns} data={products} isLoading={isLoading} compact />
       <Pagination page={page} totalPages={hasProductFilters ? 1 : Math.ceil(total / 20)} onPageChange={setPage} />
       </>)}
@@ -834,37 +821,20 @@ export function ProductsPage() {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Precios</h3>
               </div>
 
-              {comps.filter((c: any) => c.isActive).length > 0 ? (
-                <>
-                  {comps.filter((c: any) => c.isActive).length > 1 && (
-                    <div className="flex flex-wrap gap-1.5 mb-3 border-b border-gray-200">
-                      {comps.filter((c: any) => c.isActive).map((c: any) => (
-                        <button key={c.id} type="button" onClick={() => setPricesTab(c.id)} className={`px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors ${pricesTab === c.id ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                          {c.name}
-                        </button>
-                      ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {tiers.map((tier: any) => {
+                  const value = form.prices.find((p) => p.priceTierId === tier.id && !p.companyId)?.price || '';
+                  return (
+                    <div key={tier.id} className="flex items-center gap-3 px-3 py-2 border border-gray-200 rounded-xl bg-white">
+                      <span className="text-sm flex-1 truncate text-gray-700">{tier.name}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-400">S/</span>
+                        <input type="number" step="0.01" min="0" placeholder="0.00" value={value} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0)} className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                      </div>
                     </div>
-                  )}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {tiers.map((tier: any) => {
-                      const value = form.prices.find((p) => p.priceTierId === tier.id && p.companyId === pricesTab)?.price || '';
-                      return (
-                        <div key={tier.id} className="flex items-center gap-3 px-3 py-2 border border-gray-200 rounded-xl bg-white">
-                          <span className="text-sm flex-1 truncate text-gray-700">{tier.name}</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-400">S/</span>
-                            <input type="number" step="0.01" min="0" placeholder="0.00" value={value} onChange={(e) => handlePriceChange(tier.id, parseFloat(e.target.value) || 0, pricesTab)} className="w-24 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              ) : (
-                <div className="px-4 py-3 border border-dashed border-gray-300 rounded-xl bg-gray-50 text-xs text-gray-500">
-                  Aún no hay almacenes activos. Creá un almacén para poder asignarle precios.
-                </div>
-              )}
+                  );
+                })}
+              </div>
             </section>
           )}
 
