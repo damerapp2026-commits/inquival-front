@@ -947,7 +947,7 @@ export function StockPage() {
             const s = summaryByProductId.get(p.id);
             return { productId: p.id, _name: p.name, totalQuantity: s?.totalQuantity ?? 0, byCompany: s?.byCompany ?? [] };
           })
-          .sort((a, b) => a._name.localeCompare(b._name, 'es', { sensitivity: 'base' }));
+          .sort((a: StockRow, b: StockRow) => a._name.localeCompare(b._name, 'es', { sensitivity: 'base' }));
         return (
           <>
             <div className="mb-3 relative max-w-sm">
