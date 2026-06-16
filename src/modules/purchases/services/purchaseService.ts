@@ -17,6 +17,7 @@ export interface UpdatePurchaseFullPayload {
   totalCost?: number;
   totalCostUsd?: number;
   paymentType?: 'CONTADO' | 'CREDITO';
+  paymentMethodId?: string;
   paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS';
   dueDate?: string;
   installments?: { amount: number; dueDate: string }[];

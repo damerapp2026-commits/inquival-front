@@ -9,6 +9,7 @@ import { useUnits } from '../../units/hooks/useUnits';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
 import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities';
+import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import { useCashRegisterToday } from '../../cash-register/hooks/useCashRegister';
 import { Modal } from '../../../shared/components/Modal';
@@ -18,7 +19,7 @@ import {
   Trash2, Loader2, DollarSign, PackagePlus, FileText, CopyIcon, Dices, Wand2,
   Building2, CreditCard, Package, FlaskConical, CheckCircle, Truck, Percent,
 } from 'lucide-react';
-import type { Company, Product, Category, Laboratory } from '../../../shared/types';
+import type { Company, Product, Category, Laboratory, PaymentMethod } from '../../../shared/types';
 import toast from 'react-hot-toast';
 import {
   blurOnWheel,
@@ -90,6 +91,7 @@ export interface PurchaseSubmitPayload {
   grDate?: string;
   date: string;
   paymentType: 'CONTADO' | 'CREDITO' | 'BONIFICACION';
+  paymentMethodId?: string;
   addToStock?: boolean;
   paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS';
   detraccion?: boolean;
@@ -136,11 +138,15 @@ export function PurchaseFormBody({
   const supplierByRuc = useSupplierByRuc();
   const createSupplier = useCreateSupplier();
   const { data: cashRegisterToday } = useCashRegisterToday();
+  const { data: paymentMethodsData } = usePaymentMethods();
   const { data: categoriesData } = useCategories();
   const { data: laboratoriesData } = useLaboratories();
   const { data: unitsData } = useUnits();
   const { data: priceTiersData } = usePriceTiers();
   const priceTiers: any[] = Array.isArray(priceTiersData) ? priceTiersData : [];
+  const paymentMethods: PaymentMethod[] = Array.isArray(paymentMethodsData)
+    ? paymentMethodsData.filter((m: PaymentMethod) => m.isActive !== false)
+    : [];
   const allUnits: { value: string; label: string }[] = Array.isArray(unitsData)
     ? unitsData.filter((u: any) => u.isActive).map((u: any) => ({ value: u.name, label: u.abbreviation ? `${u.name} (${u.abbreviation})` : u.name }))
     : [];
@@ -184,6 +190,12 @@ export function PurchaseFormBody({
       originalTotalUsd: initial.originalTotalUsd,
     });
   }, [currency, exchangeRate, exchangeRateDate, form, initial.originalTotal, initial.originalTotalUsd, onDraftChange]);
+
+  useEffect(() => {
+    if (form.paymentType !== 'CONTADO' || form.paymentMethodId || paymentMethods.length === 0) return;
+    const defaultMethod = paymentMethods.find((m) => m.name.toLowerCase() === 'efectivo') || paymentMethods[0];
+    setForm((prev) => prev.paymentMethodId ? prev : { ...prev, paymentMethodId: defaultMethod.id });
+  }, [form.paymentMethodId, form.paymentType, paymentMethods]);
   const [labResolving, setLabResolving] = useState(false);
   const [installmentGen, setInstallmentGen] = useState(() => ({
     count: initial.state.installments.length || 6,
@@ -465,6 +477,10 @@ export function PurchaseFormBody({
       toast.error('La caja del día está cerrada. No se pueden registrar compras al contado.');
       return;
     }
+    if (form.paymentType === 'CONTADO' && !form.paymentMethodId) {
+      toast.error('Selecciona el método de pago');
+      return;
+    }
     if (!form.supplier.trim()) { toast.error('Selecciona un laboratorio'); return; }
     const hasValidItems = form.items.some(i => i.productId && i.quantity > 0);
     if (!hasValidItems) { toast.error('Agrega al menos un producto con cantidad mayor a 0'); return; }
@@ -514,6 +530,7 @@ export function PurchaseFormBody({
         ...(i.expirationDate ? { expirationDate: i.expirationDate } : {}),
       })),
       paymentType: form.paymentType,
+      paymentMethodId: form.paymentType === 'CONTADO' ? form.paymentMethodId : undefined,
       date: form.purchaseDate,
       currency,
     };
@@ -1013,6 +1030,28 @@ export function PurchaseFormBody({
               <button type="button" onClick={() => setForm({ ...form, paymentType: 'BONIFICACION', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], addToStock: form.addToStock ?? true })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'BONIFICACION' ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Bonificación</button>
             </div>
           </div>
+
+          {form.paymentType === 'CONTADO' && (
+            <div className="mt-3 bg-primary-50 border border-primary-100 rounded-lg p-3">
+              <label className="block text-xs font-medium text-primary-800 mb-1">
+                Método de pago <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={form.paymentMethodId}
+                onChange={(e) => setForm({ ...form, paymentMethodId: e.target.value })}
+                className="w-full px-3 py-2 border border-primary-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400"
+                required
+              >
+                <option value="">Seleccionar método...</option>
+                {paymentMethods.map((method) => (
+                  <option key={method.id} value={method.id}>{method.name}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-primary-600 mt-1">
+                Se registrará en caja con este método para el detalle del día.
+              </p>
+            </div>
+          )}
 
           {form.paymentType === 'BONIFICACION' && (
             <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg p-3">

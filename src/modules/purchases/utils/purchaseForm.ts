@@ -103,6 +103,7 @@ export interface PurchaseFormState {
   supplierId: string;
   laboratoryId: string;
   paymentType: 'CONTADO' | 'CREDITO' | 'BONIFICACION';
+  paymentMethodId: string;
   addToStock: boolean;
   paymentScheduleType: 'SINGLE_DATE' | 'INSTALLMENTS';
   detraccion: boolean;
@@ -227,6 +228,7 @@ export function purchaseToFormState(purchase: Purchase, products: Product[]): Pu
     supplierId: purchase.supplierId || '',
     laboratoryId: (purchase as any).laboratoryId || '',
     paymentType: purchase.paymentType,
+    paymentMethodId: (purchase as any).paymentMethodId || '',
     addToStock: purchase.addToStock !== false,
     paymentScheduleType: purchase.paymentScheduleType || 'SINGLE_DATE',
     detraccion: purchase.detraccion || false,
@@ -266,6 +268,7 @@ export function buildInitialCreate(today: string): PurchaseInitial {
       supplierId: '',
       laboratoryId: '',
       paymentType: 'CONTADO',
+      paymentMethodId: '',
       addToStock: true,
       paymentScheduleType: 'SINGLE_DATE',
       detraccion: false,

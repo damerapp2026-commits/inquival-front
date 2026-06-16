@@ -94,6 +94,7 @@ export function EditPurchasePage() {
       date: payload.date,
       currency: payload.currency,
       paymentType: payload.paymentType,
+      paymentMethodId: payload.paymentMethodId,
       items: payload.items,
     };
     if (payload.currency === 'USD') {

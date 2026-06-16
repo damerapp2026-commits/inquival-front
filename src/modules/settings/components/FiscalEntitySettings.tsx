@@ -104,7 +104,12 @@ export function FiscalEntitySettings() {
     if (editing) {
       await updateMutation.mutateAsync({ id: editing.id, payload: form });
     } else {
-      await createMutation.mutateAsync(form);
+      await createMutation.mutateAsync({
+        legalName: form.legalName,
+        ruc: form.ruc,
+        address: form.address,
+        isDefault: form.isDefault,
+      });
     }
     closeForm();
   };
