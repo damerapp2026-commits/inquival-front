@@ -160,6 +160,15 @@ export function PriceCatalogView({ enabled }: Props) {
     [priceTiers],
   );
 
+  const preferredSaleTiers = useMemo(() => {
+    const tierName = (tier: any) => String(tier?.name || '').toLowerCase();
+    const distributor = sortedTiers.filter((tier: any) => tierName(tier).includes('distribuidor'));
+    const farmer = sortedTiers.filter((tier: any) => tierName(tier).includes('agricultor'));
+    const prioritized = new Set([...distributor, ...farmer].map((tier: any) => tier.id));
+    const others = sortedTiers.filter((tier: any) => !prioritized.has(tier.id));
+    return [...distributor, ...farmer, ...others];
+  }, [sortedTiers]);
+
   const tiersById = useMemo(
     () => new Map(priceTiers.map((t: any) => [t.id, t])),
     [priceTiers],
@@ -167,8 +176,9 @@ export function PriceCatalogView({ enabled }: Props) {
 
   const lookupStoredPrice = (p: Product): { price?: number; tierName?: string } => {
     if (!p.prices?.length) return {};
-    for (const t of sortedTiers) {
-      const found = p.prices.find((px: any) => px.priceTierId === t.id && !px.companyId && px.price > 0);
+    for (const t of preferredSaleTiers) {
+      const tierPrices = p.prices.filter((px: any) => px.priceTierId === t.id && px.price > 0);
+      const found = tierPrices.find((px: any) => px.companyId) || tierPrices.find((px: any) => !px.companyId);
       if (found) return { price: found.price, tierName: t.name };
     }
     const anyGlobal = p.prices.find((px: any) => !px.companyId && px.price > 0);
@@ -235,7 +245,7 @@ export function PriceCatalogView({ enabled }: Props) {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, catalogByProduct, labsById, sortedTiers, tiersById, stockByProduct]);
+  }, [products, catalogByProduct, labsById, preferredSaleTiers, tiersById, stockByProduct]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();

@@ -436,11 +436,13 @@ export function POSPage() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Re-resolve prices when global tier or company changes (only non-custom, non-override items)
+  // Re-resolve prices when the selected tier/company or product prices change.
   useEffect(() => {
-    if (!tierId || !companyId || cart.length === 0) return;
-    setCart((prev) =>
-      prev.map((item) => {
+    if (!tierId || !companyId) return;
+    setCart((prev) => {
+      if (prev.length === 0) return prev;
+      let changed = false;
+      const next = prev.map((item) => {
         if (item.isCustomPrice) return item;
         const effectiveTier = item.tierOverride || tierId;
         const product = products.find((p) => p.id === item.productId);
@@ -449,11 +451,12 @@ export function POSPage() {
         if (!itemCompany) return item;
         const price = resolvePrice(product, effectiveTier, itemCompany);
         if (price == null || price === item.unitPrice) return item;
+        changed = true;
         return { ...item, unitPrice: price };
-      }),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tierId, companyId]);
+      });
+      return changed ? next : prev;
+    });
+  }, [tierId, companyId, products]);
 
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
