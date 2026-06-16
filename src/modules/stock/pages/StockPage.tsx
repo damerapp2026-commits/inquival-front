@@ -939,10 +939,11 @@ export function StockPage() {
 
       {activeTab === 'inventory' && allWarehouses && (() => {
         const summary = Array.isArray(allWarehousesSummary) ? allWarehousesSummary : [];
+        type StockRow = { productId: string; _name: string; totalQuantity: number; byCompany: Array<{ companyId: string; quantity: number }> };
         const summaryByProductId = new Map(summary.map(s => [s.productId, s]));
-        const rows = products
+        const rows: StockRow[] = products
           .filter((p: Product) => !filteredProductIds || filteredProductIds.has(p.id))
-          .map((p: Product): { productId: string; _name: string; totalQuantity: number; byCompany: Array<{ companyId: string; quantity: number }> } => {
+          .map((p: Product): StockRow => {
             const s = summaryByProductId.get(p.id);
             return { productId: p.id, _name: p.name, totalQuantity: s?.totalQuantity ?? 0, byCompany: s?.byCompany ?? [] };
           })
@@ -974,7 +975,7 @@ export function StockPage() {
                     const isOrphan = !product;
                     const isInactive = product?.isActive === false;
                     const isExpanded = expandedStock[item.productId];
-                    const breakdown = (item.byCompany || []).slice().sort((a, b) => b.quantity - a.quantity);
+                    const breakdown: Array<{ companyId: string; quantity: number }> = (item.byCompany || []).slice().sort((a, b) => b.quantity - a.quantity);
                     const warehouseCount = breakdown.filter(b => b.quantity > 0).length;
                     return (
                       <React.Fragment key={item.productId}>
