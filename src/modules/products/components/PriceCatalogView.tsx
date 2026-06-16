@@ -440,20 +440,24 @@ export function PriceCatalogView({ enabled }: Props) {
     const hasEdit = editedRaw !== undefined;
     const hasSaved = row.precioMinorista != null;
 
-    const fallbackPrice = row.storedSellPrice ?? row.precioVenta;
+    const fallbackPrice = row.precioMinorista ?? row.precioVenta;
     const fallbackSource = row.storedSellPrice != null
       ? `${row.storedSellPriceTier ?? 'precio guardado'}`
-      : row.precioVenta != null
+      : row.precioMinorista != null
+        ? 'catálogo'
+        : row.precioVenta != null
         ? 'última compra'
         : null;
 
     const value = hasEdit
       ? editedRaw!
-      : hasSaved
-        ? fmt(row.precioMinorista)
-        : fallbackPrice != null ? fmt(fallbackPrice) : '';
+      : row.storedSellPrice != null
+        ? fmt(row.storedSellPrice)
+        : hasSaved
+          ? fmt(row.precioMinorista)
+          : fallbackPrice != null ? fmt(fallbackPrice) : '';
 
-    const isFromFallback = !hasEdit && !hasSaved && fallbackPrice != null;
+    const isFromFallback = !hasEdit && (row.storedSellPrice != null || (!hasSaved && fallbackPrice != null));
     const bgClass = isFromFallback
       ? 'bg-cyan-50/40 text-cyan-700 italic'
       : 'bg-cyan-50 text-cyan-900';
