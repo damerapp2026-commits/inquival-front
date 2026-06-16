@@ -3,7 +3,9 @@ import { Modal } from '../../../shared/components/Modal';
 import { useSales } from '../../sales/hooks/useSales';
 import { useClientCredits } from '../../credits/hooks/useCredits';
 import { formatDateEs } from '../../../shared/utils/date.util';
-import { ChevronDown, ChevronRight, ShoppingBag, CheckCircle2, Clock } from 'lucide-react';
+import { ChevronDown, ChevronRight, ShoppingBag, CheckCircle2, Clock, FileDown, Loader2 } from 'lucide-react';
+import { downloadClientHistoryPdf } from '../../credits/utils/creditsPdf';
+import toast from 'react-hot-toast';
 import type { Client, Sale, CreditAccount } from '../../../shared/types';
 
 interface Props {
@@ -35,6 +37,19 @@ function ClientStatementContent({ client }: { client: Client }) {
   const { data: salesData, isLoading: loadingSales } = useSales({ clientId: client.id, limit: 500, excludeCancelled: 'true' });
   const { data: creditsData, isLoading: loadingCredits } = useClientCredits(client.id, { limit: 200 });
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportPdf = async () => {
+    setExporting(true);
+    try {
+      await downloadClientHistoryPdf({ client, sales: allSales, credits: allCredits });
+      toast.success('PDF generado');
+    } catch {
+      toast.error('Error al generar el PDF');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const allSales: Sale[] = useMemo(
     () => ((salesData as any)?.data || []).slice().sort((a: Sale, b: Sale) => b.date.localeCompare(a.date)),
@@ -107,9 +122,20 @@ function ClientStatementContent({ client }: { client: Client }) {
 
       {/* Historial de ventas */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-          <ShoppingBag size={14} className="text-gray-400" /> Historial de ventas
-        </h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <ShoppingBag size={14} className="text-gray-400" /> Historial de ventas
+          </h3>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={exporting || allSales.length === 0}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 transition-colors"
+          >
+            {exporting ? <Loader2 size={12} className="animate-spin" /> : <FileDown size={12} />}
+            Exportar PDF
+          </button>
+        </div>
         {allSales.length === 0 ? (
           <div className="text-center py-8 text-sm text-gray-400">Sin ventas registradas</div>
         ) : (
