@@ -1,4 +1,4 @@
-import type { CreditAccount, Client } from '../../../shared/types';
+import type { CreditAccount, Client, Sale } from '../../../shared/types';
 
 let pdfMakePromise: Promise<any> | null = null;
 function loadPdfMake() {
@@ -520,4 +520,172 @@ export async function downloadClientStatementPdf({ client, credits, mode }: Clie
         });
 
   pdfMake.createPdf(docDef).download(`${fileStem}.pdf`);
+}
+
+/* ─────────────────────────────────────────────
+   Historial completo de un cliente (ventas + créditos)
+   ───────────────────────────────────────────── */
+
+interface ClientHistoryParams {
+  client: Client;
+  sales: Sale[];
+  credits: CreditAccount[];
+}
+
+function buildClientHistory({ client, sales, credits }: ClientHistoryParams) {
+  const creditBySaleId = new Map<string, CreditAccount>();
+  credits.forEach(credit => {
+    (credit.saleIds || []).forEach((saleId: string) => creditBySaleId.set(saleId, credit));
+  });
+
+  const dispTotal = (s: Sale) => s.currency === 'USD' && s.totalUsd != null ? s.totalUsd : s.total;
+  const currSym = (s: Sale) => s.currency === 'USD' ? '$' : 'S/';
+  const voucherLabel = (t?: string) => t === 'BOLETA' ? 'Boleta' : t === 'FACTURA' ? 'Factura' : 'N. Venta';
+
+  const totalPen = sales.filter(s => s.currency !== 'USD').reduce((a, s) => a + s.total, 0);
+  const totalUsd = sales.filter(s => s.currency === 'USD').reduce((a, s) => a + dispTotal(s), 0);
+  const totalCreditAmount = credits.reduce((a, c) => a + c.totalAmount, 0);
+  const totalPaidCredit = credits.reduce((a, c) => a + c.paidAmount, 0);
+  const totalPending = credits.filter(c => c.status !== 'PAID').reduce((a, c) => a + c.pendingAmount, 0);
+
+  const totalVentasText = [
+    totalPen > 0 ? `S/ ${totalPen.toFixed(2)}` : null,
+    totalUsd > 0 ? `$ ${totalUsd.toFixed(2)}` : null,
+  ].filter(Boolean).join(' · ') || '—';
+
+  const tableBody: any[] = [[
+    { text: 'N°', style: 'thead' },
+    { text: 'Fecha', style: 'thead' },
+    { text: 'Tipo', style: 'thead' },
+    { text: 'Total', style: 'thead', alignment: 'right' },
+    { text: 'Pago / Estado', style: 'thead' },
+  ]];
+
+  for (const sale of sales) {
+    const credit = creditBySaleId.get(sale.id);
+    const totalDisplay = dispTotal(sale);
+    const sym = currSym(sale);
+    const initialAmount = (sale.payments || []).reduce((s: number, p: any) => s + p.amount, 0);
+
+    const paymentLabel = sale.isCredit
+      ? `Crédito${credit ? ` · ${statusLabel(credit.status)}` : ''}`
+      : (sale.payments?.map((p: any) => p.paymentMethodName).filter(Boolean).join(' + ') || 'Efectivo');
+
+    tableBody.push([
+      { text: sale.saleNumber || `NV-${sale.id.slice(-6).toUpperCase()}`, fontSize: 7.5, color: GRAY },
+      { text: formatDate(sale.date), fontSize: 7.5 },
+      { text: voucherLabel(sale.voucherType), fontSize: 7.5 },
+      { text: `${sym} ${totalDisplay.toFixed(2)}`, fontSize: 7.5, alignment: 'right', bold: true, color: sale.currency === 'USD' ? '#059669' : '#111827' },
+      { text: paymentLabel, fontSize: 7.5, color: sale.isCredit ? '#d97706' : '#374151' },
+    ]);
+
+    if (sale.isCredit && credit) {
+      const pct = credit.totalAmount > 0 ? Math.min(100, (credit.paidAmount / credit.totalAmount) * 100) : 0;
+
+      const paymentRows: any[] = (credit.payments || []).map((p: any) => [
+        { text: formatDate(p.paymentDate), fontSize: 6.5 },
+        { text: p.paymentMethodName || '—', fontSize: 6.5, color: GRAY },
+        { text: `S/ ${p.amount.toFixed(2)}`, fontSize: 6.5, alignment: 'right', bold: true, color: '#059669' },
+        { text: p.notes || '', fontSize: 6.5, color: GRAY, italics: true },
+      ]);
+
+      tableBody.push([
+        {
+          colSpan: 5,
+          fillColor: '#fff7ed',
+          margin: [8, 4, 8, 4],
+          stack: [
+            {
+              columns: [
+                { stack: [{ text: 'Total venta', fontSize: 6, color: GRAY }, { text: `${sym} ${totalDisplay.toFixed(2)}`, fontSize: 8, bold: true }], width: '*' },
+                { stack: [{ text: 'Inicial', fontSize: 6, color: GRAY }, { text: initialAmount > 0 ? `${sym} ${initialAmount.toFixed(2)}` : '—', fontSize: 8, bold: true, color: '#2563eb' }], width: '*' },
+                { stack: [{ text: 'Abonos', fontSize: 6, color: GRAY }, { text: `S/ ${credit.paidAmount.toFixed(2)}`, fontSize: 8, bold: true, color: '#059669' }], width: '*' },
+                { stack: [{ text: 'Pendiente', fontSize: 6, color: GRAY }, { text: `S/ ${credit.pendingAmount.toFixed(2)}`, fontSize: 8, bold: true, color: credit.pendingAmount > 0 ? '#dc2626' : GRAY }], width: '*' },
+                ...(credit.dueDate ? [{ stack: [{ text: 'Vence', fontSize: 6, color: GRAY }, { text: formatDate(credit.dueDate), fontSize: 7.5 }], width: '*' }] : []),
+              ],
+              columnGap: 8,
+            },
+            { text: `${pct.toFixed(0)}% abonado`, fontSize: 6, color: GRAY, margin: [0, 4, 0, 2] },
+            ...(paymentRows.length > 0 ? [{
+              table: {
+                widths: [48, 55, 42, '*'],
+                body: [
+                  [
+                    { text: 'Fecha', fontSize: 6, bold: true, color: GRAY },
+                    { text: 'Método', fontSize: 6, bold: true, color: GRAY },
+                    { text: 'Monto', fontSize: 6, bold: true, alignment: 'right', color: GRAY },
+                    { text: 'Notas', fontSize: 6, bold: true, color: GRAY },
+                  ],
+                  ...paymentRows,
+                ],
+              },
+              layout: { hLineColor: () => '#d1fae5', vLineColor: () => '#d1fae5', hLineWidth: () => 0.2, vLineWidth: () => 0.2, paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 3, paddingRight: () => 3 },
+            }] : [{ text: 'Sin abonos registrados', fontSize: 6.5, color: GRAY, italics: true }]),
+          ],
+        },
+        {}, {}, {}, {},
+      ]);
+    }
+  }
+
+  return {
+    pageSize: 'A4',
+    pageMargins: [30, 30, 30, 30],
+    content: [
+      ...baseHeader('Historial de cuenta', undefined, `${client.name}${client.documentNumber ? ` · ${client.documentNumber}` : ''}`),
+      {
+        columns: [
+          { table: { widths: ['*'], body: [[{ text: 'TOTAL VENTAS', style: 'cardHead' }], [{ text: totalVentasText, style: 'cardValue' }]] }, layout: { hLineColor: () => BORDER, vLineColor: () => BORDER, hLineWidth: () => 0.5, vLineWidth: () => 0.5 } },
+          { width: 6, text: '' },
+          { table: { widths: ['*'], body: [[{ text: 'EN CRÉDITO', style: 'cardHead' }], [{ text: `S/ ${totalCreditAmount.toFixed(2)}`, style: 'cardValue' }]] }, layout: { hLineColor: () => BORDER, vLineColor: () => BORDER, hLineWidth: () => 0.5, vLineWidth: () => 0.5 } },
+          { width: 6, text: '' },
+          { table: { widths: ['*'], body: [[{ text: 'ABONADO', style: 'cardHead' }], [{ text: `S/ ${totalPaidCredit.toFixed(2)}`, style: 'cardValueGreen' }]] }, layout: { hLineColor: () => BORDER, vLineColor: () => BORDER, hLineWidth: () => 0.5, vLineWidth: () => 0.5 } },
+          { width: 6, text: '' },
+          { table: { widths: ['*'], body: [[{ text: 'PENDIENTE', style: 'cardHead' }], [{ text: `S/ ${totalPending.toFixed(2)}`, style: totalPending > 0 ? 'cardValueRed' : 'cardValue' }]] }, layout: { hLineColor: () => BORDER, vLineColor: () => BORDER, hLineWidth: () => 0.5, vLineWidth: () => 0.5 } },
+        ],
+        margin: [0, 0, 0, 10],
+      },
+      {
+        table: {
+          headerRows: 1,
+          widths: [72, 45, 38, 52, '*'],
+          body: tableBody,
+        },
+        layout: {
+          hLineColor: () => BORDER,
+          vLineColor: () => BORDER,
+          hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length ? 0.5 : 0.2),
+          vLineWidth: () => 0.2,
+          paddingTop: () => 3,
+          paddingBottom: () => 3,
+          paddingLeft: () => 4,
+          paddingRight: () => 4,
+        },
+      },
+      sales.length === 0
+        ? { text: 'Sin ventas registradas.', alignment: 'center', color: GRAY, margin: [0, 20] }
+        : { text: '' },
+    ],
+    styles: {
+      thead: { bold: true, color: 'white', fillColor: BRAND, fontSize: 8 },
+      cardHead: { fontSize: 7, color: GRAY, alignment: 'center', bold: true, margin: [0, 3] },
+      cardValue: { fontSize: 10, bold: true, alignment: 'center', margin: [0, 3] },
+      cardValueGreen: { fontSize: 10, bold: true, alignment: 'center', color: '#059669', margin: [0, 3] },
+      cardValueRed: { fontSize: 10, bold: true, alignment: 'center', color: '#dc2626', margin: [0, 3] },
+    },
+    defaultStyle: { fontSize: 9 },
+    footer: (currentPage: number, pageCount: number) => ({
+      text: `${currentPage} / ${pageCount}`,
+      alignment: 'center',
+      fontSize: 8,
+      color: GRAY,
+      margin: [0, 10],
+    }),
+  };
+}
+
+export async function downloadClientHistoryPdf({ client, sales, credits }: ClientHistoryParams) {
+  const pdfMake = await loadPdfMake();
+  const stamp = new Date().toISOString().slice(0, 10);
+  pdfMake.createPdf(buildClientHistory({ client, sales, credits })).download(`historial_${slugify(client.name || 'cliente')}_${stamp}.pdf`);
 }
