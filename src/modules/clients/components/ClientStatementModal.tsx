@@ -3,7 +3,7 @@ import { Modal } from '../../../shared/components/Modal';
 import { useSales } from '../../sales/hooks/useSales';
 import { useClientCredits } from '../../credits/hooks/useCredits';
 import { formatDateEs } from '../../../shared/utils/date.util';
-import { ChevronDown, ChevronRight, ShoppingBag, CreditCard, CheckCircle2, Clock } from 'lucide-react';
+import { ChevronDown, ChevronRight, ShoppingBag, CheckCircle2, Clock } from 'lucide-react';
 import type { Client, Sale, CreditAccount } from '../../../shared/types';
 
 interface Props {
@@ -19,11 +19,22 @@ export function ClientStatementModal({ client, onClose }: Props) {
   );
 }
 
+function voucherLabel(voucherType?: string): { text: string; cls: string } {
+  if (voucherType === 'BOLETA') return { text: 'Boleta', cls: 'text-primary-700 font-medium text-xs' };
+  if (voucherType === 'FACTURA') return { text: 'Factura', cls: 'text-blue-700 font-medium text-xs' };
+  return { text: 'N. Venta', cls: 'text-gray-400 text-xs' };
+}
+
+function statusBadge(credit: CreditAccount) {
+  if (credit.status === 'PAID') return { label: 'Pagado', cls: 'bg-green-100 text-green-700' };
+  if (credit.status === 'PARTIAL') return { label: 'Parcial', cls: 'bg-yellow-100 text-yellow-700' };
+  return { label: 'Pendiente', cls: 'bg-orange-100 text-orange-700' };
+}
+
 function ClientStatementContent({ client }: { client: Client }) {
   const { data: salesData, isLoading: loadingSales } = useSales({ clientId: client.id, limit: 500, excludeCancelled: 'true' });
   const { data: creditsData, isLoading: loadingCredits } = useClientCredits(client.id, { limit: 200 });
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
-  const [expandedCreditId, setExpandedCreditId] = useState<string | null>(null);
 
   const allSales: Sale[] = useMemo(
     () => ((salesData as any)?.data || []).slice().sort((a: Sale, b: Sale) => b.date.localeCompare(a.date)),
@@ -31,9 +42,19 @@ function ClientStatementContent({ client }: { client: Client }) {
   );
 
   const allCredits: CreditAccount[] = useMemo(
-    () => Array.isArray(creditsData) ? creditsData : ((creditsData as any)?.data || []),
+    () => (Array.isArray(creditsData) ? creditsData : ((creditsData as any)?.data || []))
+      .filter((c: CreditAccount) => c.totalAmount > 0),
     [creditsData],
   );
+
+  // Map saleId → CreditAccount for O(1) lookup in each row
+  const creditBySaleId = useMemo(() => {
+    const map = new Map<string, CreditAccount>();
+    allCredits.forEach(credit => {
+      (credit.saleIds || []).forEach(saleId => map.set(saleId, credit));
+    });
+    return map;
+  }, [allCredits]);
 
   const sym = (sale: Sale) => sale.currency === 'USD' ? '$' : 'S/';
   const dispTotal = (sale: Sale) => sale.currency === 'USD' && sale.totalUsd != null ? sale.totalUsd : sale.total;
@@ -45,12 +66,6 @@ function ClientStatementContent({ client }: { client: Client }) {
   const totalPending = pendingCredits.reduce((a, c) => a + c.pendingAmount, 0);
   const totalPaidCredit = allCredits.reduce((a, c) => a + c.paidAmount, 0);
   const totalCreditAmount = allCredits.reduce((a, c) => a + c.totalAmount, 0);
-
-  const statusBadge = (credit: CreditAccount) => {
-    if (credit.status === 'PAID') return { label: 'Pagado', cls: 'bg-green-100 text-green-700' };
-    if (credit.status === 'PARTIAL') return { label: 'Parcial', cls: 'bg-yellow-100 text-yellow-700' };
-    return { label: 'Pendiente', cls: 'bg-orange-100 text-orange-700' };
-  };
 
   if (loadingSales || loadingCredits) {
     return (
@@ -65,7 +80,7 @@ function ClientStatementContent({ client }: { client: Client }) {
       {/* Resumen */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-blue-50 rounded-xl p-3 text-center">
-          <div className="text-[11px] text-blue-600 font-semibold uppercase tracking-wider mb-1">Total compras</div>
+          <div className="text-[11px] text-blue-600 font-semibold uppercase tracking-wider mb-1">Total ventas</div>
           <div className="font-bold text-blue-800 tabular-nums text-sm">
             {totalPen > 0 && <div>S/ {totalPen.toFixed(2)}</div>}
             {totalUsd > 0 && <div className="text-emerald-700">$ {totalUsd.toFixed(2)}</div>}
@@ -113,11 +128,17 @@ function ClientStatementContent({ client }: { client: Client }) {
               <tbody className="divide-y divide-gray-100">
                 {allSales.map(sale => {
                   const isExp = expandedSaleId === sale.id;
+                  const credit = creditBySaleId.get(sale.id);
+                  const hasItems = (sale.items?.length ?? 0) > 0;
+                  const isExpandable = hasItems || (sale.isCredit && !!credit);
+                  const label = voucherLabel(sale.voucherType);
+                  const currSym = sym(sale);
+
                   return (
                     <React.Fragment key={sale.id}>
                       <tr className={`hover:bg-gray-50 transition-colors ${isExp ? 'bg-indigo-50/30' : ''}`}>
                         <td className="px-2 py-2 text-center">
-                          {(sale.items?.length ?? 0) > 0 && (
+                          {isExpandable && (
                             <button
                               type="button"
                               onClick={() => setExpandedSaleId(prev => prev === sale.id ? null : sale.id)}
@@ -132,15 +153,11 @@ function ClientStatementContent({ client }: { client: Client }) {
                         </td>
                         <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{formatDateEs(sale.date)}</td>
                         <td className="px-3 py-2.5">
-                          {sale.voucherType === 'BOLETA'
-                            ? <span className="text-primary-700 font-medium text-xs">Boleta</span>
-                            : sale.voucherType === 'FACTURA'
-                            ? <span className="text-blue-700 font-medium text-xs">Factura</span>
-                            : <span className="text-gray-400 text-xs">{sale.voucherType || '—'}</span>}
+                          <span className={label.cls}>{label.text}</span>
                         </td>
                         <td className="px-3 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap">
                           <span className={sale.currency === 'USD' ? 'text-emerald-700' : 'text-gray-800'}>
-                            {sym(sale)} {dispTotal(sale).toFixed(2)}
+                            {currSym} {dispTotal(sale).toFixed(2)}
                           </span>
                         </td>
                         <td className="px-3 py-2.5">
@@ -155,34 +172,128 @@ function ClientStatementContent({ client }: { client: Client }) {
                           )}
                         </td>
                       </tr>
-                      {isExp && (sale.items?.length ?? 0) > 0 && (
+
+                      {isExp && isExpandable && (
                         <tr>
                           <td colSpan={6} className="px-4 pb-3 pt-1 bg-indigo-50/20">
-                            <div className="rounded-lg border border-gray-200 overflow-hidden">
-                              <table className="min-w-full text-xs">
-                                <thead>
-                                  <tr className="bg-gray-50 border-b border-gray-100">
-                                    <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-gray-500 uppercase">Producto</th>
-                                    <th className="px-3 py-1.5 text-right text-[10px] font-semibold text-gray-500 uppercase">Cant.</th>
-                                    <th className="px-3 py-1.5 text-right text-[10px] font-semibold text-gray-500 uppercase">P. Unit.</th>
-                                    <th className="px-3 py-1.5 text-right text-[10px] font-semibold text-gray-500 uppercase">Subtotal</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100 bg-white">
-                                  {sale.items.map((item, idx) => (
-                                    <tr key={idx}>
-                                      <td className="px-3 py-1.5 text-gray-800">{item.productName || item.productId}</td>
-                                      <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{item.quantity}</td>
-                                      <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
-                                        {sale.currency === 'USD' ? '$' : 'S/'} {(item.unitPriceUsd ?? item.unitPrice).toFixed(2)}
-                                      </td>
-                                      <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-gray-800">
-                                        {sale.currency === 'USD' ? '$' : 'S/'} {(item.subtotalUsd ?? item.subtotal).toFixed(2)}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                            <div className="space-y-2">
+
+                              {/* Tabla de productos */}
+                              {hasItems && (
+                                <div className="rounded-lg border border-gray-200 overflow-hidden">
+                                  <table className="min-w-full text-xs">
+                                    <thead>
+                                      <tr className="bg-gray-50 border-b border-gray-100">
+                                        <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-gray-500 uppercase">Producto</th>
+                                        <th className="px-3 py-1.5 text-right text-[10px] font-semibold text-gray-500 uppercase">Cant.</th>
+                                        <th className="px-3 py-1.5 text-right text-[10px] font-semibold text-gray-500 uppercase">P. Unit.</th>
+                                        <th className="px-3 py-1.5 text-right text-[10px] font-semibold text-gray-500 uppercase">Subtotal</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 bg-white">
+                                      {sale.items.map((item, idx) => (
+                                        <tr key={idx}>
+                                          <td className="px-3 py-1.5 text-gray-800">{item.productName || item.productId}</td>
+                                          <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{item.quantity}</td>
+                                          <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
+                                            {currSym} {(item.unitPriceUsd ?? item.unitPrice).toFixed(2)}
+                                          </td>
+                                          <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-gray-800">
+                                            {currSym} {(item.subtotalUsd ?? item.subtotal).toFixed(2)}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+
+                              {/* Sección de cuenta por cobrar */}
+                              {sale.isCredit && credit && (() => {
+                                const badge = statusBadge(credit);
+                                const isPending = credit.status !== 'PAID';
+                                const pct = credit.totalAmount > 0
+                                  ? Math.min(100, (credit.paidAmount / credit.totalAmount) * 100)
+                                  : 0;
+                                const initialAmount = (sale.payments || []).reduce((s, p) => s + p.amount, 0);
+
+                                return (
+                                  <div className={`rounded-lg border overflow-hidden ${isPending ? 'border-orange-200' : 'border-green-200'}`}>
+                                    {/* Header */}
+                                    <div className={`px-3 py-2 flex items-center justify-between ${isPending ? 'bg-orange-50' : 'bg-green-50'}`}>
+                                      <span className={`text-[11px] font-semibold uppercase tracking-wider ${isPending ? 'text-orange-700' : 'text-green-700'}`}>
+                                        Cuenta por cobrar
+                                      </span>
+                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${badge.cls}`}>{badge.label}</span>
+                                    </div>
+
+                                    <div className="px-3 py-2.5 bg-white space-y-2.5">
+                                      {/* Montos */}
+                                      <div className="grid grid-cols-3 gap-2 text-xs">
+                                        <div>
+                                          <div className="text-[10px] text-gray-400 mb-0.5">Total crédito</div>
+                                          <div className="font-semibold text-gray-800 tabular-nums">S/ {credit.totalAmount.toFixed(2)}</div>
+                                        </div>
+                                        <div>
+                                          <div className="text-[10px] text-gray-400 mb-0.5">
+                                            {initialAmount > 0 ? `Inicial + abonos` : 'Abonado'}
+                                          </div>
+                                          <div className="font-semibold text-green-600 tabular-nums">S/ {credit.paidAmount.toFixed(2)}</div>
+                                          {initialAmount > 0 && (
+                                            <div className="text-[10px] text-gray-400">(Inicial: S/ {initialAmount.toFixed(2)})</div>
+                                          )}
+                                        </div>
+                                        <div>
+                                          <div className="text-[10px] text-gray-400 mb-0.5">Pendiente</div>
+                                          <div className={`font-bold tabular-nums ${isPending ? 'text-red-600' : 'text-gray-400'}`}>
+                                            S/ {credit.pendingAmount.toFixed(2)}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Barra de progreso */}
+                                      <div>
+                                        <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                          <div
+                                            className="h-full bg-green-500 rounded-full transition-all"
+                                            style={{ width: `${pct}%` }}
+                                          />
+                                        </div>
+                                        <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+                                          <span>{pct.toFixed(0)}% abonado</span>
+                                          {credit.dueDate && <span>Vence: {formatDateEs(credit.dueDate)}</span>}
+                                        </div>
+                                      </div>
+
+                                      {/* Abonos */}
+                                      {(credit.payments?.length ?? 0) > 0 ? (
+                                        <div>
+                                          <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Abonos</div>
+                                          <div className="space-y-1">
+                                            {credit.payments.map((payment, idx) => (
+                                              <div key={payment.id || idx} className="flex items-center justify-between py-1 px-2.5 bg-green-50 rounded-md text-xs">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                  <CheckCircle2 size={11} className="text-green-500 flex-shrink-0" />
+                                                  <span className="text-gray-700 whitespace-nowrap">{formatDateEs(payment.paymentDate)}</span>
+                                                  {payment.paymentMethodName && <span className="text-gray-500">· {payment.paymentMethodName}</span>}
+                                                  {payment.receivedByName && <span className="text-gray-400 truncate">· {payment.receivedByName}</span>}
+                                                  {payment.notes && <span className="text-gray-400 italic truncate max-w-[100px]">· {payment.notes}</span>}
+                                                </div>
+                                                <span className="font-semibold tabular-nums text-green-700 ml-2 flex-shrink-0">S/ {payment.amount.toFixed(2)}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs text-gray-400 flex items-center gap-1.5">
+                                          <Clock size={11} /> Sin abonos registrados
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
                             </div>
                           </td>
                         </tr>
@@ -195,101 +306,6 @@ function ClientStatementContent({ client }: { client: Client }) {
           </div>
         )}
       </div>
-
-      {/* Cuentas de crédito */}
-      {allCredits.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-            <CreditCard size={14} className="text-orange-400" /> Cuentas de crédito
-          </h3>
-          <div className="space-y-2">
-            {allCredits.map(credit => {
-              const isExp = expandedCreditId === credit.id;
-              const badge = statusBadge(credit);
-              const isPending = credit.status !== 'PAID';
-              return (
-                <div key={credit.id} className={`border rounded-lg overflow-hidden ${isPending ? 'border-orange-200' : 'border-gray-200'}`}>
-                  <button
-                    type="button"
-                    onClick={() => setExpandedCreditId(prev => prev === credit.id ? null : credit.id)}
-                    className={`w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-gray-50 transition-colors ${isPending ? 'bg-orange-50/40' : 'bg-white'}`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {isExp ? <ChevronDown size={14} className="text-gray-400 flex-shrink-0" /> : <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />}
-                      <div className="min-w-0">
-                        <span className="text-sm font-medium text-gray-800 truncate block">
-                          {credit.name || `Crédito — ${formatDateEs(credit.createdAt)}`}
-                        </span>
-                        {credit.dueDate && (
-                          <span className="text-[11px] text-gray-500">Vence: {formatDateEs(credit.dueDate)}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4 flex-shrink-0 ml-4">
-                      <div className="text-right hidden sm:block">
-                        <div className="text-[10px] text-gray-400">Pendiente</div>
-                        <div className={`text-sm font-bold tabular-nums ${isPending ? 'text-red-600' : 'text-gray-400'}`}>
-                          S/ {credit.pendingAmount.toFixed(2)}
-                        </div>
-                      </div>
-                      <div className="text-right hidden sm:block">
-                        <div className="text-[10px] text-gray-400">Total</div>
-                        <div className="text-sm font-semibold tabular-nums text-gray-700">S/ {credit.totalAmount.toFixed(2)}</div>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge.cls}`}>{badge.label}</span>
-                    </div>
-                  </button>
-                  {isExp && (
-                    <div className="border-t border-gray-100 px-4 py-3 bg-white space-y-3">
-                      <div className="flex justify-between text-xs text-gray-600 sm:hidden mb-1">
-                        <span>Total: <span className="font-semibold">S/ {credit.totalAmount.toFixed(2)}</span></span>
-                        <span>Pendiente: <span className={`font-semibold ${isPending ? 'text-red-600' : ''}`}>S/ {credit.pendingAmount.toFixed(2)}</span></span>
-                      </div>
-                      {/* Progress bar */}
-                      <div>
-                        <div className="flex justify-between text-[11px] text-gray-500 mb-1">
-                          <span>Abonado: S/ {credit.paidAmount.toFixed(2)}</span>
-                          <span>Total: S/ {credit.totalAmount.toFixed(2)}</span>
-                        </div>
-                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-green-500 rounded-full transition-all"
-                            style={{ width: `${credit.totalAmount > 0 ? Math.min(100, (credit.paidAmount / credit.totalAmount) * 100) : 0}%` }}
-                          />
-                        </div>
-                      </div>
-                      {/* Historial de abonos */}
-                      {(credit.payments?.length ?? 0) > 0 ? (
-                        <div>
-                          <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Abonos</div>
-                          <div className="space-y-1">
-                            {credit.payments.map((payment, idx) => (
-                              <div key={payment.id || idx} className="flex items-center justify-between py-1.5 px-3 bg-green-50 rounded-lg text-xs">
-                                <div className="flex items-center gap-2">
-                                  <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
-                                  <span className="text-gray-700 whitespace-nowrap">{formatDateEs(payment.paymentDate)}</span>
-                                  {payment.paymentMethodName && <span className="text-gray-500">· {payment.paymentMethodName}</span>}
-                                  {payment.receivedByName && <span className="text-gray-400">· {payment.receivedByName}</span>}
-                                  {payment.notes && <span className="text-gray-400 italic truncate max-w-[120px]">· {payment.notes}</span>}
-                                </div>
-                                <span className="font-semibold tabular-nums text-green-700 ml-2">S/ {payment.amount.toFixed(2)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-xs text-gray-400 flex items-center gap-1.5">
-                          <Clock size={12} /> Sin abonos registrados
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

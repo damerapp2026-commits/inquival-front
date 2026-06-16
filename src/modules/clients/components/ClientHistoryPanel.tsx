@@ -110,7 +110,7 @@ export function ClientHistoryPanel({ clientId }: { clientId: string }) {
                         ? <span className="text-primary-700 font-medium">Boleta</span>
                         : sale.voucherType === 'FACTURA'
                         ? <span className="text-blue-700 font-medium">Factura</span>
-                        : <span className="text-gray-400 text-xs">{sale.voucherType || '—'}</span>}
+                        : <span className="text-gray-400 text-xs">{(sale.voucherType && sale.voucherType !== 'NONE') ? sale.voucherType : 'N. Venta'}</span>}
                     </td>
                     <td className="px-3 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap">
                       <span className={sale.currency === 'USD' ? 'text-emerald-700' : 'text-gray-800'}>
