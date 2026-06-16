@@ -229,19 +229,20 @@ function ClientStatementContent({ client }: { client: Client }) {
 
                                     <div className="px-3 py-2.5 bg-white space-y-2.5">
                                       {/* Montos */}
-                                      <div className="grid grid-cols-3 gap-2 text-xs">
+                                      <div className="grid grid-cols-4 gap-2 text-xs">
                                         <div>
-                                          <div className="text-[10px] text-gray-400 mb-0.5">Total crédito</div>
-                                          <div className="font-semibold text-gray-800 tabular-nums">S/ {credit.totalAmount.toFixed(2)}</div>
+                                          <div className="text-[10px] text-gray-400 mb-0.5">Total</div>
+                                          <div className="font-semibold text-gray-800 tabular-nums">{currSym} {dispTotal(sale).toFixed(2)}</div>
                                         </div>
                                         <div>
-                                          <div className="text-[10px] text-gray-400 mb-0.5">
-                                            {initialAmount > 0 ? `Inicial + abonos` : 'Abonado'}
+                                          <div className="text-[10px] text-gray-400 mb-0.5">Inicial</div>
+                                          <div className="font-semibold text-blue-600 tabular-nums">
+                                            {initialAmount > 0 ? `${currSym} ${initialAmount.toFixed(2)}` : '—'}
                                           </div>
+                                        </div>
+                                        <div>
+                                          <div className="text-[10px] text-gray-400 mb-0.5">Abonos</div>
                                           <div className="font-semibold text-green-600 tabular-nums">S/ {credit.paidAmount.toFixed(2)}</div>
-                                          {initialAmount > 0 && (
-                                            <div className="text-[10px] text-gray-400">(Inicial: S/ {initialAmount.toFixed(2)})</div>
-                                          )}
                                         </div>
                                         <div>
                                           <div className="text-[10px] text-gray-400 mb-0.5">Pendiente</div>
