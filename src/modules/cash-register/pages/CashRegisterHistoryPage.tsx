@@ -225,6 +225,9 @@ export function CashRegisterHistoryPage() {
       : null;
     const clientName = e.clientName || clientFromDesc;
     const displayClient = clientName && !/^sin\s*cliente$/i.test(clientName) ? clientName : null;
+    const isPurchaseEntry = e.category === 'PURCHASE' && e.type === 'EXPENSE';
+    const purchaseSupplier = isPurchaseEntry ? sanitizeEntryDesc(e.description) : null;
+    const voucherRef = (e.voucherSeries && e.voucherNumber) ? `${e.voucherSeries}-${e.voucherNumber}` : null;
     const isUsdEntry = getEntryUsdAmount(e) != null;
     return (
       <tr key={key} className={`${e.isDeleted ? 'opacity-50' : ''} ${nested ? 'bg-gray-50/50' : ''}`}>
@@ -241,9 +244,14 @@ export function CashRegisterHistoryPage() {
         </td>
         <td className="px-3 py-2.5 text-xs text-gray-600">{categoryLabels[e.category] || e.category}</td>
         <td className="px-3 py-2.5 text-xs text-gray-800">
-          {displayClient
+          {isPurchaseEntry && purchaseSupplier
+            ? <span className={e.isDeleted ? 'line-through text-gray-400' : 'font-medium'}>
+                {purchaseSupplier}
+                {voucherRef && <span className="font-normal text-gray-400 ml-1">({voucherRef})</span>}
+              </span>
+            : displayClient
             ? <span className={e.isDeleted ? 'line-through text-gray-400' : 'font-medium'}>{displayClient}</span>
-            : <span className="text-gray-400 italic">Sin cliente</span>}
+            : <span className="text-gray-400 italic">—</span>}
         </td>
         <td className="px-3 py-2.5">
           {method
