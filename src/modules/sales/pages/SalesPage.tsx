@@ -56,17 +56,6 @@ type PaymentMode = string; // paymentMethodId | 'MIXED' | 'CREDIT'
 export function SalesPage() {
   const { user } = useAuth();
   const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
-  const [activeTab, setActiveTab] = useState<'sales' | 'boletas' | 'facturas' | 'loans'>('sales');
-  const [page, setPage] = useState(1);
-  const [boletaPage, setBoletaPage] = useState(1);
-  const [facturaPage, setFacturaPage] = useState(1);
-  const [loanPage, setLoanPage] = useState(1);
-  const [sellerFilter, setSellerFilter] = useState('');
-  const [clientFilter, setClientFilter] = useState('');
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState('');
-  const [productFilter, setProductFilter] = useState('');
-  const [startDate, setStartDate] = useState(getMonthStart);
-  const [endDate, setEndDate] = useState(getToday);
   // When set, opens a modal listing every sale for that client (ignores date range)
   const [clientHistoryId, setClientHistoryId] = useState<string | null>(null);
 
@@ -93,14 +82,51 @@ export function SalesPage() {
     return map;
   }, [sellersData, user]);
 
-  const effectiveSellerId = isSellerRole ? user?.id : (sellerFilter || undefined);
+  // Todos los filtros en URL params para que persistan al navegar y volver
   const [searchParams, setSearchParams] = useSearchParams();
+  const updateParams = (updates: Record<string, string | null>) => {
+    setSearchParams((prev) => {
+      const sp = new URLSearchParams(prev);
+      for (const [k, v] of Object.entries(updates)) {
+        if (!v) sp.delete(k); else sp.set(k, v);
+      }
+      return sp;
+    }, { replace: true });
+  };
+  const _tab = searchParams.get('tab') || 'sales';
+  const activeTab = (['sales', 'boletas', 'facturas', 'loans'].includes(_tab) ? _tab : 'sales') as 'sales' | 'boletas' | 'facturas' | 'loans';
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+  const boletaPage = Math.max(1, parseInt(searchParams.get('bPage') || '1', 10));
+  const facturaPage = Math.max(1, parseInt(searchParams.get('fPage') || '1', 10));
+  const loanPage = Math.max(1, parseInt(searchParams.get('lPage') || '1', 10));
+  const sellerFilter = searchParams.get('seller') || '';
+  const clientFilter = searchParams.get('client') || '';
+  const paymentMethodFilter = searchParams.get('paymentMethod') || '';
+  const productFilter = searchParams.get('product') || '';
+  const startDate = searchParams.get('startDate') || getMonthStart();
+  const endDate = searchParams.get('endDate') || getToday();
+  const loanStatusFilter = searchParams.get('loanStatus') || '';
+
+  const setActiveTab = (v: 'sales' | 'boletas' | 'facturas' | 'loans') =>
+    updateParams({ tab: v !== 'sales' ? v : null, page: null, bPage: null, fPage: null, lPage: null });
+  const setPage = (p: number) => updateParams({ page: p > 1 ? String(p) : null });
+  const setBoletaPage = (p: number) => updateParams({ bPage: p > 1 ? String(p) : null });
+  const setFacturaPage = (p: number) => updateParams({ fPage: p > 1 ? String(p) : null });
+  const setLoanPage = (p: number) => updateParams({ lPage: p > 1 ? String(p) : null });
+  const setSellerFilter = (v: string) => updateParams({ seller: v || null, page: null, bPage: null, fPage: null });
+  const setClientFilter = (v: string) => updateParams({ client: v || null, page: null, bPage: null, fPage: null });
+  const setPaymentMethodFilter = (v: string) => updateParams({ paymentMethod: v || null, page: null, bPage: null, fPage: null });
+  const setProductFilter = (v: string) => updateParams({ product: v || null, page: null, bPage: null, fPage: null });
+  const setStartDate = (v: string) => updateParams({ startDate: v !== getMonthStart() ? v : null, page: null, bPage: null, fPage: null, lPage: null });
+  const setEndDate = (v: string) => updateParams({ endDate: v !== getToday() ? v : null, page: null, bPage: null, fPage: null, lPage: null });
+  const setLoanStatusFilter = (v: string) => updateParams({ loanStatus: v || null, lPage: null });
+
+  const effectiveSellerId = isSellerRole ? user?.id : (sellerFilter || undefined);
   const [showModal, setShowModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [viewingSale, setViewingSale] = useState<Sale | null>(null);
   const [viewingLoan, setViewingLoan] = useState<Loan | null>(null);
   const [returningLoan, setReturningLoan] = useState<Loan | null>(null);
-  const [loanStatusFilter, setLoanStatusFilter] = useState('');
 
   const { data, isLoading } = useSales({ page, limit: 50, clientId: clientFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
   const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 50, clientId: clientFilter || undefined, startDate, endDate, voucherType: 'BOLETA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
@@ -564,7 +590,7 @@ export function SalesPage() {
   const handleExportVouchers = async (voucherType: 'BOLETA' | 'FACTURA') => {
     try {
       const XLSX = await import('xlsx');
-      const result = await saleService.getAll({ limit: 9999, startDate, endDate, voucherType });
+      const result = await saleService.getAll({ limit: 9999, startDate, endDate, voucherType, clientId: clientFilter || undefined, sellerId: effectiveSellerId || undefined });
       const allSales: Sale[] = (result?.data || []).filter(matchesPaymentMethod).filter(matchesProduct);
       if (allSales.length === 0) { toast.error('No hay datos para exportar'); return; }
 

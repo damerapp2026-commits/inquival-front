@@ -102,7 +102,8 @@ export interface PurchaseFormState {
   supplierRuc: string;
   supplierId: string;
   laboratoryId: string;
-  paymentType: 'CONTADO' | 'CREDITO';
+  paymentType: 'CONTADO' | 'CREDITO' | 'BONIFICACION';
+  addToStock: boolean;
   paymentScheduleType: 'SINGLE_DATE' | 'INSTALLMENTS';
   dueDate: string;
   installments: { amount: number; dueDate: string; status?: 'PENDING' | 'PAID' }[];
@@ -112,6 +113,9 @@ export interface PurchaseFormState {
   documentSeries: string;
   documentNumber: string;
   issueDate: string;
+  grSeries: string;
+  grNumber: string;
+  grDate: string;
 }
 
 export interface PurchaseInitial {
@@ -166,6 +170,7 @@ export function purchaseToFormState(purchase: Purchase, products: Product[]): Pu
     supplierId: purchase.supplierId || '',
     laboratoryId: (purchase as any).laboratoryId || '',
     paymentType: purchase.paymentType,
+    addToStock: purchase.addToStock !== false,
     paymentScheduleType: purchase.paymentScheduleType || 'SINGLE_DATE',
     dueDate: dateInputStr(purchase.dueDate),
     installments: (purchase.installments || []).map((i) => ({
@@ -178,6 +183,9 @@ export function purchaseToFormState(purchase: Purchase, products: Product[]): Pu
     documentSeries: purchase.documentSeries || '',
     documentNumber: purchase.documentNumber || '',
     issueDate: dateInputStr(purchase.issueDate),
+    grSeries: purchase.grSeries || '',
+    grNumber: purchase.grNumber || '',
+    grDate: dateInputStr(purchase.grDate),
   };
 
   return {
@@ -198,6 +206,7 @@ export function buildInitialCreate(today: string): PurchaseInitial {
       supplierId: '',
       laboratoryId: '',
       paymentType: 'CONTADO',
+      addToStock: true,
       paymentScheduleType: 'SINGLE_DATE',
       dueDate: '',
       installments: [],
@@ -207,6 +216,9 @@ export function buildInitialCreate(today: string): PurchaseInitial {
       documentSeries: '',
       documentNumber: '',
       issueDate: today,
+      grSeries: '',
+      grNumber: '',
+      grDate: '',
     },
     currency: 'USD',
     exchangeRate: null,

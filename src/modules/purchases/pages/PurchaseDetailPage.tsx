@@ -292,7 +292,11 @@ export function PurchaseDetailPage() {
             <InfoCell label="F. Recepción">
               {formatDateEs(purchase.date, { day: '2-digit', month: 'long', year: 'numeric' })}
             </InfoCell>
-            <InfoCell label="Almacén">{getCompanyName(purchase.companyId)}</InfoCell>
+            <InfoCell label="Guía de Remisión">
+              {purchase.grSeries || purchase.grNumber
+                ? <>{[purchase.grSeries, purchase.grNumber].filter(Boolean).join('-')}{purchase.grDate && <span className="block text-xs text-gray-500 mt-0.5">Fecha: {formatDateEs(purchase.grDate)}</span>}</>
+                : <span className="text-gray-400">—</span>}
+            </InfoCell>
             <InfoCell label="Proveedor">
               {purchase.supplier}
               {purchase.supplierRuc ? ` (${purchase.supplierRuc})` : ''}
@@ -311,16 +315,6 @@ export function PurchaseDetailPage() {
             {purchase.paymentType === 'CREDITO' && purchase.paymentScheduleType === 'SINGLE_DATE' && purchase.dueDate && (
               <InfoCell label="Vencimiento">
                 {formatDateEs(purchase.dueDate, { day: '2-digit', month: 'long', year: 'numeric' })}
-              </InfoCell>
-            )}
-            {(purchase.grSeries || purchase.grNumber) && (
-              <InfoCell label="Guía de Remisión">
-                {[purchase.grSeries, purchase.grNumber].filter(Boolean).join('-')}
-                {purchase.grDate && (
-                  <span className="block text-xs text-gray-500 mt-0.5">
-                    Fecha: {formatDateEs(purchase.grDate)}
-                  </span>
-                )}
               </InfoCell>
             )}
           </div>

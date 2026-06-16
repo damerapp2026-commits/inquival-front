@@ -359,7 +359,7 @@ export function EditSaleItemsModal({
             <div className="text-xs text-gray-500">
               {sale.isCredit
                 ? 'Venta a crédito: el adelanto en caja no es editable desde aquí.'
-                : 'Cambia el método o divide el cobro entre Yape, Efectivo, Transferencia, etc.'}
+                : 'Cambia el método o divide el cobro entre Yape, Efectivo, Depósito, Transferencia, etc.'}
             </div>
           </div>
 

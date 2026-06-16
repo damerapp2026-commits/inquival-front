@@ -15,7 +15,7 @@ import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { SmartSearchSelect } from '../../../shared/components/SmartSearchSelect';
 import {
   Trash2, Loader2, DollarSign, PackagePlus, FileText, CopyIcon, Dices, Wand2,
-  Building2, CreditCard, Package, FlaskConical, CheckCircle,
+  Building2, CreditCard, Package, FlaskConical, CheckCircle, Truck,
 } from 'lucide-react';
 import type { Company, Product, Category, Laboratory } from '../../../shared/types';
 import toast from 'react-hot-toast';
@@ -83,8 +83,12 @@ export interface PurchaseSubmitPayload {
   documentSeries?: string;
   documentNumber?: string;
   issueDate?: string;
+  grSeries?: string;
+  grNumber?: string;
+  grDate?: string;
   date: string;
-  paymentType: 'CONTADO' | 'CREDITO';
+  paymentType: 'CONTADO' | 'CREDITO' | 'BONIFICACION';
+  addToStock?: boolean;
   paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS';
   currency: 'PEN' | 'USD';
   exchangeRate?: number | null;
@@ -152,7 +156,11 @@ export function PurchaseFormBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipoCambioData, currency, mode]);
   const [labResolving, setLabResolving] = useState(false);
-  const [installmentGen, setInstallmentGen] = useState({ count: 6, intervalDays: 30, firstDaysFromPurchase: 30 });
+  const [installmentGen, setInstallmentGen] = useState(() => ({
+    count: initial.state.installments.length || 6,
+    intervalDays: 15,
+    firstDaysFromPurchase: 15,
+  }));
   const [scrollToLast, setScrollToLast] = useState(false);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [showNewProduct, setShowNewProduct] = useState(false);
@@ -440,6 +448,9 @@ export function PurchaseFormBody({
     if (form.documentSeries) payload.documentSeries = form.documentSeries;
     if (form.documentNumber) payload.documentNumber = form.documentNumber;
     if (form.issueDate) payload.issueDate = form.issueDate;
+    if (form.grSeries) payload.grSeries = form.grSeries;
+    if (form.grNumber) payload.grNumber = form.grNumber;
+    if (form.grDate) payload.grDate = form.grDate;
     if (currency === 'USD') {
       payload.totalCostUsd = documentTotal;
       payload.exchangeRate = exchangeRate;
@@ -454,6 +465,11 @@ export function PurchaseFormBody({
       payload.paymentScheduleType = form.paymentScheduleType;
       if (form.paymentScheduleType === 'SINGLE_DATE') payload.dueDate = form.dueDate;
       if (form.paymentScheduleType === 'INSTALLMENTS') payload.installments = form.installments;
+    }
+    if (form.paymentType === 'BONIFICACION') {
+      payload.addToStock = form.addToStock;
+      payload.totalCost = 0;
+      payload.totalCostUsd = undefined;
     }
     if (mode === 'edit') payload.reason = reason.trim();
 
@@ -541,6 +557,39 @@ export function PurchaseFormBody({
           </SectionCard>
 
         </div>
+
+        {/* Guía de Remisión */}
+        <SectionCard title="Guía de Remisión" icon={Truck}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Serie</label>
+              <input
+                value={form.grSeries}
+                onChange={(e) => setForm({ ...form, grSeries: e.target.value.toUpperCase() })}
+                placeholder="T001"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm uppercase"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Correlativo</label>
+              <input
+                value={form.grNumber}
+                onChange={(e) => setForm({ ...form, grNumber: e.target.value })}
+                placeholder="00000001"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Fecha</label>
+              <input
+                type="date"
+                value={form.grDate}
+                onChange={(e) => setForm({ ...form, grDate: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+          </div>
+        </SectionCard>
 
         {/* Productos */}
         <SectionCard title={`Productos (${form.items.length})`} icon={Package}>
@@ -800,9 +849,33 @@ export function PurchaseFormBody({
             <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de Pago</label>
             <div className="flex gap-2">
               <button type="button" onClick={() => setForm({ ...form, paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [] })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CONTADO' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Contado</button>
-              <button type="button" onClick={() => setForm({ ...form, paymentType: 'CREDITO' })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CREDITO' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Crédito</button>
+              <button type="button" onClick={() => setForm({ ...form, paymentType: 'CREDITO', paymentScheduleType: 'SINGLE_DATE' })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CREDITO' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Crédito</button>
+              <button type="button" onClick={() => setForm({ ...form, paymentType: 'BONIFICACION', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], addToStock: form.addToStock ?? true })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'BONIFICACION' ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Bonificación</button>
             </div>
           </div>
+
+          {form.paymentType === 'BONIFICACION' && (
+            <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg p-3">
+              <label className="block text-xs font-medium text-purple-800 mb-2">¿Agregar productos al stock?</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, addToStock: true })}
+                  className={`flex-1 py-1.5 rounded text-xs font-medium border-2 transition ${form.addToStock !== false ? 'border-purple-500 bg-white text-purple-700' : 'border-gray-200 text-gray-500'}`}
+                >
+                  Sí, agregar al stock
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, addToStock: false })}
+                  className={`flex-1 py-1.5 rounded text-xs font-medium border-2 transition ${form.addToStock === false ? 'border-purple-500 bg-white text-purple-700' : 'border-gray-200 text-gray-500'}`}
+                >
+                  No agregar al stock
+                </button>
+              </div>
+              <p className="text-[11px] text-purple-600 mt-2">No representa ningún gasto ni cuenta por pagar.</p>
+            </div>
+          )}
 
           {form.paymentType === 'CREDITO' && (
             <div className="mt-4 space-y-3 bg-orange-50 p-3 rounded-lg border border-orange-200">
