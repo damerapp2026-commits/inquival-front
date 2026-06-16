@@ -388,8 +388,8 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
+          <div className="lg:col-span-4">
             <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
               <CalendarDays size={13} /> Fecha del pago
             </label>
@@ -409,8 +409,8 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
               </div>
             )}
           </div>
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Método de pago</label>
+          <div className="lg:col-span-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Forma de pago</label>
             <div className="flex gap-2 mb-2">
               <button
                 type="button"
@@ -442,7 +442,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
               </button>
             </div>
 
-            {paymentMode === 'SINGLE' ? (
+            {paymentMode === 'SINGLE' && (
               <select
                 value={paymentMethodId}
                 onChange={(e) => setPaymentMethodId(e.target.value)}
@@ -454,63 +454,9 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
               </select>
-            ) : (
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-blue-800">
-                    Total mixto: S/ {splitTotal.toFixed(2)} de S/ {paymentTotal.toFixed(2)}
-                  </span>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={fillSplitRemaining} className="text-xs text-blue-700 hover:text-blue-900 font-medium">
-                      Completar saldo
-                    </button>
-                    <button type="button" onClick={addPaymentSplit} className="text-xs text-blue-700 hover:text-blue-900 font-medium">
-                      + Agregar
-                    </button>
-                  </div>
-                </div>
-                {paymentSplits.map((split, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <select
-                      value={split.paymentMethodId}
-                      onChange={(e) => updatePaymentSplit(idx, 'paymentMethodId', e.target.value)}
-                      className="flex-1 px-3 py-2 border border-blue-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                      required
-                    >
-                      <option value="">Seleccionar método...</option>
-                      {paymentMethods.map((m) => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
-                      ))}
-                    </select>
-                    <div className="relative w-32">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">S/</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={split.amount || ''}
-                        onChange={(e) => updatePaymentSplit(idx, 'amount', parseFloat(e.target.value) || 0)}
-                        className="w-full pl-7 pr-2 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        placeholder="0.00"
-                        required
-                      />
-                    </div>
-                    {paymentSplits.length > 2 && (
-                      <button
-                        type="button"
-                        onClick={() => removePaymentSplit(idx)}
-                        className="text-red-400 hover:text-red-600 px-1"
-                        title="Quitar método"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
             )}
           </div>
-          <div className="md:col-span-3">
+          <div className="lg:col-span-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
             <input
               type="text"
@@ -521,6 +467,63 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
             />
           </div>
         </div>
+
+        {paymentMode === 'MIXED' && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+              <span className="text-xs font-semibold text-blue-800">
+                Total mixto: S/ {splitTotal.toFixed(2)} de S/ {paymentTotal.toFixed(2)}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={fillSplitRemaining} className="text-xs px-2.5 py-1 rounded-md bg-white border border-blue-200 text-blue-700 hover:bg-blue-100 font-medium">
+                  Completar saldo
+                </button>
+                <button type="button" onClick={addPaymentSplit} className="text-xs px-2.5 py-1 rounded-md bg-white border border-blue-200 text-blue-700 hover:bg-blue-100 font-medium">
+                  + Agregar
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {paymentSplits.map((split, idx) => (
+                <div key={idx} className="grid grid-cols-1 sm:grid-cols-[1fr_8rem_auto] gap-2 items-center">
+                  <select
+                    value={split.paymentMethodId}
+                    onChange={(e) => updatePaymentSplit(idx, 'paymentMethodId', e.target.value)}
+                    className="min-w-0 px-3 py-2 border border-blue-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    required
+                  >
+                    <option value="">Seleccionar método...</option>
+                    {paymentMethods.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                  <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">S/</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={split.amount || ''}
+                      onChange={(e) => updatePaymentSplit(idx, 'amount', parseFloat(e.target.value) || 0)}
+                      className="w-full pl-7 pr-2 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removePaymentSplit(idx)}
+                    disabled={paymentSplits.length <= 2}
+                    className="w-8 h-8 rounded-lg text-red-500 hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent"
+                    title="Quitar método"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {(mode === 'EXPLICIT' ? explicitErrors : fifoErrors).slice(0, 3).map((err, i) => (
           <div key={i} className="text-xs text-red-600 flex items-center gap-1">
