@@ -267,6 +267,7 @@ export function POSPage() {
     })),
   });
   const stockQueryDataKey = stockQueries.map((q) => q.dataUpdatedAt).join('|');
+  const stockReady = companies.length > 0 && stockQueries.length === companies.length && stockQueries.every((q) => q.isSuccess);
 
   // { [companyId]: { [productId]: quantity } }
   const stockByCompany = useMemo(() => {
@@ -300,17 +301,41 @@ export function POSPage() {
   }, [stockByCompany, companyId]);
 
   // Picks the warehouse with the most stock for a product (used in "Todos" mode)
-  const findSourceCompanyForProduct = (productId: string): string | null => {
+  const findSourceCompanyForProduct = (productId: string, requestedQty = 1): string | null => {
+    let sufficientId: string | null = null;
+    let sufficientQty = 0;
     let bestId: string | null = null;
     let bestQty = 0;
     Object.entries(stockByCompany).forEach(([cid, map]) => {
       const qty = map[productId] || 0;
+      if (qty >= requestedQty && qty > sufficientQty) {
+        sufficientId = cid;
+        sufficientQty = qty;
+      }
       if (qty > 0 && qty > bestQty) {
         bestId = cid;
         bestQty = qty;
       }
     });
+    if (sufficientId) return sufficientId;
     return bestId;
+  };
+
+  const stockForProductInCompany = (productId: string, cid?: string): number => {
+    if (!cid) return 0;
+    return stockByCompany[cid]?.[productId] ?? 0;
+  };
+
+  const resolveSourceCompanyForProduct = (productId: string, requestedQty: number, preferredCompanyId?: string): string | undefined => {
+    if (preferredCompanyId && stockForProductInCompany(productId, preferredCompanyId) >= requestedQty) {
+      return preferredCompanyId;
+    }
+    const withEnoughStock = findSourceCompanyForProduct(productId, requestedQty);
+    if (withEnoughStock) return withEnoughStock;
+    if (preferredCompanyId && stockForProductInCompany(productId, preferredCompanyId) > 0) {
+      return preferredCompanyId;
+    }
+    return findSourceCompanyForProduct(productId, 1) || undefined;
   };
 
   const companyNameById = useMemo(() => {
@@ -321,7 +346,7 @@ export function POSPage() {
 
   // Preload cart from quote (if ?fromQuote=... param)
   useEffect(() => {
-    if (!preloadedQuote || !products.length || sourceQuoteId === preloadedQuote.id) return;
+    if (!preloadedQuote || !products.length || !stockReady || sourceQuoteId === preloadedQuote.id) return;
     if (preloadedQuote.status === 'CONVERTED' || preloadedQuote.status === 'REJECTED') {
       toast.error('Esta cotización ya no puede convertirse');
       navigate('/quotes');
@@ -329,25 +354,43 @@ export function POSPage() {
     }
     setCompanyId(ALL_COMPANIES);
     if (preloadedQuote.clientId) setClientId(preloadedQuote.clientId);
-    const items: CartItem[] = preloadedQuote.items.map((i: any) => {
+    const unavailableItems: string[] = [];
+    const adjustedItems: string[] = [];
+    const items: CartItem[] = preloadedQuote.items.flatMap((i: any) => {
       const p = products.find(pr => pr.id === i.productId);
-      const sourceCompanyId = i.companyId || preloadedQuote.companyId || findSourceCompanyForProduct(i.productId) || undefined;
-      return {
+      const requestedQty = Number(i.quantity || 0);
+      const preferredCompanyId = i.sourceCompanyId || i.companyId || preloadedQuote.companyId || undefined;
+      const sourceCompanyId = resolveSourceCompanyForProduct(i.productId, requestedQty, preferredCompanyId);
+      const availableQty = stockForProductInCompany(i.productId, sourceCompanyId);
+      const name = p?.name || i.productName || 'Producto';
+      if (!sourceCompanyId || availableQty <= 0) {
+        unavailableItems.push(name);
+        return [];
+      }
+      const quantity = requestedQty > availableQty ? availableQty : requestedQty;
+      if (quantity !== requestedQty) adjustedItems.push(`${name}: ${requestedQty} → ${quantity}`);
+      return [{
         productId: i.productId,
-        name: p?.name || '—',
+        name,
         unit: p?.unit || '',
-        quantity: i.quantity,
+        quantity,
         unitPrice: i.unitPrice,
         taxType: normalizeTaxType(p?.taxType),
         tierOverride: i.priceTier,
         isCustomPrice: true,
         sourceCompanyId,
-      };
+      }];
     });
     setCart(items);
     setSourceQuoteId(preloadedQuote.id);
     toast.success(`Cotización ${preloadedQuote.quoteNumber} cargada`);
-  }, [preloadedQuote, products, sourceQuoteId, navigate]);
+    if (adjustedItems.length > 0) {
+      toast(`Cantidades ajustadas por stock: ${adjustedItems.slice(0, 3).join(', ')}${adjustedItems.length > 3 ? '…' : ''}`, { icon: '⚠️' });
+    }
+    if (unavailableItems.length > 0) {
+      toast.error(`Sin stock: ${unavailableItems.slice(0, 3).join(', ')}${unavailableItems.length > 3 ? '…' : ''}`);
+    }
+  }, [preloadedQuote, products, stockReady, stockByCompany, sourceQuoteId, navigate]);
 
   // Defaults once data loads
   useEffect(() => {
@@ -503,6 +546,7 @@ export function POSPage() {
     const item = cart.find((i) => i.productId === productId);
     const stock = stockForCartItem(item);
     if (value > stock) { toast.error(`Solo hay ${stock} en stock`); value = stock; }
+    if (value <= 0) { removeFromCart(productId); return; }
     setCart((prev) => prev.map((i) => i.productId === productId ? { ...i, quantity: value } : i));
   };
 
@@ -576,6 +620,43 @@ export function POSPage() {
     setBonusItems((prev) => prev.map((b) => b.productId === productId ? { ...b, quantity: value } : b));
   };
 
+  const reconcileCartStock = (): boolean => {
+    const adjusted: string[] = [];
+    const removed: string[] = [];
+    let changed = false;
+
+    const nextCart = cart.flatMap((item) => {
+      const sourceCompanyId = companyId === ALL_COMPANIES
+        ? resolveSourceCompanyForProduct(item.productId, item.quantity, item.sourceCompanyId)
+        : companyId;
+      const available = stockForProductInCompany(item.productId, sourceCompanyId);
+
+      if (!sourceCompanyId || available <= 0) {
+        changed = true;
+        removed.push(item.name);
+        return [];
+      }
+
+      const quantity = item.quantity > available ? available : item.quantity;
+      if (quantity !== item.quantity || sourceCompanyId !== item.sourceCompanyId) {
+        changed = true;
+        adjusted.push(`${item.name}: ${item.quantity} → ${quantity}`);
+      }
+
+      return [{ ...item, sourceCompanyId, quantity }];
+    });
+
+    if (adjusted.length > 0) {
+      toast(`Se ajustó el carrito por stock: ${adjusted.slice(0, 3).join(', ')}${adjusted.length > 3 ? '…' : ''}`, { icon: '⚠️' });
+    }
+    if (removed.length > 0) {
+      toast.error(`Se quitaron productos sin stock: ${removed.slice(0, 3).join(', ')}${removed.length > 3 ? '…' : ''}`);
+    }
+
+    if (changed) setCart(nextCart);
+    return changed;
+  };
+
   const [editingPriceFor, setEditingPriceFor] = useState<string | null>(null);
 
   // Solo los items GRAVADO contribuyen IGV. Los precios en carrito vienen con IGV incluido,
@@ -606,6 +687,7 @@ export function POSPage() {
       toast.error('El carrito está vacío');
       return;
     }
+    if (reconcileCartStock()) return;
     const effectiveIsCourtesy = total < 0.001;
     if (!paymentMethodId && !effectiveIsCourtesy) {
       toast.error('No hay métodos de pago configurados');
