@@ -194,6 +194,7 @@ export function PurchaseFormBody({
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [showNewProduct, setShowNewProduct] = useState(false);
   const [newProductForIdx, setNewProductForIdx] = useState<number>(-1);
+  const [quickProducts, setQuickProducts] = useState<Product[]>([]);
   const [newProduct, setNewProduct] = useState({
     name: '', description: '', categoryId: '', laboratoryId: '', unit: 'unidad',
     activeIngredient: '', taxType: 'GRAVADO' as 'GRAVADO' | 'EXONERADO' | 'INAFECTO', tracksLot: false,
@@ -205,8 +206,31 @@ export function PurchaseFormBody({
   const products = useMemo(() => {
     const raw: any = productsData;
     const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
-    return list.filter((p) => p.isActive !== false);
-  }, [productsData]);
+    const byId = new Map<string, Product>();
+    [...list, ...quickProducts].forEach((p) => {
+      if (p?.id && p.isActive !== false) byId.set(p.id, p);
+    });
+    return [...byId.values()];
+  }, [productsData, quickProducts]);
+
+  const sortedActivePriceTiers = useMemo(
+    () => priceTiers
+      .filter((t: any) => t.isActive !== false)
+      .slice()
+      .sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0)),
+    [priceTiers],
+  );
+
+  const getSalePriceTierId = (product?: Product): string => {
+    const prices = product?.prices || [];
+    for (const tier of sortedActivePriceTiers) {
+      if (prices.some((p: any) => p.priceTierId === tier.id && !p.companyId && p.price > 0)) return tier.id;
+    }
+    for (const tier of sortedActivePriceTiers) {
+      if (prices.some((p: any) => p.priceTierId === tier.id && p.price > 0)) return tier.id;
+    }
+    return sortedActivePriceTiers[0]?.id || '';
+  };
 
   const addItem = () => {
     setForm(prev => {
@@ -239,8 +263,7 @@ export function PurchaseFormBody({
   const seedPrecioVentaFromProduct = (productId: string): number => {
     const prod = products.find((pr: Product) => pr.id === productId);
     if (!prod || !prod.prices?.length) return 0;
-    const sortedTiers = priceTiers.slice().sort((a, b) => (a.priority || 0) - (b.priority || 0));
-    for (const t of sortedTiers) {
+    for (const t of sortedActivePriceTiers) {
       const found = prod.prices.find((px: any) => px.priceTierId === t.id && !px.companyId && px.price > 0);
       if (found) return found.price;
     }
@@ -368,11 +391,17 @@ export function PurchaseFormBody({
         tracksLot: newProduct.tracksLot,
         prices: [],
       };
+      const currentItem = form.items[newProductForIdx];
+      const tierId = getSalePriceTierId();
+      if (currentItem?.precioVenta > 0 && tierId) {
+        payload.prices = [{ priceTierId: tierId, price: currentItem.precioVenta }];
+      }
       if (newProduct.description.trim()) payload.description = newProduct.description.trim();
       if (newProduct.activeIngredient.trim()) payload.activeIngredient = newProduct.activeIngredient.trim();
       if (newProduct.laboratoryId) payload.laboratoryId = newProduct.laboratoryId;
       const created = await createProduct.mutateAsync(payload);
       if (created && newProductForIdx >= 0) {
+        setQuickProducts((prev) => [...prev.filter((p) => p.id !== created.id), created]);
         updateItem(newProductForIdx, 'productId', created.id);
         if (newProduct.companyId) {
           updateItem(newProductForIdx, 'companyId', newProduct.companyId);

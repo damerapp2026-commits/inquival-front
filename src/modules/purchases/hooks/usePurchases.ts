@@ -42,7 +42,22 @@ export function usePriceCatalog(opts?: { companyId?: string; enabled?: boolean }
 }
 export function useCreatePurchase() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: purchaseService.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ['purchases'] }); qc.invalidateQueries({ queryKey: ['stock'] }); qc.invalidateQueries({ queryKey: ['accounts-payable'] }); qc.invalidateQueries({ queryKey: ['cash-register-today'] }); qc.invalidateQueries({ queryKey: ['cash-registers'] }); toast.success('Compra registrada'); }, onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error') });
+  return useMutation({
+    mutationFn: purchaseService.create,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['stock'] });
+      qc.invalidateQueries({ queryKey: ['accounts-payable'] });
+      qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['price-catalog'] });
+      qc.invalidateQueries({ queryKey: ['last-price'] });
+      qc.invalidateQueries({ queryKey: ['product-lots'] });
+      toast.success('Compra registrada');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error'),
+  });
 }
 export function useUpdatePurchase() {
   const qc = useQueryClient();
@@ -89,6 +104,8 @@ export function useUpdatePurchaseFull() {
       qc.invalidateQueries({ queryKey: ['kardex'] });
       qc.invalidateQueries({ queryKey: ['price-catalog'] });
       qc.invalidateQueries({ queryKey: ['last-price'] });
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['product-lots'] });
       toast.success('Compra actualizada');
     },
     onError: (err: any) => {
