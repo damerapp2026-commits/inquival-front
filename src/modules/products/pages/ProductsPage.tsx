@@ -30,6 +30,7 @@ const TAX_TYPES = [
   { value: 'EXONERADO', label: 'Exonerado' },
   { value: 'INAFECTO', label: 'Inafecto' },
 ];
+const ALL_PRICE_COMPANIES = '__ALL__';
 
 interface BulkProduct {
   name: string;
@@ -43,6 +44,8 @@ interface BulkProduct {
   initialStocks: { companyId: string; quantity: number }[];
   expanded: boolean;
 }
+
+type DisplayProductPrice = { priceTierId: string; companyId?: string; price: number; companyName?: string };
 
 export function ProductsPage() {
   const { user } = useAuth();
@@ -69,10 +72,19 @@ export function ProductsPage() {
   const debouncedIngredient = useDebounce(activeIngredientFilter);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
-  const [priceCompanyFilter, setPriceCompanyFilter] = useState('');
+  const [priceCompanyFilter, setPriceCompanyFilter] = useState(ALL_PRICE_COMPANIES);
 
   const queryClient = useQueryClient();
-  const { data, isLoading } = useProducts({ page, limit: 20, search: debouncedSearch, activeIngredient: debouncedIngredient || undefined, laboratoryId: laboratoryFilter || undefined, category: categoryFilter || undefined });
+  const hasProductFilters = !!(debouncedSearch || debouncedIngredient || laboratoryFilter || categoryFilter);
+  const { data, isLoading } = useProducts({
+    page: hasProductFilters ? 1 : page,
+    limit: hasProductFilters ? 10000 : 20,
+    search: debouncedSearch || undefined,
+    activeIngredient: debouncedIngredient || undefined,
+    laboratoryId: laboratoryFilter || undefined,
+    categoryId: categoryFilter || undefined,
+    category: categoryFilter || undefined,
+  });
   const { data: priceTiers } = usePriceTiers();
   const { data: categories } = useCategories();
   const { data: laboratories } = useLaboratories();
@@ -497,32 +509,49 @@ export function ProductsPage() {
     XLSX.writeFile(wb, 'plantilla_productos.xlsx');
   };
 
-  const products = data?.data || [];
-  const total = data?.total || 0;
+  const rawProducts: Product[] = data?.data || [];
   const tiers = Array.isArray(priceTiers) ? priceTiers : [];
   const cats = Array.isArray(categories) ? categories : [];
   const labs = Array.isArray(laboratories) ? laboratories : [];
   const labsById = new Map<string, any>(labs.map((l: any) => [l.id, l]));
   const comps = Array.isArray(companies) ? companies : [];
+  const activeComps = comps.filter((c: any) => c.isActive);
+  const activeCompIds = new Set(activeComps.map((c: any) => c.id));
+  const compNameById = new Map<string, string>(activeComps.map((c: any) => [c.id, c.name]));
 
-  // Auto-select first active company when data loads
-  React.useEffect(() => {
-    if (!priceCompanyFilter && comps.length > 0) {
-      const first = comps.find((c: any) => c.isActive);
-      if (first) setPriceCompanyFilter(first.id);
-    }
-  }, [comps, priceCompanyFilter]);
+  const products = React.useMemo(() => {
+    const q = debouncedSearch.trim().toLowerCase();
+    const ingredient = debouncedIngredient.trim().toLowerCase();
+    return rawProducts.filter((p) => {
+      if (q && !p.name.toLowerCase().includes(q)) return false;
+      if (ingredient && !(p.activeIngredient || '').toLowerCase().includes(ingredient)) return false;
+      if (categoryFilter && p.categoryId !== categoryFilter) return false;
+      if (laboratoryFilter && (p.laboratoryId || '') !== laboratoryFilter) return false;
+      return true;
+    });
+  }, [rawProducts, debouncedSearch, debouncedIngredient, categoryFilter, laboratoryFilter]);
+  const total = hasProductFilters ? products.length : (data?.total || 0);
 
   const { data: stockSummaryData } = useStockByProductSummary();
   const stockByProduct = new Map(
     (stockSummaryData || []).map((s: any) => [s.productId, s])
   );
 
-  const getPricesForDisplay = (product: Product) => {
-    if (!priceCompanyFilter) return [];
+  const getPricesForDisplay = (product: Product): DisplayProductPrice[] => {
+    if (priceCompanyFilter === ALL_PRICE_COMPANIES) {
+      return tiers.flatMap((t: any) =>
+        (product.prices || [])
+          .filter((p) => p.priceTierId === t.id && (!p.companyId || activeCompIds.has(p.companyId)))
+          .map((p) => ({ ...p, companyName: p.companyId ? compNameById.get(p.companyId) : 'Global' })),
+      );
+    }
     return tiers.map((t: any) =>
-      product.prices?.find(p => p.priceTierId === t.id && p.companyId === priceCompanyFilter) || null
-    ).filter(Boolean) as typeof product.prices;
+      product.prices?.find(p => p.priceTierId === t.id && p.companyId === priceCompanyFilter)
+      || product.prices?.find(p => p.priceTierId === t.id && !p.companyId)
+      || null
+    )
+      .filter((p): p is DisplayProductPrice => p != null)
+      .map((p) => ({ ...p, companyName: p.companyId ? compNameById.get(p.companyId) : 'Global' }));
   };
 
   const columns = [
@@ -542,6 +571,7 @@ export function ProductsPage() {
     { key: 'prices', header: 'Precio', render: (item: Product) => {
       const displayPrices = getPricesForDisplay(item);
       const single = displayPrices.length === 1;
+      const showCompany = priceCompanyFilter === ALL_PRICE_COMPANIES;
       return (
         <div className="text-xs space-y-1">
           {displayPrices.map((p) => {
@@ -549,6 +579,7 @@ export function ProductsPage() {
             return (
               <div key={`${p.priceTierId}-${p.companyId}`} className="whitespace-nowrap">
                 {!single && <span className="font-medium">{tier?.name || 'N/A'}: </span>}
+                {showCompany && <span className="text-gray-400">{p.companyName ? `${p.companyName}: ` : ''}</span>}
                 <span className={single ? 'font-semibold text-gray-800 text-sm tabular-nums' : 'tabular-nums'}>S/ {p.price.toFixed(2)}</span>
               </div>
             );
@@ -665,15 +696,16 @@ export function ProductsPage() {
         </select>
         <LabCombobox labs={labs} value={laboratoryFilter} onChange={(id) => { setLaboratoryFilter(id); setPage(1); }} placeholder="Todos los laboratorios" emptyLabel="Todos los laboratorios" className="" />
       </div>
-      {comps.filter((c: any) => c.isActive).length > 1 && (
+      {activeComps.length > 1 && (
         <div className="mb-4">
           <select value={priceCompanyFilter} onChange={(e) => setPriceCompanyFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm bg-white">
-            {comps.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>Precios: {c.name}</option>)}
+            <option value={ALL_PRICE_COMPANIES}>Precios: Todos los almacenes</option>
+            {activeComps.map((c: any) => <option key={c.id} value={c.id}>Precios: {c.name}</option>)}
           </select>
         </div>
       )}
       <DataTable columns={columns} data={products} isLoading={isLoading} compact />
-      <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
+      <Pagination page={page} totalPages={hasProductFilters ? 1 : Math.ceil(total / 20)} onPageChange={setPage} />
       </>)}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar producto' : 'Nuevo producto'} size="xl">
         <form onSubmit={handleSubmit} className="space-y-6">
