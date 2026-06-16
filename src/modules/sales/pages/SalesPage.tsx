@@ -46,6 +46,18 @@ function getToday() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+function daysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function monthRange(year: number, month: number) {
+  const mm = String(month).padStart(2, '0');
+  return {
+    start: `${year}-${mm}-01`,
+    end: `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, '0')}`,
+  };
+}
+
 interface PaymentSplit {
   paymentMethodId: string;
   amount: number;
@@ -122,6 +134,13 @@ export function SalesPage() {
   const setEndDate = (v: string) => updateParams({ endDate: v !== getToday() ? v : null, page: null, bPage: null, fPage: null, lPage: null });
   const setLoanStatusFilter = (v: string) => updateParams({ loanStatus: v || null, lPage: null });
   const resetDateFilter = () => updateParams({ startDate: null, endDate: null, page: null, bPage: null, fPage: null, lPage: null });
+  const selectedYear = Number((startDate || getToday()).slice(0, 4));
+  const selectedMonth = Number((startDate || getToday()).slice(5, 7));
+  const yearOptions = Array.from({ length: 8 }, (_, i) => new Date().getFullYear() - i);
+  const setDatePeriod = (year: number, month: number) => {
+    const range = monthRange(year, month);
+    updateParams({ startDate: range.start, endDate: range.end, page: null, bPage: null, fPage: null, lPage: null });
+  };
 
   const effectiveSellerId = isSellerRole ? user?.id : (sellerFilter || undefined);
   const [showModal, setShowModal] = useState(false);
@@ -931,9 +950,36 @@ export function SalesPage() {
             <option value="RETURNED">Devuelto</option>
           </select>
         )}
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="px-3 py-2 border rounded-lg" />
+        <select
+          value={selectedYear}
+          onChange={(e) => setDatePeriod(Number(e.target.value), selectedMonth)}
+          className="px-3 py-2 border rounded-lg text-sm bg-white"
+          title="Año"
+        >
+          {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+        </select>
+        <select
+          value={selectedMonth}
+          onChange={(e) => setDatePeriod(selectedYear, Number(e.target.value))}
+          className="px-3 py-2 border rounded-lg text-sm bg-white"
+          title="Mes"
+        >
+          <option value={1}>Enero</option>
+          <option value={2}>Febrero</option>
+          <option value={3}>Marzo</option>
+          <option value={4}>Abril</option>
+          <option value={5}>Mayo</option>
+          <option value={6}>Junio</option>
+          <option value={7}>Julio</option>
+          <option value={8}>Agosto</option>
+          <option value={9}>Septiembre</option>
+          <option value={10}>Octubre</option>
+          <option value={11}>Noviembre</option>
+          <option value={12}>Diciembre</option>
+        </select>
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="px-3 py-2 border rounded-lg text-sm min-w-[150px]" aria-label="Desde" />
         <span className="text-gray-500 text-sm">hasta</span>
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="px-3 py-2 border rounded-lg" />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="px-3 py-2 border rounded-lg text-sm min-w-[150px]" aria-label="Hasta" />
         {(startDate !== getMonthStart() || endDate !== getToday()) && (
           <button onClick={resetDateFilter} className="flex items-center gap-1 px-3 py-2 text-sm text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100">
             <CalendarDays size={14} /> Este mes
