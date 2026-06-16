@@ -162,9 +162,19 @@ function ClientStatementContent({ client }: { client: Client }) {
                         </td>
                         <td className="px-3 py-2.5">
                           {sale.isCredit ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-100 text-orange-700">
-                              Crédito
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-100 text-orange-700">
+                                Crédito
+                              </span>
+                              {credit && (() => {
+                                const b = statusBadge(credit);
+                                return (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${b.cls}`}>
+                                    {b.label}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                           ) : (
                             <span className="text-xs text-gray-600">
                               {sale.payments?.map(p => p.paymentMethodName).filter(Boolean).join(' + ') || 'Efectivo'}
