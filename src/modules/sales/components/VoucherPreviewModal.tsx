@@ -81,6 +81,13 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   const isUsd = sale.currency === 'USD';
   const sym = isUsd ? '$' : 'S/';
   const totalDisplay = displayTotal(sale);
+  const ticketSubtotal = !isUsd && typeof sale.baseImponible === 'number'
+    ? sale.baseImponible
+    : Math.round((totalDisplay / 1.18) * 100) / 100;
+  const ticketIgv = !isUsd && typeof sale.igv === 'number'
+    ? sale.igv
+    : Math.round((totalDisplay - ticketSubtotal) * 100) / 100;
+
   const itemsRows = sale.items.map((i) => `
     <tr class="item">
       <td class="qty">${i.quantity}</td>
@@ -183,14 +190,9 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
     <tbody>${itemsRows}</tbody>
   </table>
   <div class="hr"></div>
-  ${typeof sale.baseImponible === 'number' ? `<div class="kv"><span>Subtotal</span><span>${sym} ${sale.baseImponible.toFixed(2)}</span></div>` : ''}
-  ${typeof sale.igv === 'number' && sale.igv > 0 ? `<div class="kv"><span>IGV (18%)</span><span>${sym} ${sale.igv.toFixed(2)}</span></div>` : ''}
-  ${isUsd ? `
-  <div class="total bold xl"><span>TOTAL</span><span>$ ${totalDisplay.toFixed(2)}</span></div>
-  <div class="kv muted" style="font-size:10px;margin-top:2px;"><span>TC ${sale.exchangeRate?.toFixed(2) || '-'} → Equiv.</span><span>S/ ${displayPenTotal(sale).toFixed(2)}</span></div>
-  ` : `
-  <div class="total bold xl"><span>TOTAL</span><span>S/ ${sale.total.toFixed(2)}</span></div>
-  `}
+  ${ticketSubtotal > 0 ? `<div class="kv"><span>Subtotal</span><span>${sym} ${ticketSubtotal.toFixed(2)}</span></div>` : ''}
+  ${ticketIgv > 0 ? `<div class="kv"><span>IGV (18%)</span><span>${sym} ${ticketIgv.toFixed(2)}</span></div>` : ''}
+  <div class="total bold xl"><span>TOTAL</span><span>${sym} ${totalDisplay.toFixed(2)}</span></div>
   ${sale.isCourtesy ? `<div class="center bold" style="color:#059669;margin:4px 0;border:1px dashed #059669;padding:3px;">BONIFICACIÓN</div>` : ''}
   ${creditBlock}
   ${cashPaymentBlock}
@@ -211,10 +213,10 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
   const sym = isUsd ? '$' : 'S/';
   const totalDisplay = displayTotal(sale);
 
-  const subtotal = typeof sale.baseImponible === 'number'
+  const subtotal = !isUsd && typeof sale.baseImponible === 'number'
     ? sale.baseImponible
     : Math.round((totalDisplay / 1.18) * 100) / 100;
-  const igv = typeof sale.igv === 'number'
+  const igv = !isUsd && typeof sale.igv === 'number'
     ? sale.igv
     : Math.round((totalDisplay - subtotal) * 100) / 100;
 
@@ -433,12 +435,6 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
         <div class="cur">${sym}</div>
         <div class="val">${totalDisplay.toFixed(2)}</div>
       </div>
-      ${isUsd ? `
-      <div class="totals-row" style="margin-top:4px;opacity:0.75;">
-        <div class="lbl r" style="font-size:8px;">TC ${(sale.exchangeRate || 0).toFixed(2)} → EQUIV.</div>
-        <div class="cur">S/</div>
-        <div class="val" style="font-size:8px;">${displayPenTotal(sale).toFixed(2)}</div>
-      </div>` : ''}
     </div>
   </div>
 
@@ -472,7 +468,7 @@ function buildWhatsappText(sale: VoucherSnapshot): string {
   if (sale.clientName) lines.push(`👤 Cliente: ${sale.clientName}`);
   if (sale.clientLocation) lines.push(`📍 Ubicación: ${sale.clientLocation}`);
   lines.push(`🧑‍💼 R. Comercial: ${sale.sellerName}`);
-  if (isUsd && sale.exchangeRate) lines.push(`💱 Moneda: USD · TC ${sale.exchangeRate.toFixed(2)}`);
+  if (isUsd) lines.push(`💱 Moneda: USD`);
   lines.push('');
   lines.push('*Productos:*');
   sale.items.forEach((i) => {
@@ -480,7 +476,6 @@ function buildWhatsappText(sale: VoucherSnapshot): string {
   });
   lines.push('');
   lines.push(`*💰 TOTAL: ${sym} ${dispTotal.toFixed(2)}*`);
-  if (isUsd && sale.exchangeRate) lines.push(`_(Equiv. S/ ${displayPenTotal(sale).toFixed(2)})_`);
   if (!sale.isCourtesy && sale.payments.length) {
     lines.push('');
     lines.push('Forma de pago:');

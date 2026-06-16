@@ -140,11 +140,17 @@ function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): a
   });
   content.push(dashedLine());
 
-  if (typeof sale.baseImponible === 'number') {
-    content.push({ columns: [{ text: 'Subtotal' }, { text: `${sym} ${sale.baseImponible.toFixed(2)}`, alignment: 'right' }] });
+  const ticketSubtotal = !isUsd && typeof sale.baseImponible === 'number'
+    ? sale.baseImponible
+    : Math.round((totalDisplay / 1.18) * 100) / 100;
+  const ticketIgv = !isUsd && typeof sale.igv === 'number'
+    ? sale.igv
+    : Math.round((totalDisplay - ticketSubtotal) * 100) / 100;
+  if (ticketSubtotal > 0) {
+    content.push({ columns: [{ text: 'Subtotal' }, { text: `${sym} ${ticketSubtotal.toFixed(2)}`, alignment: 'right' }] });
   }
-  if (typeof sale.igv === 'number' && sale.igv > 0) {
-    content.push({ columns: [{ text: 'IGV (18%)' }, { text: `${sym} ${sale.igv.toFixed(2)}`, alignment: 'right' }] });
+  if (ticketIgv > 0) {
+    content.push({ columns: [{ text: 'IGV (18%)' }, { text: `${sym} ${ticketIgv.toFixed(2)}`, alignment: 'right' }] });
   }
   content.push({
     columns: [
@@ -289,10 +295,10 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
   const currencyLabel = isUsd ? '$' : 'S/';
   const totalDisplay = displayTotal(sale);
 
-  const subtotal = typeof sale.baseImponible === 'number'
+  const subtotal = !isUsd && typeof sale.baseImponible === 'number'
     ? sale.baseImponible
     : Math.round((totalDisplay / 1.18) * 100) / 100;
-  const igv = typeof sale.igv === 'number'
+  const igv = !isUsd && typeof sale.igv === 'number'
     ? sale.igv
     : Math.round((totalDisplay - subtotal) * 100) / 100;
 
