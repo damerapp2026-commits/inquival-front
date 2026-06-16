@@ -145,7 +145,7 @@ export function PurchaseFormBody({
   const [form, setForm] = useState(initial.state);
   const [exchangeRate, setExchangeRate] = useState<number | null>(initial.exchangeRate);
   const [exchangeRateDate, setExchangeRateDate] = useState(initial.exchangeRateDate);
-  const [exchangeRateFromSunat, setExchangeRateFromSunat] = useState(false);
+  const [exchangeRateSource, setExchangeRateSource] = useState<'SUNAT' | 'ESTIMADO' | null>(null);
 
   // Al registrar una compra nueva en USD, sugerir el tipo de cambio SUNAT del día
   const { data: tipoCambioData } = useTodayTipoCambio(mode === 'create' && currency === 'USD');
@@ -153,7 +153,7 @@ export function PurchaseFormBody({
     if (mode === 'create' && currency === 'USD' && exchangeRate == null && tipoCambioData?.venta) {
       setExchangeRate(tipoCambioData.venta);
       setExchangeRateDate(tipoCambioData.fecha);
-      setExchangeRateFromSunat(true);
+      setExchangeRateSource(tipoCambioData.source || (tipoCambioData.isFallback ? 'ESTIMADO' : 'SUNAT'));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipoCambioData, currency, mode]);
@@ -803,8 +803,10 @@ export function PurchaseFormBody({
                 <div className="mt-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     Tipo de cambio (S/ por $) <span className="text-red-500">*</span>
-                    {exchangeRateFromSunat && (
-                      <span className="ml-1 text-[10px] font-normal text-blue-600">(SUNAT {exchangeRateDate})</span>
+                    {exchangeRateSource && (
+                      <span className={`ml-1 text-[10px] font-normal ${exchangeRateSource === 'ESTIMADO' ? 'text-amber-600' : 'text-blue-600'}`}>
+                        ({exchangeRateSource === 'ESTIMADO' ? 'Estimado' : 'SUNAT'} {exchangeRateDate})
+                      </span>
                     )}
                   </label>
                   <input
@@ -815,7 +817,7 @@ export function PurchaseFormBody({
                     onChange={(e) => {
                       const v = parseFloat(e.target.value);
                       setExchangeRate(isNaN(v) || v <= 0 ? null : v);
-                      setExchangeRateFromSunat(false);
+                      setExchangeRateSource(null);
                       setExchangeRateDate('');
                     }}
                     placeholder="Ej: 3.7500"

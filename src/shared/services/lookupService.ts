@@ -3,7 +3,13 @@ import { api } from './api';
 
 export interface DniResult { nombre: string; apellidoPaterno: string; apellidoMaterno: string; nombreCompleto: string; }
 export interface RucResult { razonSocial: string; direccion: string; estado: string; }
-export interface TipoCambioResult { compra: number; venta: number; fecha: string; }
+export interface TipoCambioResult {
+  compra: number;
+  venta: number;
+  fecha: string;
+  source?: 'SUNAT' | 'ESTIMADO';
+  isFallback?: boolean;
+}
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 const publicApi = axios.create({ baseURL: API_URL, headers: { 'Content-Type': 'application/json' } });
