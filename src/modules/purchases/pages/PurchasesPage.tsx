@@ -103,20 +103,6 @@ export function PurchasesPage() {
   const purchases = data?.data || [];
   const total = data?.total || 0;
 
-  const toggleCurrency = (c: 'PEN' | 'USD') =>
-    updateParams({ currency: currencyFilter === c ? null : c, page: null });
-  const togglePaymentType = (pt: 'CONTADO' | 'CREDITO') =>
-    updateParams({ paymentType: paymentTypeFilter === pt ? null : pt, page: null });
-  const toggleCombo = (c: 'PEN' | 'USD', pt: 'CONTADO' | 'CREDITO') => {
-    const sameC = currencyFilter === c;
-    const samePT = paymentTypeFilter === pt;
-    updateParams({
-      currency: sameC && samePT ? null : c,
-      paymentType: sameC && samePT ? null : pt,
-      page: null,
-    });
-  };
-
   const { data: companiesData } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
   const companies: Company[] = Array.isArray(companiesData) ? companiesData : [];

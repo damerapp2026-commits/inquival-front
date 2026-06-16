@@ -942,7 +942,7 @@ export function StockPage() {
         const summaryByProductId = new Map(summary.map(s => [s.productId, s]));
         const rows = products
           .filter((p: Product) => !filteredProductIds || filteredProductIds.has(p.id))
-          .map((p: Product) => {
+          .map((p: Product): { productId: string; _name: string; totalQuantity: number; byCompany: Array<{ companyId: string; quantity: number }> } => {
             const s = summaryByProductId.get(p.id);
             return { productId: p.id, _name: p.name, totalQuantity: s?.totalQuantity ?? 0, byCompany: s?.byCompany ?? [] };
           })
