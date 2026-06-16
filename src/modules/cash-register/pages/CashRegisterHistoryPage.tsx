@@ -226,7 +226,9 @@ export function CashRegisterHistoryPage() {
     const clientName = e.clientName || clientFromDesc;
     const displayClient = clientName && !/^sin\s*cliente$/i.test(clientName) ? clientName : null;
     const isPurchaseEntry = e.category === 'PURCHASE' && e.type === 'EXPENSE';
-    const purchaseSupplier = isPurchaseEntry ? sanitizeEntryDesc(e.description) : null;
+    const purchaseSupplier = isPurchaseEntry
+      ? sanitizeEntryDesc(e.description).replace(/^[Cc]ompra\s+/i, '').split(':')[0].trim()
+      : null;
     const voucherRef = (e.voucherSeries && e.voucherNumber) ? `${e.voucherSeries}-${e.voucherNumber}` : null;
     const isUsdEntry = getEntryUsdAmount(e) != null;
     return (
