@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { Building2, Shield } from 'lucide-react';
+import { Building2, Shield, Receipt } from 'lucide-react';
 import { CompanyInfoForm } from '../components/CompanyInfoForm';
+import { FiscalEntitySettings } from '../components/FiscalEntitySettings';
 import { UsersPage } from '../../users/pages/UsersPage';
 
-type Tab = 'company' | 'users';
+type Tab = 'company' | 'fiscal' | 'users';
 
 const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'company', label: 'Información de la empresa', icon: Building2 },
+  { id: 'fiscal', label: 'Entidades fiscales', icon: Receipt },
   { id: 'users', label: 'Usuarios', icon: Shield },
 ];
 
@@ -42,6 +44,7 @@ export function SettingsPage() {
       </div>
 
       {tab === 'company' && <CompanyInfoForm />}
+      {tab === 'fiscal' && <FiscalEntitySettings />}
       {tab === 'users' && <UsersPage />}
     </div>
   );

@@ -59,6 +59,10 @@ function formatDate(d: Date): string {
   return d.toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function displayTotal(sale: VoucherSnapshot): number {
+  return sale.currency === 'USD' && sale.totalUsd != null ? sale.totalUsd : sale.total;
+}
+
 const BRAND_GREEN = '#16a34a';
 const BRAND_GREEN_DARK = '#15803d';
 const BORDER_GRAY = '#94a3b8';
@@ -69,6 +73,8 @@ function dashedLine(width = 206) {
 
 function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
   const c = COMPANY_INFO;
+  const isUsd = sale.currency === 'USD';
+  const sym = isUsd ? '$' : 'S/';
   const itemRows: any[] = [];
   sale.items.forEach((i) => {
     itemRows.push([
@@ -80,10 +86,11 @@ function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): a
     itemRows.push([
       {},
       {},
-      { text: `S/ ${i.unitPrice.toFixed(2)}`, alignment: 'right' },
-      { text: `S/ ${i.subtotal.toFixed(2)}`, alignment: 'right' },
+      { text: `${sym} ${i.unitPrice.toFixed(2)}`, alignment: 'right' },
+      { text: `${sym} ${i.subtotal.toFixed(2)}`, alignment: 'right' },
     ]);
   });
+  const totalDisplay = displayTotal(sale);
 
   const content: any[] = [];
   if (logoDataUrl) {
@@ -133,22 +140,22 @@ function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): a
   content.push(dashedLine());
 
   if (typeof sale.baseImponible === 'number') {
-    content.push({ columns: [{ text: 'Subtotal' }, { text: `S/ ${sale.baseImponible.toFixed(2)}`, alignment: 'right' }] });
+    content.push({ columns: [{ text: 'Subtotal' }, { text: `${sym} ${sale.baseImponible.toFixed(2)}`, alignment: 'right' }] });
   }
   if (typeof sale.igv === 'number' && sale.igv > 0) {
-    content.push({ columns: [{ text: 'IGV (18%)' }, { text: `S/ ${sale.igv.toFixed(2)}`, alignment: 'right' }] });
+    content.push({ columns: [{ text: 'IGV (18%)' }, { text: `${sym} ${sale.igv.toFixed(2)}`, alignment: 'right' }] });
   }
   content.push({
     columns: [
       { text: 'TOTAL', bold: true, fontSize: 14 },
-      { text: `S/ ${sale.total.toFixed(2)}`, bold: true, fontSize: 14, alignment: 'right' },
+      { text: `${sym} ${totalDisplay.toFixed(2)}`, bold: true, fontSize: 14, alignment: 'right' },
     ],
     margin: [0, 4, 0, 4],
   });
 
   const anticipoSum = sale.payments.reduce((s, p) => s + p.amount, 0);
   const paidSoFar = sale.creditPaidAmount ?? anticipoSum;
-  const pendingAmount = Math.max(0, sale.total - paidSoFar);
+  const pendingAmount = Math.max(0, totalDisplay - paidSoFar);
 
   if (sale.isCredit) {
     content.push(dashedLine());
@@ -156,20 +163,20 @@ function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): a
     if (anticipoSum > 0) {
       content.push({ text: 'Abonado a la fecha', bold: true, margin: [0, 3, 0, 0] });
       sale.payments.forEach((p) => {
-        content.push({ columns: [{ text: p.methodName }, { text: `S/ ${p.amount.toFixed(2)}`, alignment: 'right' }] });
+        content.push({ columns: [{ text: p.methodName }, { text: `${sym} ${p.amount.toFixed(2)}`, alignment: 'right' }] });
       });
       const posteriores = paidSoFar - anticipoSum;
       if (posteriores > 0.001) {
-        content.push({ columns: [{ text: 'Abonos posteriores' }, { text: `S/ ${posteriores.toFixed(2)}`, alignment: 'right' }] });
+        content.push({ columns: [{ text: 'Abonos posteriores' }, { text: `${sym} ${posteriores.toFixed(2)}`, alignment: 'right' }] });
       }
-      content.push({ columns: [{ text: 'Total abonado', bold: true }, { text: `S/ ${paidSoFar.toFixed(2)}`, bold: true, alignment: 'right' }] });
+      content.push({ columns: [{ text: 'Total abonado', bold: true }, { text: `${sym} ${paidSoFar.toFixed(2)}`, bold: true, alignment: 'right' }] });
     } else {
       content.push({ text: 'Sin abono inicial', color: '#555', italics: true, margin: [0, 2, 0, 2] });
     }
     content.push({
       columns: [
         { text: 'SALDO PENDIENTE', bold: true, fontSize: 11, color: '#b91c1c' },
-        { text: `S/ ${pendingAmount.toFixed(2)}`, bold: true, fontSize: 11, color: '#b91c1c', alignment: 'right' },
+        { text: `${sym} ${pendingAmount.toFixed(2)}`, bold: true, fontSize: 11, color: '#b91c1c', alignment: 'right' },
       ],
       margin: [0, 4, 0, 2],
     });
@@ -181,13 +188,13 @@ function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): a
     content.push(dashedLine());
     content.push({ text: 'Forma de pago', bold: true });
     sale.payments.forEach((p) => {
-      content.push({ columns: [{ text: p.methodName }, { text: `S/ ${p.amount.toFixed(2)}`, alignment: 'right' }] });
+      content.push({ columns: [{ text: p.methodName }, { text: `${sym} ${p.amount.toFixed(2)}`, alignment: 'right' }] });
     });
     if (sale.payments.length > 1) {
       content.push({
         columns: [
           { text: 'Total pagado', bold: true },
-          { text: `S/ ${anticipoSum.toFixed(2)}`, bold: true, alignment: 'right' },
+          { text: `${sym} ${anticipoSum.toFixed(2)}`, bold: true, alignment: 'right' },
         ],
         margin: [0, 2, 0, 0],
       });
@@ -277,13 +284,16 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
   const headerRuc = c.ruc || '—';
   const title = voucherTitle(sale.voucherType).toUpperCase();
   const number = displayVoucherNumber(sale);
+  const isUsd = sale.currency === 'USD';
+  const currencyLabel = isUsd ? '$' : 'S/';
+  const totalDisplay = displayTotal(sale);
 
   const subtotal = typeof sale.baseImponible === 'number'
     ? sale.baseImponible
-    : Math.round((sale.total / 1.18) * 100) / 100;
+    : Math.round((totalDisplay / 1.18) * 100) / 100;
   const igv = typeof sale.igv === 'number'
     ? sale.igv
-    : Math.round((sale.total - subtotal) * 100) / 100;
+    : Math.round((totalDisplay - subtotal) * 100) / 100;
 
   const itemsRows = sale.items.map((it, idx) => [
     { text: idx + 1, alignment: 'center', fontSize: 8 },
@@ -305,7 +315,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
 
   const anticipoSumA4 = sale.payments.reduce((s, p) => s + p.amount, 0);
   const paidSoFarA4 = sale.creditPaidAmount ?? anticipoSumA4;
-  const pendingAmountA4 = Math.max(0, sale.total - paidSoFarA4);
+  const pendingAmountA4 = Math.max(0, totalDisplay - paidSoFarA4);
 
   const paymentsBody: any[] = [
     [{
@@ -317,7 +327,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
     ...sale.payments.map((p) => [
       { text: p.methodName, bold: true, fontSize: 8 },
       { text: ':', fontSize: 8 },
-      { text: `S/ ${p.amount.toFixed(2)}`, alignment: 'right', fontSize: 8 },
+      { text: `${currencyLabel} ${p.amount.toFixed(2)}`, alignment: 'right', fontSize: 8 },
     ]),
   ];
   if (sale.isCredit) {
@@ -326,20 +336,20 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
       paymentsBody.push([
         { text: 'Abonos posteriores', bold: true, fontSize: 8 },
         { text: ':', fontSize: 8 },
-        { text: `S/ ${posteriores.toFixed(2)}`, alignment: 'right', fontSize: 8 },
+        { text: `${currencyLabel} ${posteriores.toFixed(2)}`, alignment: 'right', fontSize: 8 },
       ]);
     }
     if (paidSoFarA4 > 0) {
       paymentsBody.push([
         { text: 'Total abonado', bold: true, fontSize: 8 },
         { text: ':', fontSize: 8 },
-        { text: `S/ ${paidSoFarA4.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 8 },
+        { text: `${currencyLabel} ${paidSoFarA4.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 8 },
       ]);
     }
     paymentsBody.push([
       { text: 'SALDO PENDIENTE', bold: true, fontSize: 9, color: '#b91c1c' },
       { text: ':', fontSize: 9, color: '#b91c1c' },
-      { text: `S/ ${pendingAmountA4.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 9, color: '#b91c1c' },
+      { text: `${currencyLabel} ${pendingAmountA4.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 9, color: '#b91c1c' },
     ]);
     if (sale.creditDueDate) {
       const due = new Date(sale.creditDueDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -353,7 +363,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
     paymentsBody.push([
       { text: 'Total pagado', bold: true, fontSize: 8 },
       { text: ':', fontSize: 8 },
-      { text: `S/ ${anticipoSumA4.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 8 },
+      { text: `${currencyLabel} ${anticipoSumA4.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 8 },
     ]);
   }
   if (paymentsBody.length === 1) {
@@ -465,7 +475,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
       {
         text: [
           { text: 'SON: ', bold: true, fontSize: 8 },
-          { text: numberToWords(sale.total, 'PEN'), fontSize: 8 },
+          { text: numberToWords(totalDisplay, isUsd ? 'USD' : 'PEN'), fontSize: 8 },
         ],
         margin: [2, 2, 2, 2],
       },
@@ -496,18 +506,18 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
               body: [
                 [
                   { text: 'OP. GRAVADAS', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
-                  { text: 'S/', fontSize: 9, alignment: 'center', margin: [0, 3] },
+                  { text: currencyLabel, fontSize: 9, alignment: 'center', margin: [0, 3] },
                   { text: subtotal.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
                 ],
                 [
                   { text: 'I.G.V. 18%', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
-                  { text: 'S/', fontSize: 9, alignment: 'center', margin: [0, 3] },
+                  { text: currencyLabel, fontSize: 9, alignment: 'center', margin: [0, 3] },
                   { text: igv.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
                 ],
                 [
                   { text: 'IMPORTE TOTAL', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 10, alignment: 'right', margin: [4, 3] },
-                  { text: 'S/', fontSize: 10, alignment: 'center', bold: true, margin: [0, 3] },
-                  { text: sale.total.toFixed(2), fontSize: 10, alignment: 'right', bold: true, margin: [0, 3] },
+                  { text: currencyLabel, fontSize: 10, alignment: 'center', bold: true, margin: [0, 3] },
+                  { text: totalDisplay.toFixed(2), fontSize: 10, alignment: 'right', bold: true, margin: [0, 3] },
                 ],
               ],
             },

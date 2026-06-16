@@ -9,7 +9,7 @@ import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { useExpiringLots, useProductLotsByProduct } from '../../stock/hooks/useProductLots';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
-import { ClipboardList, Search, ArrowUpCircle, ArrowDownCircle, X, Package, FileText, Download, Printer } from 'lucide-react';
+import { ClipboardList, Search, ArrowUpCircle, ArrowDownCircle, X, Package, FileText, Download, Printer, ArrowLeft } from 'lucide-react';
 import type { Company, Product } from '../../../shared/types';
 
 const MOVEMENT_LABELS: Record<string, { label: string; color: string; isEntry: boolean }> = {
@@ -43,9 +43,11 @@ interface StockMovement {
 type Tab = 'kardex' | 'movimientos';
 
 export function KardexPage() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = (searchParams.get('tab') as Tab) || 'kardex';
   const tab: Tab = tabParam === 'movimientos' ? 'movimientos' : 'kardex';
+  const productIdParam = searchParams.get('productId') || '';
 
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
@@ -61,9 +63,21 @@ export function KardexPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <ClipboardList size={24} /> Kardex
-        </h1>
+        <div className="flex items-center gap-3">
+          {productIdParam && (
+            <button
+              type="button"
+              onClick={() => navigate('/kardex')}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              title="Volver al listado"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          )}
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <ClipboardList size={24} /> Kardex
+          </h1>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg shadow mb-4">

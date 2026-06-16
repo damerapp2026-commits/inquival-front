@@ -8,6 +8,7 @@ import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { useUnits } from '../../units/hooks/useUnits';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useSupplierByRuc, useCreateSupplier } from '../../suppliers/hooks/useSuppliers';
+import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities';
 import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import { useCashRegisterToday } from '../../cash-register/hooks/useCashRegister';
 import { Modal } from '../../../shared/components/Modal';
@@ -15,7 +16,7 @@ import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { SmartSearchSelect } from '../../../shared/components/SmartSearchSelect';
 import {
   Trash2, Loader2, DollarSign, PackagePlus, FileText, CopyIcon, Dices, Wand2,
-  Building2, CreditCard, Package, FlaskConical, CheckCircle,
+  Building2, CreditCard, Package, FlaskConical, CheckCircle, Truck, Percent,
 } from 'lucide-react';
 import type { Company, Product, Category, Laboratory } from '../../../shared/types';
 import toast from 'react-hot-toast';
@@ -83,9 +84,15 @@ export interface PurchaseSubmitPayload {
   documentSeries?: string;
   documentNumber?: string;
   issueDate?: string;
+  grSeries?: string;
+  grNumber?: string;
+  grDate?: string;
   date: string;
-  paymentType: 'CONTADO' | 'CREDITO';
+  paymentType: 'CONTADO' | 'CREDITO' | 'BONIFICACION';
+  addToStock?: boolean;
   paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS';
+  detraccion?: boolean;
+  detraccionDueDate?: string;
   currency: 'PEN' | 'USD';
   exchangeRate?: number | null;
   exchangeRateDate?: string;
@@ -105,6 +112,7 @@ export interface PurchaseSubmitPayload {
     lotNumber?: string;
     expirationDate?: string;
   }>;
+  fiscalEntityId?: string;
   reason?: string;
 }
 
@@ -118,6 +126,9 @@ export function PurchaseFormBody({
   onCancelHref,
   warningBanner,
 }: PurchaseFormBodyProps) {
+  const { data: fiscalEntitiesData } = useFiscalEntities();
+  const fiscalEntities = (Array.isArray(fiscalEntitiesData) ? fiscalEntitiesData : []).filter((e: any) => e.isActive !== false);
+
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
   const supplierByRuc = useSupplierByRuc();
@@ -135,11 +146,20 @@ export function PurchaseFormBody({
   const createProduct = useCreateProduct();
   const categories: Category[] = Array.isArray(categoriesData) ? categoriesData : (categoriesData as any)?.data || [];
 
+  const [fiscalEntityId, setFiscalEntityId] = useState<string>(initial.fiscalEntityId ?? '');
   const [currency, setCurrency] = useState<'PEN' | 'USD'>(initial.currency);
   const [form, setForm] = useState(initial.state);
   const [exchangeRate, setExchangeRate] = useState<number | null>(initial.exchangeRate);
   const [exchangeRateDate, setExchangeRateDate] = useState(initial.exchangeRateDate);
-  const [exchangeRateFromSunat, setExchangeRateFromSunat] = useState(false);
+  const [exchangeRateSource, setExchangeRateSource] = useState<'SUNAT' | 'ESTIMADO' | null>(null);
+
+  useEffect(() => {
+    if (!fiscalEntityId && fiscalEntities.length > 0) {
+      const def = fiscalEntities.find((e: any) => e.isDefault) || fiscalEntities[0];
+      if (def) setFiscalEntityId(def.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fiscalEntities.length]);
 
   // Al registrar una compra nueva en USD, sugerir el tipo de cambio SUNAT del día
   const { data: tipoCambioData } = useTodayTipoCambio(mode === 'create' && currency === 'USD');
@@ -147,12 +167,16 @@ export function PurchaseFormBody({
     if (mode === 'create' && currency === 'USD' && exchangeRate == null && tipoCambioData?.venta) {
       setExchangeRate(tipoCambioData.venta);
       setExchangeRateDate(tipoCambioData.fecha);
-      setExchangeRateFromSunat(true);
+      setExchangeRateSource(tipoCambioData.source || (tipoCambioData.isFallback ? 'ESTIMADO' : 'SUNAT'));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipoCambioData, currency, mode]);
   const [labResolving, setLabResolving] = useState(false);
-  const [installmentGen, setInstallmentGen] = useState({ count: 6, intervalDays: 30, firstDaysFromPurchase: 30 });
+  const [installmentGen, setInstallmentGen] = useState(() => ({
+    count: initial.state.installments.length || 6,
+    intervalDays: 15,
+    firstDaysFromPurchase: 15,
+  }));
   const [scrollToLast, setScrollToLast] = useState(false);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [showNewProduct, setShowNewProduct] = useState(false);
@@ -263,6 +287,13 @@ export function PurchaseFormBody({
   const totalSoles = currency === 'USD' && exchangeRate && documentTotal ? Math.round(documentTotal * exchangeRate * 100) / 100 : 0;
   const creditTotal = documentTotal;
   const creditSymbol = currency === 'USD' ? '$' : 'S/';
+
+  const hasExemptItem = form.items.some(i => i.productId && !itemAppliesIgv(i.productId, products));
+  const totalInPen = currency === 'USD' && exchangeRate && documentTotal
+    ? Math.round(documentTotal * exchangeRate * 100) / 100
+    : documentTotal;
+  const detraccionAmountPen = Math.round(totalInPen * 0.015 * 100) / 100;
+  const netAfterDetraccion = Math.round(documentTotal * 0.985 * 100) / 100;
 
   const itemsSubtotal = Math.round(form.items.reduce((s, i) => s + (i.quantity * i.costoAdquisicion || 0), 0) * 100) / 100;
 
@@ -406,6 +437,14 @@ export function PurchaseFormBody({
       toast.error('Ingresa el tipo de cambio para compras en dólares');
       return;
     }
+    if (!fiscalEntityId && fiscalEntities.length > 0) {
+      toast.error('Selecciona la entidad fiscal (RUC emisor)');
+      return;
+    }
+    if (hasExemptItem && form.detraccion && !form.detraccionDueDate) {
+      toast.error('Selecciona la fecha límite de pago de la detracción');
+      return;
+    }
     if (mode === 'edit' && reason.trim().length < 5) {
       toast.error('Indica el motivo del cambio (mínimo 5 caracteres)');
       return;
@@ -440,6 +479,9 @@ export function PurchaseFormBody({
     if (form.documentSeries) payload.documentSeries = form.documentSeries;
     if (form.documentNumber) payload.documentNumber = form.documentNumber;
     if (form.issueDate) payload.issueDate = form.issueDate;
+    if (form.grSeries) payload.grSeries = form.grSeries;
+    if (form.grNumber) payload.grNumber = form.grNumber;
+    if (form.grDate) payload.grDate = form.grDate;
     if (currency === 'USD') {
       payload.totalCostUsd = documentTotal;
       payload.exchangeRate = exchangeRate;
@@ -455,6 +497,16 @@ export function PurchaseFormBody({
       if (form.paymentScheduleType === 'SINGLE_DATE') payload.dueDate = form.dueDate;
       if (form.paymentScheduleType === 'INSTALLMENTS') payload.installments = form.installments;
     }
+    if (form.paymentType === 'BONIFICACION') {
+      payload.addToStock = form.addToStock;
+      payload.totalCost = 0;
+      payload.totalCostUsd = undefined;
+    }
+    if (hasExemptItem && form.detraccion && form.detraccionDueDate) {
+      payload.detraccion = true;
+      payload.detraccionDueDate = form.detraccionDueDate;
+    }
+    if (fiscalEntityId) payload.fiscalEntityId = fiscalEntityId;
     if (mode === 'edit') payload.reason = reason.trim();
 
     await onSubmit(payload);
@@ -511,6 +563,23 @@ export function PurchaseFormBody({
           {/* Comprobante */}
           <SectionCard title="Comprobante de pago" icon={FileText}>
             <div className="grid grid-cols-2 gap-3">
+              {fiscalEntities.length > 1 && (
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Empresa receptora (RUC)</label>
+                  <select
+                    value={fiscalEntityId}
+                    onChange={(e) => setFiscalEntityId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                  >
+                    <option value="">— Seleccionar —</option>
+                    {fiscalEntities.map((fe: any) => (
+                      <option key={fe.id} value={fe.id}>
+                        {fe.legalName} — RUC {fe.ruc}{fe.isDefault ? ' (por defecto)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Tipo</label>
                 <select value={form.documentType} onChange={(e) => setForm({ ...form, documentType: e.target.value as any })} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
@@ -541,6 +610,39 @@ export function PurchaseFormBody({
           </SectionCard>
 
         </div>
+
+        {/* Guía de Remisión */}
+        <SectionCard title="Guía de Remisión" icon={Truck}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Serie</label>
+              <input
+                value={form.grSeries}
+                onChange={(e) => setForm({ ...form, grSeries: e.target.value.toUpperCase() })}
+                placeholder="T001"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm uppercase"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Correlativo</label>
+              <input
+                value={form.grNumber}
+                onChange={(e) => setForm({ ...form, grNumber: e.target.value })}
+                placeholder="00000001"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Fecha</label>
+              <input
+                type="date"
+                value={form.grDate}
+                onChange={(e) => setForm({ ...form, grDate: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+              />
+            </div>
+          </div>
+        </SectionCard>
 
         {/* Productos */}
         <SectionCard title={`Productos (${form.items.length})`} icon={Package}>
@@ -740,8 +842,10 @@ export function PurchaseFormBody({
                 <div className="mt-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     Tipo de cambio (S/ por $) <span className="text-red-500">*</span>
-                    {exchangeRateFromSunat && (
-                      <span className="ml-1 text-[10px] font-normal text-blue-600">(SUNAT {exchangeRateDate})</span>
+                    {exchangeRateSource && (
+                      <span className={`ml-1 text-[10px] font-normal ${exchangeRateSource === 'ESTIMADO' ? 'text-amber-600' : 'text-blue-600'}`}>
+                        ({exchangeRateSource === 'ESTIMADO' ? 'Estimado' : 'SUNAT'} {exchangeRateDate})
+                      </span>
                     )}
                   </label>
                   <input
@@ -752,7 +856,7 @@ export function PurchaseFormBody({
                     onChange={(e) => {
                       const v = parseFloat(e.target.value);
                       setExchangeRate(isNaN(v) || v <= 0 ? null : v);
-                      setExchangeRateFromSunat(false);
+                      setExchangeRateSource(null);
                       setExchangeRateDate('');
                     }}
                     placeholder="Ej: 3.7500"
@@ -794,15 +898,102 @@ export function PurchaseFormBody({
           </div>
         </SectionCard>
 
+        {/* Detracción */}
+        {hasExemptItem && (
+          <SectionCard title="Detracción (SPOT)" icon={Percent}>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-gray-700">¿Afecta detracción?</p>
+                <p className="text-xs text-gray-500 mt-0.5">Hay productos exonerados/inafectos. Tasa fija: 1.5% del total.</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.detraccion}
+                onClick={() => setForm({ ...form, detraccion: !form.detraccion, detraccionDueDate: '' })}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 ${form.detraccion ? 'bg-blue-600' : 'bg-gray-200'}`}
+              >
+                <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${form.detraccion ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+
+            {form.detraccion && (
+              <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-3">
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Total de compra</span>
+                    <span className="tabular-nums">{creditSymbol} {documentTotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-blue-700">
+                    <span className="flex items-center gap-1">
+                      <span>Detracción 1.5%</span>
+                      <span className="text-[11px] text-blue-500">(CxP "Detracción - {form.supplier || '…'}")</span>
+                    </span>
+                    <span className="font-semibold tabular-nums">S/ {detraccionAmountPen.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-gray-800 border-t border-blue-200 pt-1.5">
+                    <span>A condiciones de pago</span>
+                    <span className="tabular-nums">{creditSymbol} {netAfterDetraccion.toFixed(2)}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Fecha límite pago detracción <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={form.detraccionDueDate}
+                    onChange={(e) => setForm({ ...form, detraccionDueDate: e.target.value })}
+                    className="w-full sm:w-52 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  />
+                  <p className="text-[11px] text-blue-600 mt-1">
+                    Se creará una CxP "Detracción - {form.supplier || '…'}" por S/ {detraccionAmountPen.toFixed(2)} pagadera en esta fecha.
+                  </p>
+                </div>
+              </div>
+            )}
+          </SectionCard>
+        )}
+
         {/* Pago */}
         <SectionCard title="Condiciones de pago" icon={CreditCard}>
+          {hasExemptItem && form.detraccion && (
+            <div className="mb-3 flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <Percent size={12} />
+              <span>Aplica al <span className="font-semibold">98.5% restante ({creditSymbol} {netAfterDetraccion.toFixed(2)})</span> después de descontar la detracción.</span>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de Pago</label>
             <div className="flex gap-2">
               <button type="button" onClick={() => setForm({ ...form, paymentType: 'CONTADO', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [] })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CONTADO' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Contado</button>
-              <button type="button" onClick={() => setForm({ ...form, paymentType: 'CREDITO' })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CREDITO' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Crédito</button>
+              <button type="button" onClick={() => setForm({ ...form, paymentType: 'CREDITO', paymentScheduleType: 'SINGLE_DATE' })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'CREDITO' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Crédito</button>
+              <button type="button" onClick={() => setForm({ ...form, paymentType: 'BONIFICACION', paymentScheduleType: 'SINGLE_DATE', dueDate: '', installments: [], addToStock: form.addToStock ?? true })} className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${form.paymentType === 'BONIFICACION' ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>Bonificación</button>
             </div>
           </div>
+
+          {form.paymentType === 'BONIFICACION' && (
+            <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg p-3">
+              <label className="block text-xs font-medium text-purple-800 mb-2">¿Agregar productos al stock?</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, addToStock: true })}
+                  className={`flex-1 py-1.5 rounded text-xs font-medium border-2 transition ${form.addToStock !== false ? 'border-purple-500 bg-white text-purple-700' : 'border-gray-200 text-gray-500'}`}
+                >
+                  Sí, agregar al stock
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, addToStock: false })}
+                  className={`flex-1 py-1.5 rounded text-xs font-medium border-2 transition ${form.addToStock === false ? 'border-purple-500 bg-white text-purple-700' : 'border-gray-200 text-gray-500'}`}
+                >
+                  No agregar al stock
+                </button>
+              </div>
+              <p className="text-[11px] text-purple-600 mt-2">No representa ningún gasto ni cuenta por pagar.</p>
+            </div>
+          )}
 
           {form.paymentType === 'CREDITO' && (
             <div className="mt-4 space-y-3 bg-orange-50 p-3 rounded-lg border border-orange-200">

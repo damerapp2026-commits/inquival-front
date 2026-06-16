@@ -5,6 +5,7 @@ import { useProducts } from '../hooks/useProducts';
 import { useCategories } from '../../categories/hooks/useCategories';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
+import { useStockByProductSummary } from '../../stock/hooks/useStock';
 import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import type { Product } from '../../../shared/types';
 
@@ -83,6 +84,7 @@ interface MergedRow {
   storedSellPrice?: number;
   storedSellPriceTier?: string;
   markupPercent?: number;
+  stockQuantity: number;
   lastPurchaseDate?: string;
   documentSeries?: string;
   documentNumber?: string;
@@ -115,6 +117,7 @@ export function PriceCatalogView({ enabled }: Props) {
   const { data: categoriesData } = useCategories();
   const { data: laboratoriesData } = useLaboratories();
   const { data: priceTiersData } = usePriceTiers();
+  const { data: stockSummaryData } = useStockByProductSummary();
   const { data: tipoCambioData, isLoading: tcLoading } = useTodayTipoCambio(enabled);
   const tcDay = tipoCambioData?.venta ?? null;
   const updatePriceCatalog = useUpdatePriceCatalog();
@@ -147,6 +150,10 @@ export function PriceCatalogView({ enabled }: Props) {
   const priceTiers: any[] = Array.isArray(priceTiersData) ? priceTiersData : [];
   const products: Product[] = (productsData as any)?.data || (Array.isArray(productsData) ? productsData : []) || [];
   const catalogRows: PriceCatalogRow[] = Array.isArray(catalogData) ? catalogData : [];
+  const stockByProduct = useMemo(
+    () => new Map((stockSummaryData || []).map((s: any) => [s.productId, s])),
+    [stockSummaryData],
+  );
 
   const sortedTiers = useMemo(
     () => priceTiers.slice().sort((a: any, b: any) => (a.priority || 0) - (b.priority || 0)),
@@ -200,6 +207,7 @@ export function PriceCatalogView({ enabled }: Props) {
   const merged: MergedRow[] = useMemo(() => {
     return products.map((p) => {
       const row = catalogByProduct.get(p.id);
+      const stock = stockByProduct.get(p.id) as any;
       const labName = p.laboratoryId ? (labsById.get(p.laboratoryId) as any)?.name : undefined;
       const { price: storedSellPrice, tierName: storedSellPriceTier } = lookupStoredPrice(p);
       return {
@@ -219,6 +227,7 @@ export function PriceCatalogView({ enabled }: Props) {
         storedSellPrice,
         storedSellPriceTier,
         markupPercent: row?.markupPercent,
+        stockQuantity: Number(stock?.totalQuantity ?? 0),
         lastPurchaseDate: row?.lastPurchaseDate,
         documentSeries: row?.documentSeries,
         documentNumber: row?.documentNumber,
@@ -226,7 +235,7 @@ export function PriceCatalogView({ enabled }: Props) {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, catalogByProduct, labsById, sortedTiers, tiersById]);
+  }, [products, catalogByProduct, labsById, sortedTiers, tiersById, stockByProduct]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -614,7 +623,7 @@ export function PriceCatalogView({ enabled }: Props) {
           <table className="min-w-full text-xs">
             <thead>
               <tr className="bg-gray-50 text-gray-500 border-b border-gray-100 text-[10px]">
-                <th colSpan={2}></th>
+                <th colSpan={3}></th>
                 <th className="text-right px-2 py-1 font-medium tabular-nums" colSpan={2}>
                   T.C. <span className="text-blue-700">{tc != null ? tc.toFixed(2) : '—'}</span>
                 </th>
@@ -633,8 +642,9 @@ export function PriceCatalogView({ enabled }: Props) {
                 <th colSpan={2}></th>
               </tr>
               <tr className="bg-gray-50 text-gray-600 border-b border-gray-200">
-                <th className="text-left px-3 py-2 font-medium">Producto</th>
-                <th className="text-left px-3 py-2 font-medium">Laboratorio</th>
+                <th className="text-left px-2 py-2 font-medium w-[180px] max-w-[180px]">Nombre</th>
+                <th className="text-left px-2 py-2 font-medium w-[110px] max-w-[110px]">Laboratorio</th>
+                <th className="text-right px-2 py-2 font-medium w-16">Stock</th>
                 <th className="text-right px-2 py-2 font-medium bg-amber-100 text-amber-800">USD s/IGV</th>
                 <th className="text-right px-2 py-2 font-medium bg-stone-100 text-stone-700">PEN s/IGV</th>
                 <th className="text-right px-2 py-2 font-medium bg-amber-100 text-amber-800">USD c/IGV</th>
@@ -649,14 +659,14 @@ export function PriceCatalogView({ enabled }: Props) {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={12} className="px-4 py-12 text-center text-gray-400">
                     <Loader2 size={20} className="animate-spin inline" /> Cargando catálogo…
                   </td>
                 </tr>
               )}
               {!isLoading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={12} className="px-4 py-12 text-center text-gray-400">
                     {merged.length === 0
                       ? 'No hay productos cargados.'
                       : 'Ningún producto coincide con los filtros.'}
@@ -669,15 +679,18 @@ export function PriceCatalogView({ enabled }: Props) {
                 const hasError = errorIds.has(r.productId);
                 return (
                   <tr key={r.productId} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">
-                      <div>{r.productName}</div>
+                    <td className="px-2 py-2 font-medium text-gray-800 w-[180px] max-w-[180px]">
+                      <div className="truncate" title={r.productName}>{r.productName}</div>
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td className="px-2 py-2 w-[110px] max-w-[110px]">
                       {r.laboratoryName ? (
-                        <span className="text-[11px] bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded">
+                        <span className="block truncate text-[11px] bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded" title={r.laboratoryName}>
                           {r.laboratoryName}
                         </span>
                       ) : '—'}
+                    </td>
+                    <td className={`px-2 py-2 text-right tabular-nums w-16 ${r.stockQuantity <= 10 ? 'text-red-600 font-semibold' : 'text-gray-700'}`}>
+                      {r.stockQuantity}
                     </td>
                     <td className="px-1 py-1 text-right tabular-nums bg-amber-50">
                       {renderInput(r, 'unitPriceSinIgvUsd', 'bg-amber-50 text-amber-900')}

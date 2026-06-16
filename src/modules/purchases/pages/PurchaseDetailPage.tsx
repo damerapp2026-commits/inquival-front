@@ -4,7 +4,7 @@ import { usePurchases, useCancelPurchase, useUpdatePurchaseMeta } from '../hooks
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useAuth } from '../../../app/providers/AuthProvider';
-import { useAccountPayableByPurchaseId } from '../../accounts-payable/hooks/useAccountsPayable';
+import { useAccountPayablesByPurchaseId } from '../../accounts-payable/hooks/useAccountsPayable';
 import { ArrowLeft, ShoppingCart, Building2, CreditCard, Package, Pencil, Trash2, CheckCircle, Clock, AlertCircle, FileText } from 'lucide-react';
 import type { Purchase, Company, Product, AccountPayable } from '../../../shared/types';
 import { CancelPurchaseDialog } from '../components/CancelPurchaseDialog';
@@ -39,9 +39,10 @@ const apStatusConfig = {
   CONSOLIDATED: { label: 'Consolidado', cls: 'bg-purple-100 text-purple-700', icon: CheckCircle },
 } as const;
 
-function AccountPayableSection({ ap, sym }: { ap: AccountPayable | null | undefined; sym: string }) {
+function AccountPayableSection({ ap, title = 'Cuenta por Pagar' }: { ap: AccountPayable | null | undefined; title?: string }) {
   if (!ap) return null;
 
+  const sym = ap.currency === 'USD' ? '$' : 'S/';
   const cfg = apStatusConfig[ap.status as keyof typeof apStatusConfig] ?? apStatusConfig.PENDING;
   const StatusIcon = cfg.icon;
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -52,7 +53,7 @@ function AccountPayableSection({ ap, sym }: { ap: AccountPayable | null | undefi
   };
 
   return (
-    <SectionCard title="Cuenta por Pagar" icon={CreditCard}>
+    <SectionCard title={title} icon={CreditCard}>
       {/* Resumen general */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold ${cfg.cls}`}>
@@ -180,7 +181,7 @@ export function PurchaseDetailPage() {
   const { data, isLoading } = usePurchases({ limit: 500 });
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
-  const { data: accountPayable } = useAccountPayableByPurchaseId(id ?? null);
+  const { data: accountPayables } = useAccountPayablesByPurchaseId(id ?? null);
   const cancelPurchase = useCancelPurchase();
   const updateMeta = useUpdatePurchaseMeta();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -217,6 +218,9 @@ export function PurchaseDetailPage() {
   }
 
   const sym = purchase.totalCostUsd ? '$' : 'S/';
+  const apList = (accountPayables as AccountPayable[] | undefined) ?? [];
+  const mainAP = apList.find(ap => !ap.supplier?.startsWith('Detracción - ')) ?? null;
+  const detraccionAP = apList.find(ap => ap.supplier?.startsWith('Detracción - ')) ?? null;
 
   return (
     <div>
@@ -292,7 +296,11 @@ export function PurchaseDetailPage() {
             <InfoCell label="F. Recepción">
               {formatDateEs(purchase.date, { day: '2-digit', month: 'long', year: 'numeric' })}
             </InfoCell>
-            <InfoCell label="Almacén">{getCompanyName(purchase.companyId)}</InfoCell>
+            <InfoCell label="Guía de Remisión">
+              {purchase.grSeries || purchase.grNumber
+                ? <>{[purchase.grSeries, purchase.grNumber].filter(Boolean).join('-')}{purchase.grDate && <span className="block text-xs text-gray-500 mt-0.5">Fecha: {formatDateEs(purchase.grDate)}</span>}</>
+                : <span className="text-gray-400">—</span>}
+            </InfoCell>
             <InfoCell label="Proveedor">
               {purchase.supplier}
               {purchase.supplierRuc ? ` (${purchase.supplierRuc})` : ''}
@@ -311,16 +319,6 @@ export function PurchaseDetailPage() {
             {purchase.paymentType === 'CREDITO' && purchase.paymentScheduleType === 'SINGLE_DATE' && purchase.dueDate && (
               <InfoCell label="Vencimiento">
                 {formatDateEs(purchase.dueDate, { day: '2-digit', month: 'long', year: 'numeric' })}
-              </InfoCell>
-            )}
-            {(purchase.grSeries || purchase.grNumber) && (
-              <InfoCell label="Guía de Remisión">
-                {[purchase.grSeries, purchase.grNumber].filter(Boolean).join('-')}
-                {purchase.grDate && (
-                  <span className="block text-xs text-gray-500 mt-0.5">
-                    Fecha: {formatDateEs(purchase.grDate)}
-                  </span>
-                )}
               </InfoCell>
             )}
           </div>
@@ -371,7 +369,12 @@ export function PurchaseDetailPage() {
 
         {/* Cuenta por Pagar (solo crédito) */}
         {purchase.paymentType === 'CREDITO' && (
-          <AccountPayableSection ap={accountPayable as AccountPayable | null | undefined} sym={sym} />
+          <AccountPayableSection ap={mainAP} />
+        )}
+
+        {/* Detracción SPOT (cualquier tipo de pago) */}
+        {detraccionAP && (
+          <AccountPayableSection ap={detraccionAP} title="Detracción (SPOT)" />
         )}
 
         {/* Totales */}

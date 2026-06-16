@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { usePurchases, useUpdatePurchaseMeta } from '../hooks/usePurchases';
 import { purchaseService } from '../services/purchaseService';
 import { useCompanies } from '../../companies/hooks/useCompanies';
@@ -44,6 +44,7 @@ const DATE_PRESETS = [
 
 export function PurchasesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [grModal, setGrModal] = useState<{ purchaseId: string; grSeries: string; grNumber: string; grDate: string } | null>(null);
   const updateMeta = useUpdatePurchaseMeta();
@@ -54,6 +55,8 @@ export function PurchasesPage() {
   const endDate = searchParams.get('endDate') || '';
   const activePreset = searchParams.get('preset') || '';
   const supplierParam = searchParams.get('supplier') || '';
+  const currencyFilter = (searchParams.get('currency') || '') as '' | 'PEN' | 'USD';
+  const paymentTypeFilter = (searchParams.get('paymentType') || '') as '' | 'CONTADO' | 'CREDITO';
 
   // Estado local solo para el input (se escribe sin tocar la URL hasta el debounce)
   const [supplierSearch, setSupplierSearch] = useState(supplierParam);
@@ -80,7 +83,23 @@ export function PurchasesPage() {
     supplier: supplierParam || undefined,
     startDate: startDate || undefined,
     endDate: endDate || undefined,
+    currency: currencyFilter || undefined,
+    paymentType: paymentTypeFilter || undefined,
   });
+
+  const toggleCurrency = (c: 'PEN' | 'USD') =>
+    updateParams({ currency: currencyFilter === c ? null : c, page: null });
+  const togglePaymentType = (pt: 'CONTADO' | 'CREDITO') =>
+    updateParams({ paymentType: paymentTypeFilter === pt ? null : pt, page: null });
+  const toggleCombo = (c: 'PEN' | 'USD', pt: 'CONTADO' | 'CREDITO') => {
+    const sameC = currencyFilter === c;
+    const samePT = paymentTypeFilter === pt;
+    updateParams({
+      currency: sameC && samePT ? null : c,
+      paymentType: sameC && samePT ? null : pt,
+      page: null,
+    });
+  };
   const purchases = data?.data || [];
   const total = data?.total || 0;
 
@@ -135,6 +154,8 @@ export function PurchasesPage() {
         supplier: supplierParam || undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
+        currency: currencyFilter || undefined,
+        paymentType: paymentTypeFilter || undefined,
       });
       const allPurchases: Purchase[] = result?.data || [];
       if (allPurchases.length === 0) { toast.error('No hay datos para exportar'); return; }
@@ -194,6 +215,10 @@ export function PurchasesPage() {
   const columns = [
     { key: 'date', header: 'F. Emisión', render: (item: Purchase) => formatDateEs(item.issueDate || item.date, { day: '2-digit', month: '2-digit', year: 'numeric' }) },
     { key: 'supplier', header: 'Proveedor' },
+    { key: 'document', header: 'Comprobante', render: (item: Purchase) => item.documentSeries && item.documentNumber
+      ? <span className="font-mono text-xs text-gray-700">{item.documentSeries}-{item.documentNumber}</span>
+      : <span className="text-gray-300">—</span>
+    },
     { key: 'items', header: 'Items', render: (item: Purchase) => `${item.items.length} producto(s)` },
     { key: 'totalCost', header: 'Total', render: (item: Purchase) => {
       const isUsd = !!item.totalCostUsd;
@@ -217,7 +242,7 @@ export function PurchasesPage() {
     )},
     { key: 'actions', header: '', render: (item: Purchase) => (
       <div className="flex items-center gap-2">
-        <button onClick={(e) => { e.stopPropagation(); navigate(`/purchases/${item.id}`); }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
+        <button onClick={(e) => { e.stopPropagation(); navigate(`/purchases/${item.id}`, { state: { from: location.pathname + location.search } }); }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
         <button
           onClick={(e) => { e.stopPropagation(); openGrModal(item); }}
           title={item.grSeries || item.grNumber ? `GR: ${[item.grSeries, item.grNumber].filter(Boolean).join('-')}` : 'Añadir Guía de Remisión'}
@@ -313,52 +338,110 @@ export function PurchasesPage() {
           <button onClick={handleExportPurchases} className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-primary-700 bg-primary-100 border border-primary-300 rounded-lg hover:bg-primary-200 transition-colors">
             <Download size={14} /> Excel
           </button>
-          {/* Total general */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
-            <span className="text-xs text-gray-500 font-medium">{total} compra{total !== 1 ? 's' : ''}</span>
-            <span className="text-gray-300">|</span>
-            <span className="font-semibold text-gray-800">
-              S/ {totalPen.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
+
+          {/* Contador + filtros de moneda */}
+          <div className="flex items-center gap-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+            <span className="text-xs text-gray-500 font-medium mr-1">{total} compra{total !== 1 ? 's' : ''}</span>
+            {totalPen > 0 && (
+              <button
+                type="button"
+                onClick={() => toggleCurrency('PEN')}
+                title={currencyFilter === 'PEN' ? 'Quitar filtro S/' : 'Filtrar solo S/'}
+                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${currencyFilter === 'PEN' ? 'bg-gray-700 text-white' : 'text-gray-700 hover:bg-gray-200'}`}
+              >
+                S/ {totalPen.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </button>
+            )}
             {totalUsd > 0 && (
-              <span className="font-semibold text-blue-700">
-                · $ {totalUsd.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-              </span>
+              <button
+                type="button"
+                onClick={() => toggleCurrency('USD')}
+                title={currencyFilter === 'USD' ? 'Quitar filtro $' : 'Filtrar solo $'}
+                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${currencyFilter === 'USD' ? 'bg-blue-700 text-white' : 'text-blue-700 hover:bg-blue-100'}`}
+              >
+                $ {totalUsd.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+              </button>
             )}
           </div>
 
           {/* Contado */}
           {(totalPenContado > 0 || totalUsdContado > 0) && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary-200 rounded-lg text-sm">
-              <span className="text-xs font-semibold text-primary-700 uppercase tracking-wide">Contado</span>
+            <div className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm border transition-colors ${paymentTypeFilter === 'CONTADO' ? 'bg-primary-600 border-primary-600' : 'bg-primary-50 border-primary-200'}`}>
+              <button
+                type="button"
+                onClick={() => togglePaymentType('CONTADO')}
+                title={paymentTypeFilter === 'CONTADO' ? 'Quitar filtro Contado' : 'Filtrar solo Contado'}
+                className={`text-xs font-semibold uppercase tracking-wide mr-1 ${paymentTypeFilter === 'CONTADO' ? 'text-white' : 'text-primary-700'}`}
+              >
+                Contado
+              </button>
               {totalPenContado > 0 && (
-                <span className="font-semibold text-gray-800">
+                <button
+                  type="button"
+                  onClick={() => toggleCombo('PEN', 'CONTADO')}
+                  title="Filtrar Contado en S/"
+                  className={`px-1.5 py-0.5 rounded text-xs font-semibold transition-colors ${currencyFilter === 'PEN' && paymentTypeFilter === 'CONTADO' ? 'bg-white text-primary-700' : paymentTypeFilter === 'CONTADO' ? 'text-white/90 hover:bg-white/20' : 'text-gray-700 hover:bg-primary-100'}`}
+                >
                   S/ {totalPenContado.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
+                </button>
               )}
               {totalUsdContado > 0 && (
-                <span className="font-semibold text-blue-700">
-                  {totalPenContado > 0 ? '· ' : ''}$ {totalUsdContado.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleCombo('USD', 'CONTADO')}
+                  title="Filtrar Contado en $"
+                  className={`px-1.5 py-0.5 rounded text-xs font-semibold transition-colors ${currencyFilter === 'USD' && paymentTypeFilter === 'CONTADO' ? 'bg-white text-blue-700' : paymentTypeFilter === 'CONTADO' ? 'text-white/90 hover:bg-white/20' : 'text-blue-700 hover:bg-primary-100'}`}
+                >
+                  $ {totalUsdContado.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                </button>
               )}
             </div>
           )}
 
           {/* Crédito */}
           {(totalPenCredito > 0 || totalUsdCredito > 0) && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-sm">
-              <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">Crédito</span>
+            <div className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm border transition-colors ${paymentTypeFilter === 'CREDITO' ? 'bg-orange-500 border-orange-500' : 'bg-orange-50 border-orange-200'}`}>
+              <button
+                type="button"
+                onClick={() => togglePaymentType('CREDITO')}
+                title={paymentTypeFilter === 'CREDITO' ? 'Quitar filtro Crédito' : 'Filtrar solo Crédito'}
+                className={`text-xs font-semibold uppercase tracking-wide mr-1 ${paymentTypeFilter === 'CREDITO' ? 'text-white' : 'text-orange-700'}`}
+              >
+                Crédito
+              </button>
               {totalPenCredito > 0 && (
-                <span className="font-semibold text-gray-800">
+                <button
+                  type="button"
+                  onClick={() => toggleCombo('PEN', 'CREDITO')}
+                  title="Filtrar Crédito en S/"
+                  className={`px-1.5 py-0.5 rounded text-xs font-semibold transition-colors ${currencyFilter === 'PEN' && paymentTypeFilter === 'CREDITO' ? 'bg-white text-orange-700' : paymentTypeFilter === 'CREDITO' ? 'text-white/90 hover:bg-white/20' : 'text-gray-700 hover:bg-orange-100'}`}
+                >
                   S/ {totalPenCredito.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
+                </button>
               )}
               {totalUsdCredito > 0 && (
-                <span className="font-semibold text-blue-700">
-                  {totalPenCredito > 0 ? '· ' : ''}$ {totalUsdCredito.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleCombo('USD', 'CREDITO')}
+                  title="Filtrar Crédito en $"
+                  className={`px-1.5 py-0.5 rounded text-xs font-semibold transition-colors ${currencyFilter === 'USD' && paymentTypeFilter === 'CREDITO' ? 'bg-white text-blue-700' : paymentTypeFilter === 'CREDITO' ? 'text-white/90 hover:bg-white/20' : 'text-blue-700 hover:bg-orange-100'}`}
+                >
+                  $ {totalUsdCredito.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                </button>
               )}
             </div>
+          )}
+
+          {/* Limpiar filtros activos de moneda/tipo */}
+          {(currencyFilter || paymentTypeFilter) && (
+            <button
+              type="button"
+              onClick={() => updateParams({ currency: null, paymentType: null, page: null })}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
+              title="Quitar filtros de moneda/tipo"
+            >
+              <X size={13} /> Limpiar filtros
+            </button>
           )}
         </div>
       )}

@@ -524,13 +524,6 @@ export function NewQuotePage() {
                 <h2 className="text-base font-semibold text-gray-900">Productos y servicios</h2>
                 <p className="text-xs text-gray-500 mt-0.5">Buscá en el catálogo y ajustá cantidad o precio por línea.</p>
               </div>
-              <button
-                type="button"
-                onClick={addEmptyLine}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100"
-              >
-                <Plus size={14} /> Agregar línea
-              </button>
             </header>
 
             <div className="p-6 space-y-4">
@@ -638,6 +631,16 @@ export function NewQuotePage() {
                   )}
                 </div>
               ))}
+
+              {lines.length > 0 && (
+                <button
+                  type="button"
+                  onClick={addEmptyLine}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100"
+                >
+                  <Plus size={14} /> Agregar línea
+                </button>
+              )}
             </div>
           </section>
 

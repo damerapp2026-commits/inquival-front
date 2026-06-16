@@ -14,8 +14,20 @@ export function useAccountPayableByPurchaseId(purchaseId: string | null) {
   return useQuery({
     queryKey: ['accounts-payable-by-purchase', purchaseId],
     queryFn: async () => {
-      const result = await accountPayableService.getAll({ purchaseId, limit: 1, page: 1 });
-      return (result as any)?.data?.[0] ?? null;
+      const result = await accountPayableService.getAll({ purchaseId, limit: 10, page: 1 });
+      const all = (result as any)?.data ?? [];
+      return all.find((ap: any) => !ap.supplier?.startsWith('Detracción - ')) ?? null;
+    },
+    enabled: !!purchaseId,
+  });
+}
+
+export function useAccountPayablesByPurchaseId(purchaseId: string | null) {
+  return useQuery({
+    queryKey: ['accounts-payables-by-purchase', purchaseId],
+    queryFn: async () => {
+      const result = await accountPayableService.getAll({ purchaseId, limit: 10, page: 1 });
+      return (result as any)?.data ?? [];
     },
     enabled: !!purchaseId,
   });

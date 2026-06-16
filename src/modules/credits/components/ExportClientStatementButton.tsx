@@ -4,6 +4,7 @@ import { FileDown, ChevronDown, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { creditService } from '../services/creditService';
 import { downloadClientStatementPdf } from '../utils/creditsPdf';
+import { ClientStatementModal } from '../../clients/components/ClientStatementModal';
 import type { Client, CreditAccount } from '../../../shared/types';
 
 interface Props {
@@ -17,7 +18,8 @@ const MENU_WIDTH = 240;
 
 export function ExportClientStatementButton({ client, credits, variant = 'button', label = 'Estado de cuenta' }: Props) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState<'summary' | 'detailed' | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -33,8 +35,8 @@ export function ExportClientStatementButton({ client, credits, variant = 'button
     setCoords({ top, left });
   }, [open]);
 
-  const handleExport = async (mode: 'summary' | 'detailed') => {
-    setLoading(mode);
+  const handleExportSummary = async () => {
+    setLoading(true);
     try {
       let list: CreditAccount[] = credits || [];
       if (!credits) {
@@ -46,13 +48,13 @@ export function ExportClientStatementButton({ client, credits, variant = 'button
         setOpen(false);
         return;
       }
-      await downloadClientStatementPdf({ client, credits: list, mode });
+      await downloadClientStatementPdf({ client, credits: list, mode: 'summary' });
       toast.success('PDF generado');
       setOpen(false);
     } catch {
       toast.error('Error al generar el PDF');
     } finally {
-      setLoading(null);
+      setLoading(false);
     }
   };
 
@@ -106,16 +108,16 @@ export function ExportClientStatementButton({ client, credits, variant = 'button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleExport('summary');
+                  handleExportSummary();
                 }}
-                disabled={!!loading}
+                disabled={loading}
                 className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs disabled:opacity-50"
               >
                 <div className="flex items-center gap-2">
-                  {loading === 'summary' && <Loader2 size={11} className="animate-spin" />}
+                  {loading && <Loader2 size={11} className="animate-spin" />}
                   <div>
                     <div className="font-medium text-gray-800">Resumen por fecha</div>
-                    <div className="text-[10px] text-gray-500">Listado de cuentas con totales</div>
+                    <div className="text-[10px] text-gray-500">Listado de cuentas con totales (PDF)</div>
                   </div>
                 </div>
               </button>
@@ -123,23 +125,22 @@ export function ExportClientStatementButton({ client, credits, variant = 'button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleExport('detailed');
+                  setOpen(false);
+                  setShowDetailModal(true);
                 }}
-                disabled={!!loading}
+                disabled={loading}
                 className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs border-t border-gray-100 disabled:opacity-50"
               >
-                <div className="flex items-center gap-2">
-                  {loading === 'detailed' && <Loader2 size={11} className="animate-spin" />}
-                  <div>
-                    <div className="font-medium text-gray-800">Detallado</div>
-                    <div className="text-[10px] text-gray-500">Productos y pagos de cada cuenta</div>
-                  </div>
+                <div>
+                  <div className="font-medium text-gray-800">Detallado</div>
+                  <div className="text-[10px] text-gray-500">Ver ventas y créditos en pantalla</div>
                 </div>
               </button>
             </div>
           </>,
           document.body,
         )}
+      <ClientStatementModal client={showDetailModal ? client : null} onClose={() => setShowDetailModal(false)} />
     </>
   );
 }

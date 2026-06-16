@@ -65,13 +65,15 @@ export function EditPurchasePage() {
 
   const initial = purchaseToFormState(purchase, products);
 
-  // Pre-poblar cuotas desde AccountPayable si existe y tiene cuotas
+  // Pre-poblar condiciones de pago desde AccountPayable (fuente de verdad para CxP)
   if (accountPayable?.paymentScheduleType === 'INSTALLMENTS' && (accountPayable?.installments?.length ?? 0) > 0) {
     initial.state.installments = accountPayable.installments.map((i: AccountPayableInstallment) => ({
       amount: i.amount,
       dueDate: i.dueDate ? i.dueDate.slice(0, 10) : '',
       status: i.status as 'PENDING' | 'PAID',
     }));
+  } else if (accountPayable?.paymentScheduleType === 'SINGLE_DATE' && accountPayable?.dueDate) {
+    initial.state.dueDate = accountPayable.dueDate.slice(0, 10);
   }
 
   const handleSubmit = async (payload: PurchaseSubmitPayload) => {
@@ -86,6 +88,9 @@ export function EditPurchasePage() {
       documentSeries: payload.documentSeries || null,
       documentNumber: payload.documentNumber || null,
       issueDate: payload.issueDate || null,
+      grSeries: payload.grSeries || null,
+      grNumber: payload.grNumber || null,
+      grDate: payload.grDate || null,
       date: payload.date,
       currency: payload.currency,
       paymentType: payload.paymentType,

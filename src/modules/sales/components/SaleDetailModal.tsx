@@ -137,7 +137,7 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
     if (!sale) return;
     setSharing(true);
     try {
-      const res = await saleService.getVoucherPdf(sale.id);
+      const res = await saleService.getVoucherPdf(sale.id, { force: true });
       if (res.whatsappUrl) {
         window.open(res.whatsappUrl, '_blank', 'noopener,noreferrer');
       } else {
@@ -155,7 +155,7 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
     if (!sale) return;
     setSharing(true);
     try {
-      const res = await saleService.getVoucherPdf(sale.id);
+      const res = await saleService.getVoucherPdf(sale.id, { force: true });
       window.open(res.pdfUrl, '_blank', 'noopener,noreferrer');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'No se pudo generar el PDF');
@@ -173,10 +173,13 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
       items: sale.items.map((it: any) => ({
         name: productMap.get(it.productId)?.name || it.productName || it.productId,
         quantity: it.quantity,
-        unitPrice: it.unitPrice,
-        subtotal: it.subtotal,
+        unitPrice: itemDispPrice(sale, it),
+        subtotal: itemDispSub(sale, it),
       })),
-      payments: (sale.payments || []).map((p: SalePayment) => ({ methodName: p.paymentMethodName, amount: p.amount })),
+      payments: (sale.payments || []).map((p: SalePayment) => ({
+        methodName: p.paymentMethodName,
+        amount: sale.currency === 'USD' && p.amountUsd != null ? p.amountUsd : p.amount,
+      })),
       isCredit: sale.isCredit,
       sellerName,
       clientName: client?.name || sale.clientName,
@@ -185,6 +188,9 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
       igv,
       baseImponible,
       voucherNumber: sale.saleNumber,
+      currency: sale.currency !== 'PEN' ? sale.currency : undefined,
+      exchangeRate: sale.exchangeRate,
+      totalUsd: sale.totalUsd,
     });
   };
 
@@ -214,10 +220,13 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
           <div className="px-6 py-5 overflow-y-auto flex-1 space-y-4">
             {/* Total cobrado */}
             {(() => {
+              const isUsd = sale.currency === 'USD';
+              const sym = saleSym(sale);
+              const totalDisplay = saleDispTotal(sale);
               const anticipo = sale.isCredit
-                ? (sale.payments || []).reduce((s: number, p: SalePayment) => s + (p.amount || 0), 0)
-                : sale.total;
-              const pendienteCredito = sale.isCredit ? Math.max(0, sale.total - anticipo) : 0;
+                ? (sale.payments || []).reduce((s: number, p: SalePayment) => s + (isUsd && p.amountUsd != null ? p.amountUsd : (p.amount || 0)), 0)
+                : totalDisplay;
+              const pendienteCredito = sale.isCredit ? Math.max(0, totalDisplay - anticipo) : 0;
               return (
                 <div className={`rounded-xl p-4 border ${sale.isCancelled ? 'bg-red-50 border-red-100' : sale.isCredit ? 'bg-orange-50/60 border-orange-100' : 'bg-primary-50/60 border-primary-100'}`}>
                   <div className="flex items-start justify-between gap-3">
@@ -248,11 +257,11 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
                     <div className="mt-3 pt-3 border-t border-orange-200/70 grid grid-cols-2 gap-3 text-sm">
                       <div>
                         <span className="block text-[10px] uppercase tracking-wider text-orange-700/80 font-semibold">Cobrado en caja</span>
-                        <div className="font-bold text-primary-700 tabular-nums">S/ {anticipo.toFixed(2)}</div>
+                        <div className="font-bold text-primary-700 tabular-nums">{sym} {anticipo.toFixed(2)}</div>
                       </div>
                       <div>
                         <span className="block text-[10px] uppercase tracking-wider text-orange-700/80 font-semibold">Saldo a crédito</span>
-                        <div className="font-bold text-red-600 tabular-nums">S/ {pendienteCredito.toFixed(2)}</div>
+                        <div className="font-bold text-red-600 tabular-nums">{sym} {pendienteCredito.toFixed(2)}</div>
                       </div>
                     </div>
                   )}

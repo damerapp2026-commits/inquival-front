@@ -23,6 +23,7 @@ import { EditSaleItemsModal } from '../components/EditSaleItemsModal';
 import { ClientSalesHistoryModal } from '../components/ClientSalesHistoryModal';
 import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod, Stock } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
+import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 
 function saleSym(s: { currency?: string }): string { return s.currency === 'USD' ? '$' : 'S/'; }
 function saleDispTotal(s: { currency?: string; total: number; totalUsd?: number }): number {
@@ -56,17 +57,6 @@ type PaymentMode = string; // paymentMethodId | 'MIXED' | 'CREDIT'
 export function SalesPage() {
   const { user } = useAuth();
   const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
-  const [activeTab, setActiveTab] = useState<'sales' | 'boletas' | 'facturas' | 'loans'>('sales');
-  const [page, setPage] = useState(1);
-  const [boletaPage, setBoletaPage] = useState(1);
-  const [facturaPage, setFacturaPage] = useState(1);
-  const [loanPage, setLoanPage] = useState(1);
-  const [sellerFilter, setSellerFilter] = useState('');
-  const [clientFilter, setClientFilter] = useState('');
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState('');
-  const [productFilter, setProductFilter] = useState('');
-  const [startDate, setStartDate] = useState(getMonthStart);
-  const [endDate, setEndDate] = useState(getToday);
   // When set, opens a modal listing every sale for that client (ignores date range)
   const [clientHistoryId, setClientHistoryId] = useState<string | null>(null);
 
@@ -93,14 +83,52 @@ export function SalesPage() {
     return map;
   }, [sellersData, user]);
 
-  const effectiveSellerId = isSellerRole ? user?.id : (sellerFilter || undefined);
+  // Todos los filtros en URL params para que persistan al navegar y volver
   const [searchParams, setSearchParams] = useSearchParams();
+  const updateParams = (updates: Record<string, string | null>) => {
+    setSearchParams((prev) => {
+      const sp = new URLSearchParams(prev);
+      for (const [k, v] of Object.entries(updates)) {
+        if (!v) sp.delete(k); else sp.set(k, v);
+      }
+      return sp;
+    }, { replace: true });
+  };
+  const _tab = searchParams.get('tab') || 'sales';
+  const activeTab = (['sales', 'boletas', 'facturas', 'loans'].includes(_tab) ? _tab : 'sales') as 'sales' | 'boletas' | 'facturas' | 'loans';
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+  const boletaPage = Math.max(1, parseInt(searchParams.get('bPage') || '1', 10));
+  const facturaPage = Math.max(1, parseInt(searchParams.get('fPage') || '1', 10));
+  const loanPage = Math.max(1, parseInt(searchParams.get('lPage') || '1', 10));
+  const sellerFilter = searchParams.get('seller') || '';
+  const clientFilter = searchParams.get('client') || '';
+  const paymentMethodFilter = searchParams.get('paymentMethod') || '';
+  const productFilter = searchParams.get('product') || '';
+  const startDate = searchParams.get('startDate') || getMonthStart();
+  const endDate = searchParams.get('endDate') || getToday();
+  const loanStatusFilter = searchParams.get('loanStatus') || '';
+
+  const setActiveTab = (v: 'sales' | 'boletas' | 'facturas' | 'loans') =>
+    updateParams({ tab: v !== 'sales' ? v : null, page: null, bPage: null, fPage: null, lPage: null });
+  const setPage = (p: number) => updateParams({ page: p > 1 ? String(p) : null });
+  const setBoletaPage = (p: number) => updateParams({ bPage: p > 1 ? String(p) : null });
+  const setFacturaPage = (p: number) => updateParams({ fPage: p > 1 ? String(p) : null });
+  const setLoanPage = (p: number) => updateParams({ lPage: p > 1 ? String(p) : null });
+  const setSellerFilter = (v: string) => updateParams({ seller: v || null, page: null, bPage: null, fPage: null });
+  const setClientFilter = (v: string) => updateParams({ client: v || null, page: null, bPage: null, fPage: null });
+  const setPaymentMethodFilter = (v: string) => updateParams({ paymentMethod: v || null, page: null, bPage: null, fPage: null });
+  const setProductFilter = (v: string) => updateParams({ product: v || null, page: null, bPage: null, fPage: null });
+  const setStartDate = (v: string) => updateParams({ startDate: v !== getMonthStart() ? v : null, page: null, bPage: null, fPage: null, lPage: null });
+  const setEndDate = (v: string) => updateParams({ endDate: v !== getToday() ? v : null, page: null, bPage: null, fPage: null, lPage: null });
+  const setLoanStatusFilter = (v: string) => updateParams({ loanStatus: v || null, lPage: null });
+  const resetDateFilter = () => updateParams({ startDate: null, endDate: null, page: null, bPage: null, fPage: null, lPage: null });
+
+  const effectiveSellerId = isSellerRole ? user?.id : (sellerFilter || undefined);
   const [showModal, setShowModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [viewingSale, setViewingSale] = useState<Sale | null>(null);
   const [viewingLoan, setViewingLoan] = useState<Loan | null>(null);
   const [returningLoan, setReturningLoan] = useState<Loan | null>(null);
-  const [loanStatusFilter, setLoanStatusFilter] = useState('');
 
   const { data, isLoading } = useSales({ page, limit: 50, clientId: clientFilter || undefined, startDate, endDate, sellerId: effectiveSellerId, excludeCancelled: 'true' });
   const { data: boletasData, isLoading: boletasLoading } = useSales({ page: boletaPage, limit: 50, clientId: clientFilter || undefined, startDate, endDate, voucherType: 'BOLETA', sellerId: effectiveSellerId, excludeCancelled: 'true' });
@@ -201,6 +229,8 @@ export function SalesPage() {
     items: [{ productId: '', companyId: '', quantity: 0, priceTier: '', unitPrice: 0, subtotal: 0, isBonus: false }],
     currency: 'PEN' as 'PEN' | 'USD',
   });
+  const { data: tipoCambioData } = useTodayTipoCambio(showModal && form.currency === 'USD');
+  const exchangeRate = tipoCambioData?.venta || 3.41;
 
   const [loanForm, setLoanForm] = useState<{
     loanType: 'OUTGOING' | 'INCOMING';
@@ -324,7 +354,7 @@ export function SalesPage() {
       isCredit,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       items: form.items.map(({ subtotal, isBonus, ...item }) => item),
-      ...(isUsd ? { currency: 'USD', exchangeRate: 1 } : {}),
+      ...(isUsd ? { currency: 'USD', exchangeRate } : {}),
     };
     if (!isCredit) {
       if (isMixed) {
@@ -349,6 +379,7 @@ export function SalesPage() {
       total: saleResult?.total ?? saleTotal,
       totalUsd: saleResult?.totalUsd,
       currency: form.currency !== 'PEN' ? form.currency : undefined,
+      exchangeRate: isUsd ? exchangeRate : undefined,
       voucherType: form.voucherType as VoucherSnapshot['voucherType'],
       date: new Date(),
       items: form.items.map((item) => {
@@ -563,7 +594,7 @@ export function SalesPage() {
   const handleExportVouchers = async (voucherType: 'BOLETA' | 'FACTURA') => {
     try {
       const XLSX = await import('xlsx');
-      const result = await saleService.getAll({ limit: 9999, startDate, endDate, voucherType });
+      const result = await saleService.getAll({ limit: 9999, startDate, endDate, voucherType, clientId: clientFilter || undefined, sellerId: effectiveSellerId || undefined });
       const allSales: Sale[] = (result?.data || []).filter(matchesPaymentMethod).filter(matchesProduct);
       if (allSales.length === 0) { toast.error('No hay datos para exportar'); return; }
 
@@ -821,7 +852,7 @@ export function SalesPage() {
       {/* Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         {!isSellerRole && (activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && sellers.length > 0 && (
-          <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }} className="px-3 py-2 border rounded-lg text-sm">
+          <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
             <option value="">Responsables</option>
             {sellers.map((s: any) => <option key={s.id} value={s.id}>{(s.fullName || s.username) + (s.role === 'ADMIN' ? ' (Admin)' : '')}</option>)}
           </select>
@@ -832,7 +863,7 @@ export function SalesPage() {
               <SearchableSelect
                 options={clients.map((c: Client) => ({ value: c.id, label: c.name, sublabel: c.documentNumber }))}
                 value={clientFilter}
-                onChange={(v) => { setClientFilter(v); setPage(1); setBoletaPage(1); setFacturaPage(1); }}
+                onChange={(v) => setClientFilter(v)}
                 placeholder="Buscar cliente..."
                 minChars={1}
               />
@@ -840,7 +871,7 @@ export function SalesPage() {
             {clientFilter && (
               <button
                 type="button"
-                onClick={() => { setClientFilter(''); setPage(1); setBoletaPage(1); setFacturaPage(1); }}
+                onClick={() => setClientFilter('')}
                 title="Limpiar cliente"
                 className="px-2 py-2 text-gray-500 hover:text-gray-800"
               >
@@ -855,7 +886,7 @@ export function SalesPage() {
               <SearchableSelect
                 options={products.map((p: Product) => ({ value: p.id, label: p.name }))}
                 value={productFilter}
-                onChange={(v) => { setProductFilter(v); setPage(1); setBoletaPage(1); setFacturaPage(1); }}
+                onChange={(v) => setProductFilter(v)}
                 placeholder="Buscar producto..."
                 minChars={1}
               />
@@ -863,7 +894,7 @@ export function SalesPage() {
             {productFilter && (
               <button
                 type="button"
-                onClick={() => { setProductFilter(''); setPage(1); setBoletaPage(1); setFacturaPage(1); }}
+                onClick={() => setProductFilter('')}
                 title="Limpiar producto"
                 className="px-2 py-2 text-gray-500 hover:text-gray-800"
               >
@@ -875,7 +906,7 @@ export function SalesPage() {
         {(activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && paymentMethods.length > 0 && (
           <select
             value={paymentMethodFilter}
-            onChange={(e) => { setPaymentMethodFilter(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); }}
+            onChange={(e) => setPaymentMethodFilter(e.target.value)}
             className="px-3 py-2 border rounded-lg text-sm"
           >
             <option value="">Métodos de Pago</option>
@@ -886,18 +917,18 @@ export function SalesPage() {
           </select>
         )}
         {activeTab === 'loans' && (
-          <select value={loanStatusFilter} onChange={(e) => { setLoanStatusFilter(e.target.value); setLoanPage(1); }} className="px-3 py-2 border rounded-lg">
+          <select value={loanStatusFilter} onChange={(e) => setLoanStatusFilter(e.target.value)} className="px-3 py-2 border rounded-lg">
             <option value="">Todos los estados</option>
             <option value="ACTIVE">Activo</option>
             <option value="PARTIAL">Parcial</option>
             <option value="RETURNED">Devuelto</option>
           </select>
         )}
-        <input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); setLoanPage(1); }} className="px-3 py-2 border rounded-lg" />
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="px-3 py-2 border rounded-lg" />
         <span className="text-gray-500 text-sm">hasta</span>
-        <input type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(1); setBoletaPage(1); setFacturaPage(1); setLoanPage(1); }} className="px-3 py-2 border rounded-lg" />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="px-3 py-2 border rounded-lg" />
         {(startDate !== getMonthStart() || endDate !== getToday()) && (
-          <button onClick={() => { setStartDate(getMonthStart()); setEndDate(getToday()); setPage(1); setBoletaPage(1); setFacturaPage(1); setLoanPage(1); }} className="flex items-center gap-1 px-3 py-2 text-sm text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100">
+          <button onClick={resetDateFilter} className="flex items-center gap-1 px-3 py-2 text-sm text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100">
             <CalendarDays size={14} /> Este mes
           </button>
         )}
@@ -1252,10 +1283,13 @@ export function SalesPage() {
             items: sale.items.map((it) => ({
               name: productMap.get(it.productId)?.name || it.productId,
               quantity: it.quantity,
-              unitPrice: it.unitPrice,
-              subtotal: it.subtotal,
+              unitPrice: itemDispPrice(sale, it),
+              subtotal: itemDispSub(sale, it),
             })),
-            payments: (sale.payments || []).map((p) => ({ methodName: p.paymentMethodName, amount: p.amount })),
+            payments: (sale.payments || []).map((p) => ({
+              methodName: p.paymentMethodName,
+              amount: sale.currency === 'USD' && p.amountUsd != null ? p.amountUsd : p.amount,
+            })),
             isCredit: sale.isCredit,
             sellerName,
             clientName: client?.name,
@@ -1264,6 +1298,9 @@ export function SalesPage() {
             igv,
             baseImponible,
             voucherNumber: sale.saleNumber,
+            currency: sale.currency !== 'PEN' ? sale.currency : undefined,
+            exchangeRate: sale.exchangeRate,
+            totalUsd: sale.totalUsd,
           });
         };
         return (
@@ -1293,10 +1330,13 @@ export function SalesPage() {
               <div className="px-6 py-5 overflow-y-auto flex-1 space-y-4">
                 {/* Total + desglose para venta a crédito */}
                 {(() => {
+                  const isUsd = sale.currency === 'USD';
+                  const sym = saleSym(sale);
+                  const totalDisplay = saleDispTotal(sale);
                   const anticipo = sale.isCredit
-                    ? (sale.payments || []).reduce((s: number, p: any) => s + (p.amount || 0), 0)
-                    : sale.total;
-                  const pendienteCredito = sale.isCredit ? Math.max(0, sale.total - anticipo) : 0;
+                    ? (sale.payments || []).reduce((s: number, p: any) => s + (isUsd && p.amountUsd != null ? p.amountUsd : (p.amount || 0)), 0)
+                    : totalDisplay;
+                  const pendienteCredito = sale.isCredit ? Math.max(0, totalDisplay - anticipo) : 0;
                   return (
                     <div className={`rounded-xl p-4 border ${sale.isCancelled ? 'bg-red-50 border-red-100' : sale.isCredit ? 'bg-orange-50/60 border-orange-100' : 'bg-primary-50/60 border-primary-100'}`}>
                       <div className="flex items-start justify-between gap-3">
@@ -1324,11 +1364,11 @@ export function SalesPage() {
                         <div className="mt-3 pt-3 border-t border-orange-200/70 grid grid-cols-2 gap-3 text-sm">
                           <div>
                             <span className="block text-[10px] uppercase tracking-wider text-orange-700/80 font-semibold">Cobrado en caja</span>
-                            <div className="font-bold text-primary-700 tabular-nums">S/ {anticipo.toFixed(2)}</div>
+                            <div className="font-bold text-primary-700 tabular-nums">{sym} {anticipo.toFixed(2)}</div>
                           </div>
                           <div>
                             <span className="block text-[10px] uppercase tracking-wider text-orange-700/80 font-semibold">Saldo a crédito</span>
-                            <div className="font-bold text-red-600 tabular-nums">S/ {pendienteCredito.toFixed(2)}</div>
+                            <div className="font-bold text-red-600 tabular-nums">{sym} {pendienteCredito.toFixed(2)}</div>
                           </div>
                         </div>
                       )}

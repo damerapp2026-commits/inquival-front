@@ -31,6 +31,6 @@ export function useTodayTipoCambio(enabled = true) {
     enabled,
     staleTime: 12 * 60 * 60 * 1000,
     gcTime: 24 * 60 * 60 * 1000,
-    retry: 1,
+    retry: false,
   });
 }

@@ -58,12 +58,25 @@ function formatDate(d: Date): string {
   return d.toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function displayTotal(sale: VoucherSnapshot): number {
+  return sale.currency === 'USD' && sale.totalUsd != null ? sale.totalUsd : sale.total;
+}
+
+function displayPenTotal(sale: VoucherSnapshot): number {
+  if (sale.currency !== 'USD') return sale.total;
+  if (sale.totalUsd != null && sale.exchangeRate) {
+    return Math.round(sale.totalUsd * sale.exchangeRate * 100) / 100;
+  }
+  return sale.total;
+}
+
 function buildTicketHtml(sale: VoucherSnapshot): string {
   const number = displayVoucherNumber(sale);
   const title = voucherTitle(sale.voucherType).toUpperCase();
   const company = COMPANY_INFO;
   const isUsd = sale.currency === 'USD';
   const sym = isUsd ? '$' : 'S/';
+  const totalDisplay = displayTotal(sale);
   const itemsRows = sale.items.map((i) => `
     <tr class="item">
       <td class="qty">${i.quantity}</td>
@@ -81,7 +94,7 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   `).join('');
 
   const paidSoFar = sale.creditPaidAmount ?? sale.payments.reduce((s, p) => s + p.amount, 0);
-  const pendingAmount = Math.max(0, sale.total - paidSoFar);
+  const pendingAmount = Math.max(0, totalDisplay - paidSoFar);
   const dueDateFmt = sale.creditDueDate
     ? new Date(sale.creditDueDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : '';
@@ -167,9 +180,9 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   <div class="hr"></div>
   ${typeof sale.baseImponible === 'number' ? `<div class="kv"><span>Subtotal</span><span>${sym} ${sale.baseImponible.toFixed(2)}</span></div>` : ''}
   ${typeof sale.igv === 'number' && sale.igv > 0 ? `<div class="kv"><span>IGV (18%)</span><span>${sym} ${sale.igv.toFixed(2)}</span></div>` : ''}
-  ${isUsd && sale.totalUsd != null ? `
-  <div class="total bold xl"><span>TOTAL</span><span>$ ${sale.totalUsd.toFixed(2)}</span></div>
-  <div class="kv muted" style="font-size:10px;margin-top:2px;"><span>TC ${sale.exchangeRate?.toFixed(2)} → Equiv.</span><span>S/ ${sale.total.toFixed(2)}</span></div>
+  ${isUsd ? `
+  <div class="total bold xl"><span>TOTAL</span><span>$ ${totalDisplay.toFixed(2)}</span></div>
+  <div class="kv muted" style="font-size:10px;margin-top:2px;"><span>TC ${sale.exchangeRate?.toFixed(2) || '-'} → Equiv.</span><span>S/ ${displayPenTotal(sale).toFixed(2)}</span></div>
   ` : `
   <div class="total bold xl"><span>TOTAL</span><span>S/ ${sale.total.toFixed(2)}</span></div>
   `}
@@ -191,13 +204,14 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
   const headerRuc = c.ruc || '—';
   const isUsd = sale.currency === 'USD';
   const sym = isUsd ? '$' : 'S/';
+  const totalDisplay = displayTotal(sale);
 
   const subtotal = typeof sale.baseImponible === 'number'
     ? sale.baseImponible
-    : Math.round((sale.total / 1.18) * 100) / 100;
+    : Math.round((totalDisplay / 1.18) * 100) / 100;
   const igv = typeof sale.igv === 'number'
     ? sale.igv
-    : Math.round((sale.total - subtotal) * 100) / 100;
+    : Math.round((totalDisplay - subtotal) * 100) / 100;
 
   const blankItemRows = Math.max(0, (isA5 ? 5 : 8) - sale.items.length);
   const itemsRows = sale.items.map((i, idx) => `
@@ -217,7 +231,7 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
   `).join('');
 
   const paidSoFarA4 = sale.creditPaidAmount ?? sale.payments.reduce((s, p) => s + p.amount, 0);
-  const pendingAmountA4 = Math.max(0, sale.total - paidSoFarA4);
+  const pendingAmountA4 = Math.max(0, totalDisplay - paidSoFarA4);
   const dueDateFmtA4 = sale.creditDueDate
     ? new Date(sale.creditDueDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : '';
@@ -379,7 +393,7 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
     <tbody>${itemsRows}</tbody>
   </table>
 
-  <div class="amount-words"><span class="b">SON: </span>${escapeHtml(numberToWords(sale.total, isUsd ? 'USD' : 'PEN'))}</div>
+  <div class="amount-words"><span class="b">SON: </span>${escapeHtml(numberToWords(totalDisplay, isUsd ? 'USD' : 'PEN'))}</div>
 
   <div class="two-col">
     <div class="col-l">
@@ -408,13 +422,13 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
       <div class="totals-row last">
         <div class="lbl r">IMPORTE TOTAL</div>
         <div class="cur">${sym}</div>
-        <div class="val">${sale.total.toFixed(2)}</div>
+        <div class="val">${totalDisplay.toFixed(2)}</div>
       </div>
       ${isUsd ? `
       <div class="totals-row" style="margin-top:4px;opacity:0.75;">
         <div class="lbl r" style="font-size:8px;">TC ${(sale.exchangeRate || 0).toFixed(2)} → EQUIV.</div>
         <div class="cur">S/</div>
-        <div class="val" style="font-size:8px;">${((sale.total || 0) * (sale.exchangeRate || 1)).toFixed(2)}</div>
+        <div class="val" style="font-size:8px;">${displayPenTotal(sale).toFixed(2)}</div>
       </div>` : ''}
     </div>
   </div>
@@ -441,7 +455,7 @@ function buildA5Html(sale: VoucherSnapshot): string {
 function buildWhatsappText(sale: VoucherSnapshot): string {
   const isUsd = sale.currency === 'USD';
   const sym = isUsd ? '$' : 'S/';
-  const dispTotal = isUsd && sale.totalUsd != null ? sale.totalUsd : sale.total;
+  const dispTotal = displayTotal(sale);
   const lines: string[] = [];
   lines.push(`🧾 *${voucherTitle(sale.voucherType)} · ${displayVoucherNumber(sale)}*`);
   lines.push(`🏢 ${COMPANY_INFO.legalName}`);
@@ -452,16 +466,15 @@ function buildWhatsappText(sale: VoucherSnapshot): string {
   lines.push('');
   lines.push('*Productos:*');
   sale.items.forEach((i) => {
-    const itemAmt = isUsd && sale.exchangeRate ? (i.subtotal / sale.exchangeRate).toFixed(2) : i.subtotal.toFixed(2);
-    lines.push(`• ${i.quantity} × ${i.name} — ${sym} ${itemAmt}`);
+    lines.push(`• ${i.quantity} × ${i.name} — ${sym} ${i.subtotal.toFixed(2)}`);
   });
   lines.push('');
   lines.push(`*💰 TOTAL: ${sym} ${dispTotal.toFixed(2)}*`);
-  if (isUsd && sale.exchangeRate) lines.push(`_(Equiv. S/ ${(dispTotal * sale.exchangeRate).toFixed(2)})_`);
+  if (isUsd && sale.exchangeRate) lines.push(`_(Equiv. S/ ${displayPenTotal(sale).toFixed(2)})_`);
   if (!sale.isCourtesy && sale.payments.length) {
     lines.push('');
     lines.push('Forma de pago:');
-    sale.payments.forEach((p) => lines.push(`• ${p.methodName}: S/ ${p.amount.toFixed(2)}`));
+    sale.payments.forEach((p) => lines.push(`• ${p.methodName}: ${sym} ${p.amount.toFixed(2)}`));
   }
   lines.push('');
   lines.push('¡Gracias por su preferencia! 🙏');
@@ -538,9 +551,9 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
   const handleSendWhatsapp = async () => {
     setPdfBusy('whatsapp');
     try {
-      const result = sale.id ? await saleService.getVoucherPdf(sale.id) : null;
+      const result = sale.id ? await saleService.getVoucherPdf(sale.id, { force: true }) : null;
       const text = result?.pdfUrl
-        ? `Hola, te comparto tu ${voucherTitle(sale.voucherType).toLowerCase()} ${number} por ${sale.currency === 'USD' ? '$' : 'S/'} ${sale.total.toFixed(2)}: ${result.pdfUrl}`
+        ? `Hola, te comparto tu ${voucherTitle(sale.voucherType).toLowerCase()} ${number} por ${sale.currency === 'USD' ? '$' : 'S/'} ${displayTotal(sale).toFixed(2)}: ${result.pdfUrl}`
         : buildWhatsappText(sale);
       const digits = waPhone.replace(/\D/g, '');
       const fullPhone = digits.length === 9 ? `51${digits}` : digits;
@@ -641,7 +654,7 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
             <span>{sale.items.length} producto{sale.items.length === 1 ? '' : 's'}</span>
             {sale.clientName && <span className="text-gray-700 font-medium">· {sale.clientName}</span>}
           </div>
-          <div className="text-base font-bold text-primary-700 tabular-nums">{sale.currency === 'USD' ? '$' : 'S/'} {sale.total.toFixed(2)}</div>
+          <div className="text-base font-bold text-primary-700 tabular-nums">{sale.currency === 'USD' ? '$' : 'S/'} {displayTotal(sale).toFixed(2)}</div>
         </div>
 
         {/* Actions */}

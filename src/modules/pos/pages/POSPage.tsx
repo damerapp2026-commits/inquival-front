@@ -20,6 +20,7 @@ import { useOpenClientCredits } from '../../credits/hooks/useCredits';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { useUsers } from '../../users/hooks/useUsers';
 import { VoucherPreviewModal, type VoucherSnapshot } from '../../sales/components/VoucherPreviewModal';
+import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 
 const IGV_RATE = 0.18;
 
@@ -187,6 +188,12 @@ export function POSPage() {
   const [currency, setCurrency] = useState<'PEN' | 'USD'>('PEN');
   /** Tipo de cambio USD → PEN (requerido cuando currency === 'USD'). */
   const [exchangeRate, setExchangeRate] = useState<number>(3.75);
+  const { data: tipoCambioData } = useTodayTipoCambio(currency === 'USD');
+  useEffect(() => {
+    if (currency === 'USD' && tipoCambioData?.venta) {
+      setExchangeRate(tipoCambioData.venta);
+    }
+  }, [currency, tipoCambioData]);
   const [bonusItems, setBonusItems] = useState<BonusCartItem[]>([]);
 
   const computedDueDate = (() => {
@@ -657,6 +664,7 @@ export function POSPage() {
       baseImponible: gravadoBase,
       isCourtesy: isCourtesy || undefined,
       currency: currency !== 'PEN' ? currency : undefined,
+      exchangeRate: currency === 'USD' ? exchangeRate : undefined,
       totalUsd: currency === 'USD' ? saleTotal : undefined,
     };
     try {

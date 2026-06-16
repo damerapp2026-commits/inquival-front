@@ -939,10 +939,14 @@ export function StockPage() {
 
       {activeTab === 'inventory' && allWarehouses && (() => {
         const summary = Array.isArray(allWarehousesSummary) ? allWarehousesSummary : [];
-        const rows = summary
-          .filter(s => !filteredProductIds || filteredProductIds.has(s.productId))
-          .map(s => ({ ...s, _name: getProductName(s.productId) }))
-          .sort((a, b) => a._name.localeCompare(b._name));
+        const summaryByProductId = new Map(summary.map(s => [s.productId, s]));
+        const rows = products
+          .filter((p: Product) => !filteredProductIds || filteredProductIds.has(p.id))
+          .map((p: Product) => {
+            const s = summaryByProductId.get(p.id);
+            return { productId: p.id, _name: p.name, totalQuantity: s?.totalQuantity ?? 0, byCompany: s?.byCompany ?? [] };
+          })
+          .sort((a, b) => a._name.localeCompare(b._name, 'es', { sensitivity: 'base' }));
         return (
           <>
             <div className="mb-3 relative max-w-sm">
