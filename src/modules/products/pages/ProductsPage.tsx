@@ -19,7 +19,9 @@ import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, Download, Upload, Truck, ImagePlus, Loader2, Tag, Boxes, Receipt, Wallet, PackageSearch, FlaskConical, Percent, BookOpen, LayoutGrid, List as ListIcon, Check } from 'lucide-react';
 import { ProductSuppliersModal } from '../components/ProductSuppliersModal';
 import { PriceCatalogView } from '../components/PriceCatalogView';
+import { StockValuedView } from '../components/StockValuedView';
 import { downloadProductCatalogPdf, openCatalogWindow } from '../utils/productCatalogPdf';
+import { useAuth } from '../../../app/providers/AuthProvider';
 import toast from 'react-hot-toast';
 import type { Product, ProductCommission } from '../../../shared/types';
 
@@ -43,9 +45,16 @@ interface BulkProduct {
 }
 
 export function ProductsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [searchParams, setSearchParams] = useSearchParams();
-  const view: 'list' | 'catalog' = searchParams.get('view') === 'catalog' ? 'catalog' : 'list';
-  const setView = (v: 'list' | 'catalog') => {
+  const rawView = searchParams.get('view');
+  const view: 'list' | 'catalog' | 'stock-valued' = rawView === 'catalog'
+    ? 'catalog'
+    : rawView === 'stock-valued' && isAdmin
+      ? 'stock-valued'
+      : 'list';
+  const setView = (v: 'list' | 'catalog' | 'stock-valued') => {
     const next = new URLSearchParams(searchParams);
     if (v === 'list') next.delete('view'); else next.set('view', v);
     setSearchParams(next, { replace: true });
@@ -568,7 +577,7 @@ export function ProductsPage() {
         </div>
       );
     }},
-    { key: 'lastCostPrice', header: 'Costo', render: (item: Product) => {
+    ...(isAdmin ? [{ key: 'lastCostPrice', header: 'Costo', render: (item: Product) => {
       if (!item.lastCostPrice) return <span className="text-gray-300 text-xs">—</span>;
       const cSym = item.lastCostCurrency === 'USD' ? '$' : 'S/';
       const sSym = item.lastSaleCurrency === 'USD' ? '$' : 'S/';
@@ -578,7 +587,7 @@ export function ProductsPage() {
           {item.lastSalePrice ? <div className="text-gray-400 tabular-nums">P.V. {sSym} {item.lastSalePrice.toFixed(2)}</div> : null}
         </div>
       );
-    }},
+    }}] : []),
     { key: 'actions', header: 'Acciones', render: (item: Product) => (
       <div className="flex gap-2">
         <button onClick={() => setSuppliersTarget(item)} className="text-gray-500 hover:text-primary-600" title="Ver proveedores"><Truck size={16} /></button>
@@ -626,9 +635,19 @@ export function ProductsPage() {
         >
           Catálogo de precios
         </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setView('stock-valued')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${view === 'stock-valued' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            Stock valorizado
+          </button>
+        )}
       </div>
 
       {view === 'catalog' && <PriceCatalogView enabled={view === 'catalog'} />}
+      {view === 'stock-valued' && isAdmin && <StockValuedView enabled={view === 'stock-valued'} />}
 
       {view === 'list' && (<>
       <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">

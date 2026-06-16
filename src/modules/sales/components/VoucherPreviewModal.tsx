@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, FileText, Smartphone, FileText as FileIcon, Printer, ExternalLink, MessageCircle, Download, Loader2 } from 'lucide-react';
 import { COMPANY_INFO } from '../../../config/companyInfo';
-import { downloadVoucherPdf, openVoucherPdf } from '../utils/voucherPdf';
+import { downloadVoucherPdf, openVoucherPdf, printVoucherPdf } from '../utils/voucherPdf';
 import { numberToWords } from '../../quotes/utils/numberToWords';
 import { saleService } from '../services/saleService';
 import toast from 'react-hot-toast';
@@ -31,6 +31,8 @@ export interface VoucherSnapshot {
   exchangeRate?: number;
   /** Total en USD original (solo si currency='USD'). */
   totalUsd?: number;
+  /** Ubicación del cliente: caserío > distrito > provincia > departamento */
+  clientLocation?: string;
 }
 
 type Format = 'TICKET' | 'A4' | 'A5';
@@ -48,9 +50,11 @@ function displayVoucherNumber(sale: VoucherSnapshot): string {
   return sale.voucherNumber || shortVoucherNumber(sale.id);
 }
 
-function voucherTitle(type: string): string {
-  if (type === 'BOLETA') return 'Boleta de venta';
-  if (type === 'FACTURA') return 'Factura';
+export function resolveClientLocation(client?: { hamlet?: string; district?: string; province?: string; department?: string } | null): string | undefined {
+  return client?.hamlet || client?.district || client?.province || client?.department || undefined;
+}
+
+function voucherTitle(_type: string): string {
   return 'Nota de venta';
 }
 
@@ -164,7 +168,8 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   <div class="hr"></div>
   ${sale.clientName ? `<div class="kv"><span class="bold">Cliente:</span><span>${escapeHtml(sale.clientName)}</span></div>` : ''}
   ${sale.clientDocument ? `<div class="kv"><span class="bold">Doc:</span><span>${escapeHtml(sale.clientDocument)}</span></div>` : ''}
-  <div class="kv"><span class="bold">Vendedor:</span><span>${escapeHtml(sale.sellerName)}</span></div>
+  ${sale.clientLocation ? `<div class="kv"><span class="bold">Ubicación:</span><span>${escapeHtml(sale.clientLocation)}</span></div>` : ''}
+  <div class="kv"><span class="bold">R. Comercial:</span><span>${escapeHtml(sale.sellerName)}</span></div>
   <div class="hr"></div>
   <table class="items">
     <thead>
@@ -370,9 +375,13 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
       <tr>
         <td class="lbl">Teléfono</td><td class="sep">:</td>
         <td>${escapeHtml(sale.clientPhone || ' ')}</td>
-        <td class="lbl-r">Vendedor</td><td class="sep">:</td>
+        <td class="lbl-r">R. Comercial</td><td class="sep">:</td>
         <td>${escapeHtml((sale.sellerName || '—').toUpperCase())}</td>
       </tr>
+      ${sale.clientLocation ? `<tr>
+        <td class="lbl">Ubicación</td><td class="sep">:</td>
+        <td colspan="4">${escapeHtml(sale.clientLocation.toUpperCase())}</td>
+      </tr>` : ''}
       <tr>
         <td class="lbl">Fecha Emisión</td><td class="sep">:</td>
         <td colspan="4">${formatDate(sale.date)}</td>
@@ -461,7 +470,8 @@ function buildWhatsappText(sale: VoucherSnapshot): string {
   lines.push(`🏢 ${COMPANY_INFO.legalName}`);
   lines.push(`📅 ${formatDate(sale.date)}`);
   if (sale.clientName) lines.push(`👤 Cliente: ${sale.clientName}`);
-  lines.push(`🧑‍💼 Vendedor: ${sale.sellerName}`);
+  if (sale.clientLocation) lines.push(`📍 Ubicación: ${sale.clientLocation}`);
+  lines.push(`🧑‍💼 R. Comercial: ${sale.sellerName}`);
   if (isUsd && sale.exchangeRate) lines.push(`💱 Moneda: USD · TC ${sale.exchangeRate.toFixed(2)}`);
   lines.push('');
   lines.push('*Productos:*');
@@ -488,7 +498,7 @@ interface Props {
 
 export function VoucherPreviewModal({ sale, onClose }: Props) {
   const [format, setFormat] = useState<Format>('TICKET');
-  const [pdfBusy, setPdfBusy] = useState<null | 'download' | 'open' | 'whatsapp'>(null);
+  const [pdfBusy, setPdfBusy] = useState<null | 'download' | 'open' | 'print' | 'whatsapp'>(null);
   const [showWaModal, setShowWaModal] = useState(false);
   const [waPhone, setWaPhone] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -512,11 +522,16 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
   const number = displayVoucherNumber(sale);
   const title = voucherTitle(sale.voucherType);
 
-  const handlePrint = () => {
-    const w = iframeRef.current?.contentWindow;
-    if (!w) return;
-    w.focus();
-    w.print();
+  const handlePrint = async () => {
+    if (!sale) return;
+    setPdfBusy('print');
+    try {
+      await printVoucherPdf(sale, format);
+    } catch (err) {
+      console.error('No se pudo imprimir', err);
+    } finally {
+      setPdfBusy(null);
+    }
   };
 
   const handleOpenInNewTab = async () => {
@@ -688,9 +703,10 @@ export function VoucherPreviewModal({ sale, onClose }: Props) {
           <button
             type="button"
             onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 text-sm font-semibold transition-colors shadow-sm"
+            disabled={pdfBusy === 'print'}
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 text-sm font-semibold transition-colors shadow-sm disabled:opacity-50"
           >
-            <Printer size={15} /> Imprimir
+            {pdfBusy === 'print' ? <Loader2 size={15} className="animate-spin" /> : <Printer size={15} />} Imprimir
           </button>
         </div>
       </div>

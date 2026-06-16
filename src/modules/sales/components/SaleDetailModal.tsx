@@ -316,7 +316,7 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
                 <div className={`text-sm font-medium truncate ${sale.clientId ? 'text-gray-900' : 'text-gray-400 italic'}`}>{getClientName(sale.clientId)}</div>
               </div>
               <div className="border border-gray-200 rounded-xl p-3">
-                <span className="block text-xs text-gray-500 mb-0.5">Vendedor</span>
+                <span className="block text-xs text-gray-500 mb-0.5">R. de Venta</span>
                 <div className="text-sm font-medium text-gray-900 truncate">{sellerName}</div>
               </div>
             </div>
@@ -433,15 +433,13 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
                 Editar items
               </button>
             )}
-            {!sale.isCancelled && (
-              <button
-                type="button"
-                onClick={() => { setCancelling(true); setCancelReason(''); }}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors text-sm font-semibold"
-              >
-                <XCircle size={16} /> Anular
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+            >
+              Cancelar
+            </button>
             </div>
           </div>
         </div>

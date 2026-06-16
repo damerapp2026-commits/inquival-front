@@ -39,13 +39,12 @@ interface CartPreload {
   sellerId?: string;
 }
 
-function resolvePrice(product: Product, tierId: string, companyId?: string): number | undefined {
+function resolvePrice(product: Product, tierId: string): number | undefined {
   if (!product.prices?.length) return undefined;
-  if (companyId) {
-    const byCompany = product.prices.find((p: ProductPrice) => p.priceTierId === tierId && p.companyId === companyId);
-    if (byCompany) return byCompany.price;
-  }
-  return product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId)?.price;
+  return (
+    product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId)?.price ??
+    product.prices.find((p: ProductPrice) => p.priceTierId === tierId)?.price
+  );
 }
 
 export function NewQuotePage() {
@@ -281,8 +280,29 @@ export function NewQuotePage() {
     setLines((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const applyTierToLine = (idx: number, nextTierId: string) => {
+    const line = lines[idx];
+    const product = products.find((p) => p.id === line.productId);
+    const price = product ? resolvePrice(product, nextTierId) : undefined;
+    setLine(idx, {
+      tierOverride: nextTierId,
+      ...(price != null ? { unitPrice: price } : {}),
+    });
+  };
+
+  const handleTierChange = (nextTierId: string) => {
+    setTierId(nextTierId);
+    setLines((prev) => prev.map((line) => {
+      if (!line.productId || line.tierOverride) return line;
+      const product = products.find((p) => p.id === line.productId);
+      const price = product ? resolvePrice(product, nextTierId) : undefined;
+      return price != null ? { ...line, unitPrice: price } : line;
+    }));
+  };
+
   const pickProduct = (idx: number, p: Product) => {
-    const price = resolvePrice(p, tierId, companyId) ?? 0;
+    const lineTierId = lines[idx]?.tierOverride || tierId;
+    const price = lineTierId ? resolvePrice(p, lineTierId) ?? 0 : 0;
     setLine(idx, {
       productId: p.id,
       name: p.name,
@@ -527,20 +547,12 @@ export function NewQuotePage() {
             </header>
 
             <div className="p-6 space-y-4">
-              {/* Almacén + lista de precios */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Almacén / Sucursal</label>
-                  <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500">
-                    {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Lista de precios</label>
-                  <select value={tierId} onChange={(e) => setTierId(e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500">
-                    {tiers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                </div>
+              {/* Lista de precios */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Lista de precios</label>
+                <select value={tierId} onChange={(e) => handleTierChange(e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500">
+                  {tiers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
               </div>
 
               {lines.length === 0 && (
@@ -571,7 +583,8 @@ export function NewQuotePage() {
                       {searchOpenForLine === idx && productOptions.length > 0 && (
                         <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
                           {productOptions.map((p) => {
-                            const price = resolvePrice(p, tierId, companyId) ?? 0;
+                            const lineTierId = lines[idx]?.tierOverride || tierId;
+                            const price = lineTierId ? resolvePrice(p, lineTierId) ?? 0 : 0;
                             return (
                               <button
                                 key={p.id}
@@ -597,7 +610,17 @@ export function NewQuotePage() {
                   </div>
 
                   {line.productId && (
-                    <div className="mt-3 grid grid-cols-[100px_140px_1fr] gap-3 items-end">
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-[150px_100px_140px_1fr] gap-3 items-end">
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-500 mb-1">Lista</label>
+                        <select
+                          value={line.tierOverride || tierId}
+                          onChange={(e) => applyTierToLine(idx, e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        >
+                          {tiers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                      </div>
                       <div>
                         <label className="block text-[11px] font-medium text-gray-500 mb-1">Cantidad</label>
                         <input

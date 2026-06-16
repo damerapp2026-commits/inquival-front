@@ -100,6 +100,13 @@ function stripMethod(desc: string) {
   return sanitizeEntryDesc(desc).replace(/\s*\[.*?\]\s*$/, '');
 }
 
+function methodsFromEntries(entries: CashRegisterEntry[]) {
+  const methods = entries
+    .map((entry) => methodFromDescription(entry.description))
+    .filter((method): method is string => !!method);
+  return [...new Set(methods)];
+}
+
 function clientFromSaleDescription(desc: string): string {
   const stripped = stripMethod(desc);
   if (/^venta\s+sin\s+cliente/i.test(stripped)) return 'Sin cliente';
@@ -684,7 +691,7 @@ export function CashRegisterPage() {
                   const isSaleGroup = first.referenceType === 'Sale' && !!first.referenceId;
                   const baseRaw = sanitizeEntryDesc(first.description).replace(/\s*\(\d+ de \d+\)\s*$/, '');
                   const baseDesc = isSaleGroup ? clientFromSaleDescription(baseRaw) : stripMethod(baseRaw);
-                  const method = methodFromDescription(first.description);
+                  const groupMethods = methodsFromEntries(group.entries);
                   const vendor = first.createdBy ? (userById[first.createdBy] || 'Usuario') : '';
                   return (
                     <React.Fragment key={group.groupId}>
@@ -718,7 +725,9 @@ export function CashRegisterPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3.5"><VendorChip name={vendor} /></td>
-                        <td className="px-4 py-3.5">{method ? <MethodPill name={method} /> : <span className="text-gray-300">—</span>}</td>
+                        <td className="px-4 py-3.5">
+                          {groupMethods.length > 0 ? <MethodPill name={groupMethods.join(' + ')} /> : <span className="text-gray-300">—</span>}
+                        </td>
                         <td className={`px-4 py-3.5 text-right font-bold tabular-nums ${first.type === 'INCOME' ? 'text-primary-700' : 'text-rose-600'}`}>
                           {(() => {
                             const groupSale = isSaleGroup ? salesByRefId.get(first.referenceId!) : undefined;

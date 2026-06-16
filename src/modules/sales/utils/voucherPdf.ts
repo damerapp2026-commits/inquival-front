@@ -109,7 +109,8 @@ function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): a
 
   if (sale.clientName) content.push({ columns: [{ text: 'Cliente:', bold: true, width: 55 }, { text: sale.clientName }] });
   if (sale.clientDocument) content.push({ columns: [{ text: 'Doc:', bold: true, width: 55 }, { text: sale.clientDocument }] });
-  content.push({ columns: [{ text: 'Vendedor:', bold: true, width: 55 }, { text: sale.sellerName || 'Sin asignar' }] });
+  if (sale.clientLocation) content.push({ columns: [{ text: 'Ubicación:', bold: true, width: 55 }, { text: sale.clientLocation }] });
+  content.push({ columns: [{ text: 'R. Comercial:', bold: true, width: 55 }, { text: sale.sellerName || 'Sin asignar' }] });
 
   content.push(dashedLine());
   content.push({
@@ -427,8 +428,11 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
             ],
             [
               { text: 'Teléfono', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: sale.clientPhone || ' ', fontSize: 8 },
-              { text: 'Vendedor', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: (sale.sellerName || '—').toUpperCase(), fontSize: 8 },
+              { text: 'R. Comercial', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: (sale.sellerName || '—').toUpperCase(), fontSize: 8 },
             ],
+            ...(sale.clientLocation ? [[
+              { text: 'Ubicación', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: sale.clientLocation.toUpperCase(), fontSize: 8, colSpan: 4 }, {}, {}, {},
+            ]] : []),
             [
               { text: 'Fecha Emisión', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: formatDate(sale.date), fontSize: 8, colSpan: 4 }, {}, {}, {},
             ],
@@ -562,6 +566,11 @@ export async function downloadVoucherPdf(sale: VoucherSnapshot, format: VoucherF
 export async function openVoucherPdf(sale: VoucherSnapshot, format: VoucherFormat = 'TICKET') {
   const pdf = await buildPdf(sale, format);
   pdf.open();
+}
+
+export async function printVoucherPdf(sale: VoucherSnapshot, format: VoucherFormat = 'TICKET') {
+  const pdf = await buildPdf(sale, format);
+  pdf.print();
 }
 
 export async function buildVoucherPdfBlob(sale: VoucherSnapshot, format: VoucherFormat = 'TICKET'): Promise<Blob> {

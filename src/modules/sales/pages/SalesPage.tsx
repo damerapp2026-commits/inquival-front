@@ -18,7 +18,7 @@ import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download, FileText, X, CheckCircle2, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { VoucherPreviewModal, type VoucherSnapshot } from '../components/VoucherPreviewModal';
+import { VoucherPreviewModal, type VoucherSnapshot, resolveClientLocation } from '../components/VoucherPreviewModal';
 import { EditSaleItemsModal } from '../components/EditSaleItemsModal';
 import { ClientSalesHistoryModal } from '../components/ClientSalesHistoryModal';
 import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod, Stock } from '../../../shared/types';
@@ -403,6 +403,7 @@ export function SalesPage() {
       sellerName: sellerUser?.fullName || sellerUser?.username || 'Sin asignar',
       clientName: client?.name,
       clientPhone: client?.phone,
+      clientLocation: resolveClientLocation(client),
     };
     setSuccessSale(snapshot);
   };
@@ -685,16 +686,20 @@ export function SalesPage() {
       const name = getSellerName(item);
       return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
     }}] : []),
-    { key: 'clientId', header: 'Cliente', render: (item: Sale) => item.clientId ? (
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); setClientHistoryId(item.clientId!); }}
-        className="text-primary-700 hover:text-primary-900 hover:underline text-left"
-        title="Ver todas las ventas de este cliente"
-      >
-        {getClientName(item.clientId, item.clientName)}
-      </button>
-    ) : <span className="text-gray-400">Sin cliente</span> },
+    { key: 'clientId', header: 'Cliente', render: (item: Sale) => (
+      <div className="max-w-[130px] truncate">
+        {item.clientId ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setClientHistoryId(item.clientId!); }}
+            className="text-primary-700 hover:text-primary-900 hover:underline text-left truncate w-full"
+            title={getClientName(item.clientId, item.clientName)}
+          >
+            {getClientName(item.clientId, item.clientName)}
+          </button>
+        ) : <span className="text-gray-400">Sin cliente</span>}
+      </div>
+    ) },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'total', header: isMethodPortionFilter ? 'Cobrado' : 'Total', render: (item: Sale) => {
       const sym = saleSym(item);
@@ -732,16 +737,20 @@ export function SalesPage() {
       const name = getSellerName(item);
       return name === '—' ? <span className="text-gray-300">—</span> : <span className="text-emerald-700">{name}</span>;
     }}] : []),
-    { key: 'clientId', header: 'Cliente', render: (item: Sale) => item.clientId ? (
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); setClientHistoryId(item.clientId!); }}
-        className="text-primary-700 hover:text-primary-900 hover:underline text-left"
-        title="Ver todas las ventas de este cliente"
-      >
-        {getClientName(item.clientId, item.clientName)}
-      </button>
-    ) : <span className="text-gray-400">Sin cliente</span> },
+    { key: 'clientId', header: 'Cliente', render: (item: Sale) => (
+      <div className="max-w-[130px] truncate">
+        {item.clientId ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setClientHistoryId(item.clientId!); }}
+            className="text-primary-700 hover:text-primary-900 hover:underline text-left truncate w-full"
+            title={getClientName(item.clientId, item.clientName)}
+          >
+            {getClientName(item.clientId, item.clientName)}
+          </button>
+        ) : <span className="text-gray-400">Sin cliente</span>}
+      </div>
+    ) },
     { key: 'items', header: 'Items', render: (item: Sale) => `${item.items.length} producto(s)` },
     { key: 'baseAmount', header: 'Valor Venta', render: (item: Sale) => {
       const base = getSaleBaseAmount(item);
@@ -1295,6 +1304,7 @@ export function SalesPage() {
             clientName: client?.name,
             clientDocument: client?.documentNumber,
             clientPhone: client?.phone,
+            clientLocation: resolveClientLocation(client),
             igv,
             baseImponible,
             voucherNumber: sale.saleNumber,
@@ -1431,7 +1441,7 @@ export function SalesPage() {
                     )}
                   </div>
                   <div className="border border-gray-200 rounded-xl p-3">
-                    <span className="block text-xs text-gray-500 mb-0.5">Vendedor</span>
+                    <span className="block text-xs text-gray-500 mb-0.5">R. de Venta</span>
                     <div className="text-sm font-medium text-gray-900 truncate">{getSellerName(sale)}</div>
                   </div>
                 </div>
@@ -1520,7 +1530,7 @@ export function SalesPage() {
                 <button
                   type="button"
                   onClick={openVoucherPreview}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors text-sm font-semibold"
                 >
                   <FileText size={16} /> Ver comprobante
                 </button>
@@ -1533,15 +1543,13 @@ export function SalesPage() {
                     Editar items
                   </button>
                 )}
-                {!sale.isCancelled && (
-                  <button
-                    type="button"
-                    onClick={() => { setCancellingSale(sale); setCancelReason(''); setViewingSale(null); }}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors text-sm font-semibold"
-                  >
-                    <XCircle size={16} /> Anular
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingSale(null)}
+                  className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+                >
+                  Cancelar
+                </button>
               </div>
             </div>
           </div>
