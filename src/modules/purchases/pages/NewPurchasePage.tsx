@@ -1,15 +1,24 @@
+import { useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { useCreatePurchase } from '../hooks/usePurchases';
 import { PurchaseFormBody, type PurchaseSubmitPayload } from '../components/PurchaseFormBody';
-import { buildInitialCreate } from '../utils/purchaseForm';
+import {
+  buildInitialCreate,
+  clearPurchaseCreateDraft,
+  readPurchaseCreateDraft,
+  writePurchaseCreateDraft,
+  type PurchaseInitial,
+} from '../utils/purchaseForm';
 import { getTodayDateString } from '../../../shared/utils/date.util';
 
 export function NewPurchasePage() {
   const navigate = useNavigate();
   const createPurchase = useCreatePurchase();
-  const today = getTodayDateString();
-  const initial = buildInitialCreate(today);
+  const initial = useMemo(() => {
+    const fallback = buildInitialCreate(getTodayDateString());
+    return readPurchaseCreateDraft(fallback) ?? fallback;
+  }, []);
 
   const handleSubmit = async (payload: PurchaseSubmitPayload) => {
     const apiPayload: any = { ...payload };
@@ -18,6 +27,7 @@ export function NewPurchasePage() {
       delete apiPayload.totalCost;
     }
     await createPurchase.mutateAsync(apiPayload);
+    clearPurchaseCreateDraft();
     navigate('/purchases');
   };
 
@@ -43,6 +53,7 @@ export function NewPurchasePage() {
         isSubmitting={createPurchase.isPending}
         onSubmit={handleSubmit}
         onCancelHref="/purchases"
+        onDraftChange={(draft: PurchaseInitial) => writePurchaseCreateDraft(draft)}
       />
     </div>
   );

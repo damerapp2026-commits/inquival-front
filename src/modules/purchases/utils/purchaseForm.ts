@@ -127,6 +127,60 @@ export interface PurchaseInitial {
   originalTotalUsd?: number;
 }
 
+export interface PurchaseCreateDraft extends PurchaseInitial {
+  savedAt: string;
+}
+
+export const PURCHASE_CREATE_DRAFT_KEY = 'inquival:purchases:new:draft:v1';
+
+const isCurrency = (value: unknown): value is 'PEN' | 'USD' => value === 'PEN' || value === 'USD';
+
+export function readPurchaseCreateDraft(fallback: PurchaseInitial): PurchaseInitial | null {
+  try {
+    const raw = window.localStorage.getItem(PURCHASE_CREATE_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PurchaseCreateDraft>;
+    if (!parsed.state || !isCurrency(parsed.currency)) return null;
+
+    return {
+      state: {
+        ...fallback.state,
+        ...parsed.state,
+        items: Array.isArray(parsed.state.items) && parsed.state.items.length
+          ? parsed.state.items.map((item) => ({ ...emptyItem(), ...item }))
+          : fallback.state.items,
+        installments: Array.isArray(parsed.state.installments) ? parsed.state.installments : [],
+      },
+      currency: parsed.currency,
+      exchangeRate: typeof parsed.exchangeRate === 'number' ? parsed.exchangeRate : null,
+      exchangeRateDate: typeof parsed.exchangeRateDate === 'string' ? parsed.exchangeRateDate : '',
+      originalTotal: 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function writePurchaseCreateDraft(initial: PurchaseInitial) {
+  try {
+    const draft: PurchaseCreateDraft = {
+      ...initial,
+      savedAt: new Date().toISOString(),
+    };
+    window.localStorage.setItem(PURCHASE_CREATE_DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // Storage can be unavailable in private mode; the form should keep working.
+  }
+}
+
+export function clearPurchaseCreateDraft() {
+  try {
+    window.localStorage.removeItem(PURCHASE_CREATE_DRAFT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 export function purchaseToFormState(purchase: Purchase, products: Product[]): PurchaseInitial {
   const currency: 'PEN' | 'USD' = purchase.totalCostUsd ? 'USD' : 'PEN';
   const exchangeRate = purchase.exchangeRate ?? null;

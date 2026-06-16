@@ -72,6 +72,7 @@ export interface PurchaseFormBodyProps {
   isSubmitting: boolean;
   onSubmit: (payload: PurchaseSubmitPayload) => Promise<void> | void;
   onCancelHref: string;
+  onDraftChange?: (draft: PurchaseInitial) => void;
   warningBanner?: React.ReactNode;
 }
 
@@ -120,6 +121,7 @@ export function PurchaseFormBody({
   isSubmitting,
   onSubmit,
   onCancelHref,
+  onDraftChange,
   warningBanner,
 }: PurchaseFormBodyProps) {
   const { data: companies } = useCompanies();
@@ -155,6 +157,18 @@ export function PurchaseFormBody({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipoCambioData, currency, mode]);
+
+  useEffect(() => {
+    if (!onDraftChange) return;
+    onDraftChange({
+      state: form,
+      currency,
+      exchangeRate,
+      exchangeRateDate,
+      originalTotal: initial.originalTotal,
+      originalTotalUsd: initial.originalTotalUsd,
+    });
+  }, [currency, exchangeRate, exchangeRateDate, form, initial.originalTotal, initial.originalTotalUsd, onDraftChange]);
   const [labResolving, setLabResolving] = useState(false);
   const [installmentGen, setInstallmentGen] = useState(() => ({
     count: initial.state.installments.length || 6,
