@@ -2,8 +2,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { purchaseService } from '../services/purchaseService';
 import toast from 'react-hot-toast';
 
-export function usePurchases(params?: any) {
-  return useQuery({ queryKey: ['purchases', params], queryFn: () => purchaseService.getAll(params) });
+export function usePurchases(params?: any, opts?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['purchases', params],
+    queryFn: () => purchaseService.getAll(params),
+    enabled: opts?.enabled,
+  });
 }
 export function usePurchaseById(id: string | undefined) {
   return useQuery({

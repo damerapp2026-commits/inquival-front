@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart, useExchangeRate, useProfitability } from '../hooks/useDashboard';
 import { useAPAlerts } from '../../accounts-payable/hooks/useAccountsPayable';
 import { useSales } from '../../sales/hooks/useSales';
+import { usePriceCatalog, usePurchases } from '../../purchases/hooks/usePurchases';
+import { useProducts } from '../../products/hooks/useProducts';
 import { useUsers } from '../../users/hooks/useUsers';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { TrendingUp, TrendingDown, DollarSign, CreditCard, FileText, AlertTriangle, Clock, Tag, Truck, ShoppingCart, Package, BarChart3, Wallet, Users as UsersIcon } from 'lucide-react';
@@ -10,13 +12,240 @@ import {
   AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, Cell,
 } from 'recharts';
-import type { AccountPayable, Sale } from '../../../shared/types';
+import type { AccountPayable, Product, Purchase, Sale } from '../../../shared/types';
 
 const CHART_COLORS = ['#16a34a', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
 const SUPPLIER_COLORS = ['#15803d', '#0ea5e9', '#f43f5e', '#84cc16', '#fb923c'];
 const SELLER_COLORS = ['#16a34a', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1'];
 
 const symFor = (ap?: { currency?: 'PEN' | 'USD' } | null): string => (ap?.currency === 'USD' ? '$' : 'S/');
+
+const numberFrom = (value: unknown): number | null => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const firstNumber = (row: Record<string, unknown>, keys: string[]): number | null => {
+  for (const key of keys) {
+    const value = numberFrom(row[key]);
+    if (value != null) return value;
+  }
+  return null;
+};
+
+const firstPositive = (...values: Array<unknown>): number | null => {
+  for (const value of values) {
+    const n = numberFrom(value);
+    if (n != null && n > 0) return n;
+  }
+  return null;
+};
+
+const normalizeName = (value: unknown): string =>
+  String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+const pickString = (source: Record<string, any>, keys: string[]): string => {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return '';
+};
+
+const pickProductId = (source: Record<string, any>): string =>
+  pickString(source, ['productId', 'product_id', 'productID']) || pickString(source.product || {}, ['id', '_id']);
+
+const pickProductName = (source: Record<string, any>): string =>
+  normalizeName(
+    pickString(source, ['productName', 'name', 'product_name', 'product']) ||
+    pickString(source.product || {}, ['name', 'productName']),
+  );
+
+const pickNumber = (source: Record<string, any>, keys: string[]): number | null => {
+  for (const key of keys) {
+    const value = numberFrom(source[key]);
+    if (value != null) return value;
+  }
+  return null;
+};
+
+function buildProductNameById(products: Product[]) {
+  return new Map(products.map((product) => [product.id, normalizeName(product.name)]));
+}
+
+function buildProductCostLookup(products: Product[], catalogRows: Record<string, any>[]) {
+  const byId = new Map<string, number>();
+  const byName = new Map<string, number>();
+
+  catalogRows.forEach((row) => {
+    const productId = pickProductId(row);
+    const productName = pickProductName(row);
+    const exchangeRate = numberFrom(row.exchangeRate) || 1;
+    const cost = firstPositive(
+      row.unitCost,
+      row.unit_cost,
+      row.unitPriceConIgvPen,
+      row.unit_price_con_igv_pen,
+      row.unitPriceSinIgvPen,
+      row.unit_price_sin_igv_pen,
+      row.unitPriceConIgvUsd ? numberFrom(row.unitPriceConIgvUsd)! * exchangeRate : null,
+      row.unit_price_con_igv_usd ? numberFrom(row.unit_price_con_igv_usd)! * exchangeRate : null,
+    );
+    if (!cost) return;
+    if (productId) byId.set(productId, cost);
+    if (productName) byName.set(productName, cost);
+  });
+
+  products.forEach((product) => {
+    const cost = firstPositive((product as any).lastCostPrice, (product as any).last_cost_price);
+    if (!cost) return;
+    byId.set(product.id, cost);
+    const name = normalizeName(product.name);
+    if (name) byName.set(name, cost);
+  });
+
+  return { byId, byName };
+}
+
+function buildProductSalePriceLookup(products: Product[], catalogRows: Record<string, any>[]) {
+  const byId = new Map<string, number>();
+  const byName = new Map<string, number>();
+
+  catalogRows.forEach((row) => {
+    const productId = pickProductId(row);
+    const productName = pickProductName(row);
+    const price = firstPositive(row.precioVenta, row.precio_venta, row.precioMinorista, row.precio_minorista, row.precioEspecial, row.precio_especial);
+    if (!price) return;
+    if (productId) byId.set(productId, price);
+    if (productName) byName.set(productName, price);
+  });
+
+  products.forEach((product) => {
+    const prices = Array.isArray(product.prices) ? product.prices : [];
+    const price = firstPositive(
+      (product as any).lastSalePrice,
+      (product as any).last_sale_price,
+      ...prices.map((item: any) => item?.price),
+    );
+    if (!price) return;
+    byId.set(product.id, price);
+    const name = normalizeName(product.name);
+    if (name) byName.set(name, price);
+  });
+
+  return { byId, byName };
+}
+
+function buildLatestCostByProduct(purchases: Purchase[], productNameById: Map<string, string>) {
+  const latest = new Map<string, { cost: number; at: number }>();
+  const byName = new Map<string, { cost: number; at: number }>();
+
+  purchases.forEach((purchase: any) => {
+    if (purchase.isCancelled || purchase.cancelledAt) return;
+    const at = new Date(purchase.issueDate || purchase.date || purchase.createdAt || 0).getTime() || 0;
+    const exchangeRate = numberFrom(purchase.exchangeRate) || 1;
+    const isUsd = purchase.totalCostUsd != null;
+
+    (purchase.items || []).forEach((item: any) => {
+      const productId = pickProductId(item);
+      const productName = pickProductName(item) || (productId ? productNameById.get(productId) || '' : '');
+      const unitCost = pickNumber(item, ['unitCost', 'unit_cost', 'cost', 'purchasePrice', 'purchase_price']);
+      const unitPriceConIgv = pickNumber(item, ['unitPriceConIgv', 'unit_price_con_igv', 'unitPriceWithTax']);
+      const unitPriceSinIgv = pickNumber(item, ['unitPriceSinIgv', 'unit_price_sin_igv', 'unitPriceWithoutTax']);
+      const cost = firstPositive(
+        unitCost,
+        isUsd && unitPriceConIgv ? unitPriceConIgv * exchangeRate : unitPriceConIgv,
+        isUsd && unitPriceSinIgv ? unitPriceSinIgv * exchangeRate : unitPriceSinIgv,
+      );
+      if (!cost) return;
+      if (productId) {
+        const current = latest.get(productId);
+        if (!current || at >= current.at) latest.set(productId, { cost, at });
+      }
+      if (productName) {
+        const current = byName.get(productName);
+        if (!current || at >= current.at) byName.set(productName, { cost, at });
+      }
+    });
+  });
+
+  return { byId: latest, byName };
+}
+
+function buildSoldQuantityByProduct(sales: Sale[], productNameById: Map<string, string>) {
+  const byId = new Map<string, number>();
+  const byName = new Map<string, number>();
+
+  sales.forEach((sale) => {
+    if (sale.isCancelled) return;
+    (sale.items || []).forEach((item: any) => {
+      const quantity = numberFrom(item.quantity) || 0;
+      if (quantity <= 0) return;
+      const productId = pickProductId(item);
+      if (productId) byId.set(productId, (byId.get(productId) || 0) + quantity);
+      const productName = pickProductName(item) || (productId ? productNameById.get(productId) || '' : '');
+      if (productName) byName.set(productName, (byName.get(productName) || 0) + quantity);
+    });
+  });
+
+  return { byId, byName };
+}
+
+function enrichProfitabilityRows(rows: unknown, purchases: Purchase[], sales: Sale[], products: Product[], catalogRows: Record<string, any>[]) {
+  if (!Array.isArray(rows)) return rows;
+  const productNameById = buildProductNameById(products);
+  const productCostLookup = buildProductCostLookup(products, catalogRows);
+  const productSalePriceLookup = buildProductSalePriceLookup(products, catalogRows);
+  const latestCostByProduct = buildLatestCostByProduct(purchases, productNameById);
+  const soldQuantityByProduct = buildSoldQuantityByProduct(sales, productNameById);
+
+  return rows.map((raw) => {
+    const row = raw as Record<string, unknown>;
+    const productId = pickProductId(row as Record<string, any>);
+    const productName = pickProductName(row as Record<string, any>) || (productId ? productNameById.get(productId) || '' : '');
+    const currentCost = numberFrom(row.totalCost);
+    const totalRevenue = numberFrom(row.totalRevenue) ?? 0;
+    const salePrice =
+      (productId ? productSalePriceLookup.byId.get(productId) : null) ??
+      (productName ? productSalePriceLookup.byName.get(productName) : null);
+    const quantity =
+      firstNumber(row, [
+        'totalQuantity',
+        'total_quantity',
+        'quantity',
+        'cantidad',
+        'soldQuantity',
+        'sold_quantity',
+        'quantitySold',
+        'quantity_sold',
+        'unitsSold',
+        'units_sold',
+        'totalUnitsSold',
+        'total_units_sold',
+        'qty',
+      ]) ??
+      (productId ? soldQuantityByProduct.byId.get(productId) : null) ??
+      (productName ? soldQuantityByProduct.byName.get(productName) : null) ??
+      (salePrice && totalRevenue > 0 ? totalRevenue / salePrice : null);
+    const latestCost =
+      (productId ? latestCostByProduct.byId.get(productId)?.cost : null) ??
+      (productName ? latestCostByProduct.byName.get(productName)?.cost : null) ??
+      (productId ? productCostLookup.byId.get(productId) : null) ??
+      (productName ? productCostLookup.byName.get(productName) : null);
+
+    if (currentCost != null || !quantity || !latestCost) return row;
+
+    const totalCost = Math.round(quantity * latestCost * 100) / 100;
+    const grossProfit = Math.round((totalRevenue - totalCost) * 100) / 100;
+
+    return {
+      ...row,
+      totalCost,
+      grossProfit,
+      marginPercent: totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0,
+    };
+  });
+}
 
 function toInputDate(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -136,11 +365,23 @@ export function DashboardPage() {
   const { data: topSuppliers } = useTopSuppliers(chartRange.start, chartRange.end);
   const { data: catSalesChart } = useCategorySalesChart(catChartRange.start, catChartRange.end);
   const { data: sellerSalesData, isLoading: sellerSalesLoading } = useSales({ page: 1, limit: 1000, startDate: chartRange.start, endDate: chartRange.end });
+  const { data: profitabilitySalesData, isLoading: profitabilitySalesLoading } = useSales({
+    page: 1,
+    limit: 5000,
+    startDate: profitRange.start,
+    endDate: profitRange.end,
+  });
   const { data: usersData } = useUsers({ limit: 200 });
   const { data: profitabilityData, isLoading: profitLoading } = useProfitability(
     user?.role === 'ADMIN' ? profitRange.start : undefined,
     user?.role === 'ADMIN' ? profitRange.end : undefined,
   );
+  const { data: purchasesData, isLoading: purchasesLoading } = usePurchases(
+    { page: 1, limit: 1000 },
+    { enabled: user?.role === 'ADMIN' },
+  );
+  const { data: priceCatalogData, isLoading: priceCatalogLoading } = usePriceCatalog({ enabled: user?.role === 'ADMIN' });
+  const { data: productsData, isLoading: productsLoading } = useProducts({ limit: 10000 });
 
   const sellersList: any[] = useMemo(() => {
     const raw: any = usersData;
@@ -173,6 +414,14 @@ export function DashboardPage() {
   const topSuppliersData: { name: string; total: number; count: number }[] = Array.isArray(topSuppliers) ? topSuppliers : [];
   const catChartData: Record<string, any>[] = catSalesChart?.dailyData || [];
   const allCategories: string[] = catSalesChart?.categories || [];
+  const purchases: Purchase[] = Array.isArray(purchasesData) ? purchasesData : purchasesData?.data || [];
+  const profitabilitySales: Sale[] = Array.isArray(profitabilitySalesData) ? profitabilitySalesData : profitabilitySalesData?.data || [];
+  const products: Product[] = Array.isArray(productsData) ? productsData : productsData?.data || [];
+  const priceCatalogRows: Record<string, any>[] = Array.isArray(priceCatalogData) ? priceCatalogData : [];
+  const enrichedProfitabilityData = useMemo(
+    () => enrichProfitabilityRows(profitabilityData, purchases, profitabilitySales, products, priceCatalogRows),
+    [profitabilityData, purchases, profitabilitySales, products, priceCatalogRows],
+  );
 
   const activeCategories = useMemo(
     () => allCategories.filter((c) => !disabledCats.has(c)),
@@ -609,14 +858,14 @@ export function DashboardPage() {
             />
           </div>
 
-          {profitLoading ? (
+          {profitLoading || purchasesLoading || profitabilitySalesLoading || productsLoading || priceCatalogLoading ? (
             <div className="h-[360px] flex items-center justify-center text-gray-400 text-sm">Calculando rentabilidad...</div>
-          ) : !Array.isArray(profitabilityData) || profitabilityData.length === 0 ? (
+          ) : !Array.isArray(enrichedProfitabilityData) || enrichedProfitabilityData.length === 0 ? (
             <div className="h-[360px] flex items-center justify-center text-gray-400 text-sm">Sin ventas en el período seleccionado</div>
           ) : (
             <>
-              <ResponsiveContainer width="100%" height={Math.max(320, profitabilityData.length * 48)}>
-                <BarChart data={profitabilityData} layout="vertical" margin={{ left: 10, right: 60 }} barCategoryGap="25%" barGap={3}>
+              <ResponsiveContainer width="100%" height={Math.max(320, enrichedProfitabilityData.length * 48)}>
+                <BarChart data={enrichedProfitabilityData} layout="vertical" margin={{ left: 10, right: 60 }} barCategoryGap="25%" barGap={3}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `S/${v}`} />
                   <YAxis
@@ -639,8 +888,20 @@ export function DashboardPage() {
                           </div>
                           {row?.totalCost != null && (
                             <div className="flex justify-between gap-4">
-                              <span className="text-gray-500">Costo</span>
+                              <span className="text-gray-500">Costo total</span>
                               <span className="font-medium text-orange-500">S/ {Number(row.totalCost).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {row?.unitCost != null && (
+                            <div className="flex justify-between gap-4">
+                              <span className="text-gray-500">Precio costo</span>
+                              <span className="font-medium text-orange-500">S/ {Number(row.unitCost).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {row?.totalSold != null && (
+                            <div className="flex justify-between gap-4">
+                              <span className="text-gray-500">Cantidad</span>
+                              <span className="font-medium text-gray-700">{Number(row.totalSold).toFixed(2)}</span>
                             </div>
                           )}
                           {row?.grossProfit != null && (
@@ -674,7 +935,7 @@ export function DashboardPage() {
 
               <div className="mt-4 flex flex-wrap gap-3">
                 {(() => {
-                  const rows = profitabilityData as any[];
+                  const rows = enrichedProfitabilityData as any[];
                   const totalRev = rows.reduce((s: number, r: any) => s + (r.totalRevenue || 0), 0);
                   const totalCost = rows.filter((r: any) => r.totalCost != null).reduce((s: number, r: any) => s + r.totalCost, 0);
                   const totalProfit = totalRev - totalCost;

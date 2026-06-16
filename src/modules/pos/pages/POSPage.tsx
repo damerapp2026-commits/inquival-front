@@ -67,6 +67,51 @@ interface BonusCartItem {
   sourceCompanyId?: string;
 }
 
+interface PosDraft {
+  cart: CartItem[];
+  bonusItems: BonusCartItem[];
+  companyId?: string;
+  tierId?: string;
+  clientId?: string;
+  voucherType?: 'NONE' | 'BOLETA' | 'FACTURA';
+  sellerId?: string;
+  currency?: 'PEN' | 'USD';
+  exchangeRate?: number;
+}
+
+const POS_DRAFT_KEY = 'inquival:pos:draft:v1';
+
+function readPosDraft(): PosDraft | null {
+  try {
+    const raw = window.localStorage.getItem(POS_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PosDraft;
+    return {
+      ...parsed,
+      cart: Array.isArray(parsed.cart) ? parsed.cart : [],
+      bonusItems: Array.isArray(parsed.bonusItems) ? parsed.bonusItems : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writePosDraft(draft: PosDraft) {
+  try {
+    window.localStorage.setItem(POS_DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // Storage can be unavailable in private mode; the POS should keep working.
+  }
+}
+
+function clearPosDraft() {
+  try {
+    window.localStorage.removeItem(POS_DRAFT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 function normalizeTaxType(value: unknown): TaxType {
   const v = String(value || '').trim().toUpperCase();
   return v === 'EXONERADO' || v === 'INAFECTO' ? v : 'GRAVADO';
@@ -91,6 +136,7 @@ function resolvePrice(product: Product, tierId: string, companyId: string): numb
 }
 
 export function POSPage() {
+  const persistedDraft = useMemo(() => readPosDraft(), []);
   const { user } = useAuth();
   const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
   const { data: usersData } = useUsers({ limit: 200 });
@@ -152,9 +198,9 @@ export function POSPage() {
 
   const [categoryId, setCategoryId] = useState<string>(''); // '' = Todos
   const [onlyInStock, setOnlyInStock] = useState(false);
-  const [companyId, setCompanyId] = useState<string>('');
-  const [tierId, setTierId] = useState<string>('');
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [companyId, setCompanyId] = useState<string>(persistedDraft?.companyId || '');
+  const [tierId, setTierId] = useState<string>(persistedDraft?.tierId || '');
+  const [cart, setCart] = useState<CartItem[]>(persistedDraft?.cart || []);
   const [showCheckout, setShowCheckout] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const convertQuote = useConvertQuote();
@@ -163,8 +209,8 @@ export function POSPage() {
   const fromQuoteId = searchParams.get('fromQuote') || '';
   const { data: preloadedQuote } = useQuote(fromQuoteId);
   const [sourceQuoteId, setSourceQuoteId] = useState<string>('');
-  const [clientId, setClientId] = useState<string>('');
-  const [voucherType, setVoucherType] = useState<'NONE' | 'BOLETA' | 'FACTURA'>('NONE');
+  const [clientId, setClientId] = useState<string>(persistedDraft?.clientId || '');
+  const [voucherType, setVoucherType] = useState<'NONE' | 'BOLETA' | 'FACTURA'>(persistedDraft?.voucherType || 'NONE');
   const [paymentMethodId, setPaymentMethodId] = useState<string>('');
   const [splitPayments, setSplitPayments] = useState<{ paymentMethodId: string; amount: number }[]>([]);
   const [isCredit, setIsCredit] = useState(false);
@@ -174,7 +220,7 @@ export function POSPage() {
   const [creditDueDays, setCreditDueDays] = useState('');
 
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
-  const [sellerId, setSellerId] = useState<string>('');
+  const [sellerId, setSellerId] = useState<string>(persistedDraft?.sellerId || '');
   const todayLocal = (() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -184,10 +230,10 @@ export function POSPage() {
   /** Venta de cortesía: solo ADMIN puede activar. Total = 0, sin pago. */
   const [isCourtesy, setIsCourtesy] = useState(false);
   /** Moneda de la venta. Los precios del carrito son en esta moneda. */
-  const [currency, setCurrency] = useState<'PEN' | 'USD'>('PEN');
+  const [currency, setCurrency] = useState<'PEN' | 'USD'>(persistedDraft?.currency || 'PEN');
   /** Tipo de cambio USD → PEN (requerido cuando currency === 'USD'). */
-  const [exchangeRate, setExchangeRate] = useState<number>(3.75);
-  const [bonusItems, setBonusItems] = useState<BonusCartItem[]>([]);
+  const [exchangeRate, setExchangeRate] = useState<number>(persistedDraft?.exchangeRate || 3.75);
+  const [bonusItems, setBonusItems] = useState<BonusCartItem[]>(persistedDraft?.bonusItems || []);
 
   const computedDueDate = (() => {
     const days = parseInt(creditDueDays, 10);
@@ -274,10 +320,11 @@ export function POSPage() {
       navigate('/quotes');
       return;
     }
-    if (preloadedQuote.companyId) setCompanyId(preloadedQuote.companyId);
+    setCompanyId(ALL_COMPANIES);
     if (preloadedQuote.clientId) setClientId(preloadedQuote.clientId);
     const items: CartItem[] = preloadedQuote.items.map((i: any) => {
       const p = products.find(pr => pr.id === i.productId);
+      const sourceCompanyId = i.companyId || preloadedQuote.companyId || findSourceCompanyForProduct(i.productId) || undefined;
       return {
         productId: i.productId,
         name: p?.name || '—',
@@ -287,7 +334,7 @@ export function POSPage() {
         taxType: normalizeTaxType(p?.taxType),
         tierOverride: i.priceTier,
         isCustomPrice: true,
-        sourceCompanyId: preloadedQuote.companyId || undefined,
+        sourceCompanyId,
       };
     });
     setCart(items);
@@ -308,6 +355,24 @@ export function POSPage() {
   useEffect(() => {
     if (!paymentMethodId && paymentMethods.length) setPaymentMethodId(paymentMethods[0].id);
   }, [paymentMethods, paymentMethodId]);
+
+  useEffect(() => {
+    if (cart.length === 0 && bonusItems.length === 0) {
+      clearPosDraft();
+      return;
+    }
+    writePosDraft({
+      cart,
+      bonusItems,
+      companyId,
+      tierId,
+      clientId,
+      voucherType,
+      sellerId,
+      currency,
+      exchangeRate,
+    });
+  }, [cart, bonusItems, companyId, tierId, clientId, voucherType, sellerId, currency, exchangeRate]);
 
   // Keyboard shortcut: Ctrl+K focus search
   useEffect(() => {
@@ -440,6 +505,7 @@ export function POSPage() {
   };
 
   const clearCart = () => {
+    clearPosDraft();
     setCart([]);
     setBonusItems([]);
   };
@@ -729,6 +795,7 @@ export function POSPage() {
       }
       setCart([]);
       setBonusItems([]);
+      clearPosDraft();
       setClientId('');
       setVoucherType('NONE');
       setSplitPayments([]);
