@@ -1565,6 +1565,8 @@ export function SalesPage() {
         priceTiers={Array.isArray(priceTiers) ? priceTiers : []}
         paymentMethods={paymentMethods}
         stockByCompanyMap={stockQtyByCompany}
+        userRole={user?.role}
+        sellerOptions={sellers.map((s: any) => ({ id: s.id, name: s.fullName || s.username }))}
       />
 
       {/* Modal éxito post-venta */}

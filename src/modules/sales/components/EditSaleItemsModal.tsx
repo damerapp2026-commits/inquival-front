@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
+import { Trash2 } from 'lucide-react';
 import { Modal } from '../../../shared/components/Modal';
 import { useUpdateSaleItems, useUpdateSaleDate } from '../hooks/useSales';
 import { getTodayDateString, toLocalDateString } from '../../../shared/utils/date.util';
 import type { Sale, Product, Company, PriceTier, PaymentMethod } from '../../../shared/types';
+
+interface SellerOption {
+  id: string;
+  name: string;
+}
 
 interface EditSaleItemsModalProps {
   sale: Sale | null;
@@ -14,6 +20,8 @@ interface EditSaleItemsModalProps {
   priceTiers: PriceTier[];
   paymentMethods: PaymentMethod[];
   stockByCompanyMap: Record<string, Map<string, number>>;
+  userRole?: string;
+  sellerOptions?: SellerOption[];
 }
 
 interface DraftItem {
@@ -22,6 +30,7 @@ interface DraftItem {
   priceTier: string;
   quantity: number;
   unitPrice: number;
+  originalIndex: number;
 }
 
 interface DraftPayment {
@@ -40,23 +49,27 @@ export function EditSaleItemsModal({
   priceTiers,
   paymentMethods,
   stockByCompanyMap,
+  userRole,
+  sellerOptions = [],
 }: EditSaleItemsModalProps) {
   const [items, setItems] = useState<DraftItem[]>([]);
   const [reason, setReason] = useState('');
   const [payments, setPayments] = useState<DraftPayment[]>([]);
   const [dateValue, setDateValue] = useState('');
   const [dateReason, setDateReason] = useState('');
+  const [sellerId, setSellerId] = useState('');
   const updateMutation = useUpdateSaleItems();
   const updateDateMutation = useUpdateSaleDate();
 
   useEffect(() => {
     if (sale) {
-      setItems(sale.items.map((i) => ({
+      setItems(sale.items.map((i, idx) => ({
         productId: i.productId,
         companyId: i.companyId,
         priceTier: i.priceTier,
         quantity: i.quantity,
         unitPrice: i.unitPrice,
+        originalIndex: idx,
       })));
       setPayments((sale.payments || []).map((p) => ({
         paymentMethodId: p.paymentMethodId || '',
@@ -65,6 +78,7 @@ export function EditSaleItemsModal({
       setReason('');
       setDateValue(toLocalDateString(sale.date));
       setDateReason('');
+      setSellerId(sale.sellerId || '');
     }
   }, [sale?.id]);
 
@@ -87,6 +101,13 @@ export function EditSaleItemsModal({
   }, [priceTiers]);
 
   const activeMethods = useMemo(() => paymentMethods.filter((m) => m.isActive), [paymentMethods]);
+  const sellerNameById = useMemo(() => {
+    const map: Record<string, string> = {};
+    sellerOptions.forEach((s) => { map[s.id] = s.name; });
+    return map;
+  }, [sellerOptions]);
+  const isAdmin = userRole === 'ADMIN';
+  const selectedSellerName = sellerId ? sellerNameById[sellerId] || sellerId : '';
 
   const newTotal = useMemo(
     () => round2(items.reduce((s, i) => s + i.quantity * i.unitPrice, 0)),
@@ -110,6 +131,8 @@ export function EditSaleItemsModal({
   const paymentsSum = round2(payments.reduce((s, p) => s + (p.amount || 0), 0));
   const paymentsMatch = paymentsSum === newTotal;
   const canEditPayments = !sale.isCredit;
+  const canEditSeller = isAdmin;
+  const sellerChanged = canEditSeller && sellerId !== '' && sellerId !== (sale.sellerId || '');
 
   const originalPayments = sale.payments || [];
   const paymentsChanged = canEditPayments && (
@@ -130,6 +153,10 @@ export function EditSaleItemsModal({
     });
   };
 
+  const removeItem = (idx: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const updatePayment = (idx: number, field: 'paymentMethodId' | 'amount', value: string | number) => {
     setPayments((prev) => {
       const next = [...prev];
@@ -146,25 +173,31 @@ export function EditSaleItemsModal({
     setPayments((prev) => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev);
   };
 
-  const stockAvailableFor = (item: DraftItem, originalQty: number): number | null => {
+  const stockAvailableFor = (item: DraftItem): number | null => {
     const companyMap = stockByCompanyMap[item.companyId];
     if (!companyMap) return null;
     const baseAvailable = companyMap.get(item.productId) ?? 0;
+    const originalQty = sale.items[item.originalIndex]?.quantity ?? 0;
     return round2(baseAvailable + originalQty);
   };
 
   const validate = (): string | null => {
     if (reason.trim().length < 5) return 'El motivo debe tener al menos 5 caracteres';
+    if (items.length === 0) return 'La venta debe tener al menos un item';
     for (let idx = 0; idx < items.length; idx++) {
       const it = items[idx];
       if (!(it.quantity > 0)) return `La cantidad del item ${idx + 1} debe ser mayor a 0`;
       if (it.unitPrice < 0) return `El precio del item ${idx + 1} no puede ser negativo`;
-      const original = sale.items[idx];
-      const available = stockAvailableFor(it, original.quantity);
+      const original = sale.items[it.originalIndex];
+      if (!original) return `El item ${idx + 1} no coincide con la venta original`;
+      const available = stockAvailableFor(it);
       if (available !== null && it.quantity > available) {
         const productName = productById.get(it.productId)?.name || 'Producto';
         return `${productName}: stock insuficiente (disponible ${available}, solicitado ${it.quantity})`;
       }
+    }
+    if (canEditSeller && sellerId && !sellerOptions.some((s) => s.id === sellerId)) {
+      return 'Selecciona un responsable válido';
     }
     if (canEditPayments) {
       if (payments.length === 0) return 'Agrega al menos un pago';
@@ -193,9 +226,11 @@ export function EditSaleItemsModal({
           productId: i.productId,
           companyId: i.companyId,
           priceTier: i.priceTier,
+          originalIndex: i.originalIndex,
           quantity: round2(i.quantity),
           unitPrice: round2(i.unitPrice),
         })),
+        sellerId: sellerChanged ? sellerId : undefined,
         payments: paymentsChanged ? payments.map((p) => ({ paymentMethodId: p.paymentMethodId, amount: round2(p.amount) })) : undefined,
       });
       onUpdated?.(updated);
@@ -238,8 +273,35 @@ export function EditSaleItemsModal({
     <Modal isOpen={!!sale} onClose={onClose} title={`Editar venta ${sale.saleNumber || ''}`} size="xl">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-          Ajusta precio, cantidad y opcionalmente la distribución de pagos. Stock y caja se actualizan automáticamente; en ventas a crédito el adelanto en caja no se modifica.
+          Ajusta precio, cantidad, responsable y opcionalmente la distribución de pagos. Stock, caja, historial y comprobantes se actualizan automáticamente.
         </div>
+
+        {canEditSeller && (
+          <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+            <div className="text-sm font-semibold text-gray-800">Responsable de la venta</div>
+            <div className="text-xs text-gray-500">
+              Cambia quién figura como representante comercial de esta venta. Solo se modifica el responsable; no afecta stock ni caja por sí mismo.
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Responsable actual / nuevo</label>
+                <select
+                  value={sellerId}
+                  onChange={(e) => setSellerId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                >
+                  <option value="">Mantener responsable actual</option>
+                  {sellerOptions.map((seller) => (
+                    <option key={seller.id} value={seller.id}>{seller.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-xs text-gray-500 sm:pb-2">
+                {sellerId ? `Seleccionado: ${selectedSellerName}` : 'Sin cambio'}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="rounded-lg border border-gray-200 p-3 space-y-2">
           <div className="text-sm font-semibold text-gray-800">Fecha de la venta</div>
@@ -289,18 +351,18 @@ export function EditSaleItemsModal({
                 <th className="px-3 py-2 text-right">Cantidad</th>
                 <th className="px-3 py-2 text-right">Precio unit.</th>
                 <th className="px-3 py-2 text-right">Subtotal</th>
+                <th className="px-3 py-2 text-right">Acción</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {items.map((it, idx) => {
-                const original = sale.items[idx];
                 const product = productById.get(it.productId);
                 const company = companyById.get(it.companyId);
                 const subtotal = round2(it.quantity * it.unitPrice);
-                const available = stockAvailableFor(it, original.quantity);
+                const available = stockAvailableFor(it);
                 const overStock = available !== null && it.quantity > available;
                 return (
-                  <tr key={`${it.productId}-${it.companyId}-${it.priceTier}-${idx}`} className={overStock ? 'bg-red-50' : ''}>
+                  <tr key={`${it.productId}-${it.companyId}-${it.priceTier}-${it.originalIndex}`} className={overStock ? 'bg-red-50' : ''}>
                     <td className="px-3 py-2">
                       <div className="font-medium text-gray-800">{product?.name || it.productId}</div>
                       {available !== null && (
@@ -330,21 +392,32 @@ export function EditSaleItemsModal({
                       />
                     </td>
                     <td className="px-3 py-2 text-right font-medium text-gray-800">S/ {subtotal.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => removeItem(idx)}
+                        disabled={items.length === 1}
+                        title={items.length === 1 ? 'La venta debe conservar al menos un item' : 'Eliminar item'}
+                        className="inline-flex items-center justify-center p-2 rounded-lg text-red-600 hover:bg-red-50 disabled:text-gray-300 disabled:hover:bg-transparent"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
             <tfoot>
               <tr className="border-t border-gray-200 bg-gray-50">
-                <td colSpan={5} className="px-3 py-2 text-right text-xs uppercase text-gray-500">Total original</td>
+                <td colSpan={6} className="px-3 py-2 text-right text-xs uppercase text-gray-500">Total original</td>
                 <td className="px-3 py-2 text-right text-gray-700">S/ {previousTotal.toFixed(2)}</td>
               </tr>
               <tr className="bg-gray-50">
-                <td colSpan={5} className="px-3 py-2 text-right text-xs uppercase text-gray-500">Total nuevo</td>
+                <td colSpan={6} className="px-3 py-2 text-right text-xs uppercase text-gray-500">Total nuevo</td>
                 <td className="px-3 py-2 text-right font-semibold text-gray-900">S/ {newTotal.toFixed(2)}</td>
               </tr>
               <tr className="bg-gray-50">
-                <td colSpan={5} className="px-3 py-2 text-right text-xs uppercase text-gray-500">Diferencia</td>
+                <td colSpan={6} className="px-3 py-2 text-right text-xs uppercase text-gray-500">Diferencia</td>
                 <td className={`px-3 py-2 text-right font-semibold ${diff > 0 ? 'text-red-600' : diff < 0 ? 'text-green-700' : 'text-gray-500'}`}>
                   {diff > 0 ? '+' : ''}S/ {diff.toFixed(2)}
                 </td>

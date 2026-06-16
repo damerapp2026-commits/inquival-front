@@ -34,7 +34,19 @@ export interface WorkerExpenseEntry { date: string; description?: string; invoic
 export interface WorkerExpenseReport { id: string; workerId: string; workerName?: string; month: number; year: number; depositedAmount?: number; status: WorkerExpenseReportStatus; entries: WorkerExpenseEntry[]; reviewedBy?: string; reviewNotes?: string; submittedAt?: string; reviewedAt?: string; createdAt?: string; updatedAt?: string; }
 
 export interface AccountPayableInstallment { id?: string; amount: number; dueDate: string; status: 'PENDING' | 'PAID'; paidDate?: string; numeroUnico?: string; }
-export interface AccountPayablePayment { id?: string; amount: number; paymentDate: string; codigoTransferencia?: string; notes?: string; registeredBy?: string; registeredByName?: string; }
+export interface AccountPayablePayment {
+  id?: string;
+  amount: number;
+  currency?: 'PEN' | 'USD';
+  paymentCurrency?: 'PEN' | 'USD';
+  receivedAmount?: number;
+  exchangeRate?: number;
+  paymentDate: string;
+  codigoTransferencia?: string;
+  notes?: string;
+  registeredBy?: string;
+  registeredByName?: string;
+}
 export interface AccountPayable { id: string; purchaseId: string; purchaseRef?: string; agreementId?: string; supplier: string; totalAmount: number; paidAmount: number; pendingAmount: number; status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CONSOLIDATED'; paymentScheduleType: 'SINGLE_DATE' | 'INSTALLMENTS'; dueDate?: string; installments: AccountPayableInstallment[]; payments: AccountPayablePayment[]; numeroUnico?: string; currency?: 'PEN' | 'USD'; totalAmountPen?: number; createdBy?: string; createdAt: string; }
 export interface APAlerts { overdue: AccountPayable[]; upcoming: AccountPayable[]; summary: { totalPending: number; totalOverdue: number; count: number }; }
 

@@ -71,6 +71,13 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
     }
     return m;
   }, [users, currentUser]);
+  const sellerOptions = useMemo(() => {
+    const raw: any = users;
+    const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
+    return list
+      .filter((u: any) => u.role === 'VENDEDOR' || u.role === 'VENDEDOR_CAMPO' || u.role === 'ADMIN')
+      .map((u: any) => ({ id: u.id, name: u.fullName || u.username || u.id }));
+  }, [users]);
 
   // Stock por empresa — sólo se carga cuando el usuario pide editar items.
   const stockQueries = useQueries({
@@ -454,6 +461,8 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
         priceTiers={tiers}
         paymentMethods={paymentMethods}
         stockByCompanyMap={stockByCompanyMap}
+        userRole={userRole}
+        sellerOptions={sellerOptions}
       />
 
       {/* Sub-modal: anular */}

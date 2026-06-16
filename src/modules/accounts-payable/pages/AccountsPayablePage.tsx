@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useAccountsPayable, useAccountPayableById, useRegisterAPPayment, useUpdateNumeroUnico } from '../hooks/useAccountsPayable';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
+import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import { usePaymentAgreements, useCreatePaymentAgreement, useRegisterAgreementPayment, useCancelPaymentAgreement } from '../hooks/usePaymentAgreements';
 import { Modal } from '../../../shared/components/Modal';
 import {
@@ -114,8 +115,17 @@ export function AccountsPayablePage() {
     () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' }),
     [],
   );
-  const [payForm, setPayForm] = useState({ amount: 0, codigoTransferencia: '', notes: '', paymentDate: todayLocal, paymentMethodId: '' });
+  const [payForm, setPayForm] = useState({
+    amount: 0,
+    codigoTransferencia: '',
+    notes: '',
+    paymentDate: todayLocal,
+    paymentMethodId: '',
+    paymentCurrency: 'PEN' as 'PEN' | 'USD',
+    exchangeRate: null as number | null,
+  });
   const { data: paymentMethodsData } = usePaymentMethods();
+  const { data: payTodayTipoCambio } = useTodayTipoCambio(showPayModal && selectedAP?.currency === 'USD' && payForm.paymentCurrency === 'PEN');
   const paymentMethods: { id: string; name: string; isActive?: boolean }[] = useMemo(
     () => (Array.isArray(paymentMethodsData) ? paymentMethodsData : []).filter((m: any) => m.isActive !== false),
     [paymentMethodsData],
@@ -283,11 +293,52 @@ export function AccountsPayablePage() {
   const openAPPayment = (ap: AccountPayable) => {
     setSelectedAP(ap);
     const next = getNextInstallment(ap);
-    setPayForm({ amount: next ? next.amount : 0, codigoTransferencia: '', notes: '', paymentDate: todayLocal, paymentMethodId: '' });
+    setPayForm({
+      amount: next ? next.amount : 0,
+      codigoTransferencia: '',
+      notes: '',
+      paymentDate: todayLocal,
+      paymentMethodId: '',
+      paymentCurrency: (ap.currency || 'PEN') as 'PEN' | 'USD',
+      exchangeRate: null,
+    });
     setShowPayModal(true);
   };
+  useEffect(() => {
+    if (!showPayModal || !selectedAP) return;
+    if (selectedAP.currency !== 'USD') return;
+    if (payForm.paymentCurrency !== 'PEN') return;
+    const rate = (payTodayTipoCambio as any)?.venta;
+    if (typeof rate === 'number' && rate > 0 && (!payForm.exchangeRate || payForm.exchangeRate <= 0)) {
+      setPayForm((prev) => (prev.exchangeRate && prev.exchangeRate > 0 ? prev : { ...prev, exchangeRate: rate }));
+    }
+  }, [showPayModal, selectedAP?.currency, selectedAP?.id, payForm.paymentCurrency, payForm.exchangeRate, payTodayTipoCambio]);
+
   const nextInstallment = selectedAP ? getNextInstallment(selectedAP) : null;
-  const exceedsPending = selectedAP ? payForm.amount > selectedAP.pendingAmount : false;
+  const paymentEquivalentInApCurrency = useMemo(() => {
+    if (!selectedAP) return 0;
+    const apCurrency = selectedAP.currency || 'PEN';
+    const tenderCurrency = payForm.paymentCurrency;
+    const rate = payForm.exchangeRate || 0;
+    if (apCurrency === tenderCurrency) return payForm.amount;
+    if (rate <= 0) return 0;
+    return tenderCurrency === 'USD'
+      ? Math.round(payForm.amount * rate * 100) / 100
+      : Math.round((payForm.amount / rate) * 100) / 100;
+  }, [selectedAP, payForm.amount, payForm.paymentCurrency, payForm.exchangeRate]);
+  const exceedsPending = selectedAP ? paymentEquivalentInApCurrency > selectedAP.pendingAmount : false;
+  const paymentSymbol = payForm.paymentCurrency === 'USD' ? '$' : 'S/';
+  const maxPaymentAmount = selectedAP
+    ? (selectedAP.currency || 'PEN') === payForm.paymentCurrency
+      ? selectedAP.pendingAmount
+      : (payForm.exchangeRate && payForm.exchangeRate > 0
+        ? Math.round(
+          ((selectedAP.currency === 'USD' && payForm.paymentCurrency === 'PEN')
+            ? selectedAP.pendingAmount * payForm.exchangeRate
+            : selectedAP.pendingAmount / payForm.exchangeRate) * 100,
+        ) / 100
+        : selectedAP.pendingAmount)
+    : 0;
   const handleAPPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (exceedsPending) return;
@@ -295,6 +346,8 @@ export function AccountsPayablePage() {
       apId: selectedAP!.id,
       data: {
         amount: payForm.amount,
+        paymentCurrency: payForm.paymentCurrency,
+        exchangeRate: payForm.exchangeRate || undefined,
         codigoTransferencia: payForm.codigoTransferencia,
         notes: payForm.notes,
         paymentDate: payForm.paymentDate || undefined,
@@ -948,14 +1001,83 @@ export function AccountsPayablePage() {
             </div>
           )}
           <div className="border-t border-gray-100" />
+          {selectedAP?.currency === 'USD' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Moneda del pago</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPayForm((prev) => ({ ...prev, paymentCurrency: 'USD', exchangeRate: null }))}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${
+                      payForm.paymentCurrency === 'USD'
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    $ Dólares
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPayForm((prev) => ({ ...prev, paymentCurrency: 'PEN', exchangeRate: prev.exchangeRate || ((payTodayTipoCambio as any)?.venta || 3.4) }))}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border-2 transition ${
+                      payForm.paymentCurrency === 'PEN'
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}
+                  >
+                    S/ Soles
+                  </button>
+                </div>
+              </div>
+              {payForm.paymentCurrency === 'PEN' && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    T.C. del pago
+                    <span className="ml-1 text-[10px] font-normal text-blue-600">
+                      (SUNAT {todayLocal})
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.0001"
+                    value={payForm.exchangeRate ?? ''}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      setPayForm({ ...payForm, exchangeRate: isNaN(v) || v <= 0 ? null : v });
+                    }}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:border-primary-400 transition-colors"
+                  />
+                  <p className="mt-1 text-[11px] text-gray-500">Se sugiere el tipo de cambio del sistema, pero puedes ajustarlo.</p>
+                </div>
+              )}
+            </div>
+          )}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Monto a pagar</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Monto a pagar ({paymentSymbol})</label>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-sm select-none">{symFor(selectedAP)}</span>
-              <input type="number" min="0.01" step="0.01" max={selectedAP?.pendingAmount} value={payForm.amount||''} onChange={e=>setPayForm({...payForm,amount:parseFloat(e.target.value)||0})}
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-sm select-none">{paymentSymbol}</span>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                max={maxPaymentAmount || undefined}
+                value={payForm.amount||''}
+                onChange={e=>setPayForm({...payForm,amount:parseFloat(e.target.value)||0})}
                 className={`w-full pl-10 pr-4 py-2.5 border rounded-xl text-sm font-medium outline-none transition-colors ${exceedsPending?'border-red-400 bg-red-50':'border-gray-200 focus:border-primary-400'}`} required />
             </div>
-            {exceedsPending && <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1"><AlertCircle size={12} /> Excede el pendiente ({symFor(selectedAP)} {selectedAP?.pendingAmount.toFixed(2)})</p>}
+            {selectedAP?.currency === 'USD' && payForm.paymentCurrency === 'PEN' && (
+              <p className="mt-1 text-[11px] text-gray-500">
+                Equivale a {symFor(selectedAP)} {paymentEquivalentInApCurrency.toFixed(2)} del pendiente.
+              </p>
+            )}
+            {exceedsPending && (
+              <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
+                <AlertCircle size={12} />
+                Excede el pendiente ({symFor(selectedAP)} {selectedAP?.pendingAmount.toFixed(2)})
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Código Único / Código Transferencia <span className="text-red-500">*</span></label>
@@ -1067,7 +1189,28 @@ export function AccountsPayablePage() {
                 <div className="space-y-2">
                   {detailAP.payments.map((p: AccountPayablePayment, idx: number) => (
                     <div key={p.id||idx} className="p-2 bg-primary-50 rounded-lg border border-primary-200">
-                      <div className="flex items-center justify-between"><div className="text-sm font-medium text-primary-700">{symFor(detailAP)} {p.amount.toFixed(2)}</div><div className="text-xs text-gray-500">{new Date(p.paymentDate).toLocaleDateString('es-PE')}{p.registeredByName?` - ${p.registeredByName}`:''}</div></div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-medium text-primary-700">
+                          {p.paymentCurrency && p.paymentCurrency !== (detailAP.currency || 'PEN') ? (
+                            <>
+                              {(p.paymentCurrency === 'USD' ? '$' : 'S/')} {Number(p.receivedAmount ?? p.amount).toFixed(2)}
+                              <span className="mx-1 text-primary-300">→</span>
+                              {symFor(detailAP)} {p.amount.toFixed(2)}
+                            </>
+                          ) : (
+                            <>{symFor(detailAP)} {p.amount.toFixed(2)}</>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {new Date(p.paymentDate).toLocaleDateString('es-PE')}
+                          {p.registeredByName ? ` - ${p.registeredByName}` : ''}
+                        </div>
+                      </div>
+                      {p.exchangeRate && p.paymentCurrency && p.paymentCurrency !== (detailAP.currency || 'PEN') && (
+                        <div className="text-[11px] text-gray-500 mt-0.5">
+                          TC {p.exchangeRate.toFixed(4)} · {p.paymentCurrency === 'USD' ? '$' : 'S/'}
+                        </div>
+                      )}
                       <div className="text-xs text-gray-600 mt-0.5 font-mono">Cód: {p.codigoTransferencia}</div>
                       {p.notes && <div className="text-xs text-gray-400 mt-0.5">{p.notes}</div>}
                     </div>

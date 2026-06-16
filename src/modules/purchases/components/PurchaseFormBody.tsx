@@ -900,7 +900,7 @@ export function PurchaseFormBody({
               {currency === 'USD' && (
                 <div className="mt-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Tipo de cambio (S/ por $) <span className="text-red-500">*</span>
+                    Tipo de cambio del sistema (S/ por $)
                     {exchangeRateSource && (
                       <span className={`ml-1 text-[10px] font-normal ${exchangeRateSource === 'ESTIMADO' ? 'text-amber-600' : 'text-blue-600'}`}>
                         ({exchangeRateSource === 'ESTIMADO' ? 'Estimado' : 'SUNAT'} {exchangeRateDate})
@@ -912,14 +912,9 @@ export function PurchaseFormBody({
                     min="0.01"
                     step="0.0001"
                     value={exchangeRate ?? ''}
-                    onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      setExchangeRate(isNaN(v) || v <= 0 ? null : v);
-                      setExchangeRateSource(null);
-                      setExchangeRateDate('');
-                    }}
                     placeholder="Ej: 3.7500"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    readOnly
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700 focus:outline-none"
                   />
                 </div>
               )}

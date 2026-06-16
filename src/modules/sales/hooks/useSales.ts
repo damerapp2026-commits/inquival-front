@@ -26,8 +26,11 @@ export function useUpdateSaleItems() {
     mutationFn: saleService.updateItems,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['sale'] });
       qc.invalidateQueries({ queryKey: ['stock'] });
       qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      qc.invalidateQueries({ queryKey: ['credit-accounts'] });
       toast.success('Venta actualizada');
     },
     onError: (err: any) => {

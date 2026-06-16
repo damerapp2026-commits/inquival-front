@@ -40,7 +40,21 @@ export function useAPAlerts(days?: number) {
 export function useRegisterAPPayment() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ apId, data }: { apId: string; data: { amount: number; codigoTransferencia?: string; notes?: string; paymentDate?: string; paymentMethodId?: string } }) => accountPayableService.registerPayment(apId, data),
+    mutationFn: ({
+      apId,
+      data,
+    }: {
+      apId: string;
+      data: {
+        amount: number;
+        paymentCurrency?: 'PEN' | 'USD';
+        exchangeRate?: number;
+        codigoTransferencia?: string;
+        notes?: string;
+        paymentDate?: string;
+        paymentMethodId?: string;
+      };
+    }) => accountPayableService.registerPayment(apId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts-payable'] });
       qc.invalidateQueries({ queryKey: ['accounts-payable-alerts'] });
