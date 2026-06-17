@@ -58,6 +58,23 @@ function monthRange(year: number, month: number) {
   };
 }
 
+function getMonthLabel(month: number) {
+  return [
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre',
+  ][month - 1] || 'Mes';
+}
+
 function isoToDisplayDate(value: string) {
   const [year, month, day] = value.split('-');
   return year && month && day ? `${day}/${month}/${year}` : value;
@@ -194,8 +211,16 @@ export function SalesPage() {
   const setEndDate = (v: string) => updateParams({ endDate: v !== getToday() ? v : null, page: null, bPage: null, fPage: null, lPage: null });
   const setLoanStatusFilter = (v: string) => updateParams({ loanStatus: v || null, lPage: null });
   const resetDateFilter = () => updateParams({ startDate: null, endDate: null, page: null, bPage: null, fPage: null, lPage: null });
+  const [localStartDate, setLocalStartDate] = useState(startDate);
+  const [localEndDate, setLocalEndDate] = useState(endDate);
+  useEffect(() => { setLocalStartDate(startDate); }, [startDate]);
+  useEffect(() => { setLocalEndDate(endDate); }, [endDate]);
   const selectedYear = Number((startDate || getToday()).slice(0, 4));
   const selectedMonth = Number((startDate || getToday()).slice(5, 7));
+  const selectedMonthRange = monthRange(selectedYear, selectedMonth);
+  const isCurrentMonthPartial = startDate === getMonthStart() && endDate === getToday();
+  const isExactSelectedMonth = startDate === selectedMonthRange.start && endDate === selectedMonthRange.end;
+  const monthSelectorValue = isCurrentMonthPartial || isExactSelectedMonth ? String(selectedMonth) : 'custom';
   const yearOptions = Array.from({ length: 8 }, (_, i) => new Date().getFullYear() - i);
   const setDatePeriod = (year: number, month: number) => {
     const range = monthRange(year, month);
@@ -1019,27 +1044,47 @@ export function SalesPage() {
           {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
         </select>
         <select
-          value={selectedMonth}
-          onChange={(e) => setDatePeriod(selectedYear, Number(e.target.value))}
+          value={monthSelectorValue}
+          onChange={(e) => {
+            if (e.target.value === 'custom') return;
+            setDatePeriod(selectedYear, Number(e.target.value));
+          }}
           className="px-3 py-2 border rounded-lg text-sm bg-white"
           title="Mes"
         >
-          <option value={1}>Enero</option>
-          <option value={2}>Febrero</option>
-          <option value={3}>Marzo</option>
-          <option value={4}>Abril</option>
-          <option value={5}>Mayo</option>
-          <option value={6}>Junio</option>
-          <option value={7}>Julio</option>
-          <option value={8}>Agosto</option>
-          <option value={9}>Septiembre</option>
-          <option value={10}>Octubre</option>
-          <option value={11}>Noviembre</option>
-          <option value={12}>Diciembre</option>
+          <option value="custom">Personalizado</option>
+          <option value={1}>{getMonthLabel(1)}</option>
+          <option value={2}>{getMonthLabel(2)}</option>
+          <option value={3}>{getMonthLabel(3)}</option>
+          <option value={4}>{getMonthLabel(4)}</option>
+          <option value={5}>{getMonthLabel(5)}</option>
+          <option value={6}>{getMonthLabel(6)}</option>
+          <option value={7}>{getMonthLabel(7)}</option>
+          <option value={8}>{getMonthLabel(8)}</option>
+          <option value={9}>{getMonthLabel(9)}</option>
+          <option value={10}>{getMonthLabel(10)}</option>
+          <option value={11}>{getMonthLabel(11)}</option>
+          <option value={12}>{getMonthLabel(12)}</option>
         </select>
-        <DateTextInput value={startDate} onChange={setStartDate} ariaLabel="Desde" />
+        <input
+          type="date"
+          value={localStartDate}
+          onChange={(e) => {
+            setLocalStartDate(e.target.value);
+            setStartDate(e.target.value);
+          }}
+          className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+        />
         <span className="text-gray-500 text-sm">hasta</span>
-        <DateTextInput value={endDate} onChange={setEndDate} ariaLabel="Hasta" />
+        <input
+          type="date"
+          value={localEndDate}
+          onChange={(e) => {
+            setLocalEndDate(e.target.value);
+            setEndDate(e.target.value);
+          }}
+          className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+        />
         {(startDate !== getMonthStart() || endDate !== getToday()) && (
           <button onClick={resetDateFilter} className="flex items-center gap-1 px-3 py-2 text-sm text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100">
             <CalendarDays size={14} /> Este mes
