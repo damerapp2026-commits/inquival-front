@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, FileText, Smartphone, FileText as FileIcon, Printer, ExternalLink, MessageCircle, Download, Loader2 } from 'lucide-react';
 import { COMPANY_INFO } from '../../../config/companyInfo';
-import { downloadVoucherPdf, openVoucherPdf, printVoucherPdf } from '../utils/voucherPdf';
+import { displayVoucherNumber, downloadVoucherPdf, openVoucherPdf, printVoucherPdf, voucherTitle } from '../utils/voucherPdf';
 import { numberToWords } from '../../quotes/utils/numberToWords';
 import { saleService } from '../services/saleService';
 import toast from 'react-hot-toast';
@@ -42,20 +42,8 @@ function escapeHtml(s: string | undefined): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function shortVoucherNumber(id: string): string {
-  return `NV-${(id || '').slice(-8).toUpperCase().padStart(8, '0')}`;
-}
-
-function displayVoucherNumber(sale: VoucherSnapshot): string {
-  return sale.voucherNumber || shortVoucherNumber(sale.id);
-}
-
 export function resolveClientLocation(client?: { hamlet?: string; district?: string; province?: string; department?: string } | null): string | undefined {
   return client?.hamlet || client?.district || client?.province || client?.department || undefined;
-}
-
-function voucherTitle(_type: string): string {
-  return 'Nota de venta';
 }
 
 function formatDate(d: Date): string {

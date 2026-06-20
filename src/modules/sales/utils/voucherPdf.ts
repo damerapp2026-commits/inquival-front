@@ -50,8 +50,7 @@ export function displayVoucherNumber(sale: VoucherSnapshot): string {
 }
 
 export function voucherTitle(type: string): string {
-  if (type === 'BOLETA') return 'Boleta de venta';
-  if (type === 'FACTURA') return 'Factura';
+  void type;
   return 'Nota de venta';
 }
 
