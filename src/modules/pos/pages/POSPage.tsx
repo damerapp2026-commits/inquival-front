@@ -1084,7 +1084,7 @@ export function POSPage() {
       </div>
 
       {/* Cart panel — fixed drawer on mobile, static panel on desktop */}
-      <aside className={`fixed inset-y-0 right-0 z-40 w-[85vw] max-w-sm bg-white border-l border-gray-200 flex flex-col transform transition-transform duration-300 ease-in-out lg:static lg:w-96 xl:w-[440px] 2xl:w-[500px] lg:max-w-none lg:z-auto lg:translate-x-0 ${cartOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 right-0 z-40 w-[calc(100vw-32px)] max-w-md sm:w-[85vw] sm:max-w-sm bg-white border-l border-gray-200 flex flex-col transform transition-transform duration-300 ease-in-out lg:static lg:w-96 xl:w-[440px] 2xl:w-[500px] lg:max-w-none lg:z-auto lg:translate-x-0 ${cartOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="px-5 py-4 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -1181,82 +1181,87 @@ export function POSPage() {
               return (
                 <div key={item.productId}>
                   <div className="rounded-xl p-3 group bg-gray-50">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-white text-primary-600">
-                      <Package size={18} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-base font-medium text-gray-800 truncate">{item.name}</div>
-                      {companyId === ALL_COMPANIES && item.sourceCompanyId && (
-                        <div className="text-[11px] text-primary-700 bg-primary-50 inline-block px-1.5 py-0.5 rounded mt-0.5 mr-1">
-                          📍 {companyNameById[item.sourceCompanyId] || '—'}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-sm text-gray-500">
-                          {currency === 'USD' ? '$' : 'S/'} {item.unitPrice.toFixed(2)} · {item.unit}
-                        </span>
-                        {isSellerRole ? (
-                          <span
-                            className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium ${
-                              isOverridden ? 'bg-primary-100 text-primary-700' : 'text-gray-400'
-                            }`}
-                          >
-                            {effectiveTierName}
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => setEditingPriceFor(isEditing ? null : item.productId)}
-                            className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium transition-colors flex items-center gap-0.5 ${
-                              isOverridden
-                                ? 'bg-primary-100 text-primary-700 hover:bg-primary-200'
-                                : 'text-gray-400 hover:text-primary-600 hover:bg-gray-100'
-                            }`}
-                            title="Cambiar precio / rango"
-                          >
-                            <Pencil size={9} /> {effectiveTierName}
-                          </button>
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-white text-primary-600">
+                        <Package size={18} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-base font-medium text-gray-800 leading-tight break-words">{item.name}</div>
+                        {companyId === ALL_COMPANIES && item.sourceCompanyId && (
+                          <div className="text-[11px] text-primary-700 bg-primary-50 inline-block px-1.5 py-0.5 rounded mt-1 mr-1 max-w-full break-words">
+                            📍 {companyNameById[item.sourceCompanyId] || '—'}
+                          </div>
                         )}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          <span className="text-sm text-gray-500">
+                            {currency === 'USD' ? '$' : 'S/'} {item.unitPrice.toFixed(2)} · {item.unit}
+                          </span>
+                          {isSellerRole ? (
+                            <span
+                              className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium ${
+                                isOverridden ? 'bg-primary-100 text-primary-700' : 'text-gray-400'
+                              }`}
+                            >
+                              {effectiveTierName}
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setEditingPriceFor(isEditing ? null : item.productId)}
+                              className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium transition-colors flex items-center gap-0.5 ${
+                                isOverridden
+                                  ? 'bg-primary-100 text-primary-700 hover:bg-primary-200'
+                                  : 'text-gray-400 hover:text-primary-600 hover:bg-gray-100'
+                              }`}
+                              title="Cambiar precio / rango"
+                            >
+                              <Pencil size={9} /> {effectiveTierName}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => updateQty(item.productId, -1)}
-                        className="w-6 h-6 rounded-md bg-white border border-gray-200 text-gray-500 hover:bg-gray-100 flex items-center justify-center"
-                      >
-                        <Minus size={12} />
-                      </button>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => setQty(item.productId, parseFloat(e.target.value))}
-                        onFocus={(e) => e.target.select()}
-                        className="text-sm font-semibold w-10 text-center border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button
-                        onClick={() => updateQty(item.productId, 1)}
-                        className="w-6 h-6 rounded-md bg-primary-600 text-white hover:bg-primary-700 flex items-center justify-center"
-                      >
-                        <Plus size={12} />
-                      </button>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => updateQty(item.productId, -1)}
+                          className="w-8 h-8 rounded-lg bg-white border border-gray-200 text-gray-500 hover:bg-gray-100 flex items-center justify-center"
+                        >
+                          <Minus size={13} />
+                        </button>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => setQty(item.productId, parseFloat(e.target.value))}
+                          onFocus={(e) => e.target.select()}
+                          className="text-sm font-semibold w-12 h-8 text-center border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-primary-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <button
+                          onClick={() => updateQty(item.productId, 1)}
+                          className="w-8 h-8 rounded-lg bg-primary-600 text-white hover:bg-primary-700 flex items-center justify-center"
+                        >
+                          <Plus size={13} />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {!isSellerRole && !bonusRow && (
+                          <button
+                            onClick={() => addBonusRow(item)}
+                            className="text-[10px] font-semibold text-violet-600 px-2 py-1 rounded-lg border border-violet-200 bg-white hover:bg-violet-50"
+                            title="Agregar fila de bonificación para este producto"
+                          >
+                            +Bonif.
+                          </button>
+                        )}
+                        <button
+                          onClick={() => removeFromCart(item.productId)}
+                          className="w-8 h-8 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 flex items-center justify-center"
+                          title="Quitar producto"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
-                    {!isSellerRole && !bonusRow && (
-                      <button
-                        onClick={() => addBonusRow(item)}
-                        className="text-[10px] font-semibold text-gray-300 opacity-0 group-hover:opacity-100 hover:text-violet-600 transition-colors whitespace-nowrap px-1.5 py-0.5 rounded border border-transparent hover:border-violet-300 hover:bg-violet-50"
-                        title="Agregar fila de bonificación para este producto"
-                      >
-                        +Bonif.
-                      </button>
-                    )}
-                    <button
-                      onClick={() => removeFromCart(item.productId)}
-                      className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
                   {isEditing && !isSellerRole && (
                     <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
                       <div className="text-[11px] text-gray-500 font-medium">Cambiar rango de precio</div>
