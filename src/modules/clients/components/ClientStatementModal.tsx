@@ -91,7 +91,7 @@ function ClientStatementContent({ client }: { client: Client }) {
   }
 
   return (
-    <div className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
+    <div className="space-y-5 max-h-[70vh] overflow-y-auto overflow-x-hidden pr-1">
       {/* Resumen */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-blue-50 rounded-xl p-3 text-center">
@@ -122,8 +122,8 @@ function ClientStatementContent({ client }: { client: Client }) {
 
       {/* Historial de ventas */}
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 min-w-0">
             <ShoppingBag size={14} className="text-gray-400" /> Historial de ventas
           </h3>
           <button
@@ -139,8 +139,8 @@ function ClientStatementContent({ client }: { client: Client }) {
         {allSales.length === 0 ? (
           <div className="text-center py-8 text-sm text-gray-400">Sin ventas registradas</div>
         ) : (
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <table className="min-w-full text-sm">
+          <div className="border border-gray-200 rounded-lg overflow-x-auto">
+            <table className="min-w-[720px] text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
                   <th className="w-7 px-2 py-2" />
@@ -211,13 +211,13 @@ function ClientStatementContent({ client }: { client: Client }) {
 
                       {isExp && isExpandable && (
                         <tr>
-                          <td colSpan={6} className="px-4 pb-3 pt-1 bg-indigo-50/20">
+                          <td colSpan={6} className="px-2 sm:px-4 pb-3 pt-1 bg-indigo-50/20">
                             <div className="space-y-2">
 
                               {/* Tabla de productos */}
                               {hasItems && (
-                                <div className="rounded-lg border border-gray-200 overflow-hidden">
-                                  <table className="min-w-full text-xs">
+                                <div className="rounded-lg border border-gray-200 overflow-x-auto">
+                                  <table className="min-w-[560px] text-xs">
                                     <thead>
                                       <tr className="bg-gray-50 border-b border-gray-100">
                                         <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-gray-500 uppercase">Producto</th>
@@ -265,7 +265,7 @@ function ClientStatementContent({ client }: { client: Client }) {
 
                                     <div className="px-3 py-2.5 bg-white space-y-2.5">
                                       {/* Montos */}
-                                      <div className="grid grid-cols-4 gap-2 text-xs">
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                                         <div>
                                           <div className="text-[10px] text-gray-400 mb-0.5">Total</div>
                                           <div className="font-semibold text-gray-800 tabular-nums">{currSym} {dispTotal(sale).toFixed(2)}</div>
@@ -308,15 +308,15 @@ function ClientStatementContent({ client }: { client: Client }) {
                                           <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Abonos</div>
                                           <div className="space-y-1">
                                             {credit.payments.map((payment, idx) => (
-                                              <div key={payment.id || idx} className="flex items-center justify-between py-1 px-2.5 bg-green-50 rounded-md text-xs">
-                                                <div className="flex items-center gap-1.5 min-w-0">
+                                              <div key={payment.id || idx} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 py-1 px-2.5 bg-green-50 rounded-md text-xs">
+                                                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                                                   <CheckCircle2 size={11} className="text-green-500 flex-shrink-0" />
                                                   <span className="text-gray-700 whitespace-nowrap">{formatDateEs(payment.paymentDate)}</span>
                                                   {payment.paymentMethodName && <span className="text-gray-500">· {payment.paymentMethodName}</span>}
                                                   {payment.receivedByName && <span className="text-gray-400 truncate">· {payment.receivedByName}</span>}
                                                   {payment.notes && <span className="text-gray-400 italic truncate max-w-[100px]">· {payment.notes}</span>}
                                                 </div>
-                                                <span className="font-semibold tabular-nums text-green-700 ml-2 flex-shrink-0">S/ {payment.amount.toFixed(2)}</span>
+                                                <span className="font-semibold tabular-nums text-green-700 sm:ml-2 flex-shrink-0">S/ {payment.amount.toFixed(2)}</span>
                                               </div>
                                             ))}
                                           </div>
