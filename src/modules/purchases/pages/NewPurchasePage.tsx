@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { useCreatePurchase } from '../hooks/usePurchases';
@@ -15,9 +15,16 @@ import { getTodayDateString } from '../../../shared/utils/date.util';
 export function NewPurchasePage() {
   const navigate = useNavigate();
   const createPurchase = useCreatePurchase();
+  const purchaseCreatedRef = useRef(false);
+  const purchaseSubmittingRef = useRef(false);
   const initial = useMemo(() => {
     const fallback = buildInitialCreate(getTodayDateString());
     return readPurchaseCreateDraft(fallback) ?? fallback;
+  }, []);
+
+  const handleDraftChange = useCallback((draft: PurchaseInitial) => {
+    if (purchaseSubmittingRef.current || purchaseCreatedRef.current) return;
+    writePurchaseCreateDraft(draft);
   }, []);
 
   const handleSubmit = async (payload: PurchaseSubmitPayload) => {
@@ -26,9 +33,16 @@ export function NewPurchasePage() {
     if (apiPayload.currency === 'USD') {
       delete apiPayload.totalCost;
     }
-    await createPurchase.mutateAsync(apiPayload);
-    clearPurchaseCreateDraft();
-    navigate('/purchases');
+    purchaseSubmittingRef.current = true;
+    try {
+      await createPurchase.mutateAsync(apiPayload);
+      purchaseCreatedRef.current = true;
+      clearPurchaseCreateDraft();
+      navigate('/purchases');
+    } catch (error) {
+      purchaseSubmittingRef.current = false;
+      throw error;
+    }
   };
 
   return (
@@ -53,7 +67,7 @@ export function NewPurchasePage() {
         isSubmitting={createPurchase.isPending}
         onSubmit={handleSubmit}
         onCancelHref="/purchases"
-        onDraftChange={(draft: PurchaseInitial) => writePurchaseCreateDraft(draft)}
+        onDraftChange={handleDraftChange}
       />
     </div>
   );
