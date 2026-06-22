@@ -187,7 +187,14 @@ export function clearPurchaseCreateDraft() {
 
 export function purchaseToFormState(purchase: Purchase, products: Product[]): PurchaseInitial {
   const currency: 'PEN' | 'USD' = purchase.totalCostUsd != null ? 'USD' : 'PEN';
-  const exchangeRate = purchase.exchangeRate ?? (currency === 'USD' ? 3.4 : null);
+  const exchangeRate = (() => {
+    if (currency !== 'USD') return null;
+    if (typeof purchase.exchangeRate === 'number' && purchase.exchangeRate > 0) return purchase.exchangeRate;
+    if (purchase.totalCostUsd && purchase.totalCost > 0) {
+      return Math.round((purchase.totalCost / purchase.totalCostUsd) * 10000) / 10000;
+    }
+    return 3.4;
+  })();
   const exchangeRateDate = (purchase as any).exchangeRateDate || '';
 
   const items: PurchaseFormItem[] = (purchase.items || []).map((pi: PurchaseItem) => {
