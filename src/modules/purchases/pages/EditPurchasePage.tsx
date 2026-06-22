@@ -93,10 +93,12 @@ export function EditPurchasePage() {
       grDate: payload.grDate || null,
       date: payload.date,
       currency: payload.currency,
-      paymentType: payload.paymentType,
       paymentMethodId: payload.paymentMethodId,
       items: payload.items,
     };
+    if (payload.paymentType !== 'BONIFICACION') {
+      data.paymentType = payload.paymentType;
+    }
     if (payload.currency === 'USD') {
       data.totalCostUsd = payload.totalCostUsd;
       data.exchangeRate = payload.exchangeRate;
