@@ -150,6 +150,8 @@ export function CashRegisterPage() {
   }, [usersData]);
 
   const [openingAmount, setOpeningAmount] = useState(0);
+  const [openingAmountUsd, setOpeningAmountUsd] = useState(0);
+  const [activeTab, setActiveTab] = useState<'PEN' | 'USD'>('PEN');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -158,7 +160,6 @@ export function CashRegisterPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [vendorFilter, setVendorFilter] = useState<string | null>(null);
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('');
-  const [currencyFilter, setCurrencyFilter] = useState<'PEN' | 'USD' | null>(null);
 
   const editingIsSale = !!(selectedEntry?.referenceType === 'Sale' && selectedEntry?.referenceId);
   const { data: editingSale } = useSaleById(showEditModal && editingIsSale ? selectedEntry!.referenceId! : null);
@@ -233,28 +234,32 @@ export function CashRegisterPage() {
   const isClosed = register?.status === 'CLOSED';
   const entries: CashRegisterEntry[] = (register?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted);
   const activeEntries = entries;
-  const totalIncome = activeEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
-  const totalExpense = activeEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
-  const usdEntries = activeEntries.filter(
-    (e) => e.type === 'INCOME' && e.referenceType === 'Sale' && salesByRefId.get(e.referenceId || '')?.currency === 'USD',
-  );
-  const totalIncomeUsdPen = usdEntries.reduce((s, e) => s + e.amount, 0);
-  const totalIncomeUsd = (() => {
-    const seenSaleIds = new Set<string>();
-    return usdEntries.reduce((s, e) => {
-      if (e.amountUsd != null) return s + e.amountUsd;
-      if (e.referenceId && !seenSaleIds.has(e.referenceId)) {
-        seenSaleIds.add(e.referenceId);
-        return s + (salesByRefId.get(e.referenceId)?.totalUsd ?? 0);
-      }
-      return s;
-    }, 0);
-  })();
-  const totalIncomePen = totalIncome - totalIncomeUsdPen;
-  const totalExpenseUsd = activeEntries.filter((e) => e.type === 'EXPENSE' && e.currency === 'USD').reduce((s, e) => s + e.amount, 0);
-  const totalExpensePen = totalExpense - totalExpenseUsd;
+
+  // Separar entradas PEN / USD
+  const { penActiveEntries, usdActiveEntries } = useMemo(() => {
+    const pen: CashRegisterEntry[] = [];
+    const usd: CashRegisterEntry[] = [];
+    for (const e of activeEntries) {
+      const isUsd = e.currency === 'USD' ||
+        (e.referenceType === 'Sale' && !!e.referenceId && salesByRefId.get(e.referenceId)?.currency === 'USD');
+      if (isUsd) usd.push(e); else pen.push(e);
+    }
+    return { penActiveEntries: pen, usdActiveEntries: usd };
+  }, [activeEntries, salesByRefId]);
+
+  // Totales Caja S/
+  const totalIncomePen = penActiveEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
+  const totalExpensePen = penActiveEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
   const netBalancePen = (register?.openingBalance || 0) + totalIncomePen - totalExpensePen;
-  const netBalanceUsd = totalIncomeUsd - totalExpenseUsd;
+
+  // Totales Caja $
+  const totalIncomeUsd = usdActiveEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => {
+    if (e.amountUsd != null) return s + e.amountUsd;
+    if (e.referenceType === 'Sale' && e.referenceId) return s + (salesByRefId.get(e.referenceId)?.totalUsd ?? 0);
+    return s;
+  }, 0);
+  const totalExpenseUsd = usdActiveEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + (e.amountUsd ?? e.amount ?? 0), 0);
+  const netBalanceUsd = (register?.openingBalanceUsd || 0) + totalIncomeUsd - totalExpenseUsd;
 
   const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '', expenseCurrency: 'PEN', convertToSoles: false, exchangeRate: 3.70 }); setShowAddModal(true); };
   const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo', expenseCurrency: 'PEN', convertToSoles: false, exchangeRate: 3.70 }); setShowAddModal(true); };
@@ -264,7 +269,7 @@ export function CashRegisterPage() {
 
   const handleOpen = async (e: React.FormEvent) => {
     e.preventDefault();
-    await openCashRegister.mutateAsync({ openingBalance: openingAmount });
+    await openCashRegister.mutateAsync({ openingBalance: openingAmount, openingBalanceUsd: openingAmountUsd });
   };
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -354,44 +359,44 @@ export function CashRegisterPage() {
   const { data: viewingSale } = useSaleById(viewingSaleId);
 
   const filteredEntries = useMemo(() => {
-    let result = entries;
+    let result = activeTab === 'USD' ? usdActiveEntries : penActiveEntries;
     if (vendorFilter) result = result.filter((e) => e.createdBy === vendorFilter);
     if (paymentMethodFilter) {
       result = result.filter((e) => methodFromDescription(e.description) === paymentMethodFilter);
     }
-    if (currencyFilter) {
-      result = result.filter((e) => {
-        const isUsd = e.referenceType === 'Sale' && !!e.referenceId && salesByRefId.get(e.referenceId)?.currency === 'USD';
-        return currencyFilter === 'USD' ? isUsd : !isUsd;
-      });
-    }
     return result;
-  }, [entries, vendorFilter, paymentMethodFilter, currencyFilter, salesByRefId]);
+  }, [activeTab, penActiveEntries, usdActiveEntries, vendorFilter, paymentMethodFilter]);
+
+  const tabEntries = activeTab === 'USD' ? usdActiveEntries : penActiveEntries;
 
   const uniqueSellersInEntries = useMemo(() => {
     const seen = new Set<string>();
     const result: { id: string; name: string }[] = [];
-    for (const e of entries) {
+    for (const e of tabEntries) {
       if (e.createdBy && !seen.has(e.createdBy)) {
         seen.add(e.createdBy);
         result.push({ id: e.createdBy, name: userById[e.createdBy] || 'Usuario' });
       }
     }
     return result.sort((a, b) => a.name.localeCompare(b.name));
-  }, [entries, userById]);
+  }, [tabEntries, userById]);
 
   const uniqueMethodsInEntries = useMemo(() => {
     const seen = new Set<string>();
     const result: string[] = [];
-    for (const e of entries) {
+    for (const e of tabEntries) {
       const m = methodFromDescription(e.description);
       if (m && !seen.has(m)) { seen.add(m); result.push(m); }
     }
     return result.sort();
-  }, [entries]);
+  }, [tabEntries]);
 
-  const filteredIncome = filteredEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
-  const filteredExpense = filteredEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
+  const filteredIncome = activeTab === 'USD'
+    ? filteredEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + (e.amountUsd ?? (e.referenceType === 'Sale' && e.referenceId ? (salesByRefId.get(e.referenceId)?.totalUsd ?? 0) : e.amount)), 0)
+    : filteredEntries.filter((e) => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
+  const filteredExpense = activeTab === 'USD'
+    ? filteredEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + (e.amountUsd ?? e.amount ?? 0), 0)
+    : filteredEntries.filter((e) => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
 
   const groupedRows = useMemo(() => groupEntries([...filteredEntries].reverse()), [filteredEntries]);
 
@@ -421,7 +426,7 @@ export function CashRegisterPage() {
               </p>
               <form onSubmit={handleOpen} className="space-y-4 max-w-sm">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Saldo inicial</label>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Saldo inicial Caja S/</label>
                   <div className="relative">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">S/</span>
                     <input
@@ -433,6 +438,21 @@ export function CashRegisterPage() {
                       className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-2xl font-bold text-gray-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500"
                       placeholder="0.00"
                       autoFocus
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Saldo inicial Caja $</label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-emerald-500 font-semibold">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={openingAmountUsd || ''}
+                      onChange={(e) => setOpeningAmountUsd(parseFloat(e.target.value) || 0)}
+                      className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-2xl font-bold text-gray-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="0.00"
                     />
                   </div>
                 </div>
@@ -483,42 +503,65 @@ export function CashRegisterPage() {
   }
 
   // --- Register open or closed -------------------------------------------
+  const isUsdTab = activeTab === 'USD';
+  const tabBalance = isUsdTab ? netBalanceUsd : netBalancePen;
+  const tabOpening = isUsdTab ? (register?.openingBalanceUsd || 0) : (register?.openingBalance || 0);
+  const tabIncome = isUsdTab ? totalIncomeUsd : totalIncomePen;
+  const tabExpense = isUsdTab ? totalExpenseUsd : totalExpensePen;
+  const tabSym = isUsdTab ? '$' : 'S/';
+  const tabEntryCount = (isUsdTab ? usdActiveEntries : penActiveEntries).length;
+
   return (
     <div className="space-y-6">
       <PageHeader />
+
+      {/* Currency tab selector */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => { setActiveTab('PEN'); setVendorFilter(null); setPaymentMethodFilter(''); }}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${!isUsdTab ? 'bg-primary-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200 hover:border-primary-300 hover:text-primary-700'}`}
+        >
+          <Wallet size={15} /> Caja S/
+          <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${!isUsdTab ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>{penActiveEntries.length}</span>
+        </button>
+        <button
+          onClick={() => { setActiveTab('USD'); setVendorFilter(null); setPaymentMethodFilter(''); }}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${isUsdTab ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white text-gray-600 border border-gray-200 hover:border-emerald-300 hover:text-emerald-700'}`}
+        >
+          <Wallet size={15} /> Caja $
+          <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${isUsdTab ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>{usdActiveEntries.length}</span>
+        </button>
+      </div>
 
       {/* Hero card */}
       <div className={`relative overflow-hidden rounded-xl shadow-card text-white px-5 py-4 ${
         isClosed
           ? 'bg-gradient-to-br from-gray-700 via-gray-800 to-gray-900'
-          : 'bg-gradient-to-br from-primary-600 via-primary-700 to-emerald-800'
+          : isUsdTab
+            ? 'bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800'
+            : 'bg-gradient-to-br from-primary-600 via-primary-700 to-emerald-800'
       }`}>
         <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full" />
         <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur ${isClosed ? 'bg-white/15 text-white' : 'bg-white/20 text-white'}`}>
+                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur bg-white/20 text-white`}>
                   {isClosed ? <CircleDashed size={10} /> : <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" /></span>}
                   {isClosed ? 'Cerrada' : 'Abierta'}
                 </span>
-                <span className={`text-[10px] uppercase tracking-[0.15em] ${isClosed ? 'text-gray-300' : 'text-primary-100'}`}>
-                  Balance del día
+                <span className="text-[10px] uppercase tracking-[0.15em] text-white/70">
+                  {isUsdTab ? 'Caja $' : 'Caja S/'} · Balance del día
                 </span>
               </div>
               <div className="flex items-baseline gap-3 flex-wrap">
                 <div className="text-2xl sm:text-3xl font-bold tabular-nums tracking-tight">
-                  S/ {netBalancePen.toFixed(2)}
+                  {tabSym} {tabBalance.toFixed(2)}
                 </div>
-                <div className={`text-xs ${isClosed ? 'text-gray-300' : 'text-primary-100'}`}>
-                  {activeEntries.length} movimiento{activeEntries.length === 1 ? '' : 's'} · {register?.date}
+                <div className="text-xs text-white/70">
+                  {tabEntryCount} movimiento{tabEntryCount === 1 ? '' : 's'} · {register?.date}
                 </div>
               </div>
-              {netBalanceUsd !== 0 && (
-                <div className={`text-sm font-semibold tabular-nums mt-0.5 ${netBalanceUsd >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                  Balance USD: {netBalanceUsd >= 0 ? '+' : '−'} $ {Math.abs(netBalanceUsd).toFixed(2)}
-                </div>
-              )}
             </div>
           </div>
 
@@ -540,13 +583,13 @@ export function CashRegisterPage() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiTile icon={Scale} label="Apertura" value={`S/ ${(register?.openingBalance || 0).toFixed(2)}`} accent="bg-gray-100 text-gray-700" />
-        <KpiTile icon={TrendingUp} label={totalIncomeUsd > 0 ? 'Ingresos S/' : 'Ingresos'} value={`+ S/ ${totalIncomePen.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" subValue={totalIncomeUsd > 0 ? `+ $ ${totalIncomeUsd.toFixed(2)} USD` : undefined} subValueAccent="text-emerald-600" />
-        <KpiTile icon={TrendingDown} label={totalExpenseUsd > 0 ? 'Egresos S/' : 'Egresos'} value={`− S/ ${totalExpensePen.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" subValue={totalExpenseUsd > 0 ? `− $ ${totalExpenseUsd.toFixed(2)} USD` : undefined} subValueAccent="text-rose-600" />
-        <KpiTile icon={Wallet} label={netBalanceUsd !== 0 ? 'Balance Neto S/' : 'Balance Neto'} value={`S/ ${netBalancePen.toFixed(2)}`} accent="bg-blue-100 text-blue-700" valueAccent="text-blue-700" subValue={netBalanceUsd !== 0 ? `${netBalanceUsd >= 0 ? '+' : '−'} $ ${Math.abs(netBalanceUsd).toFixed(2)} USD` : undefined} subValueAccent={netBalanceUsd >= 0 ? 'text-blue-600' : 'text-rose-500'} />
+        <KpiTile icon={Scale} label="Apertura" value={`${tabSym} ${tabOpening.toFixed(2)}`} accent={isUsdTab ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'} />
+        <KpiTile icon={TrendingUp} label="Ingresos" value={`+ ${tabSym} ${tabIncome.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" />
+        <KpiTile icon={TrendingDown} label="Egresos" value={`− ${tabSym} ${tabExpense.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" />
+        <KpiTile icon={Wallet} label="Balance Neto" value={`${tabSym} ${tabBalance.toFixed(2)}`} accent="bg-blue-100 text-blue-700" valueAccent="text-blue-700" />
       </div>
 
-      {/* Tabs */}
+      {/* Nav tabs */}
       <div className="flex gap-2">
         <span className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-semibold shadow-sm">
           <Wallet size={15} /> Hoy
@@ -561,30 +604,12 @@ export function CashRegisterPage() {
         <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Layers size={16} className="text-gray-400" />
-            <h2 className="text-base font-semibold text-gray-800">Movimientos del día</h2>
+            <h2 className="text-base font-semibold text-gray-800">Movimientos · {isUsdTab ? 'Caja $' : 'Caja S/'}</h2>
             <span className="text-xs text-gray-400">
-              · {filteredEntries.length}{(vendorFilter || paymentMethodFilter || currencyFilter) ? ` de ${entries.length}` : ''} entrada{filteredEntries.length === 1 ? '' : 's'}
+              · {filteredEntries.length}{(vendorFilter || paymentMethodFilter) ? ` de ${tabEntryCount}` : ''} entrada{filteredEntries.length === 1 ? '' : 's'}
             </span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {totalIncomeUsd > 0 && (
-              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium">
-                <button
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => setCurrencyFilter(currencyFilter === 'PEN' ? null : 'PEN')}
-                  className={`px-3 py-2 transition-colors ${currencyFilter === 'PEN' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                >
-                  S/
-                </button>
-                <button
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => setCurrencyFilter(currencyFilter === 'USD' ? null : 'USD')}
-                  className={`px-3 py-2 border-l border-gray-200 transition-colors ${currencyFilter === 'USD' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                >
-                  $
-                </button>
-              </div>
-            )}
             {uniqueSellersInEntries.length > 0 && (
               <select
                 value={vendorFilter || ''}
@@ -609,10 +634,10 @@ export function CashRegisterPage() {
                 ))}
               </select>
             )}
-            {(vendorFilter || paymentMethodFilter || currencyFilter) && (
+            {(vendorFilter || paymentMethodFilter) && (
               <button
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); setCurrencyFilter(null); }}
+                onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); }}
                 className="px-3 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors"
               >
                 Limpiar filtros
@@ -621,20 +646,18 @@ export function CashRegisterPage() {
           </div>
         </div>
 
-        {(vendorFilter || paymentMethodFilter || currencyFilter) && filteredEntries.length > 0 && (
+        {(vendorFilter || paymentMethodFilter) && filteredEntries.length > 0 && (
           <div className="px-5 sm:px-6 py-2.5 bg-primary-50/50 border-b border-primary-100 flex items-center justify-between text-xs gap-3 flex-wrap">
             <span className="text-gray-500 flex items-center gap-1.5 flex-wrap">
               Filtrado por
-              {currencyFilter && <strong className={currencyFilter === 'USD' ? 'text-emerald-700' : 'text-primary-700'}>{currencyFilter === 'USD' ? '$ USD' : 'S/ Soles'}</strong>}
-              {currencyFilter && (vendorFilter || paymentMethodFilter) && <span className="text-gray-400">·</span>}
               {vendorFilter && <strong className="text-gray-700">{userById[vendorFilter] || 'vendedor'}</strong>}
               {vendorFilter && paymentMethodFilter && <span className="text-gray-400">·</span>}
               {paymentMethodFilter && <strong className="text-gray-700">{paymentMethodFilter}</strong>}
             </span>
             <span className="flex items-center gap-3 tabular-nums">
-              <span className="text-primary-700 font-semibold">+ S/ {filteredIncome.toFixed(2)}</span>
-              <span className="text-rose-600 font-semibold">− S/ {filteredExpense.toFixed(2)}</span>
-              <span className="text-gray-700 font-semibold">Neto S/ {(filteredIncome - filteredExpense).toFixed(2)}</span>
+              <span className={`font-semibold ${isUsdTab ? 'text-emerald-600' : 'text-primary-700'}`}>+ {tabSym} {filteredIncome.toFixed(2)}</span>
+              <span className="text-rose-600 font-semibold">− {tabSym} {filteredExpense.toFixed(2)}</span>
+              <span className="text-gray-700 font-semibold">Neto {tabSym} {(filteredIncome - filteredExpense).toFixed(2)}</span>
             </span>
           </div>
         )}
@@ -644,12 +667,12 @@ export function CashRegisterPage() {
             <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-3">
               <AlertCircle size={22} className="text-gray-400" />
             </div>
-            {(vendorFilter || paymentMethodFilter || currencyFilter) ? (
+            {(vendorFilter || paymentMethodFilter) ? (
               <>
                 <p className="text-sm text-gray-500 font-medium">Sin movimientos para el filtro seleccionado</p>
                 <button
                   type="button"
-                  onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); setCurrencyFilter(null); }}
+                  onClick={() => { setVendorFilter(null); setPaymentMethodFilter(''); }}
                   className="text-xs text-primary-600 hover:text-primary-700 font-medium mt-2"
                 >
                   Ver todos los movimientos
@@ -1102,20 +1125,21 @@ export function CashRegisterPage() {
                 <p className="text-sm text-amber-800">Al cerrar la caja no se podrán agregar, editar ni eliminar entradas.</p>
               </div>
 
-              <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 space-y-1.5 text-sm">
-                <div className="flex justify-between"><span className="text-gray-500">Saldo apertura</span><span className="font-semibold tabular-nums">S/ {(register?.openingBalance || 0).toFixed(2)}</span></div>
-                <div className="flex justify-between text-primary-700"><span>+ Ingresos (S/)</span><span className="font-semibold tabular-nums">S/ {totalIncomePen.toFixed(2)}</span></div>
-                {totalIncomeUsd > 0 && (
-                  <div className="flex justify-between text-emerald-600"><span>+ Ingresos (USD)</span><span className="font-semibold tabular-nums">$ {totalIncomeUsd.toFixed(2)}</span></div>
-                )}
-                <div className="flex justify-between text-rose-600"><span>− Egresos (S/)</span><span className="font-semibold tabular-nums">S/ {totalExpensePen.toFixed(2)}</span></div>
-                {totalExpenseUsd > 0 && (
-                  <div className="flex justify-between text-rose-500"><span>− Egresos (USD)</span><span className="font-semibold tabular-nums">$ {totalExpenseUsd.toFixed(2)}</span></div>
-                )}
-                <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-200 mt-2"><span>Balance cierre (S/)</span><span className="tabular-nums">S/ {netBalancePen.toFixed(2)}</span></div>
-                {netBalanceUsd !== 0 && (
-                  <div className="flex justify-between text-sm font-bold text-emerald-700"><span>Balance cierre (USD)</span><span className="tabular-nums">$ {netBalanceUsd.toFixed(2)}</span></div>
-                )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 space-y-1.5 text-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2">Caja S/</div>
+                  <div className="flex justify-between"><span className="text-gray-500">Apertura</span><span className="font-semibold tabular-nums">S/ {(register?.openingBalance || 0).toFixed(2)}</span></div>
+                  <div className="flex justify-between text-primary-700"><span>+ Ingresos</span><span className="font-semibold tabular-nums">S/ {totalIncomePen.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">S/ {totalExpensePen.toFixed(2)}</span></div>
+                  <div className="flex justify-between font-bold pt-2 border-t border-gray-200 mt-1"><span>Cierre</span><span className="tabular-nums">S/ {netBalancePen.toFixed(2)}</span></div>
+                </div>
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 space-y-1.5 text-sm">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-2">Caja $</div>
+                  <div className="flex justify-between"><span className="text-gray-500">Apertura</span><span className="font-semibold tabular-nums">$ {(register?.openingBalanceUsd || 0).toFixed(2)}</span></div>
+                  <div className="flex justify-between text-emerald-600"><span>+ Ingresos</span><span className="font-semibold tabular-nums">$ {totalIncomeUsd.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">$ {totalExpenseUsd.toFixed(2)}</span></div>
+                  <div className="flex justify-between font-bold text-emerald-700 pt-2 border-t border-emerald-200 mt-1"><span>Cierre</span><span className="tabular-nums">$ {netBalanceUsd.toFixed(2)}</span></div>
+                </div>
               </div>
 
               {methods.length > 0 && (

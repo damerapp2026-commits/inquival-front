@@ -107,6 +107,7 @@ export function CashRegisterHistoryPage() {
   const [methodFilter, setMethodFilter] = useState<string | null>(null);
   const [vendorFilter, setVendorFilter] = useState<string | null>(null);
   const [currencyFilter, setCurrencyFilter] = useState<'PEN' | 'USD' | null>(null);
+  const [detailTab, setDetailTab] = useState<'PEN' | 'USD'>('PEN');
 
   const { data, isLoading } = useCashRegisters({ page, limit: 20, startDate: startDate || undefined, endDate: endDate || undefined });
   const { data: detail } = useCashRegisterById(selectedId);
@@ -182,7 +183,7 @@ export function CashRegisterHistoryPage() {
     return { income, expense, incomeUsd, opens, count: registers.length, methodTotals };
   }, [registers, methodFilter, vendorFilter, currencyFilter]);
 
-  const openDetail = (reg: CashRegister) => { setSelectedId(reg.id); setShowDetail(true); };
+  const openDetail = (reg: CashRegister) => { setSelectedId(reg.id); setShowDetail(true); setDetailTab('PEN'); };
   const openClose = (reg: CashRegister) => { setCloseTarget(reg); setCloseNotes(''); setShowCloseModal(true); };
   const handleClose = async () => {
     if (!closeTarget) return;
@@ -193,6 +194,12 @@ export function CashRegisterHistoryPage() {
 
   const detailEntries: CashRegisterEntry[] = (detail?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted);
   const detailGroups = useMemo(() => groupEntries(detailEntries), [detailEntries]);
+  const detailHasUsd = useMemo(() => detailEntries.some(e => getEntryUsdAmount(e) != null), [detailEntries]);
+  const detailEntriesForTab = useMemo(
+    () => detailEntries.filter(e => detailTab === 'USD' ? getEntryUsdAmount(e) != null : getEntryUsdAmount(e) == null),
+    [detailEntries, detailTab],
+  );
+  const detailGroupsForTab = useMemo(() => groupEntries(detailEntriesForTab), [detailEntriesForTab]);
 
   const detailMethodTotals = useMemo(() => {
     const allActive = (detail?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted && e.type === 'INCOME');
@@ -482,7 +489,8 @@ export function CashRegisterHistoryPage() {
                       </td>
                       <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-rose-600">− S/ {expense.toFixed(2)}</td>
                       <td className="px-4 py-3.5 text-right tabular-nums font-bold text-gray-800">
-                        {reg.closingBalance != null ? `S/ ${reg.closingBalance.toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
+                        {reg.closingBalance != null ? <div>S/ {reg.closingBalance.toFixed(2)}</div> : <span className="text-gray-300 font-normal">—</span>}
+                        {reg.closingBalanceUsd != null && <div className="text-xs font-semibold text-emerald-600">$ {reg.closingBalanceUsd.toFixed(2)}</div>}
                       </td>
                       <td className="px-4 py-3.5 text-center">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${reg.status === 'CLOSED' ? 'bg-gray-100 text-gray-600' : 'bg-emerald-100 text-emerald-700'}`}>
@@ -525,31 +533,38 @@ export function CashRegisterHistoryPage() {
             )}
           </div>
 
-          <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Apertura</div>
-              <div className="font-bold tabular-nums text-gray-800 mt-1">S/ {(detail?.openingBalance || 0).toFixed(2)}</div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Ingresos</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 space-y-1.5 text-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2">Caja S/</div>
               {(() => {
-                const penIncome = detailEntries.filter(e => !e.isDeleted && e.type === 'INCOME' && getEntryUsdAmount(e) == null).reduce((s, e) => s + e.amount, 0);
-                const usdIncome = detailEntries.filter(e => !e.isDeleted && e.type === 'INCOME').reduce((s, e) => s + (getEntryUsdAmount(e) ?? 0), 0);
+                const penEntries = detailEntries.filter(e => !e.isDeleted && getEntryUsdAmount(e) == null);
+                const penIncome = penEntries.filter(e => e.type === 'INCOME').reduce((s, e) => s + e.amount, 0);
+                const penExpense = penEntries.filter(e => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
                 return (
                   <>
-                    <div className="font-bold tabular-nums text-primary-700 mt-1">+ S/ {penIncome.toFixed(2)}</div>
-                    {usdIncome > 0 && <div className="font-bold tabular-nums text-emerald-600 text-xs mt-0.5">+ $ {usdIncome.toFixed(2)}</div>}
+                    <div className="flex justify-between"><span className="text-gray-500">Apertura</span><span className="font-semibold tabular-nums">S/ {(detail?.openingBalance || 0).toFixed(2)}</span></div>
+                    <div className="flex justify-between text-primary-700"><span>+ Ingresos</span><span className="font-semibold tabular-nums">S/ {penIncome.toFixed(2)}</span></div>
+                    <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">S/ {penExpense.toFixed(2)}</span></div>
+                    <div className="flex justify-between font-bold pt-2 border-t border-gray-200 mt-1"><span>Cierre</span><span className="tabular-nums">{detail?.closingBalance != null ? `S/ ${detail.closingBalance.toFixed(2)}` : '—'}</span></div>
                   </>
                 );
               })()}
             </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Egresos</div>
-              <div className="font-bold tabular-nums text-rose-600 mt-1">− S/ {detailEntries.filter(e => !e.isDeleted && e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0).toFixed(2)}</div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Cierre</div>
-              <div className="font-bold tabular-nums text-gray-800 mt-1">{detail?.closingBalance != null ? `S/ ${detail.closingBalance.toFixed(2)}` : '—'}</div>
+            <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 space-y-1.5 text-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mb-2">Caja $</div>
+              {(() => {
+                const usdEntries = detailEntries.filter(e => !e.isDeleted && getEntryUsdAmount(e) != null);
+                const usdIncome = usdEntries.filter(e => e.type === 'INCOME').reduce((s, e) => s + (getEntryUsdAmount(e) ?? 0), 0);
+                const usdExpense = usdEntries.filter(e => e.type === 'EXPENSE').reduce((s, e) => s + (getEntryUsdAmount(e) ?? e.amount ?? 0), 0);
+                return (
+                  <>
+                    <div className="flex justify-between"><span className="text-gray-500">Apertura</span><span className="font-semibold tabular-nums">$ {(detail?.openingBalanceUsd || 0).toFixed(2)}</span></div>
+                    <div className="flex justify-between text-emerald-600"><span>+ Ingresos</span><span className="font-semibold tabular-nums">$ {usdIncome.toFixed(2)}</span></div>
+                    <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">$ {usdExpense.toFixed(2)}</span></div>
+                    <div className="flex justify-between font-bold text-emerald-700 pt-2 border-t border-emerald-200 mt-1"><span>Cierre</span><span className="tabular-nums">{detail?.closingBalanceUsd != null ? `$ ${detail.closingBalanceUsd.toFixed(2)}` : '—'}</span></div>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -572,6 +587,23 @@ export function CashRegisterHistoryPage() {
             </div>
           )}
 
+          {detailHasUsd && (
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+              <button
+                onClick={() => setDetailTab('PEN')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${detailTab === 'PEN' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <Wallet size={12} /> Caja S/
+              </button>
+              <button
+                onClick={() => setDetailTab('USD')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${detailTab === 'USD' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <Wallet size={12} /> Caja $
+              </button>
+            </div>
+          )}
+
           <div className="border border-gray-100 rounded-xl overflow-hidden max-h-96 overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-gray-50/95 backdrop-blur">
@@ -588,10 +620,10 @@ export function CashRegisterHistoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {detailGroups.length === 0 && (
+                {detailGroupsForTab.length === 0 && (
                   <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-400 text-xs">Sin movimientos</td></tr>
                 )}
-                {detailGroups.map((g, gi) => {
+                {detailGroupsForTab.map((g, gi) => {
                   if (!g.groupId || g.entries.length === 1) {
                     return renderDetailEntry(g.entries[0], false, gi);
                   }

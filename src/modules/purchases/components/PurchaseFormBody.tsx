@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { Company, Product, Category, Laboratory, PaymentMethod } from '../../../shared/types';
 import toast from 'react-hot-toast';
+import { getTodayDateString } from '../../../shared/utils/date.util';
 import {
   blurOnWheel,
   fmtPrice,
@@ -469,7 +470,13 @@ export function PurchaseFormBody({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (mode === 'create' && form.paymentType === 'CONTADO' && (cashRegisterToday as any)?.status === 'CLOSED') {
+    const effectiveCashDate = form.issueDate || form.purchaseDate;
+    if (
+      mode === 'create' &&
+      form.paymentType === 'CONTADO' &&
+      effectiveCashDate === getTodayDateString() &&
+      cashRegisterToday?.status === 'CLOSED'
+    ) {
       toast.error('La caja del día está cerrada. No se pueden registrar compras al contado.');
       return;
     }

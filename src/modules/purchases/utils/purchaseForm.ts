@@ -235,7 +235,7 @@ export function purchaseToFormState(purchase: Purchase, products: Product[]): Pu
     supplierId: purchase.supplierId || '',
     laboratoryId: (purchase as any).laboratoryId || '',
     paymentType: purchase.paymentType,
-    paymentMethodId: (purchase as any).paymentMethodId || '',
+    paymentMethodId: purchase.paymentMethodId || '',
     addToStock: purchase.addToStock !== false,
     paymentScheduleType: purchase.paymentScheduleType || 'SINGLE_DATE',
     detraccion: purchase.detraccion || false,
