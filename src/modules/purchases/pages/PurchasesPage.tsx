@@ -4,11 +4,12 @@ import { usePurchases, useUpdatePurchaseMeta } from '../hooks/usePurchases';
 import { purchaseService } from '../services/purchaseService';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
+import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
 import { Plus, ShoppingCart, Eye, Wrench, Search, X, FileText, Download } from 'lucide-react';
-import type { Purchase, Company, Product } from '../../../shared/types';
+import type { Purchase, Company, Product, FiscalEntity } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
 import toast from 'react-hot-toast';
 
@@ -57,6 +58,7 @@ export function PurchasesPage() {
   const supplierParam = searchParams.get('supplier') || '';
   const currencyFilter = (searchParams.get('currency') || '') as '' | 'PEN' | 'USD';
   const paymentTypeFilter = (searchParams.get('paymentType') || '') as '' | 'CONTADO' | 'CREDITO';
+  const fiscalEntityFilter = searchParams.get('fiscalEntityId') || '';
 
   // Estado local solo para el input (se escribe sin tocar la URL hasta el debounce)
   const [supplierSearch, setSupplierSearch] = useState(supplierParam);
@@ -85,6 +87,7 @@ export function PurchasesPage() {
     endDate: endDate || undefined,
     currency: currencyFilter || undefined,
     paymentType: paymentTypeFilter || undefined,
+    fiscalEntityId: fiscalEntityFilter || undefined,
   });
 
   const toggleCurrency = (c: 'PEN' | 'USD') =>
@@ -105,10 +108,13 @@ export function PurchasesPage() {
 
   const { data: companiesData } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
+  const { data: fiscalEntitiesData } = useFiscalEntities();
   const companies: Company[] = Array.isArray(companiesData) ? companiesData : [];
   const products: Product[] = productsData?.data || [];
+  const fiscalEntities: FiscalEntity[] = (Array.isArray(fiscalEntitiesData) ? fiscalEntitiesData : []).filter((entity) => entity.isActive !== false);
   const companyMap = useMemo(() => new Map<string, Company>(companies.map((c) => [c.id, c])), [companies]);
   const productMap = useMemo(() => new Map<string, Product>(products.map((p) => [p.id, p])), [products]);
+  const fiscalEntityMap = useMemo(() => new Map<string, FiscalEntity>(fiscalEntities.map((entity) => [entity.id, entity])), [fiscalEntities]);
   const totalPen: number = (data as any)?.totalPen ?? 0;
   const totalUsd: number = (data as any)?.totalUsd ?? 0;
   const totalPenContado: number = (data as any)?.totalPenContado ?? 0;
@@ -156,6 +162,7 @@ export function PurchasesPage() {
         endDate: endDate || undefined,
         currency: currencyFilter || undefined,
         paymentType: paymentTypeFilter || undefined,
+        fiscalEntityId: fiscalEntityFilter || undefined,
       });
       const allPurchases: Purchase[] = result?.data || [];
       if (allPurchases.length === 0) { toast.error('No hay datos para exportar'); return; }
@@ -167,6 +174,7 @@ export function PurchasesPage() {
           'Fecha': formatDateEs(p.issueDate || p.date, { day: '2-digit', month: '2-digit', year: 'numeric' }),
           'Proveedor': p.supplier,
           'RUC': p.supplierRuc || '',
+          'Empresa': p.fiscalEntityId ? fiscalEntityMap.get(p.fiscalEntityId)?.legalName || p.fiscalEntityId : '',
           'Almacén': companyMap.get(p.companyId)?.name || p.companyId,
           'Productos': productosStr,
           'Tipo': p.paymentType === 'CREDITO' ? 'Crédito' : 'Contado',
@@ -280,6 +288,35 @@ export function PurchasesPage() {
             className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
+
+        {/* Filtro por entidad fiscal */}
+        {fiscalEntities.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-gray-500">Empresa:</span>
+            <select
+              value={fiscalEntityFilter}
+              onChange={(e) => updateParams({ fiscalEntityId: e.target.value || null, page: null })}
+              className="min-w-[220px] px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">Todas</option>
+              {fiscalEntities.map((entity) => (
+                <option key={entity.id} value={entity.id}>
+                  {entity.legalName}
+                </option>
+              ))}
+            </select>
+            {fiscalEntityFilter && (
+              <button
+                type="button"
+                onClick={() => updateParams({ fiscalEntityId: null, page: null })}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
+                title="Quitar filtro de empresa"
+              >
+                <X size={13} /> Limpiar
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Filtros de fecha */}
         <div className="flex flex-wrap items-center gap-2">
