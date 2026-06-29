@@ -79,15 +79,17 @@ export function PurchasesPage() {
     setSearchParams(sp, { replace: true });
   };
 
+  const apiPage = fiscalEntityFilter ? 1 : page;
+  const apiLimit = fiscalEntityFilter ? 9999 : 20;
+
   const { data, isLoading } = usePurchases({
-    page,
-    limit: 20,
+    page: apiPage,
+    limit: apiLimit,
     supplier: supplierParam || undefined,
     startDate: startDate || undefined,
     endDate: endDate || undefined,
     currency: currencyFilter || undefined,
     paymentType: paymentTypeFilter || undefined,
-    fiscalEntityId: fiscalEntityFilter || undefined,
   });
 
   const toggleCurrency = (c: 'PEN' | 'USD') =>
@@ -103,8 +105,14 @@ export function PurchasesPage() {
       page: null,
     });
   };
-  const purchases = data?.data || [];
-  const total = data?.total || 0;
+  const apiPurchases: Purchase[] = data?.data || [];
+  const filteredByFiscalEntity = fiscalEntityFilter
+    ? apiPurchases.filter((purchase) => purchase.fiscalEntityId === fiscalEntityFilter)
+    : apiPurchases;
+  const purchases = fiscalEntityFilter
+    ? filteredByFiscalEntity.slice((page - 1) * 20, page * 20)
+    : filteredByFiscalEntity;
+  const total = fiscalEntityFilter ? filteredByFiscalEntity.length : data?.total || 0;
 
   const { data: companiesData } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
@@ -115,12 +123,41 @@ export function PurchasesPage() {
   const companyMap = useMemo(() => new Map<string, Company>(companies.map((c) => [c.id, c])), [companies]);
   const productMap = useMemo(() => new Map<string, Product>(products.map((p) => [p.id, p])), [products]);
   const fiscalEntityMap = useMemo(() => new Map<string, FiscalEntity>(fiscalEntities.map((entity) => [entity.id, entity])), [fiscalEntities]);
-  const totalPen: number = (data as any)?.totalPen ?? 0;
-  const totalUsd: number = (data as any)?.totalUsd ?? 0;
-  const totalPenContado: number = (data as any)?.totalPenContado ?? 0;
-  const totalUsdContado: number = (data as any)?.totalUsdContado ?? 0;
-  const totalPenCredito: number = (data as any)?.totalPenCredito ?? 0;
-  const totalUsdCredito: number = (data as any)?.totalUsdCredito ?? 0;
+  const fiscalTotals = useMemo(() => {
+    const totals = {
+      totalPen: 0,
+      totalUsd: 0,
+      totalPenContado: 0,
+      totalUsdContado: 0,
+      totalPenCredito: 0,
+      totalUsdCredito: 0,
+    };
+
+    for (const purchase of filteredByFiscalEntity) {
+      const isUsd = !!purchase.totalCostUsd;
+      const penAmount = purchase.totalCost || 0;
+      const usdAmount = purchase.totalCostUsd || 0;
+      if (isUsd) totals.totalUsd += usdAmount;
+      else totals.totalPen += penAmount;
+
+      if (purchase.paymentType === 'CONTADO') {
+        if (isUsd) totals.totalUsdContado += usdAmount;
+        else totals.totalPenContado += penAmount;
+      }
+      if (purchase.paymentType === 'CREDITO') {
+        if (isUsd) totals.totalUsdCredito += usdAmount;
+        else totals.totalPenCredito += penAmount;
+      }
+    }
+
+    return totals;
+  }, [filteredByFiscalEntity]);
+  const totalPen: number = fiscalEntityFilter ? fiscalTotals.totalPen : (data as any)?.totalPen ?? 0;
+  const totalUsd: number = fiscalEntityFilter ? fiscalTotals.totalUsd : (data as any)?.totalUsd ?? 0;
+  const totalPenContado: number = fiscalEntityFilter ? fiscalTotals.totalPenContado : (data as any)?.totalPenContado ?? 0;
+  const totalUsdContado: number = fiscalEntityFilter ? fiscalTotals.totalUsdContado : (data as any)?.totalUsdContado ?? 0;
+  const totalPenCredito: number = fiscalEntityFilter ? fiscalTotals.totalPenCredito : (data as any)?.totalPenCredito ?? 0;
+  const totalUsdCredito: number = fiscalEntityFilter ? fiscalTotals.totalUsdCredito : (data as any)?.totalUsdCredito ?? 0;
 
   const handleSupplierChange = (val: string) => {
     setSupplierSearch(val);
@@ -162,9 +199,10 @@ export function PurchasesPage() {
         endDate: endDate || undefined,
         currency: currencyFilter || undefined,
         paymentType: paymentTypeFilter || undefined,
-        fiscalEntityId: fiscalEntityFilter || undefined,
       });
-      const allPurchases: Purchase[] = result?.data || [];
+      const allPurchases: Purchase[] = fiscalEntityFilter
+        ? (result?.data || []).filter((purchase: Purchase) => purchase.fiscalEntityId === fiscalEntityFilter)
+        : result?.data || [];
       if (allPurchases.length === 0) { toast.error('No hay datos para exportar'); return; }
 
       const XLSX = await import('xlsx');
