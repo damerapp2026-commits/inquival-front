@@ -154,17 +154,42 @@ function AccountPayableSection({ ap, title = 'Cuenta por Pagar' }: { ap: Account
         <div className="mt-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Historial de pagos</p>
           <div className="space-y-2">
-            {ap.payments.map((pmt, idx) => (
-              <div key={idx} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-sm">
-                <div>
-                  <span className="font-medium text-gray-800">{sym} {pmt.amount.toFixed(2)}</span>
-                  {pmt.notes && <span className="ml-2 text-xs text-gray-500">{pmt.notes}</span>}
+            {ap.payments.map((pmt, idx) => {
+              const apCurrency = ap.currency || 'PEN';
+              const hasCurrencyConversion = pmt.paymentCurrency && pmt.paymentCurrency !== apCurrency;
+              const pmtSym = pmt.paymentCurrency === 'USD' ? '$' : 'S/';
+              return (
+                <div key={idx} className="px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      {hasCurrencyConversion ? (
+                        <span className="font-medium text-gray-800">
+                          {pmtSym} {Number(pmt.receivedAmount ?? pmt.amount).toFixed(2)}
+                          <span className="mx-1.5 text-gray-400">→</span>
+                          {sym} {pmt.amount.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="font-medium text-gray-800">{sym} {pmt.amount.toFixed(2)}</span>
+                      )}
+                      {pmt.notes && <span className="ml-2 text-xs text-gray-500">{pmt.notes}</span>}
+                    </div>
+                    <span className="text-xs text-gray-400">
+                      {pmt.paymentDate ? formatDateEs(pmt.paymentDate, { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                    </span>
+                  </div>
+                  {hasCurrencyConversion && pmt.exchangeRate && (
+                    <div className="text-[11px] text-gray-400 mt-0.5">
+                      T.C. {pmt.exchangeRate.toFixed(4)}
+                    </div>
+                  )}
+                  {pmt.codigoTransferencia && (
+                    <div className="text-[11px] text-gray-400 mt-0.5 font-mono">
+                      Cód: {pmt.codigoTransferencia}
+                    </div>
+                  )}
                 </div>
-                <span className="text-xs text-gray-400">
-                  {pmt.paymentDate ? formatDateEs(pmt.paymentDate, { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

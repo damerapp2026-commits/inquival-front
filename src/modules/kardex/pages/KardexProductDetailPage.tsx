@@ -19,8 +19,10 @@ const MOVEMENT_LABELS: Record<string, { label: string; color: string; isEntry: b
   ADJUSTMENT_OUT: { label: 'Ajuste -', color: 'bg-orange-100 text-orange-800', isEntry: false },
   TRANSFER_IN: { label: 'Transf. entrada', color: 'bg-purple-100 text-purple-800', isEntry: true },
   TRANSFER_OUT: { label: 'Transf. salida', color: 'bg-yellow-100 text-yellow-800', isEntry: false },
-  LOAN_OUT: { label: 'Préstamo', color: 'bg-indigo-100 text-indigo-800', isEntry: false },
+  LOAN_OUT: { label: 'Préstamo salida', color: 'bg-indigo-100 text-indigo-800', isEntry: false },
   LOAN_RETURN: { label: 'Dev. préstamo', color: 'bg-teal-100 text-teal-800', isEntry: true },
+  LOAN_IN: { label: 'Préstamo recibido', color: 'bg-cyan-100 text-cyan-800', isEntry: true },
+  LOAN_RETURN_OUT: { label: 'Dev. préstamo salida', color: 'bg-amber-100 text-amber-800', isEntry: false },
 };
 
 interface StockMovement {
@@ -278,8 +280,10 @@ function MovementsTab({ productId, companyList, getCompanyName }: TabProps) {
             <option value="ADJUSTMENT_OUT">Ajuste -</option>
             <option value="TRANSFER_IN">Transf. entrada</option>
             <option value="TRANSFER_OUT">Transf. salida</option>
-            <option value="LOAN_OUT">Préstamo</option>
+            <option value="LOAN_OUT">Préstamo salida</option>
             <option value="LOAN_RETURN">Dev. préstamo</option>
+            <option value="LOAN_IN">Préstamo recibido</option>
+            <option value="LOAN_RETURN_OUT">Dev. préstamo salida</option>
           </select>
         </div>
         <div>
