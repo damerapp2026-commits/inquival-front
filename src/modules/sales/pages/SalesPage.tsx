@@ -7,6 +7,7 @@ import { useLoans, useCreateLoan, useReturnLoanItems } from '../../loans/hooks/u
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useClients } from '../../clients/hooks/useClients';
+import { CreditsPage } from '../../credits/pages/CreditsPage';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { stockService } from '../../stock/services/stockService';
@@ -16,7 +17,7 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
-import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download, FileText, X, CheckCircle2, Building2 } from 'lucide-react';
+import { Plus, Receipt, Trash2, Eye, CalendarDays, HandshakeIcon, RotateCcw, XCircle, Copy, Download, FileText, X, CheckCircle2, Building2, CreditCard } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { VoucherPreviewModal, type VoucherSnapshot, resolveClientLocation } from '../components/VoucherPreviewModal';
 import { EditSaleItemsModal } from '../components/EditSaleItemsModal';
@@ -184,7 +185,9 @@ export function SalesPage() {
     }, { replace: true });
   };
   const _tab = searchParams.get('tab') || 'sales';
-  const activeTab = (['sales', 'boletas', 'facturas', 'loans'].includes(_tab) ? _tab : 'sales') as 'sales' | 'boletas' | 'facturas' | 'loans';
+  const activeTab = (['sales', 'boletas', 'facturas', 'loans', 'creditos'].includes(_tab) ? _tab : 'sales') as 'sales' | 'boletas' | 'facturas' | 'loans' | 'creditos';
+  const isSaleListTab = activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas';
+  const isDatedSalesTab = isSaleListTab || activeTab === 'loans';
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
   const boletaPage = Math.max(1, parseInt(searchParams.get('bPage') || '1', 10));
   const facturaPage = Math.max(1, parseInt(searchParams.get('fPage') || '1', 10));
@@ -197,7 +200,7 @@ export function SalesPage() {
   const endDate = searchParams.get('endDate') || getToday();
   const loanStatusFilter = searchParams.get('loanStatus') || '';
 
-  const setActiveTab = (v: 'sales' | 'boletas' | 'facturas' | 'loans') =>
+  const setActiveTab = (v: 'sales' | 'boletas' | 'facturas' | 'loans' | 'creditos') =>
     updateParams({ tab: v !== 'sales' ? v : null, page: null, bPage: null, fPage: null, lPage: null });
   const setPage = (p: number) => updateParams({ page: p > 1 ? String(p) : null });
   const setBoletaPage = (p: number) => updateParams({ bPage: p > 1 ? String(p) : null });
@@ -980,7 +983,7 @@ export function SalesPage() {
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt size={24} /> {isSellerRole ? 'Mis Ventas' : 'Ventas'}</h1>
-        {!isSellerRole && (
+        {!isSellerRole && activeTab !== 'creditos' && (
           <div className="flex flex-col sm:flex-row gap-2">
             <button onClick={openLoanCreate} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
               <HandshakeIcon size={18} /> Préstamo
@@ -993,14 +996,14 @@ export function SalesPage() {
       </div>
 
       {/* Filters */}
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        {!isSellerRole && (activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && sellers.length > 0 && (
+      {activeTab !== 'creditos' && <div className="mb-4 flex flex-wrap items-center gap-3">
+        {!isSellerRole && isSaleListTab && sellers.length > 0 && (
           <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
             <option value="">Responsables</option>
             {sellers.map((s: any) => <option key={s.id} value={s.id}>{(s.fullName || s.username) + (s.role === 'ADMIN' ? ' (Admin)' : '')}</option>)}
           </select>
         )}
-        {(activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && (
+        {isSaleListTab && (
           <div className="min-w-[220px] flex items-center gap-1">
             <div className="flex-1">
               <SearchableSelect
@@ -1023,7 +1026,7 @@ export function SalesPage() {
             )}
           </div>
         )}
-        {(activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && (
+        {isSaleListTab && (
           <div className="min-w-[220px] flex items-center gap-1">
             <div className="flex-1">
               <SearchableSelect
@@ -1046,7 +1049,7 @@ export function SalesPage() {
             )}
           </div>
         )}
-        {(activeTab === 'sales' || activeTab === 'boletas' || activeTab === 'facturas') && paymentMethods.length > 0 && (
+        {isSaleListTab && paymentMethods.length > 0 && (
           <select
             value={paymentMethodFilter}
             onChange={(e) => setPaymentMethodFilter(e.target.value)}
@@ -1067,62 +1070,66 @@ export function SalesPage() {
             <option value="RETURNED">Devuelto</option>
           </select>
         )}
-        <select
-          value={selectedYear}
-          onChange={(e) => setDatePeriod(Number(e.target.value), selectedMonth)}
-          className="px-3 py-2 border rounded-lg text-sm bg-white"
-          title="Año"
-        >
-          {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
-        </select>
-        <select
-          value={monthSelectorValue}
-          onChange={(e) => {
-            if (e.target.value === 'custom') return;
-            setDatePeriod(selectedYear, Number(e.target.value));
-          }}
-          className="px-3 py-2 border rounded-lg text-sm bg-white"
-          title="Mes"
-        >
-          <option value="custom">Personalizado</option>
-          <option value={1}>{getMonthLabel(1)}</option>
-          <option value={2}>{getMonthLabel(2)}</option>
-          <option value={3}>{getMonthLabel(3)}</option>
-          <option value={4}>{getMonthLabel(4)}</option>
-          <option value={5}>{getMonthLabel(5)}</option>
-          <option value={6}>{getMonthLabel(6)}</option>
-          <option value={7}>{getMonthLabel(7)}</option>
-          <option value={8}>{getMonthLabel(8)}</option>
-          <option value={9}>{getMonthLabel(9)}</option>
-          <option value={10}>{getMonthLabel(10)}</option>
-          <option value={11}>{getMonthLabel(11)}</option>
-          <option value={12}>{getMonthLabel(12)}</option>
-        </select>
-        <input
-          type="date"
-          value={localStartDate}
-          onChange={(e) => {
-            setLocalStartDate(e.target.value);
-            setStartDate(e.target.value);
-          }}
-          className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
-        />
-        <span className="text-gray-500 text-sm">hasta</span>
-        <input
-          type="date"
-          value={localEndDate}
-          onChange={(e) => {
-            setLocalEndDate(e.target.value);
-            setEndDate(e.target.value);
-          }}
-          className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
-        />
-        {(startDate !== getMonthStart() || endDate !== getToday()) && (
-          <button onClick={resetDateFilter} className="flex items-center gap-1 px-3 py-2 text-sm text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100">
-            <CalendarDays size={14} /> Este mes
-          </button>
+        {isDatedSalesTab && (
+          <>
+            <select
+              value={selectedYear}
+              onChange={(e) => setDatePeriod(Number(e.target.value), selectedMonth)}
+              className="px-3 py-2 border rounded-lg text-sm bg-white"
+              title="Año"
+            >
+              {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+            </select>
+            <select
+              value={monthSelectorValue}
+              onChange={(e) => {
+                if (e.target.value === 'custom') return;
+                setDatePeriod(selectedYear, Number(e.target.value));
+              }}
+              className="px-3 py-2 border rounded-lg text-sm bg-white"
+              title="Mes"
+            >
+              <option value="custom">Personalizado</option>
+              <option value={1}>{getMonthLabel(1)}</option>
+              <option value={2}>{getMonthLabel(2)}</option>
+              <option value={3}>{getMonthLabel(3)}</option>
+              <option value={4}>{getMonthLabel(4)}</option>
+              <option value={5}>{getMonthLabel(5)}</option>
+              <option value={6}>{getMonthLabel(6)}</option>
+              <option value={7}>{getMonthLabel(7)}</option>
+              <option value={8}>{getMonthLabel(8)}</option>
+              <option value={9}>{getMonthLabel(9)}</option>
+              <option value={10}>{getMonthLabel(10)}</option>
+              <option value={11}>{getMonthLabel(11)}</option>
+              <option value={12}>{getMonthLabel(12)}</option>
+            </select>
+            <input
+              type="date"
+              value={localStartDate}
+              onChange={(e) => {
+                setLocalStartDate(e.target.value);
+                setStartDate(e.target.value);
+              }}
+              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+            />
+            <span className="text-gray-500 text-sm">hasta</span>
+            <input
+              type="date"
+              value={localEndDate}
+              onChange={(e) => {
+                setLocalEndDate(e.target.value);
+                setEndDate(e.target.value);
+              }}
+              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+            />
+            {(startDate !== getMonthStart() || endDate !== getToday()) && (
+              <button onClick={resetDateFilter} className="flex items-center gap-1 px-3 py-2 text-sm text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100">
+                <CalendarDays size={14} /> Este mes
+              </button>
+            )}
+          </>
         )}
-      </div>
+      </div>}
 
       {/* Total del período */}
       {activeTab === 'sales' && (() => {
@@ -1209,6 +1216,12 @@ export function SalesPage() {
         >
           Préstamos
         </button>
+        <button
+          onClick={() => setActiveTab('creditos')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'creditos' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <span className="inline-flex items-center gap-1.5"><CreditCard size={14} /> Créditos</span>
+        </button>
       </div>
 
       {/* Sales Tab */}
@@ -1242,6 +1255,8 @@ export function SalesPage() {
           <Pagination page={loanPage} totalPages={Math.ceil(loansTotal / 10)} onPageChange={setLoanPage} />
         </>
       )}
+
+      {activeTab === 'creditos' && <CreditsPage asTab />}
 
       {/* Modal crear venta */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Venta" size="lg">
