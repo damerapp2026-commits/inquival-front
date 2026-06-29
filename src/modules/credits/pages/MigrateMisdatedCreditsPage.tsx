@@ -63,7 +63,7 @@ export function MigrateMisdatedCreditsPage() {
             Alinea la fecha de creación de los créditos a la fecha real de la venta que los originó.
           </p>
         </div>
-        <Link to="/credits" className="hidden sm:inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-primary-700">
+        <Link to="/clients?tab=creditos" className="hidden sm:inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-primary-700">
           <ChevronLeft size={15} /> Volver a créditos
         </Link>
       </div>

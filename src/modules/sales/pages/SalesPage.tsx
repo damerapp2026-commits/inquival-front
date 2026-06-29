@@ -718,6 +718,7 @@ export function SalesPage() {
           'IGV': Math.round(igv * 100) / 100,
           'Total': Math.round(sale.total * 100) / 100,
           'Método de Pago': paymentLabel,
+          'Estado crédito': getCreditStatusLabel(sale) || '-',
         };
       });
 
@@ -756,6 +757,7 @@ export function SalesPage() {
           'Tipo': sale.isCredit ? 'Crédito' : 'Contado',
           'Comprobante': sale.voucherType === 'BOLETA' ? 'Boleta' : sale.voucherType === 'FACTURA' ? 'Factura' : '-',
           'Método de Pago': paymentLabel,
+          'Estado crédito': getCreditStatusLabel(sale) || '-',
           'Moneda': sale.currency || 'PEN',
           'Total': Math.round(saleDispTotal(sale) * 100) / 100,
           'Estado': sale.isCancelled ? 'Anulada' : 'Activa',
@@ -779,6 +781,34 @@ export function SalesPage() {
       return <span className="text-primary-600">{label}</span>;
     }
     return <span className="text-primary-600">Efectivo</span>;
+  };
+
+  const getCreditStatusLabel = (sale: Sale) => {
+    if (!sale.isCredit) return '';
+    const labels: Record<string, string> = {
+      PENDING: 'Pendiente',
+      PARTIAL: 'Parcial',
+      PAID: 'Pagado',
+    };
+    return sale.creditStatus ? labels[sale.creditStatus] || sale.creditStatus : 'Sin cuenta';
+  };
+
+  const getCreditStatusBadge = (sale: Sale) => {
+    if (!sale.isCredit || sale.isCancelled) return <span className="text-gray-300">-</span>;
+    const status = sale.creditStatus || 'MISSING';
+    const styles: Record<string, string> = {
+      PENDING: 'bg-red-50 text-red-700 border-red-200',
+      PARTIAL: 'bg-amber-50 text-amber-700 border-amber-200',
+      PAID: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      MISSING: 'bg-gray-50 text-gray-500 border-gray-200',
+    };
+    return (
+      <span
+        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${styles[status] || styles.MISSING}`}
+      >
+        {getCreditStatusLabel(sale)}
+      </span>
+    );
   };
 
   const salesColumns = [
@@ -822,6 +852,7 @@ export function SalesPage() {
       return <span className="text-gray-400">-</span>;
     }},
     { key: 'payment', header: 'Pago', render: (item: Sale) => item.isCancelled ? <span className="text-red-600 font-medium">Anulada</span> : getPaymentLabel(item) },
+    { key: 'creditStatus', header: 'Estado crédito', render: (item: Sale) => getCreditStatusBadge(item) },
     { key: 'actions', header: '', render: (item: Sale) => (
       <div className="flex items-center gap-2">
         <button onClick={(e) => { e.stopPropagation(); setViewingSale(item); }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
@@ -876,6 +907,7 @@ export function SalesPage() {
       ) : <span className="font-medium">{sym} {disp.toFixed(2)}</span>;
     }},
     { key: 'payment', header: 'Pago', render: (item: Sale) => item.isCancelled ? <span className="text-red-600 font-medium">Anulada</span> : getPaymentLabel(item) },
+    { key: 'creditStatus', header: 'Estado crédito', render: (item: Sale) => getCreditStatusBadge(item) },
     { key: 'actions', header: '', render: (item: Sale) => (
       <div className="flex items-center gap-2">
         <button onClick={(e) => { e.stopPropagation(); setViewingSale(item); }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>

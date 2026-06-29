@@ -6,7 +6,7 @@ import { useExpiringLots } from '../../modules/stock/hooks/useProductLots';
 import { useBusinessSettings } from '../../modules/settings/hooks/useBusinessSettings';
 import {
   Package, ShoppingCart, TrendingUp, Users, Building2, Layers, ArrowLeftRight,
-  LogOut, Menu, X, Wallet, CreditCard, BarChart3, FolderTree, Settings,
+  LogOut, Menu, X, Wallet, BarChart3, FolderTree, Settings,
   ClipboardList, FileText, Bell, AlertTriangle, Clock, ScanLine, Ruler, ScrollText, Receipt,
   ChevronLeft, ChevronRight, Percent, Briefcase, CalendarClock, MoreHorizontal,
   FlaskConical, ArrowDownCircle,
@@ -56,7 +56,6 @@ const navSections: NavSection[] = [
     label: 'CATÁLOGO',
     items: [
       { path: '/clients', label: 'Clientes', icon: Users },
-      { path: '/credits', label: 'Créditos', icon: CreditCard },
       { path: '/categories', label: 'Categorías', icon: FolderTree, roles: ['ADMIN'] },
       { path: '/laboratories', label: 'Laboratorios', icon: FlaskConical, roles: ['ADMIN'] },
       { path: '/units', label: 'Unidades de Medida', icon: Ruler, roles: ['ADMIN'] },

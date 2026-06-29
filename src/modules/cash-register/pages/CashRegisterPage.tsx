@@ -93,17 +93,21 @@ function sanitizeEntryDesc(desc: string): string {
 }
 
 function methodFromDescription(desc: string) {
-  const m = sanitizeEntryDesc(desc).match(/\[([^\]]+)\]$/);
+  const m = sanitizeEntryDesc(desc).match(/\[([^\]]+)\](?:\s*\(\d+\s+de\s+\d+\))?\s*$/);
   return m ? m[1] : null;
 }
 
+function methodFromEntry(entry: CashRegisterEntry) {
+  return entry.paymentMethodName || methodFromDescription(entry.description);
+}
+
 function stripMethod(desc: string) {
-  return sanitizeEntryDesc(desc).replace(/\s*\[.*?\]\s*$/, '');
+  return sanitizeEntryDesc(desc).replace(/\s*\[[^\]]+\](?:\s*\(\d+\s+de\s+\d+\))?\s*$/, '');
 }
 
 function methodsFromEntries(entries: CashRegisterEntry[]) {
   const methods = entries
-    .map((entry) => methodFromDescription(entry.description))
+    .map(methodFromEntry)
     .filter((method): method is string => !!method);
   return [...new Set(methods)];
 }
@@ -263,7 +267,7 @@ export function CashRegisterPage() {
 
   const openAddIncome = () => { setAddForm({ type: 'INCOME', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: '', expenseCurrency: 'PEN', convertToSoles: false, exchangeRate: 3.70 }); setShowAddModal(true); };
   const openAddExpense = () => { setAddForm({ type: 'EXPENSE', category: 'OTHER', description: '', amount: 0, voucherType: 'NONE', voucherSeries: '', voucherNumber: '', paymentMethodName: 'Efectivo', expenseCurrency: 'PEN', convertToSoles: false, exchangeRate: 3.70 }); setShowAddModal(true); };
-  const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', voucherType: entry.voucherType || 'NONE', voucherSeries: entry.voucherSeries || '', voucherNumber: entry.voucherNumber || '', paymentMethodName: methodFromDescription(entry.description) || '' }); setShowEditModal(true); };
+  const openEdit = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setEditForm({ amount: entry.amount, reason: '', voucherType: entry.voucherType || 'NONE', voucherSeries: entry.voucherSeries || '', voucherNumber: entry.voucherNumber || '', paymentMethodName: methodFromEntry(entry) || '' }); setShowEditModal(true); };
 
   const openDelete = (entry: CashRegisterEntry) => { setSelectedEntry(entry); setDeleteReason(''); setShowDeleteModal(true); };
 
@@ -287,7 +291,7 @@ export function CashRegisterPage() {
     }
     await addEntry.mutateAsync({
       registerId: register.id,
-      data: { ...rest, description: desc, amount: finalAmount, ...currencyExtra },
+      data: { ...rest, description: desc, paymentMethodName: paymentMethodName || undefined, amount: finalAmount, ...currencyExtra },
     });
     setShowAddModal(false);
   };
@@ -295,7 +299,7 @@ export function CashRegisterPage() {
     e.preventDefault();
     if (!selectedEntry || !register) return;
     const { paymentMethodName, ...rest } = editForm;
-    const originalMethod = methodFromDescription(selectedEntry.description) || '';
+    const originalMethod = methodFromEntry(selectedEntry) || '';
     const methodChanged = paymentMethodName !== originalMethod;
     const isSaleEntry = selectedEntry.referenceType === 'Sale' && !!selectedEntry.referenceId;
 
@@ -340,6 +344,7 @@ export function CashRegisterPage() {
     if (methodChanged) {
       const baseDesc = stripMethod(selectedEntry.description);
       data.description = paymentMethodName ? `${baseDesc} [${paymentMethodName}]` : baseDesc;
+      data.paymentMethodName = paymentMethodName || undefined;
     }
     await editEntry.mutateAsync({ registerId: register.id, entryId: selectedEntry.id, data });
     setShowEditModal(false);
@@ -362,7 +367,7 @@ export function CashRegisterPage() {
     let result = activeTab === 'USD' ? usdActiveEntries : penActiveEntries;
     if (vendorFilter) result = result.filter((e) => e.createdBy === vendorFilter);
     if (paymentMethodFilter) {
-      result = result.filter((e) => methodFromDescription(e.description) === paymentMethodFilter);
+      result = result.filter((e) => methodFromEntry(e) === paymentMethodFilter);
     }
     return result;
   }, [activeTab, penActiveEntries, usdActiveEntries, vendorFilter, paymentMethodFilter]);
@@ -385,7 +390,7 @@ export function CashRegisterPage() {
     const seen = new Set<string>();
     const result: string[] = [];
     for (const e of tabEntries) {
-      const m = methodFromDescription(e.description);
+      const m = methodFromEntry(e);
       if (m && !seen.has(m)) { seen.add(m); result.push(m); }
     }
     return result.sort();
@@ -1111,7 +1116,7 @@ export function CashRegisterPage() {
         {(() => {
           const methodBreakdown: Record<string, { income: number; expense: number }> = {};
           activeEntries.forEach((entry) => {
-            const m = methodFromDescription(entry.description) || 'Sin método';
+            const m = methodFromEntry(entry) || 'Sin método';
             if (!methodBreakdown[m]) methodBreakdown[m] = { income: 0, expense: 0 };
             if (entry.type === 'INCOME') methodBreakdown[m].income += entry.amount;
             else methodBreakdown[m].expense += entry.amount;
@@ -1481,7 +1486,7 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
   const clientId = sale?.clientId || entry.clientId;
   const hasClient = !!clientId;
   const description = isSale ? getClientName(clientId) : stripMethod(entry.description);
-  const method = methodFromDescription(entry.description);
+  const method = methodFromEntry(entry);
   const vendor = entry.createdBy ? (userById[entry.createdBy] || 'Usuario') : '';
 
   return (

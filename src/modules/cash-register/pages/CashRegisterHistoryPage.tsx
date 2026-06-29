@@ -75,12 +75,16 @@ function sanitizeEntryDesc(desc: string): string {
 }
 
 function methodFromDescription(desc: string) {
-  const m = sanitizeEntryDesc(desc).match(/\[([^\]]+)\]$/);
+  const m = sanitizeEntryDesc(desc).match(/\[([^\]]+)\](?:\s*\(\d+\s+de\s+\d+\))?\s*$/);
   return m ? m[1] : null;
 }
 
+function methodFromEntry(entry: CashRegisterEntry) {
+  return entry.paymentMethodName || methodFromDescription(entry.description);
+}
+
 function stripMethod(desc: string) {
-  return sanitizeEntryDesc(desc).replace(/\s*\[.*?\]\s*$/, '');
+  return sanitizeEntryDesc(desc).replace(/\s*\[[^\]]+\](?:\s*\(\d+\s+de\s+\d+\))?\s*$/, '');
 }
 
 function legacyUsdAmount(desc: string): number | null {
@@ -135,7 +139,7 @@ export function CashRegisterHistoryPage() {
     let usd = false;
     registers.forEach((r) => {
       r.entries.filter((e) => !e.isDeleted).forEach((e) => {
-        const m = methodFromDescription(e.description);
+        const m = methodFromEntry(e);
         if (m) methods.add(m);
         if (e.createdBy) vendors.add(e.createdBy);
         if (getEntryUsdAmount(e) != null) usd = true;
@@ -145,7 +149,7 @@ export function CashRegisterHistoryPage() {
   }, [registers]);
 
   const passesFilter = (e: CashRegisterEntry): boolean => {
-    if (methodFilter && methodFromDescription(e.description) !== methodFilter) return false;
+    if (methodFilter && methodFromEntry(e) !== methodFilter) return false;
     if (vendorFilter && e.createdBy !== vendorFilter) return false;
     if (currencyFilter === 'USD' && getEntryUsdAmount(e) == null) return false;
     if (currencyFilter === 'PEN' && getEntryUsdAmount(e) != null) return false;
@@ -161,19 +165,19 @@ export function CashRegisterHistoryPage() {
     registers.forEach((r) => {
       const active = r.entries.filter((e) => !e.isDeleted);
       active.filter((e) => e.type === 'INCOME').forEach((e) => {
-        if (methodFilter && methodFromDescription(e.description) !== methodFilter) return;
+        if (methodFilter && methodFromEntry(e) !== methodFilter) return;
         if (vendorFilter && e.createdBy !== vendorFilter) return;
         const usd = getEntryUsdAmount(e);
         if (usd != null) {
           incomeUsd += usd;
         } else {
           income += e.amount;
-          const m = methodFromDescription(e.description);
+          const m = methodFromEntry(e);
           if (m) methodMap.set(m, (methodMap.get(m) || 0) + e.amount);
         }
       });
       active.filter((e) => e.type === 'EXPENSE').forEach((e) => {
-        if (methodFilter && methodFromDescription(e.description) !== methodFilter) return;
+        if (methodFilter && methodFromEntry(e) !== methodFilter) return;
         if (vendorFilter && e.createdBy !== vendorFilter) return;
         expense += e.amount;
       });
@@ -205,7 +209,7 @@ export function CashRegisterHistoryPage() {
     const allActive = (detail?.entries || []).filter((e: CashRegisterEntry) => !e.isDeleted && e.type === 'INCOME');
     const map = new Map<string, { pen: number; usd: number }>();
     allActive.forEach((e: CashRegisterEntry) => {
-      const m = methodFromDescription(e.description) || 'Sin método';
+      const m = methodFromEntry(e) || 'Sin método';
       const usd = getEntryUsdAmount(e);
       const prev = map.get(m) || { pen: 0, usd: 0 };
       if (usd != null) map.set(m, { ...prev, usd: prev.usd + usd });
@@ -223,7 +227,7 @@ export function CashRegisterHistoryPage() {
   });
 
   const renderDetailEntry = (e: CashRegisterEntry, nested: boolean, key: React.Key) => {
-    const method = methodFromDescription(e.description);
+    const method = methodFromEntry(e);
     const vendor = e.createdBy ? (userById[e.createdBy] || 'Usuario') : '';
     const isSale = e.referenceType === 'Sale' && !!e.referenceId;
     const descStripped = isSale ? stripMethod(e.description) : null;
@@ -632,6 +636,7 @@ export function CashRegisterHistoryPage() {
                   const total = g.total ?? g.entries.reduce((s, e) => s + e.amount, 0);
                   const baseDesc = stripMethod(first.description.replace(/\s*\(\d+ de \d+\)\s*$/, ''));
                   const vendor = first.createdBy ? (userById[first.createdBy] || 'Usuario') : '';
+                  const groupMethods = Array.from(new Set(g.entries.map(methodFromEntry).filter(Boolean)));
                   return (
                     <React.Fragment key={g.groupId}>
                       <tr onClick={() => toggleDetailGroup(g.groupId!)} className={`cursor-pointer transition-colors ${first.type === 'INCOME' ? 'bg-emerald-50/40 hover:bg-emerald-50' : 'bg-rose-50/40 hover:bg-rose-50'}`}>
@@ -656,7 +661,15 @@ export function CashRegisterHistoryPage() {
                           </span>
                           <span className="font-medium">{baseDesc}</span>
                         </td>
-                        <td className="px-3 py-2.5 text-center"><span className="text-gray-300 text-xs">—</span></td>
+                        <td className="px-3 py-2.5">
+                          {groupMethods.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {groupMethods.map((method) => (
+                                <span key={method} className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">{method}</span>
+                              ))}
+                            </div>
+                          ) : <span className="text-gray-300 text-xs">—</span>}
+                        </td>
                         <td className="px-3 py-2.5">
                           {vendor ? (
                             <div className="inline-flex items-center gap-1.5">

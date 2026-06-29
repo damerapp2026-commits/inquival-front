@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
 import { useKardex } from '../hooks/useKardex';
 import { kardexService } from '../services/kardexService';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
+import { productService } from '../../products/services/productService';
 import { useStockByProductSummary } from '../../stock/hooks/useStock';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { useExpiringLots, useProductLotsByProduct } from '../../stock/hooks/useProductLots';
@@ -128,22 +130,39 @@ function KardexTab({ products, companyList }: SubProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const productIdParam = searchParams.get('productId') || '';
   const [productSearch, setProductSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [companyId, setCompanyId] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [companyId, setCompanyId] = useState(searchParams.get('companyId') || '');
+  const [startDate, setStartDate] = useState(searchParams.get('startDate') || '');
+  const [endDate, setEndDate] = useState(searchParams.get('endDate') || '');
   const [clienteFilter, setClienteFilter] = useState('');
   const [precioVentaFilter, setPrecioVentaFilter] = useState('');
 
   const setSelectedProductId = (id: string) => {
     const sp = new URLSearchParams(searchParams);
-    if (id) sp.set('productId', id);
-    else sp.delete('productId');
+    if (id) {
+      sp.set('tab', 'kardex');
+      sp.set('productId', id);
+      if (companyId) sp.set('companyId', companyId); else sp.delete('companyId');
+      if (startDate) sp.set('startDate', startDate); else sp.delete('startDate');
+      if (endDate) sp.set('endDate', endDate); else sp.delete('endDate');
+    } else {
+      sp.delete('productId');
+    }
     setSearchParams(sp, { replace: true });
-    setPage(1);
   };
 
-  const getProductName = (id: string) => products.find((p) => p.id === id)?.name || id;
+  const productFromList = products.find((p) => p.id === productIdParam);
+  const { data: fetchedProduct } = useQuery({
+    queryKey: ['product', productIdParam],
+    queryFn: () => productService.getById(productIdParam),
+    enabled: !!productIdParam && !productFromList,
+    staleTime: 60_000,
+  });
+  const selectedProduct = productFromList || fetchedProduct;
+
+  const getProductName = (id: string) => {
+    if (id === productIdParam && selectedProduct) return selectedProduct.name;
+    return products.find((p) => p.id === id)?.name || id;
+  };
   const getCompanyName = (id: string) => companyList.find((c) => c.id === id)?.name || id;
 
   const filteredProducts = (productSearch
@@ -160,16 +179,16 @@ function KardexTab({ products, companyList }: SubProps) {
     .slice()
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' }));
 
-  // Para la vista del Kardex del producto subimos el límite a 500 (el típico producto
-  // tiene <200 movimientos) y luego ordenamos client-side ASC para imitar el formato
-  // Excel del cliente (más viejo arriba).
-  const params: Record<string, any> = { page, limit: 500 };
+  // La vista del producto debe mostrar el kardex completo, en orden cronológico,
+  // para coincidir con el formato Excel del cliente.
+  const params: Record<string, any> = { page: 1, limit: 100000 };
   if (productIdParam) params.productId = productIdParam;
   if (companyId) params.companyId = companyId;
   if (startDate) params.startDate = startDate;
   if (endDate) params.endDate = endDate;
 
   const { data: productLots } = useProductLotsByProduct(productIdParam || undefined, companyId || undefined);
+  const { data: stockSummary } = useStockByProductSummary();
 
   const { data, isLoading } = useKardex(productIdParam ? params : undefined);
   const movementsRaw: StockMovement[] = productIdParam ? data?.data || [] : [];
@@ -183,7 +202,14 @@ function KardexTab({ products, companyList }: SubProps) {
     setPrecioVentaFilter('');
   }, [productIdParam]);
 
-  const selectedProduct = products.find((p) => p.id === productIdParam);
+  const selectedProductStock = React.useMemo(() => {
+    if (!productIdParam) return 0;
+    const row = (stockSummary || []).find((s) => s.productId === productIdParam);
+    if (!row) return 0;
+    if (companyId) return row.byCompany.find((b) => b.companyId === companyId)?.quantity || 0;
+    return row.totalQuantity;
+  }, [stockSummary, productIdParam, companyId]);
+  const hasStockWithoutMovements = !!productIdParam && !isLoading && movements.length === 0 && selectedProductStock > 0;
 
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -229,8 +255,7 @@ function KardexTab({ products, companyList }: SubProps) {
       [],
       ['FECHA', 'DESCRIPCION', 'INGRESO', 'SALIDA', 'SALDO', '', 'PRECIO', 'SUBTOTAL', 'ALMACEN'],
     ];
-    // Their Excel is chronological ASC; our API returns DESC. Reverse for export.
-    const rows = [...displayMovements].reverse();
+    const rows = [...displayMovements];
     for (const m of rows) {
       const ingreso = isEntry(m) ? m.quantity : '';
       const salida = !isEntry(m) ? m.quantity : '';
@@ -326,7 +351,6 @@ function KardexTab({ products, companyList }: SubProps) {
             value={companyId}
             onChange={(e) => {
               setCompanyId(e.target.value);
-              setPage(1);
             }}
             className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
           >
@@ -346,7 +370,6 @@ function KardexTab({ products, companyList }: SubProps) {
               value={startDate}
               onChange={(e) => {
                 setStartDate(e.target.value);
-                setPage(1);
               }}
               className="w-full px-2 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
             />
@@ -358,7 +381,6 @@ function KardexTab({ products, companyList }: SubProps) {
               value={endDate}
               onChange={(e) => {
                 setEndDate(e.target.value);
-                setPage(1);
               }}
               className="w-full px-2 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
             />
@@ -477,7 +499,9 @@ function KardexTab({ products, companyList }: SubProps) {
                   ) : movements.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="border border-gray-300 px-2 py-8 text-center text-gray-400">
-                        Sin movimientos en el rango seleccionado.
+                        {hasStockWithoutMovements
+                          ? `Este producto tiene stock actual (${selectedProductStock}), pero no tiene historial Kardex registrado con los filtros seleccionados. Puede ser data anterior al registro de movimientos.`
+                          : 'Sin movimientos en el rango seleccionado.'}
                       </td>
                     </tr>
                   ) : displayMovements.length === 0 ? (
@@ -542,7 +566,11 @@ function KardexTab({ products, companyList }: SubProps) {
               </table>
             </div>
           </div>
-          <Pagination page={page} totalPages={Math.ceil(total / 500)} onPageChange={setPage} />
+          {total > movements.length && (
+            <div className="border border-amber-200 bg-amber-50 text-amber-800 text-xs px-3 py-2 mt-3 print:hidden">
+              Se muestran {movements.length} de {total} movimientos. Conviene revisar este producto con una exportación o paginación dedicada.
+            </div>
+          )}
 
           {Array.isArray(productLots) && productLots.length > 0 && (
             <div className="mt-4 border border-gray-300 bg-white print:hidden">

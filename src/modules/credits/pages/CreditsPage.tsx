@@ -258,6 +258,14 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
 
       {asTab && (
         <div className="flex items-center justify-end gap-2 mb-4">
+          <Link
+            to="/credits/migrate"
+            className="inline-flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-sm font-medium hover:bg-amber-100"
+            title="Reasignar fecha de créditos mal-fechados"
+          >
+            <Wrench size={14} />
+            Migrar fechas
+          </Link>
           <button
             type="button"
             onClick={() => setShowHistoricalModal(true)}
