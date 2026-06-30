@@ -19,6 +19,19 @@ export function useCreateQuote() {
   });
 }
 
+export function useUpdateQuote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: quoteService.update,
+    onSuccess: (_data, vars: any) => {
+      qc.invalidateQueries({ queryKey: ['quotes'] });
+      if (vars?.id) qc.invalidateQueries({ queryKey: ['quote', vars.id] });
+      toast.success('Cotización actualizada');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message?.[0] || err.response?.data?.message || 'Error al actualizar cotización'),
+  });
+}
+
 export function useUpdateQuoteStatus() {
   const qc = useQueryClient();
   return useMutation({

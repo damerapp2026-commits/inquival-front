@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link, useParams } from 'react-router-dom';
 import { ArrowLeft, User, ShoppingCart, ClipboardList, Plus, Trash2, Search, Sparkles, Building2, Save, FileText, ScrollText, Users, X, Calendar, ChevronLeft, ChevronRight, CreditCard } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useCreateQuote } from '../hooks/useQuotes';
+import { useCreateQuote, useQuote, useUpdateQuote } from '../hooks/useQuotes';
 import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useCompanies } from '../../companies/hooks/useCompanies';
@@ -13,7 +13,7 @@ import { useUsers } from '../../users/hooks/useUsers';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import type { Product, ProductPrice, Company, Client, PriceTier, QuotePayment } from '../../../shared/types';
+import type { Product, ProductPrice, Company, Client, PriceTier, QuotePayment, Quote } from '../../../shared/types';
 
 const IGV_RATE = 0.18;
 type DocType = 'DNI' | 'RUC' | 'CE' | 'OTRO';
@@ -44,11 +44,38 @@ function resolvePrice(product: Product, tierId: string): number | undefined {
   return product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId)?.price;
 }
 
+function parseQuoteNotes(notes?: string) {
+  const result = {
+    paymentTerm: '',
+    deliveryTime: '',
+    deliveryPlace: '',
+    observations: '',
+    internalNotes: '',
+  };
+  if (!notes) return result;
+
+  const [publicNotes, internal = ''] = notes.split(/\n\n\[Interno\]\s*/);
+  result.internalNotes = internal.trim();
+
+  const lines = publicNotes.split('\n');
+  const bodyLines: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith('Forma de pago:')) result.paymentTerm = line.replace('Forma de pago:', '').trim();
+    else if (line.startsWith('Tiempo de entrega:')) result.deliveryTime = line.replace('Tiempo de entrega:', '').trim();
+    else if (line.startsWith('Lugar de entrega:')) result.deliveryPlace = line.replace('Lugar de entrega:', '').trim();
+    else bodyLines.push(line);
+  }
+  result.observations = bodyLines.join('\n').trim();
+  return result;
+}
+
 export function NewQuotePage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { id: editQuoteId } = useParams();
   const { user } = useAuth();
   const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
+  const isEditing = !!editQuoteId;
 
   const preload = (location.state as { cart?: CartPreload } | null)?.cart;
 
@@ -57,7 +84,9 @@ export function NewQuotePage() {
   const { data: clientsData } = useClients({ limit: 500 });
   const { data: tiersData } = usePriceTiers();
   const { data: usersData } = useUsers({ limit: 200, isActive: true });
+  const { data: editQuote, isLoading: editQuoteLoading } = useQuote(editQuoteId);
   const createQuote = useCreateQuote();
+  const updateQuote = useUpdateQuote();
   const dniLookup = useDniLookup();
   const rucLookup = useRucLookup();
   const { data: paymentMethodsData } = usePaymentMethods();
@@ -131,6 +160,7 @@ export function NewQuotePage() {
   const [payments, setPayments] = useState<QuotePayment[]>([]);
   const [newPaymentMethod, setNewPaymentMethod] = useState('');
   const [newPaymentAmount, setNewPaymentAmount] = useState('');
+  const [didLoadEditQuote, setDidLoadEditQuote] = useState(false);
 
   // Defaults once data arrives
   useEffect(() => {
@@ -139,6 +169,61 @@ export function NewQuotePage() {
   useEffect(() => {
     if (!tierId && tiers.length) setTierId(tiers[0].id);
   }, [tiers, tierId]);
+
+  useEffect(() => {
+    if (!isEditing || didLoadEditQuote || !editQuote) return;
+
+    const quote = editQuote as Quote;
+    const client = quote.clientId ? clients.find((c) => c.id === quote.clientId) : undefined;
+    const firstItem = quote.items[0];
+    const parsedNotes = parseQuoteNotes(quote.notes);
+    const parsedValidityDays = Math.max(
+      1,
+      Math.ceil((new Date(quote.validUntil).getTime() - Date.now()) / 86400000),
+    );
+    const creditDue = (() => {
+      if (quote.paymentMethod !== 'CRÉDITO' || !quote.creditDays) return creditDueDate;
+      const issueParts = quote.issueDate.slice(0, 10).split('-').map(Number);
+      return toDateKey(new Date(issueParts[0], issueParts[1] - 1, issueParts[2] + quote.creditDays));
+    })();
+
+    setCompanyId(quote.companyId || firstItem?.companyId || companies[0]?.id || '');
+    setTierId(firstItem?.priceTier || tiers[0]?.id || '');
+    setClientId(quote.clientId || '');
+    setClientName(client?.name || quote.clientName || '');
+    setClientEmail(client?.email || '');
+    setClientPhone(client?.phone || '');
+    setClientAddress(client?.address || '');
+    setClientSearch(client?.name || quote.clientName || '');
+    setDocNumber(client?.documentNumber || '');
+    if (client?.documentNumber?.length === 8) setDocType('DNI');
+    else if (client?.documentNumber?.length === 11) setDocType('RUC');
+    setCurrency(quote.currency || 'PEN');
+    setExchangeRate(quote.exchangeRate ? String(quote.exchangeRate) : '');
+    setParticipantIds(quote.participantIds || []);
+    setValidityDays(parsedValidityDays);
+    setPaymentTerm(parsedNotes.paymentTerm || quote.paymentMethod || 'CONTADO');
+    setCreditDueDate(creditDue);
+    setDeliveryTime(parsedNotes.deliveryTime || 'INMEDIATO');
+    setDeliveryPlace(parsedNotes.deliveryPlace);
+    setObservations(parsedNotes.observations);
+    setInternalNotes(parsedNotes.internalNotes);
+    setPayments(quote.payments || []);
+    setLines(quote.items.map((item) => {
+      const product = products.find((p) => p.id === item.productId);
+      return {
+        productId: item.productId,
+        name: product?.name || item.productId,
+        unit: product?.unit || '',
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        taxType: product?.taxType,
+        tierOverride: item.priceTier,
+        sourceCompanyId: item.companyId,
+      };
+    }));
+    setDidLoadEditQuote(true);
+  }, [isEditing, didLoadEditQuote, editQuote, clients, products, companies, tiers, creditDueDate]);
 
   const validUntilISO = useMemo(() => {
     const d = new Date();
@@ -335,7 +420,7 @@ export function NewQuotePage() {
       return;
     }
     try {
-      await createQuote.mutateAsync({
+      const payload = {
         companyId,
         clientId: clientId || undefined,
         clientName: clientId ? undefined : clientName.trim(),
@@ -355,13 +440,27 @@ export function NewQuotePage() {
           priceTier: l.tierOverride || tierId,
           unitPrice: l.unitPrice,
         })),
-      } as any);
+      } as any;
+      if (isEditing && editQuoteId) {
+        await updateQuote.mutateAsync({ id: editQuoteId, data: payload });
+      } else {
+        await createQuote.mutateAsync(payload);
+      }
       navigate('/quotes');
     } catch { /* hook toast */ }
   };
 
   const company = companies.find((c) => c.id === companyId);
   const docTabs: DocType[] = ['DNI', 'RUC', 'CE', 'OTRO'];
+  const saving = createQuote.isPending || updateQuote.isPending;
+
+  if (isEditing && editQuoteLoading && !didLoadEditQuote) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -376,9 +475,9 @@ export function NewQuotePage() {
           <FileText size={22} />
         </div>
         <div>
-          <p className="text-[11px] font-semibold tracking-widest text-primary-600 uppercase">Nueva cotización</p>
-          <h1 className="text-2xl font-bold text-gray-900 mt-0.5">¿A quién le vas a cotizar?</h1>
-          <p className="text-sm text-gray-500 mt-1">Completá los datos del cliente y los productos. La cotización se genera en PDF al guardar.</p>
+          <p className="text-[11px] font-semibold tracking-widest text-primary-600 uppercase">{isEditing ? 'Editar cotización' : 'Nueva cotización'}</p>
+          <h1 className="text-2xl font-bold text-gray-900 mt-0.5">{isEditing ? 'Actualiza la cotización' : '¿A quién le vas a cotizar?'}</h1>
+          <p className="text-sm text-gray-500 mt-1">{isEditing ? 'Modifica los datos del cliente, productos y condiciones comerciales.' : 'Completá los datos del cliente y los productos. La cotización se genera en PDF al guardar.'}</p>
         </div>
       </div>
 
@@ -1006,10 +1105,10 @@ export function NewQuotePage() {
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!canSave || createQuote.isPending}
+            disabled={!canSave || saving}
             className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
           >
-            <Save size={15} /> {createQuote.isPending ? 'Guardando…' : 'Guardar cotización'}
+            <Save size={15} /> {saving ? 'Guardando…' : (isEditing ? 'Actualizar cotización' : 'Guardar cotización')}
           </button>
         </div>
       </div>

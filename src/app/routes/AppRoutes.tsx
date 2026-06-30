@@ -74,6 +74,7 @@ export function AppRoutes() {
         <Route path="pos" element={<Suspense fallback={<Loading />}><POSPage /></Suspense>} />
         <Route path="quotes" element={<Suspense fallback={<Loading />}><QuotesPage /></Suspense>} />
         <Route path="quotes/new" element={<Suspense fallback={<Loading />}><NewQuotePage /></Suspense>} />
+        <Route path="quotes/:id/edit" element={<Suspense fallback={<Loading />}><NewQuotePage /></Suspense>} />
         <Route path="sales" element={<Suspense fallback={<Loading />}><SalesPage /></Suspense>} />
         <Route path="stock" element={<AdminOnly><Suspense fallback={<Loading />}><StockPage /></Suspense></AdminOnly>} />
         <Route path="cash-register" element={<AdminOnly><Suspense fallback={<Loading />}><CashRegisterPage /></Suspense></AdminOnly>} />

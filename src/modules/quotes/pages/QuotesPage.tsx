@@ -7,7 +7,7 @@ import { useClients } from '../../clients/hooks/useClients';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
-import { ScrollText, Download, Printer, CheckCircle2, XCircle, ShoppingCart, Plus, Search, Calendar, Eye, X, Trash2, AlertTriangle, List, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ScrollText, Download, Printer, CheckCircle2, XCircle, ShoppingCart, Plus, Search, Calendar, Eye, X, Trash2, AlertTriangle, List, ChevronLeft, ChevronRight, Edit2 } from 'lucide-react';
 import type { Quote, QuoteStatus, Product, Company, Client } from '../../../shared/types';
 import { downloadQuotePdf, printQuotePdf } from '../utils/quotePdf';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
@@ -140,6 +140,9 @@ export function QuotesPage() {
         <div className="flex items-center gap-1">
           <button onClick={(e) => { e.stopPropagation(); setViewQuote(q); }} className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Ver detalle">
             <Eye size={15} />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); navigate(`/quotes/${q.id}/edit`); }} className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded" title="Editar cotización">
+            <Edit2 size={15} />
           </button>
           <button onClick={(e) => { e.stopPropagation(); setDeleteQuote(q); }} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded" title="Eliminar cotización">
             <Trash2 size={15} />
