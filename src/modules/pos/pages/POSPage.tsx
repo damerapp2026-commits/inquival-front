@@ -1294,7 +1294,7 @@ export function POSPage() {
                         </button>
                       </div>
                       <div className="flex items-center gap-2">
-                        {!isSellerRole && !bonusRow && (
+                        {!bonusRow && (
                           <button
                             onClick={() => addBonusRow(item)}
                             className="text-[10px] font-semibold text-violet-600 px-2 py-1 rounded-lg border border-violet-200 bg-white hover:bg-violet-50"
