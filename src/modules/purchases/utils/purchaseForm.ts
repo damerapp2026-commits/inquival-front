@@ -189,9 +189,10 @@ export function purchaseToFormState(purchase: Purchase, products: Product[]): Pu
   const currency: 'PEN' | 'USD' = purchase.totalCostUsd != null ? 'USD' : 'PEN';
   const exchangeRate = (() => {
     if (currency !== 'USD') return null;
-    if (typeof purchase.exchangeRate === 'number' && purchase.exchangeRate > 0) return purchase.exchangeRate;
+    if (typeof purchase.exchangeRate === 'number' && purchase.exchangeRate > 1.5) return purchase.exchangeRate;
     if (purchase.totalCostUsd && purchase.totalCost > 0) {
-      return Math.round((purchase.totalCost / purchase.totalCostUsd) * 10000) / 10000;
+      const derivedRate = Math.round((purchase.totalCost / purchase.totalCostUsd) * 10000) / 10000;
+      if (derivedRate > 1.5) return derivedRate;
     }
     return 3.4;
   })();

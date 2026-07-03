@@ -560,7 +560,12 @@ export function PurchaseFormBody({
     if (form.paymentType === 'CREDITO') {
       payload.paymentScheduleType = form.paymentScheduleType;
       if (form.paymentScheduleType === 'SINGLE_DATE') payload.dueDate = form.dueDate;
-      if (form.paymentScheduleType === 'INSTALLMENTS') payload.installments = form.installments;
+      if (form.paymentScheduleType === 'INSTALLMENTS') {
+        payload.installments = form.installments.map((i) => ({
+          amount: i.amount,
+          dueDate: i.dueDate,
+        }));
+      }
     }
     if (form.paymentType === 'BONIFICACION') {
       payload.addToStock = form.addToStock;
