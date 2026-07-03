@@ -23,7 +23,7 @@ import { VoucherPreviewModal, type VoucherSnapshot, resolveClientLocation } from
 import { EditSaleItemsModal } from '../components/EditSaleItemsModal';
 import { ClientSalesHistoryModal } from '../components/ClientSalesHistoryModal';
 import type { Sale, Loan, Company, Product, ProductPrice, Client, PriceTier, PaymentMethod, Stock } from '../../../shared/types';
-import { formatDateEs } from '../../../shared/utils/date.util';
+import { formatDateEs, getMonthRange } from '../../../shared/utils/date.util';
 import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 
 function saleSym(s: { currency?: string }): string { return s.currency === 'USD' ? '$' : 'S/'; }
@@ -37,43 +37,8 @@ function itemDispSub(s: { currency?: string }, item: { subtotal: number; subtota
   return s.currency === 'USD' && item.subtotalUsd != null ? item.subtotalUsd : item.subtotal;
 }
 
-function getMonthStart() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-}
-
-function getToday() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-}
-
 function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
-}
-
-function monthRange(year: number, month: number) {
-  const mm = String(month).padStart(2, '0');
-  return {
-    start: `${year}-${mm}-01`,
-    end: `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, '0')}`,
-  };
-}
-
-function getMonthLabel(month: number) {
-  return [
-    'Enero',
-    'Febrero',
-    'Marzo',
-    'Abril',
-    'Mayo',
-    'Junio',
-    'Julio',
-    'Agosto',
-    'Septiembre',
-    'Octubre',
-    'Noviembre',
-    'Diciembre',
-  ][month - 1] || 'Mes';
 }
 
 function isoToDisplayDate(value: string) {
@@ -121,7 +86,11 @@ function DateTextInput({ value, onChange, ariaLabel }: { value: string; onChange
       inputMode="numeric"
       placeholder="dd/mm/aaaa"
       value={draft}
-      onChange={(e) => setDraft(formatDateDraft(e.target.value))}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/[^\d/]/g, '').slice(0, 10);
+        const inputType = (e.nativeEvent as InputEvent).inputType || '';
+        setDraft(inputType.startsWith('delete') ? raw : formatDateDraft(raw));
+      }}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
@@ -130,7 +99,7 @@ function DateTextInput({ value, onChange, ariaLabel }: { value: string; onChange
           e.currentTarget.blur();
         }
       }}
-      className="px-3 py-2 border rounded-lg text-sm w-[132px]"
+      className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
       aria-label={ariaLabel}
     />
   );
@@ -175,6 +144,7 @@ export function SalesPage() {
 
   // Todos los filtros en URL params para que persistan al navegar y volver
   const [searchParams, setSearchParams] = useSearchParams();
+  const defaultMonthRange = useMemo(() => getMonthRange(), []);
   const updateParams = (updates: Record<string, string | null>) => {
     setSearchParams((prev) => {
       const sp = new URLSearchParams(prev);
@@ -196,8 +166,8 @@ export function SalesPage() {
   const clientFilter = searchParams.get('client') || '';
   const paymentMethodFilter = searchParams.get('paymentMethod') || '';
   const productFilter = searchParams.get('product') || '';
-  const startDate = searchParams.get('startDate') || getMonthStart();
-  const endDate = searchParams.get('endDate') || getToday();
+  const startDate = searchParams.get('startDate') || defaultMonthRange.start;
+  const endDate = searchParams.get('endDate') || defaultMonthRange.end;
   const loanStatusFilter = searchParams.get('loanStatus') || '';
 
   const setActiveTab = (v: 'sales' | 'boletas' | 'facturas' | 'loans' | 'creditos') =>
@@ -210,25 +180,11 @@ export function SalesPage() {
   const setClientFilter = (v: string) => updateParams({ client: v || null, page: null, bPage: null, fPage: null });
   const setPaymentMethodFilter = (v: string) => updateParams({ paymentMethod: v || null, page: null, bPage: null, fPage: null });
   const setProductFilter = (v: string) => updateParams({ product: v || null, page: null, bPage: null, fPage: null });
-  const setStartDate = (v: string) => updateParams({ startDate: v !== getMonthStart() ? v : null, page: null, bPage: null, fPage: null, lPage: null });
-  const setEndDate = (v: string) => updateParams({ endDate: v !== getToday() ? v : null, page: null, bPage: null, fPage: null, lPage: null });
+  const setStartDate = (v: string) => updateParams({ startDate: v !== defaultMonthRange.start ? v : null, page: null, bPage: null, fPage: null, lPage: null });
+  const setEndDate = (v: string) => updateParams({ endDate: v !== defaultMonthRange.end ? v : null, page: null, bPage: null, fPage: null, lPage: null });
   const setLoanStatusFilter = (v: string) => updateParams({ loanStatus: v || null, lPage: null });
   const resetDateFilter = () => updateParams({ startDate: null, endDate: null, page: null, bPage: null, fPage: null, lPage: null });
-  const [localStartDate, setLocalStartDate] = useState(startDate);
-  const [localEndDate, setLocalEndDate] = useState(endDate);
-  useEffect(() => { setLocalStartDate(startDate); }, [startDate]);
-  useEffect(() => { setLocalEndDate(endDate); }, [endDate]);
-  const selectedYear = Number((startDate || getToday()).slice(0, 4));
-  const selectedMonth = Number((startDate || getToday()).slice(5, 7));
-  const selectedMonthRange = monthRange(selectedYear, selectedMonth);
-  const isCurrentMonthPartial = startDate === getMonthStart() && endDate === getToday();
-  const isExactSelectedMonth = startDate === selectedMonthRange.start && endDate === selectedMonthRange.end;
-  const monthSelectorValue = isCurrentMonthPartial || isExactSelectedMonth ? String(selectedMonth) : 'custom';
-  const yearOptions = Array.from({ length: 8 }, (_, i) => new Date().getFullYear() - i);
-  const setDatePeriod = (year: number, month: number) => {
-    const range = monthRange(year, month);
-    updateParams({ startDate: range.start, endDate: range.end, page: null, bPage: null, fPage: null, lPage: null });
-  };
+  const isDefaultDateRange = startDate === defaultMonthRange.start && endDate === defaultMonthRange.end;
 
   const effectiveSellerId = isSellerRole ? user?.id : (sellerFilter || undefined);
   const [showModal, setShowModal] = useState(false);
@@ -1071,63 +1027,34 @@ export function SalesPage() {
           </select>
         )}
         {isDatedSalesTab && (
-          <>
-            <select
-              value={selectedYear}
-              onChange={(e) => setDatePeriod(Number(e.target.value), selectedMonth)}
-              className="px-3 py-2 border rounded-lg text-sm bg-white"
-              title="Año"
-            >
-              {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
-            </select>
-            <select
-              value={monthSelectorValue}
-              onChange={(e) => {
-                if (e.target.value === 'custom') return;
-                setDatePeriod(selectedYear, Number(e.target.value));
-              }}
-              className="px-3 py-2 border rounded-lg text-sm bg-white"
-              title="Mes"
-            >
-              <option value="custom">Personalizado</option>
-              <option value={1}>{getMonthLabel(1)}</option>
-              <option value={2}>{getMonthLabel(2)}</option>
-              <option value={3}>{getMonthLabel(3)}</option>
-              <option value={4}>{getMonthLabel(4)}</option>
-              <option value={5}>{getMonthLabel(5)}</option>
-              <option value={6}>{getMonthLabel(6)}</option>
-              <option value={7}>{getMonthLabel(7)}</option>
-              <option value={8}>{getMonthLabel(8)}</option>
-              <option value={9}>{getMonthLabel(9)}</option>
-              <option value={10}>{getMonthLabel(10)}</option>
-              <option value={11}>{getMonthLabel(11)}</option>
-              <option value={12}>{getMonthLabel(12)}</option>
-            </select>
-            <input
-              type="date"
-              value={localStartDate}
-              onChange={(e) => {
-                setLocalStartDate(e.target.value);
-                setStartDate(e.target.value);
-              }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
-            />
-            <span className="text-gray-500 text-sm">hasta</span>
-            <input
-              type="date"
-              value={localEndDate}
-              onChange={(e) => {
-                setLocalEndDate(e.target.value);
-                setEndDate(e.target.value);
-              }}
-              className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
-            />
-            {(startDate !== getMonthStart() || endDate !== getToday()) && (
-              <button onClick={resetDateFilter} className="flex items-center gap-1 px-3 py-2 text-sm text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100">
-                <CalendarDays size={14} /> Este mes
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Desde</label>
+                <DateTextInput
+                  value={startDate}
+                  onChange={setStartDate}
+                  ariaLabel="Desde"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Hasta</label>
+                <DateTextInput
+                  value={endDate}
+                  onChange={setEndDate}
+                  ariaLabel="Hasta"
+                />
+              </div>
+            </div>
+            {!isDefaultDateRange && (
+              <button
+                onClick={resetDateFilter}
+                className="text-sm text-primary-600 hover:underline font-medium pb-2"
+              >
+                Mes actual
               </button>
             )}
-          </>
+          </div>
         )}
       </div>}
 
