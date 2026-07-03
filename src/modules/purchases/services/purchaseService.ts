@@ -84,5 +84,6 @@ export const purchaseService = {
       api.patch(`/purchases/orders/${id}/status`, { status }).then((r) => r.data.data),
     convert: ({ id, purchaseId }: { id: string; purchaseId: string }) =>
       api.patch(`/purchases/orders/${id}/convert`, { purchaseId }).then((r) => r.data.data),
+    delete: (id: string) => api.delete(`/purchases/orders/${id}`).then((r) => r.data.data),
   },
 };

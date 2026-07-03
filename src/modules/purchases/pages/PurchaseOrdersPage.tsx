@@ -1,11 +1,17 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CheckCircle2, FileText, Plus, RefreshCw, Search, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, FileText, Plus, RefreshCw, Search, Trash2, XCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { DataTable } from '../../../shared/components/DataTable';
+import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
-import type { PurchaseOrder, PurchaseOrderStatus } from '../../../shared/types';
+import type { Company, FiscalEntity, Product, PurchaseOrder, PurchaseOrderStatus } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
-import { usePurchaseOrders, useUpdatePurchaseOrderStatus } from '../hooks/usePurchases';
+import { useCompanies } from '../../companies/hooks/useCompanies';
+import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities';
+import { useProducts } from '../../products/hooks/useProducts';
+import { useDeletePurchaseOrder, usePurchaseOrders, useUpdatePurchaseOrderStatus } from '../hooks/usePurchases';
+import { downloadPurchaseOrderPdf } from '../utils/purchaseOrderPdf';
 
 const STATUS_META: Record<PurchaseOrderStatus, { label: string; className: string }> = {
   PENDING: { label: 'Pendiente', className: 'bg-yellow-100 text-yellow-800' },
@@ -19,6 +25,7 @@ export function PurchaseOrdersPage() {
   const [page, setPage] = useState(1);
   const [supplier, setSupplier] = useState('');
   const [status, setStatus] = useState<'' | PurchaseOrderStatus>('');
+  const [deleteTarget, setDeleteTarget] = useState<PurchaseOrder | null>(null);
   const { data, isLoading } = usePurchaseOrders({
     page,
     limit: 20,
@@ -26,11 +33,32 @@ export function PurchaseOrdersPage() {
     status: status || undefined,
   });
   const updateStatus = useUpdatePurchaseOrderStatus();
+  const deleteOrder = useDeletePurchaseOrder();
+  const { data: productsData } = useProducts({ limit: 10000 });
+  const { data: companiesData } = useCompanies();
+  const { data: fiscalEntitiesData } = useFiscalEntities();
 
   const orders: PurchaseOrder[] = data?.data || [];
+  const products: Product[] = Array.isArray(productsData) ? productsData : productsData?.data || [];
+  const companies: Company[] = Array.isArray(companiesData) ? companiesData : [];
+  const fiscalEntities: FiscalEntity[] = (Array.isArray(fiscalEntitiesData) ? fiscalEntitiesData : []).filter((entity) => entity.isActive !== false);
+  const fiscalEntityMap = useMemo(() => new Map(fiscalEntities.map((entity) => [entity.id, entity])), [fiscalEntities]);
   const total = data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / 20));
   const pendingCount = useMemo(() => orders.filter((o) => o.status === 'PENDING').length, [orders]);
+
+  const handleDownload = async (order: PurchaseOrder) => {
+    try {
+      await downloadPurchaseOrderPdf({
+        order,
+        products,
+        companies,
+        fiscalEntity: order.fiscalEntityId ? fiscalEntityMap.get(order.fiscalEntityId) : undefined,
+      });
+    } catch {
+      toast.error('No se pudo generar el PDF de la orden');
+    }
+  };
 
   const columns = [
     {
@@ -82,6 +110,16 @@ export function PurchaseOrdersPage() {
       header: '',
       render: (o: PurchaseOrder) => (
         <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDownload(o);
+            }}
+            className="text-gray-500 hover:text-primary-700"
+            title="Descargar PDF A4"
+          >
+            <Download size={15} />
+          </button>
           {o.status !== 'CONVERTED' && o.status !== 'CANCELLED' && (
             <button
               onClick={(e) => {
@@ -115,6 +153,18 @@ export function PurchaseOrdersPage() {
               title="Cancelar"
             >
               <XCircle size={15} />
+            </button>
+          )}
+          {o.status !== 'CONVERTED' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteTarget(o);
+              }}
+              className="text-red-600 hover:text-red-800"
+              title="Eliminar"
+            >
+              <Trash2 size={15} />
             </button>
           )}
         </div>
@@ -155,6 +205,39 @@ export function PurchaseOrdersPage() {
 
       <DataTable columns={columns} data={orders} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+
+      <Modal isOpen={!!deleteTarget} onClose={() => { if (!deleteOrder.isPending) setDeleteTarget(null); }} title="Eliminar orden">
+        {deleteTarget && (
+          <div className="space-y-4">
+            <div className="p-4 bg-red-50 border border-red-100 rounded-xl">
+              <p className="text-sm text-red-800">
+                Se eliminará la orden <strong>{deleteTarget.orderNumber}</strong> de {deleteTarget.supplier}.
+              </p>
+              <p className="text-xs text-red-600 mt-1">Esta acción no afecta stock, caja ni cuentas por pagar.</p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleteOrder.isPending}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteOrder.mutate(deleteTarget.id, { onSuccess: () => setDeleteTarget(null) });
+                }}
+                disabled={deleteOrder.isPending}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleteOrder.isPending ? 'Eliminando...' : 'Sí, eliminar'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

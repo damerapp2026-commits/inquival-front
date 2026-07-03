@@ -109,6 +109,20 @@ export function useConvertPurchaseOrder() {
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error al convertir orden'),
   });
 }
+export function useDeletePurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: purchaseService.orders.delete,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      toast.success('Orden eliminada');
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg[0] : msg || 'Error al eliminar orden');
+    },
+  });
+}
 export function useUpdatePurchase() {
   const qc = useQueryClient();
   return useMutation({
