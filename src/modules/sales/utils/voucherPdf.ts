@@ -219,7 +219,7 @@ function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): a
   };
 }
 
-function buildBankAndWalletBlock(): any[] {
+function buildBankAndWalletBlock(compact = false): any[] {
   const { bankAccounts, yape, plin } = COMPANY_INFO;
   const hasAny = (bankAccounts && bankAccounts.length > 0) || yape || plin;
   if (!hasAny) return [];
@@ -253,11 +253,11 @@ function buildBankAndWalletBlock(): any[] {
   ]);
 
   return [
-    { text: '', margin: [0, 8] },
+    { text: '', margin: [0, compact ? 3 : 8] },
     {
       table: {
         widths: ['*'],
-        body: [[{ text: 'FORMAS DE PAGO', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, margin: [4, 3] }]],
+        body: [[{ text: 'FORMAS DE PAGO', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: compact ? 8 : 9, margin: [4, compact ? 2 : 3] }]],
       },
       layout: 'noBorders',
     },
@@ -267,17 +267,17 @@ function buildBankAndWalletBlock(): any[] {
         hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
         hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 1 : 0),
         vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1 : 0),
-        paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
+        paddingTop: () => (compact ? 1 : 2), paddingBottom: () => (compact ? 1 : 2), paddingLeft: () => 4, paddingRight: () => 4,
       },
     }] : []),
     ...(walletRows.length > 0 ? [
-      { text: '', margin: [0, 3] },
+      { text: '', margin: [0, compact ? 2 : 3] },
       {
         table: { widths: ['auto', 'auto', '*'], body: walletRows },
         layout: {
           hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
           hLineWidth: () => 1, vLineWidth: () => 1,
-          paddingTop: () => 3, paddingBottom: () => 3, paddingLeft: () => 6, paddingRight: () => 6,
+          paddingTop: () => (compact ? 2 : 3), paddingBottom: () => (compact ? 2 : 3), paddingLeft: () => 6, paddingRight: () => 6,
         },
       },
     ] : []),
@@ -379,7 +379,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
 
   return {
     pageSize: size,
-    pageMargins: isA5 ? [20, 18, 20, 18] : [30, 30, 30, 30],
+    pageMargins: isA5 ? [18, 14, 18, 14] : [30, 30, 30, 30],
     content: [
       // Header
       {
@@ -395,7 +395,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
               ...(c.phone ? [{ text: `Teléfonos : ${c.phone}`, style: 'companyDetail' }] : []),
               ...(c.email ? [{ text: `E-mail : ${c.email}`, style: 'companyDetail' }] : []),
             ],
-            margin: [0, isA5 ? 5 : 10, 0, 0],
+            margin: [0, isA5 ? 3 : 10, 0, 0],
           },
           {
             width: isA5 ? 150 : 200,
@@ -419,7 +419,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
         ],
       },
 
-      { text: '', margin: [0, isA5 ? 5 : 8] },
+      { text: '', margin: [0, isA5 ? 2 : 8] },
 
       // Client / seller block
       {
@@ -427,20 +427,20 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
           widths: ['auto', 5, '*', 'auto', 5, '*'],
           body: [
             [
-              { text: 'R.U.C. / D.N.I.', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: sale.clientDocument || '—', fontSize: 8, colSpan: 4 }, {}, {}, {},
+              { text: 'R.U.C. / D.N.I.', bold: true, fontSize: isA5 ? 7.5 : 8 }, { text: ':', fontSize: isA5 ? 7.5 : 8 }, { text: sale.clientDocument || '—', fontSize: isA5 ? 7.5 : 8, colSpan: 4 }, {}, {}, {},
             ],
             [
-              { text: 'Cliente', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: (sale.clientName || 'Consumidor final').toUpperCase(), fontSize: 8, colSpan: 4 }, {}, {}, {},
+              { text: 'Cliente', bold: true, fontSize: isA5 ? 7.5 : 8 }, { text: ':', fontSize: isA5 ? 7.5 : 8 }, { text: (sale.clientName || 'Consumidor final').toUpperCase(), fontSize: isA5 ? 7.5 : 8, colSpan: 4 }, {}, {}, {},
             ],
             [
-              { text: 'Teléfono', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: sale.clientPhone || ' ', fontSize: 8 },
-              { text: 'R. Comercial', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: (sale.sellerName || '—').toUpperCase(), fontSize: 8 },
+              { text: 'Teléfono', bold: true, fontSize: isA5 ? 7.5 : 8 }, { text: ':', fontSize: isA5 ? 7.5 : 8 }, { text: sale.clientPhone || ' ', fontSize: isA5 ? 7.5 : 8 },
+              { text: 'R. Comercial', bold: true, fontSize: isA5 ? 7.5 : 8 }, { text: ':', fontSize: isA5 ? 7.5 : 8 }, { text: (sale.sellerName || '—').toUpperCase(), fontSize: isA5 ? 7.5 : 8 },
             ],
             ...(sale.clientLocation ? [[
-              { text: 'Ubicación', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: sale.clientLocation.toUpperCase(), fontSize: 8, colSpan: 4 }, {}, {}, {},
+              { text: 'Ubicación', bold: true, fontSize: isA5 ? 7.5 : 8 }, { text: ':', fontSize: isA5 ? 7.5 : 8 }, { text: sale.clientLocation.toUpperCase(), fontSize: isA5 ? 7.5 : 8, colSpan: 4 }, {}, {}, {},
             ]] : []),
             [
-              { text: 'Fecha Emisión', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: formatDate(sale.date), fontSize: 8, colSpan: 4 }, {}, {}, {},
+              { text: 'Fecha Emisión', bold: true, fontSize: isA5 ? 7.5 : 8 }, { text: ':', fontSize: isA5 ? 7.5 : 8 }, { text: formatDate(sale.date), fontSize: isA5 ? 7.5 : 8, colSpan: 4 }, {}, {}, {},
             ],
           ],
         },
@@ -448,11 +448,11 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
           hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
           hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 1 : 0),
           vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1 : 0),
-          paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
+          paddingTop: () => (isA5 ? 1 : 2), paddingBottom: () => (isA5 ? 1 : 2), paddingLeft: () => 4, paddingRight: () => 4,
         },
       },
 
-      { text: '', margin: [0, isA5 ? 5 : 8] },
+      { text: '', margin: [0, isA5 ? 2 : 8] },
 
       // Items table
       {
@@ -475,11 +475,11 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
           hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
           hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0),
           vLineWidth: () => 1,
-          paddingTop: () => (isA5 ? 2 : 3), paddingBottom: () => (isA5 ? 2 : 3),
+          paddingTop: () => (isA5 ? 1 : 3), paddingBottom: () => (isA5 ? 1 : 3),
         },
       },
 
-      { text: '', margin: [0, isA5 ? 3 : 4] },
+      { text: '', margin: [0, isA5 ? 1 : 4] },
 
       // Amount in words
       {
@@ -487,10 +487,10 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
           { text: 'SON: ', bold: true, fontSize: 8 },
           { text: numberToWords(totalDisplay, isUsd ? 'USD' : 'PEN'), fontSize: 8 },
         ],
-        margin: [2, 2, 2, 2],
+        margin: [2, isA5 ? 1 : 2, 2, isA5 ? 1 : 2],
       },
 
-      { text: '', margin: [0, isA5 ? 4 : 6] },
+      { text: '', margin: [0, isA5 ? 2 : 6] },
 
       // Payments + totals
       {
@@ -505,7 +505,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
               hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
               hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0),
               vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1 : 0),
-              paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
+              paddingTop: () => (isA5 ? 1 : 2), paddingBottom: () => (isA5 ? 1 : 2), paddingLeft: () => 4, paddingRight: () => 4,
             },
           },
           { width: 10, text: '' },
@@ -515,19 +515,19 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
               widths: ['*', 30, 60],
               body: [
                 [
-                  { text: 'OP. GRAVADAS', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
-                  { text: currencyLabel, fontSize: 9, alignment: 'center', margin: [0, 3] },
-                  { text: subtotal.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
+                  { text: 'OP. GRAVADAS', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: isA5 ? 8 : 9, alignment: 'right', margin: [4, isA5 ? 2 : 3] },
+                  { text: currencyLabel, fontSize: isA5 ? 8 : 9, alignment: 'center', margin: [0, isA5 ? 2 : 3] },
+                  { text: subtotal.toFixed(2), fontSize: isA5 ? 8 : 9, alignment: 'right', margin: [0, isA5 ? 2 : 3] },
                 ],
                 [
-                  { text: 'I.G.V. 18%', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
-                  { text: currencyLabel, fontSize: 9, alignment: 'center', margin: [0, 3] },
-                  { text: igv.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
+                  { text: 'I.G.V. 18%', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: isA5 ? 8 : 9, alignment: 'right', margin: [4, isA5 ? 2 : 3] },
+                  { text: currencyLabel, fontSize: isA5 ? 8 : 9, alignment: 'center', margin: [0, isA5 ? 2 : 3] },
+                  { text: igv.toFixed(2), fontSize: isA5 ? 8 : 9, alignment: 'right', margin: [0, isA5 ? 2 : 3] },
                 ],
                 [
-                  { text: 'IMPORTE TOTAL', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 10, alignment: 'right', margin: [4, 3] },
-                  { text: currencyLabel, fontSize: 10, alignment: 'center', bold: true, margin: [0, 3] },
-                  { text: totalDisplay.toFixed(2), fontSize: 10, alignment: 'right', bold: true, margin: [0, 3] },
+                  { text: 'IMPORTE TOTAL', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: isA5 ? 9 : 10, alignment: 'right', margin: [4, isA5 ? 2 : 3] },
+                  { text: currencyLabel, fontSize: isA5 ? 9 : 10, alignment: 'center', bold: true, margin: [0, isA5 ? 2 : 3] },
+                  { text: totalDisplay.toFixed(2), fontSize: isA5 ? 9 : 10, alignment: 'right', bold: true, margin: [0, isA5 ? 2 : 3] },
                 ],
               ],
             },
@@ -539,7 +539,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
         ],
       },
 
-      ...buildBankAndWalletBlock(),
+      ...buildBankAndWalletBlock(isA5),
     ],
     styles: {
       companyName: { fontSize: isA5 ? 12 : 14, bold: true, color: '#111827' },
