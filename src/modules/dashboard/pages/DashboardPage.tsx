@@ -19,6 +19,13 @@ const SUPPLIER_COLORS = ['#15803d', '#0ea5e9', '#f43f5e', '#84cc16', '#fb923c'];
 const SELLER_COLORS = ['#16a34a', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1'];
 
 const symFor = (ap?: { currency?: 'PEN' | 'USD' } | null): string => (ap?.currency === 'USD' ? '$' : 'S/');
+const formatAmount = (value: unknown): string =>
+  Number(value || 0).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+const formatCount = (value: unknown): string =>
+  Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 
 const numberFrom = (value: unknown): number | null => {
   const n = Number(value);
@@ -463,9 +470,9 @@ export function DashboardPage() {
               <div className="text-xs font-semibold tracking-wider text-primary-100 mb-2 uppercase">
                 Ingresos · {periodLabels[period]}
               </div>
-              <div className="text-5xl font-bold">S/ {(summary?.totalIncome || 0).toFixed(2)}</div>
+              <div className="text-5xl font-bold">S/ {formatAmount(summary?.totalIncome)}</div>
               <div className="text-sm text-primary-100 mt-2">
-                Ganancia neta: S/ {(summary?.netProfit || 0).toFixed(2)}
+                Ganancia neta: S/ {formatAmount(summary?.netProfit)}
               </div>
             </div>
             <div className="flex gap-1 bg-white/15 backdrop-blur rounded-lg p-1">
@@ -485,11 +492,11 @@ export function DashboardPage() {
           <div className="grid grid-cols-2 gap-4 mt-6 pt-5 border-t border-white/20 max-w-md">
             <div>
               <div className="text-xs text-primary-100">Egresos</div>
-              <div className="text-xl font-semibold">S/ {(summary?.totalExpense || 0).toFixed(2)}</div>
+              <div className="text-xl font-semibold">S/ {formatAmount(summary?.totalExpense)}</div>
             </div>
             <div>
               <div className="text-xs text-primary-100">Deudas por cobrar</div>
-              <div className="text-xl font-semibold">S/ {(creditsSummary?.totalPending || 0).toFixed(2)}</div>
+              <div className="text-xl font-semibold">S/ {formatAmount(creditsSummary?.totalPending)}</div>
             </div>
           </div>
         </div>
@@ -500,27 +507,27 @@ export function DashboardPage() {
         <KpiCard
           icon={TrendingUp}
           label="Ingresos"
-          value={`S/ ${(summary?.totalIncome || 0).toFixed(2)}`}
+          value={`S/ ${formatAmount(summary?.totalIncome)}`}
           accent="bg-primary-100 text-primary-700"
         />
         <KpiCard
           icon={TrendingDown}
           label="Egresos"
-          value={`S/ ${(summary?.totalExpense || 0).toFixed(2)}`}
+          value={`S/ ${formatAmount(summary?.totalExpense)}`}
           accent="bg-red-100 text-red-600"
         />
         <KpiCard
           icon={CreditCard}
           label="Deudas por cobrar"
-          value={`S/ ${(creditsSummary?.totalPending || 0).toFixed(2)}`}
-          sublabel={`${creditsSummary?.activeCredits || 0} créditos activos`}
+          value={`S/ ${formatAmount(creditsSummary?.totalPending)}`}
+          sublabel={`${formatCount(creditsSummary?.activeCredits)} créditos activos`}
           accent="bg-orange-100 text-orange-600"
         />
         <KpiCard
           icon={FileText}
           label="Deudas por pagar"
-          value={`S/ ${(apAlerts?.summary?.totalPending || 0).toFixed(2)}`}
-          sublabel={`${apAlerts?.summary?.count || 0} cuentas activas`}
+          value={`S/ ${formatAmount(apAlerts?.summary?.totalPending)}`}
+          sublabel={`${formatCount(apAlerts?.summary?.count)} cuentas activas`}
           accent="bg-purple-100 text-purple-600"
         />
       </div>

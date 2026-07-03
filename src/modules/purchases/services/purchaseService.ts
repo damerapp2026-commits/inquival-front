@@ -21,6 +21,7 @@ export interface UpdatePurchaseFullPayload {
   paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS';
   dueDate?: string;
   installments?: { amount: number; dueDate: string }[];
+  fiscalEntityId?: string;
   items?: Array<{
     companyId: string;
     productId: string;
@@ -75,4 +76,13 @@ export const purchaseService = {
       markupPercent?: number;
     },
   ) => api.patch(`/purchases/price-catalog/${productId}`, data).then((r) => r.data.data),
+  orders: {
+    getAll: (params?: any) => api.get('/purchases/orders', { params }).then((r) => r.data.data),
+    getById: (id: string) => api.get(`/purchases/orders/${id}`).then((r) => r.data.data),
+    create: (data: any) => api.post('/purchases/orders', data).then((r) => r.data.data),
+    updateStatus: ({ id, status }: { id: string; status: string }) =>
+      api.patch(`/purchases/orders/${id}/status`, { status }).then((r) => r.data.data),
+    convert: ({ id, purchaseId }: { id: string; purchaseId: string }) =>
+      api.patch(`/purchases/orders/${id}/convert`, { purchaseId }).then((r) => r.data.data),
+  },
 };

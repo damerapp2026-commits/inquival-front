@@ -1,17 +1,16 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { lazy, Suspense, useState, useMemo, useEffect, useRef } from 'react';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useCategories } from '../../categories/hooks/useCategories';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useClients } from '../../clients/hooks/useClients';
-import { QuickClientModal } from '../../clients/components/QuickClientModal';
 import { SmartSearchSelect } from '../../../shared/components/SmartSearchSelect';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { useCreateSale } from '../../sales/hooks/useSales';
 import { useQuote, useConvertQuote } from '../../quotes/hooks/useQuotes';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useQuery, useQueries } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { stockService } from '../../stock/services/stockService';
 import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark, ChevronLeft, ChevronRight, Receipt, Building2, FileText, CheckCircle2, Eye, Banknote, Calendar, Gift, DollarSign } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -19,10 +18,13 @@ import type { Product, ProductPrice, Category, Company, Client, PriceTier, Payme
 import { useOpenClientCredits } from '../../credits/hooks/useCredits';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { useUsers } from '../../users/hooks/useUsers';
-import { VoucherPreviewModal, type VoucherSnapshot } from '../../sales/components/VoucherPreviewModal';
+import type { VoucherSnapshot } from '../../sales/components/VoucherPreviewModal';
 import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 
 const IGV_RATE = 0.18;
+const POS_PRODUCT_BATCH_SIZE = 120;
+const QuickClientModal = lazy(() => import('../../clients/components/QuickClientModal').then((m) => ({ default: m.QuickClientModal })));
+const VoucherPreviewModal = lazy(() => import('../../sales/components/VoucherPreviewModal').then((m) => ({ default: m.VoucherPreviewModal })));
 
 function getPaymentMethodColors(name: string, selected: boolean): string {
   const n = name.toLowerCase();
@@ -144,17 +146,21 @@ export function POSPage() {
 
   const [search, setSearch] = useState('');
   const [ingredientFilter, setIngredientFilter] = useState('');
+  const [categoryId, setCategoryId] = useState<string>(''); // '' = Todos
+  const [onlyInStock, setOnlyInStock] = useState(false);
+  const [visibleProductLimit, setVisibleProductLimit] = useState(POS_PRODUCT_BATCH_SIZE);
   const debouncedSearch = useDebounce(search);
   const debouncedIngredient = useDebounce(ingredientFilter);
 
-  const { data: productsData } = useProducts({
-    limit: 10000,
+  const { data: productsData, isLoading: productsLoading, isFetching: productsFetching } = useProducts({
+    page: 1,
+    limit: visibleProductLimit,
     search: debouncedSearch || undefined,
     activeIngredient: debouncedIngredient || undefined,
+    category: categoryId || undefined,
   });
   const { data: categoriesData } = useCategories();
   const { data: companiesData } = useCompanies();
-  const { data: clientsData } = useClients({ limit: 500 });
   const { data: priceTiers } = usePriceTiers();
   const { data: paymentMethodsData } = usePaymentMethods();
   const createSale = useCreateSale();
@@ -164,6 +170,8 @@ export function POSPage() {
     const list: Product[] = Array.isArray(raw) ? raw : raw?.data || [];
     return list.filter((p) => p.isActive);
   }, [productsData]);
+  const productsTotal = Array.isArray(productsData) ? products.length : productsData?.total || products.length;
+  const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
 
   const categories: Category[] = useMemo(() => {
     const list: Category[] = Array.isArray(categoriesData) ? categoriesData : [];
@@ -175,25 +183,18 @@ export function POSPage() {
     return list.filter((c) => c.isActive);
   }, [companiesData]);
 
-  const clients: Client[] = useMemo(() => {
-    const raw: any = clientsData;
-    const list: Client[] = Array.isArray(raw) ? raw : raw?.data || [];
-    return list.filter((c) => c.isActive);
-  }, [clientsData]);
-
   const tiers: PriceTier[] = useMemo(() => {
     const list: PriceTier[] = Array.isArray(priceTiers) ? priceTiers : [];
     return list.filter((t) => t.isActive).sort((a, b) => (a.priority || 0) - (b.priority || 0));
   }, [priceTiers]);
+  const tierById = useMemo(() => new Map(tiers.map((tier) => [tier.id, tier])), [tiers]);
 
   const paymentMethods: PaymentMethod[] = useMemo(() => {
     const raw: any = paymentMethodsData;
     const list: PaymentMethod[] = Array.isArray(raw) ? raw : raw?.data || [];
     return list.filter((p) => p.isActive);
   }, [paymentMethodsData]);
-
-  const [categoryId, setCategoryId] = useState<string>(''); // '' = Todos
-  const [onlyInStock, setOnlyInStock] = useState(false);
+  const paymentMethodById = useMemo(() => new Map(paymentMethods.map((method) => [method.id, method])), [paymentMethods]);
   const [companyId, setCompanyId] = useState<string>(persistedDraft?.companyId || '');
   const [tierId, setTierId] = useState<string>(persistedDraft?.tierId || '');
   const [cart, setCart] = useState<CartItem[]>(persistedDraft?.cart || []);
@@ -214,6 +215,16 @@ export function POSPage() {
   const [showQuickClient, setShowQuickClient] = useState(false);
   const [creditName, setCreditName] = useState('');
   const [creditDueDays, setCreditDueDays] = useState('');
+  const { data: clientsData } = useClients(
+    { limit: 500 },
+    { enabled: showCheckout || showQuickClient || !!clientId },
+  );
+  const clients: Client[] = useMemo(() => {
+    const raw: any = clientsData;
+    const list: Client[] = Array.isArray(raw) ? raw : raw?.data || [];
+    return list.filter((c) => c.isActive);
+  }, [clientsData]);
+  const clientById = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [sellerId, setSellerId] = useState<string>(persistedDraft?.sellerId || '');
@@ -254,32 +265,28 @@ export function POSPage() {
 
   const { data: openCredits } = useOpenClientCredits(isCredit ? clientId : '');
 
-  const stockQueries = useQueries({
-    queries: companies.map((c) => ({
-      queryKey: ['stock', c.id],
-      queryFn: () => stockService.getByCompany(c.id, { limit: 9999 }),
-      staleTime: 30_000,
-    })),
+  const stockSummaryQuery = useQuery({
+    queryKey: ['stock-by-product-summary'],
+    queryFn: stockService.getByProductSummary,
+    staleTime: 30_000,
   });
-  const stockQueryDataKey = stockQueries.map((q) => q.dataUpdatedAt).join('|');
-  const stockReady = companies.length > 0 && stockQueries.length === companies.length && stockQueries.every((q) => q.isSuccess);
+  const stockReady = stockSummaryQuery.isSuccess;
 
   // { [companyId]: { [productId]: quantity } }
   const stockByCompany = useMemo(() => {
     const result: Record<string, Record<string, number>> = {};
-    companies.forEach((c, idx) => {
-      const raw: any = stockQueries[idx]?.data;
-      const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
-      const map: Record<string, number> = {};
-      list.forEach((s) => {
-        const pid = s.productId || s.product?.id || s.product?._id || s.product;
-        if (pid) map[String(pid)] = s.quantity;
+    const summary = Array.isArray(stockSummaryQuery.data) ? stockSummaryQuery.data : [];
+    summary.forEach((row) => {
+      const productId = row.productId;
+      if (!productId) return;
+      (row.byCompany || []).forEach((item) => {
+        if (!item.companyId) return;
+        if (!result[item.companyId]) result[item.companyId] = {};
+        result[item.companyId][productId] = item.quantity;
       });
-      result[c.id] = map;
     });
     return result;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companies, stockQueryDataKey]);
+  }, [stockSummaryQuery.data]);
 
   // Aggregated or per-company depending on selector mode
   const stockByProduct = useMemo(() => {
@@ -352,7 +359,7 @@ export function POSPage() {
     const unavailableItems: string[] = [];
     const adjustedItems: string[] = [];
     const items: CartItem[] = preloadedQuote.items.flatMap((i: any) => {
-      const p = products.find(pr => pr.id === i.productId);
+      const p = productById.get(i.productId);
       const requestedQty = Number(i.quantity || 0);
       const preferredCompanyId = i.sourceCompanyId || i.companyId || preloadedQuote.companyId || undefined;
       const sourceCompanyId = resolveSourceCompanyForProduct(i.productId, requestedQty, preferredCompanyId);
@@ -385,7 +392,7 @@ export function POSPage() {
     if (unavailableItems.length > 0) {
       toast.error(`Sin stock: ${unavailableItems.slice(0, 3).join(', ')}${unavailableItems.length > 3 ? '…' : ''}`);
     }
-  }, [preloadedQuote, products, stockReady, stockByCompany, sourceQuoteId, navigate]);
+  }, [preloadedQuote, products.length, productById, stockReady, stockByCompany, sourceQuoteId, navigate]);
 
   // Defaults once data loads
   useEffect(() => {
@@ -440,7 +447,7 @@ export function POSPage() {
       const next = prev.map((item) => {
         if (item.isCustomPrice) return item;
         const effectiveTier = item.tierOverride || tierId;
-        const product = products.find((p) => p.id === item.productId);
+        const product = productById.get(item.productId);
         if (!product) return item;
         const itemCompany = item.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : '');
         if (!itemCompany) return item;
@@ -451,7 +458,7 @@ export function POSPage() {
       });
       return changed ? next : prev;
     });
-  }, [tierId, companyId, products]);
+  }, [tierId, companyId, productById]);
 
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
@@ -460,8 +467,19 @@ export function POSPage() {
       return true;
     });
   }, [products, categoryId, onlyInStock, stockByProduct]);
+  const visibleProducts = useMemo(
+    () => filteredProducts.slice(0, visibleProductLimit),
+    [filteredProducts, visibleProductLimit],
+  );
+  const isInitialProductsLoading = (productsLoading || productsFetching) && products.length === 0;
+  const cartByProductId = useMemo(() => new Map(cart.map((item) => [item.productId, item])), [cart]);
+  const bonusByProductId = useMemo(() => new Map(bonusItems.map((item) => [item.productId, item])), [bonusItems]);
 
-  const cartQty = (productId: string) => cart.find((i) => i.productId === productId)?.quantity || 0;
+  useEffect(() => {
+    setVisibleProductLimit(POS_PRODUCT_BATCH_SIZE);
+  }, [debouncedSearch, debouncedIngredient, categoryId, onlyInStock, companyId]);
+
+  const cartQty = (productId: string) => cartByProductId.get(productId)?.quantity || 0;
 
   const addToCart = (product: Product) => {
     if (!companyId) {
@@ -522,7 +540,7 @@ export function POSPage() {
 
   const updateQty = (productId: string, delta: number) => {
     if (delta > 0) {
-      const item = cart.find((i) => i.productId === productId);
+      const item = cartByProductId.get(productId);
       const stock = stockForCartItem(item);
       const current = item?.quantity || 0;
       if (current + delta > stock) {
@@ -541,7 +559,7 @@ export function POSPage() {
 
   const setQty = (productId: string, value: number) => {
     if (isNaN(value) || value <= 0) { removeFromCart(productId); return; }
-    const item = cart.find((i) => i.productId === productId);
+    const item = cartByProductId.get(productId);
     const stock = stockForCartItem(item);
     if (value > stock) { toast.error(`Solo hay ${stock} en stock`); value = stock; }
     if (value <= 0) { removeFromCart(productId); return; }
@@ -563,7 +581,7 @@ export function POSPage() {
     setCart((prev) =>
       prev.map((i) => {
         if (i.productId !== productId) return i;
-        const product = products.find((p) => p.id === i.productId);
+        const product = productById.get(i.productId);
         if (!product) return i;
         const useTier = newTierId || tierId;
         const itemCompany = i.sourceCompanyId || (companyId !== ALL_COMPANIES ? companyId : '');
@@ -711,7 +729,7 @@ export function POSPage() {
   const creditPending = isCredit ? Math.max(0, Math.round((total - downPayment) * 100) / 100) : 0;
   const downPaymentExceedsTotal = isCredit && splitTotal > total + 0.01;
 
-  const selectedClient = clients.find((c) => c.id === clientId);
+  const selectedClient = clientById.get(clientId);
   const creditLimit = typeof selectedClient?.creditLimit === 'number' ? selectedClient.creditLimit : 0;
   const currentDebt = (openCredits as CreditAccount[] | undefined)?.reduce((s, acc) => s + acc.pendingAmount, 0) ?? 0;
   const creditOverLimit = isCredit && creditLimit > 0 && currentDebt + creditPending > creditLimit + 0.001;
@@ -748,7 +766,7 @@ export function POSPage() {
         return;
       }
       if (overpay > 0.01) {
-        const cashIdx = validPayments.findIndex(p => (paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '').toLowerCase().includes('efectivo'));
+        const cashIdx = validPayments.findIndex(p => (paymentMethodById.get(p.paymentMethodId)?.name || '').toLowerCase().includes('efectivo'));
         if (cashIdx < 0 || validPayments[cashIdx].amount + 0.01 < overpay) {
           toast.error(`La suma de pagos (${sym} ${splitTotal.toFixed(2)}) supera el total (${sym} ${total.toFixed(2)}). Solo Efectivo permite vuelto.`);
           return;
@@ -759,7 +777,7 @@ export function POSPage() {
     if (!isCredit && !isCourtesy) {
       const overpay = Math.round((splitTotal - total) * 100) / 100;
       if (overpay > 0.01) {
-        const cashIdx = validPayments.findIndex(p => (paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '').toLowerCase().includes('efectivo'));
+        const cashIdx = validPayments.findIndex(p => (paymentMethodById.get(p.paymentMethodId)?.name || '').toLowerCase().includes('efectivo'));
         if (cashIdx >= 0) {
           validPayments = validPayments.map((p, i) =>
             i === cashIdx ? { ...p, amount: Math.round((p.amount - overpay) * 100) / 100 } : p,
@@ -797,15 +815,15 @@ export function POSPage() {
         })),
       ],
       payments: validPayments.map((p) => ({
-        methodName: paymentMethods.find((m) => m.id === p.paymentMethodId)?.name || '',
+        methodName: paymentMethodById.get(p.paymentMethodId)?.name || '',
         amount: p.amount,
       })),
       isCredit,
       creditDueDate: isCredit && computedDueDate ? computedDueDate : undefined,
       sellerName,
-      clientName: clients.find((c) => c.id === clientId)?.name,
-      clientDocument: clients.find((c) => c.id === clientId)?.documentNumber,
-      clientPhone: clients.find((c) => c.id === clientId)?.phone,
+      clientName: clientById.get(clientId)?.name,
+      clientDocument: clientById.get(clientId)?.documentNumber,
+      clientPhone: clientById.get(clientId)?.phone,
       igv,
       baseImponible: gravadoBase,
       isCourtesy: isCourtesy || undefined,
@@ -987,7 +1005,23 @@ export function POSPage() {
 
         {/* Products grid */}
         <div className="flex-1 overflow-auto p-6">
-          {filteredProducts.length === 0 ? (
+          {isInitialProductsLoading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-5 gap-4">
+              {Array.from({ length: 12 }).map((_, index) => (
+                <div key={index} className="bg-white rounded-2xl shadow-card overflow-hidden animate-pulse">
+                  <div className="aspect-square bg-primary-50" />
+                  <div className="p-3 space-y-3">
+                    <div className="h-4 bg-gray-100 rounded w-4/5" />
+                    <div className="h-3 bg-gray-100 rounded w-2/3" />
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="h-5 bg-gray-100 rounded w-14" />
+                      <div className="h-5 bg-gray-100 rounded w-12" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
               <Package size={48} className="mb-3" />
               <div className="text-sm mb-3">
@@ -1004,7 +1038,7 @@ export function POSPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-5 gap-4">
-              {filteredProducts.map((p) => {
+              {visibleProducts.map((p) => {
                 const effectiveCompanyForPrice = companyId === ALL_COMPANIES
                   ? findSourceCompanyForProduct(p.id) || ''
                   : companyId;
@@ -1042,6 +1076,7 @@ export function POSPage() {
                           src={p.imageUrl}
                           alt={p.name}
                           loading="lazy"
+                          decoding="async"
                           className="w-full h-full object-cover"
                         />
                       ) : (
@@ -1078,6 +1113,21 @@ export function POSPage() {
                   </button>
                 );
               })}
+            </div>
+          )}
+          {productsTotal > products.length && (
+            <div className="mt-5 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setVisibleProductLimit((limit) => limit + POS_PRODUCT_BATCH_SIZE)}
+                disabled={productsFetching}
+                className="px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                {productsFetching ? 'Cargando...' : `Mostrar ${Math.min(POS_PRODUCT_BATCH_SIZE, productsTotal - products.length)} más`}
+                <span className="ml-2 text-gray-400">
+                  ({products.length} de {productsTotal})
+                </span>
+              </button>
             </div>
           )}
         </div>
@@ -1118,7 +1168,7 @@ export function POSPage() {
             <span className="text-sm text-gray-500 shrink-0">Rango:</span>
             {isSellerRole ? (
               <span className="flex-1 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
-                {tiers.find((t) => t.id === tierId)?.name || '—'}
+                {tierById.get(tierId)?.name || '—'}
               </span>
             ) : (
               <select
@@ -1174,10 +1224,10 @@ export function POSPage() {
               const effectiveTierId = item.tierOverride || tierId;
               const effectiveTierName = item.isCustomPrice
                 ? 'Personalizado'
-                : tiers.find((t) => t.id === effectiveTierId)?.name || '';
+                : tierById.get(effectiveTierId)?.name || '';
               const isOverridden = !!item.tierOverride || !!item.isCustomPrice;
               const isEditing = editingPriceFor === item.productId;
-              const bonusRow = bonusItems.find((b) => b.productId === item.productId);
+              const bonusRow = bonusByProductId.get(item.productId);
               return (
                 <div key={item.productId}>
                   <div className="rounded-xl p-3 group bg-gray-50">
@@ -1804,7 +1854,7 @@ export function POSPage() {
                         )}
                         <div className="space-y-3">
                           {splitPayments.map((p, idx) => {
-                            const selectedMethod = paymentMethods.find((m) => m.id === p.paymentMethodId);
+                            const selectedMethod = paymentMethodById.get(p.paymentMethodId);
                             const isCash = (selectedMethod?.name || '').toLowerCase().includes('efectivo');
                             return (
                               <div key={idx} className="bg-gray-50 rounded-xl p-4 space-y-3">
@@ -2045,16 +2095,24 @@ export function POSPage() {
       )}
 
       {/* Voucher preview */}
-      <VoucherPreviewModal sale={voucherPreview} onClose={() => setVoucherPreview(null)} />
+      {voucherPreview && (
+        <Suspense fallback={null}>
+          <VoucherPreviewModal sale={voucherPreview} onClose={() => setVoucherPreview(null)} />
+        </Suspense>
+      )}
 
       {/* Quick client creation */}
-      <QuickClientModal
-        isOpen={showQuickClient}
-        onClose={() => setShowQuickClient(false)}
-        onCreated={(client) => { setClientId(client.id); setClientSearch(''); }}
-        prefillName={clientSearch.trim() && !/^\d+$/.test(clientSearch.trim()) ? clientSearch.trim() : undefined}
-        prefillDocument={clientSearch.trim() && /^\d+$/.test(clientSearch.trim()) ? clientSearch.trim() : undefined}
-      />
+      {showQuickClient && (
+        <Suspense fallback={null}>
+          <QuickClientModal
+            isOpen={showQuickClient}
+            onClose={() => setShowQuickClient(false)}
+            onCreated={(client) => { setClientId(client.id); setClientSearch(''); }}
+            prefillName={clientSearch.trim() && !/^\d+$/.test(clientSearch.trim()) ? clientSearch.trim() : undefined}
+            prefillDocument={clientSearch.trim() && /^\d+$/.test(clientSearch.trim()) ? clientSearch.trim() : undefined}
+          />
+        </Suspense>
+      )}
 
       {/* Mobile overlay */}
       {cartOpen && (

@@ -9,6 +9,7 @@ interface DataTableProps<T> {
   onRowClick?: (item: T) => void;
   hoverClass?: string;
   rowClassName?: (item: T) => string;
+  renderSubRow?: (item: T) => React.ReactNode;
   compact?: boolean;
 }
 
@@ -19,6 +20,7 @@ export function DataTable<T extends { id?: string }>({
   onRowClick,
   hoverClass,
   rowClassName,
+  renderSubRow,
   compact = false,
 }: DataTableProps<T>) {
   const tableWrapRef = useRef<HTMLDivElement>(null);
@@ -56,24 +58,35 @@ export function DataTable<T extends { id?: string }>({
                 </td>
               </tr>
             ) : (
-              data.map((item, index) => (
-                <tr
-                  key={item.id || index}
-                  onClick={() => onRowClick?.(item)}
-                  className={`transition-colors ${onRowClick ? 'cursor-pointer' : ''} ${
-                    rowClassName ? rowClassName(item) : hoverClass || (onRowClick ? 'hover:bg-primary-50/40' : '')
-                  }`.trim()}
-                >
-                  {columns.map((col) => (
-                    <td
-                      key={col.key}
-                      className={`${compact ? 'px-3 py-2' : 'px-4 sm:px-6 py-3.5'} whitespace-nowrap text-sm text-gray-700`}
+              data.map((item, index) => {
+                const subRow = renderSubRow?.(item);
+                return (
+                  <React.Fragment key={item.id || index}>
+                    <tr
+                      onClick={() => onRowClick?.(item)}
+                      className={`transition-colors ${onRowClick ? 'cursor-pointer' : ''} ${
+                        rowClassName ? rowClassName(item) : hoverClass || (onRowClick ? 'hover:bg-primary-50/40' : '')
+                      }`.trim()}
                     >
-                      {col.render ? col.render(item) : (item as any)[col.key]}
-                    </td>
-                  ))}
-                </tr>
-              ))
+                      {columns.map((col) => (
+                        <td
+                          key={col.key}
+                          className={`${compact ? 'px-3 py-2' : 'px-4 sm:px-6 py-3.5'} whitespace-nowrap text-sm text-gray-700`}
+                        >
+                          {col.render ? col.render(item) : (item as any)[col.key]}
+                        </td>
+                      ))}
+                    </tr>
+                    {subRow && (
+                      <tr>
+                        <td colSpan={columns.length} className="px-0 py-0">
+                          {subRow}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })
             )}
           </tbody>
         </table>

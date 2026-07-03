@@ -16,6 +16,19 @@ export function usePurchaseById(id: string | undefined) {
     enabled: !!id,
   });
 }
+export function usePurchaseOrders(params?: any) {
+  return useQuery({
+    queryKey: ['purchase-orders', params],
+    queryFn: () => purchaseService.orders.getAll(params),
+  });
+}
+export function usePurchaseOrderById(id: string | undefined) {
+  return useQuery({
+    queryKey: ['purchase-order', id],
+    queryFn: () => purchaseService.orders.getById(id!),
+    enabled: !!id,
+  });
+}
 export function useProductSuppliers(productId: string) {
   return useQuery({
     queryKey: ['product-suppliers', productId],
@@ -57,6 +70,43 @@ export function useCreatePurchase() {
       toast.success('Compra registrada');
     },
     onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error'),
+  });
+}
+export function useCreatePurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: purchaseService.orders.create,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      toast.success('Orden de compra creada');
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg[0] : msg || 'Error al crear orden');
+    },
+  });
+}
+export function useUpdatePurchaseOrderStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: purchaseService.orders.updateStatus,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      toast.success('Orden actualizada');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al actualizar orden'),
+  });
+}
+export function useConvertPurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: purchaseService.orders.convert,
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      qc.invalidateQueries({ queryKey: ['purchase-order', vars.id] });
+      toast.success('Orden convertida en compra');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al convertir orden'),
   });
 }
 export function useUpdatePurchase() {

@@ -5,10 +5,11 @@ import { purchaseService } from '../services/purchaseService';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities';
+import { PurchaseOrdersPage } from './PurchaseOrdersPage';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
-import { Plus, ShoppingCart, Eye, Wrench, Search, X, FileText, Download } from 'lucide-react';
+import { Plus, ShoppingCart, Eye, Wrench, Search, X, FileText, Download, ClipboardList, Percent } from 'lucide-react';
 import type { Purchase, Company, Product, FiscalEntity } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
 import toast from 'react-hot-toast';
@@ -59,6 +60,7 @@ export function PurchasesPage() {
   const currencyFilter = (searchParams.get('currency') || '') as '' | 'PEN' | 'USD';
   const paymentTypeFilter = (searchParams.get('paymentType') || '') as '' | 'CONTADO' | 'CREDITO';
   const fiscalEntityFilter = searchParams.get('fiscalEntityId') || '';
+  const activeTab = searchParams.get('tab') === 'orders' ? 'orders' : 'purchases';
 
   // Estado local solo para el input (se escribe sin tocar la URL hasta el debounce)
   const [supplierSearch, setSupplierSearch] = useState(supplierParam);
@@ -78,6 +80,7 @@ export function PurchasesPage() {
     }
     setSearchParams(sp, { replace: true });
   };
+  const setActiveTab = (tab: 'purchases' | 'orders') => updateParams({ tab: tab === 'orders' ? 'orders' : null, page: null });
 
   const apiPage = fiscalEntityFilter ? 1 : page;
   const apiLimit = fiscalEntityFilter ? 9999 : 20;
@@ -158,7 +161,6 @@ export function PurchasesPage() {
   const totalUsdContado: number = fiscalEntityFilter ? fiscalTotals.totalUsdContado : (data as any)?.totalUsdContado ?? 0;
   const totalPenCredito: number = fiscalEntityFilter ? fiscalTotals.totalPenCredito : (data as any)?.totalPenCredito ?? 0;
   const totalUsdCredito: number = fiscalEntityFilter ? fiscalTotals.totalUsdCredito : (data as any)?.totalUsdCredito ?? 0;
-
   const handleSupplierChange = (val: string) => {
     setSupplierSearch(val);
     if (supplierDebounceRef.current) clearTimeout(supplierDebounceRef.current);
@@ -305,16 +307,36 @@ export function PurchasesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><ShoppingCart size={24} /> Compras / Ingresos</h1>
         <div className="flex items-center gap-2">
-          <Link
+          {activeTab === 'purchases' && <Link
             to="/cash-register/migrate?tab=purchases"
             className="inline-flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-sm font-medium hover:bg-amber-100"
             title="Reasignar compras a la caja correcta según su fecha"
           >
             <Wrench size={14} /> Migrar fechas
-          </Link>
-          <Link to="/purchases/new" className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus size={18} /> Nueva Compra</Link>
+          </Link>}
+          {activeTab === 'purchases'
+            ? <Link to="/purchases/new" className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus size={18} /> Nueva Compra</Link>
+            : <Link to="/purchases/orders/new" className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Plus size={18} /> Nueva Orden</Link>
+          }
         </div>
       </div>
+      <div className="flex border-b mb-4">
+        <button
+          type="button"
+          onClick={() => setActiveTab('purchases')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'purchases' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <span className="inline-flex items-center gap-1.5"><ShoppingCart size={14} /> Compras</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('orders')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'orders' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <span className="inline-flex items-center gap-1.5"><ClipboardList size={14} /> Órdenes</span>
+        </button>
+      </div>
+      {activeTab === 'orders' ? <PurchaseOrdersPage /> : <>
       <div className="mb-4 flex flex-col gap-3">
         {/* Búsqueda por proveedor */}
         <div className="relative flex-1 max-w-md">
@@ -521,7 +543,38 @@ export function PurchasesPage() {
         </div>
       )}
 
-      <DataTable columns={columns} data={purchases} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
+      <DataTable
+        columns={columns}
+        data={purchases}
+        isLoading={isLoading}
+        hoverClass="hover:bg-primary-50"
+        renderSubRow={(purchase) => {
+          if (!purchase.detraccionAmountPen) return null;
+          return (
+            <div className="mx-4 sm:mx-6 mb-2 -mt-1 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span className="inline-flex items-center gap-1.5 font-semibold">
+                  <Percent size={14} /> Detracción (SPOT)
+                </span>
+                <span>
+                  CxP separada:
+                  <span className="ml-1 font-semibold tabular-nums">
+                    S/ {purchase.detraccionAmountPen.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </span>
+                {purchase.detraccionDueDate && (
+                  <span className="text-blue-600">
+                    Vence: {formatDateEs(purchase.detraccionDueDate, { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  </span>
+                )}
+                <span className="text-blue-500">
+                  Proveedor: Detracción - {purchase.supplier}
+                </span>
+              </div>
+            </div>
+          );
+        }}
+      />
       <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
 
       <Modal isOpen={!!grModal} onClose={() => setGrModal(null)} title="Guía de Remisión">
@@ -574,6 +627,7 @@ export function PurchasesPage() {
           </div>
         )}
       </Modal>
+      </>}
     </div>
   );
 }

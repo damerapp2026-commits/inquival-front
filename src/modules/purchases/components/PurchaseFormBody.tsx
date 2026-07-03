@@ -77,6 +77,7 @@ export interface PurchaseFormBodyProps {
   onCancelHref: string;
   onDraftChange?: (draft: PurchaseInitial) => void;
   warningBanner?: React.ReactNode;
+  affectsCash?: boolean;
 }
 
 export interface PurchaseSubmitPayload {
@@ -130,6 +131,7 @@ export function PurchaseFormBody({
   onCancelHref,
   onDraftChange,
   warningBanner,
+  affectsCash = true,
 }: PurchaseFormBodyProps) {
   const { data: fiscalEntitiesData } = useFiscalEntities();
   const fiscalEntities = (Array.isArray(fiscalEntitiesData) ? fiscalEntitiesData : []).filter((e: any) => e.isActive !== false);
@@ -473,6 +475,7 @@ export function PurchaseFormBody({
     const effectiveCashDate = form.issueDate || form.purchaseDate;
     if (
       mode === 'create' &&
+      affectsCash &&
       form.paymentType === 'CONTADO' &&
       effectiveCashDate === getTodayDateString() &&
       cashRegisterToday?.status === 'CLOSED'
@@ -480,7 +483,7 @@ export function PurchaseFormBody({
       toast.error('La caja del día está cerrada. No se pueden registrar compras al contado.');
       return;
     }
-    if (form.paymentType === 'CONTADO' && !form.paymentMethodId) {
+    if (affectsCash && form.paymentType === 'CONTADO' && !form.paymentMethodId) {
       toast.error('Selecciona el método de pago');
       return;
     }
