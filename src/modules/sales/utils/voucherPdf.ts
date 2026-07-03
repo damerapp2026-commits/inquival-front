@@ -385,7 +385,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
       {
         columns: [
           ...(logoDataUrl
-            ? [{ image: logoDataUrl, width: isA5 ? 52 : 70, margin: [0, isA5 ? 2 : 4, isA5 ? 8 : 10, 0] } as any]
+            ? [{ image: logoDataUrl, width: isA5 ? 72 : 70, margin: [0, isA5 ? 0 : 4, isA5 ? 8 : 10, 0] } as any]
             : []),
           {
             width: '*',
@@ -395,23 +395,23 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
               ...(c.phone ? [{ text: `Teléfonos : ${c.phone}`, style: 'companyDetail' }] : []),
               ...(c.email ? [{ text: `E-mail : ${c.email}`, style: 'companyDetail' }] : []),
             ],
-            margin: [0, isA5 ? 3 : 10, 0, 0],
+            margin: [0, isA5 ? 1 : 10, 0, 0],
           },
           {
             width: isA5 ? 150 : 200,
             stack: [
               {
-                table: { widths: ['*'], body: [[{ text: `R.U.C. ${headerRuc}`, alignment: 'center', bold: true, fontSize: isA5 ? 9 : 10, margin: [0, isA5 ? 4 : 4] }]] },
+                table: { widths: ['*'], body: [[{ text: `R.U.C. ${headerRuc}`, alignment: 'center', bold: true, fontSize: 10, margin: [0, 4] }]] },
                 layout: { hLineColor: () => BRAND_GREEN, vLineColor: () => BRAND_GREEN, hLineWidth: () => 1, vLineWidth: () => 1 },
               },
               ...(!isA5 ? [{ text: '', margin: [0, 3] }] : []),
               {
-                table: { widths: ['*'], body: [[{ text: title, alignment: 'center', bold: true, fontSize: isA5 ? 11 : 12, color: 'white', fillColor: BRAND_GREEN, margin: [0, isA5 ? 5 : 5] }]] },
+                table: { widths: ['*'], body: [[{ text: title, alignment: 'center', bold: true, fontSize: 12, color: 'white', fillColor: BRAND_GREEN, margin: [0, 5] }]] },
                 layout: 'noBorders',
               },
               ...(!isA5 ? [{ text: '', margin: [0, 3] }] : []),
               {
-                table: { widths: ['*'], body: [[{ text: number, alignment: 'center', bold: true, fontSize: isA5 ? 10 : 11, color: BRAND_GREEN_DARK, margin: [0, isA5 ? 4 : 4] }]] },
+                table: { widths: ['*'], body: [[{ text: number, alignment: 'center', bold: true, fontSize: 11, color: BRAND_GREEN_DARK, margin: [0, 4] }]] },
                 layout: { hLineColor: () => BRAND_GREEN, vLineColor: () => BRAND_GREEN, hLineWidth: () => 1, vLineWidth: () => 1 },
               },
             ],
@@ -542,8 +542,8 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
       ...buildBankAndWalletBlock(isA5),
     ],
     styles: {
-      companyName: { fontSize: isA5 ? 12 : 14, bold: true, color: '#111827' },
-      companyDetail: { fontSize: isA5 ? 7 : 8, color: '#374151', margin: [0, 1, 0, 0] },
+      companyName: { fontSize: isA5 ? 14 : 14, bold: true, color: '#111827' },
+      companyDetail: { fontSize: isA5 ? 8 : 8, color: '#374151', margin: [0, 1, 0, 0] },
       thead: { bold: true, color: 'white', fontSize: isA5 ? 8 : 9, alignment: 'center' },
     },
     defaultStyle: { fontSize: isA5 ? 8 : 9 },
