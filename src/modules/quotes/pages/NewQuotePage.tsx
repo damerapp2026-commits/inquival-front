@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link, useParams } from 'react-router-dom';
 import { ArrowLeft, User, ShoppingCart, ClipboardList, Plus, Trash2, Search, Sparkles, Building2, Save, FileText, ScrollText, Users, X, Calendar, ChevronLeft, ChevronRight, CreditCard } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useCreateQuote, useQuote, useUpdateQuote } from '../hooks/useQuotes';
-import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
+import { useDniLookup, useRucLookup, useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useClients } from '../../clients/hooks/useClients';
@@ -141,6 +141,7 @@ export function NewQuotePage() {
 
   const [currency, setCurrency] = useState<'PEN' | 'USD'>('PEN');
   const [exchangeRate, setExchangeRate] = useState('');
+  const { data: tipoCambioData, isLoading: tcLoading } = useTodayTipoCambio(currency === 'USD' && (!isEditing || !exchangeRate));
   const [participantIds, setParticipantIds] = useState<string[]>([]);
   const [validityDays, setValidityDays] = useState(15);
   const [paymentTerm, setPaymentTerm] = useState('CONTADO');
@@ -225,6 +226,12 @@ export function NewQuotePage() {
     setDidLoadEditQuote(true);
   }, [isEditing, didLoadEditQuote, editQuote, clients, products, companies, tiers, creditDueDate]);
 
+  useEffect(() => {
+    if (currency !== 'USD' || !tipoCambioData?.venta) return;
+    if (isEditing && exchangeRate) return;
+    setExchangeRate(String(tipoCambioData.venta));
+  }, [currency, exchangeRate, isEditing, tipoCambioData]);
+
   const validUntilISO = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + (Number.isFinite(validityDays) ? validityDays : 15));
@@ -273,6 +280,12 @@ export function NewQuotePage() {
 
   const currSymbol = currency === 'USD' ? 'US$' : 'S/';
   const exchangeRateNum = parseFloat(exchangeRate) || 0;
+  const tcSourceLabel = tipoCambioData
+    ? `${tipoCambioData.isFallback || tipoCambioData.source === 'ESTIMADO' ? 'Estimado' : 'Decolecta'} ${tipoCambioData.fecha}`
+    : tcLoading
+      ? 'Consultando Decolecta...'
+      : '';
+  const isSystemExchangeRate = !!tipoCambioData?.venta && (!isEditing || !exchangeRate || Number(exchangeRate) === tipoCambioData.venta);
 
   const isExonerado = (taxType?: string) => taxType === 'EXONERADO' || taxType === 'INAFECTO';
   const gravadoTotal = useMemo(() => lines.filter(l => !isExonerado(l.taxType)).reduce((acc, l) => acc + l.quantity * l.unitPrice, 0), [lines]);
@@ -939,16 +952,26 @@ export function NewQuotePage() {
                 </dd>
               </div>
               {currency === 'USD' && (
-                <div className="flex justify-between items-center text-gray-600">
-                  <dt>T.C. referencial</dt>
+                <div className="flex justify-between items-start text-gray-600 gap-3">
+                  <dt>
+                    <span>T.C. referencial</span>
+                    {tcSourceLabel && (
+                      <span className={`block text-[10px] ${tipoCambioData?.isFallback || tipoCambioData?.source === 'ESTIMADO' ? 'text-amber-600' : 'text-blue-600'}`}>
+                        {tcSourceLabel}
+                      </span>
+                    )}
+                  </dt>
                   <dd className="flex items-center gap-1">
                     <span className="text-xs text-gray-400">S/</span>
                     <input
-                      type="number" min={0} step="0.01"
+                      type="number" min={0} step="0.0001"
                       value={exchangeRate}
                       onChange={(e) => setExchangeRate(e.target.value)}
-                      placeholder="3.75"
-                      className="w-20 text-right px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      placeholder={tcLoading ? '...' : '3.75'}
+                      readOnly={isSystemExchangeRate}
+                      className={`w-20 text-right px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-primary-500 ${
+                        isSystemExchangeRate ? 'bg-gray-50 text-gray-700' : ''
+                      }`}
                     />
                   </dd>
                 </div>

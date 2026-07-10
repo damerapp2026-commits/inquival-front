@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../shared/components/Modal';
-import { AlertCircle, CalendarDays, DollarSign, History, Layers } from 'lucide-react';
+import { AlertCircle, CalendarDays, DollarSign, History, Layers, Loader2 } from 'lucide-react';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
-import { useBatchPayment } from '../hooks/useCredits';
+import { useBatchPayment, useOpenClientCredits } from '../hooks/useCredits';
 import type { CreditAccount, PaymentMethod } from '../../../shared/types';
 import { creditCurrency, formatMoney, moneySymbol, type MoneyCurrency } from '../utils/money';
 
@@ -32,10 +32,15 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openCredits }: Props) {
   const { data: paymentMethodsData } = usePaymentMethods();
+  const { data: fetchedOpenCredits, isFetching: isFetchingOpenCredits } = useOpenClientCredits(isOpen ? clientId : '');
   const paymentMethods: PaymentMethod[] = useMemo(
     () => (Array.isArray(paymentMethodsData) ? paymentMethodsData.filter((m: PaymentMethod) => m.isActive) : []),
     [paymentMethodsData],
   );
+  const latestOpenCredits = useMemo<CreditAccount[]>(() => {
+    const source: CreditAccount[] = Array.isArray(fetchedOpenCredits) ? fetchedOpenCredits : openCredits;
+    return source.filter((c) => c.status !== 'PAID' && c.pendingAmount > 0);
+  }, [fetchedOpenCredits, openCredits]);
 
   const batchPayment = useBatchPayment();
 
@@ -53,18 +58,27 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
   const [rows, setRows] = useState<ExplicitRow[]>([]);
   const [fifoAmount, setFifoAmount] = useState<number>(0);
   const availableCurrencies = useMemo(
-    () => Array.from(new Set(openCredits.map((c) => creditCurrency(c.currency)))),
-    [openCredits],
+    () => Array.from(new Set(latestOpenCredits.map((c) => creditCurrency(c.currency)))),
+    [latestOpenCredits],
   );
   const [currency, setCurrency] = useState<MoneyCurrency>('PEN');
   const [paymentCurrency, setPaymentCurrency] = useState<MoneyCurrency>('PEN');
   const [exchangeRate, setExchangeRate] = useState<number>(3.7);
   const payableCredits = useMemo(
-    () => openCredits.filter((c) => creditCurrency(c.currency) === currency),
-    [openCredits, currency],
+    () => latestOpenCredits.filter((c) => creditCurrency(c.currency) === currency),
+    [latestOpenCredits, currency],
   );
   const symbol = moneySymbol(currency);
   const paymentSymbol = moneySymbol(paymentCurrency);
+  const openCreditKey = useMemo(
+    () => latestOpenCredits.map((c) => `${c.id}:${c.pendingAmount}:${creditCurrency(c.currency)}`).join('|'),
+    [latestOpenCredits],
+  );
+  const payableCreditKey = useMemo(
+    () => payableCredits.map((c) => `${c.id}:${c.pendingAmount}:${creditCurrency(c.currency)}`).join('|'),
+    [payableCredits],
+  );
+  const availableCurrencyKey = availableCurrencies.join('|');
 
   const isHistorical = !!paymentDate && paymentDate !== todayLocal;
 
@@ -82,8 +96,10 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
 
   useEffect(() => {
     if (isOpen) {
-      setCurrency(availableCurrencies.includes('USD') ? 'USD' : (availableCurrencies[0] || 'PEN'));
-      setPaymentCurrency(availableCurrencies.includes('USD') ? 'USD' : (availableCurrencies[0] || 'PEN'));
+      const initialCurrency = availableCurrencies.includes('USD') ? 'USD' : (availableCurrencies[0] || 'PEN');
+      const initialPayableCredits = latestOpenCredits.filter((c) => creditCurrency(c.currency) === initialCurrency);
+      setCurrency(initialCurrency);
+      setPaymentCurrency(initialCurrency);
       setExchangeRate(3.7);
       setMode('EXPLICIT');
       setPaymentMode('SINGLE');
@@ -95,16 +111,16 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
       setNotes('');
       setPaymentDate(todayLocal);
       setFifoAmount(0);
-      setRows(payableCredits.map((c) => ({ creditId: c.id, selected: false, amount: 0 })));
+      setRows(initialPayableCredits.map((c) => ({ creditId: c.id, selected: false, amount: 0 })));
     }
-  }, [isOpen, openCredits.length, paymentMethods, availableCurrencies.length]);
+  }, [isOpen, openCreditKey, paymentMethods, availableCurrencyKey, latestOpenCredits, todayLocal]);
 
   useEffect(() => {
     if (!isOpen) return;
     setRows(payableCredits.map((c) => ({ creditId: c.id, selected: false, amount: 0 })));
     setFifoAmount(0);
     setPaymentCurrency(currency);
-  }, [currency, isOpen, payableCredits.length]);
+  }, [currency, isOpen, payableCreditKey, payableCredits]);
 
   const explicitTotal = useMemo(
     () => round2(rows.filter((r) => r.selected).reduce((s, r) => s + (r.amount || 0), 0)),
@@ -288,6 +304,13 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
             <div className="text-xl font-semibold text-gray-800">{payableCredits.length}</div>
           </div>
         </div>
+
+        {isFetchingOpenCredits && (
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <Loader2 size={13} className="animate-spin" />
+            Actualizando cuentas abiertas del cliente...
+          </div>
+        )}
 
         {availableCurrencies.length > 1 && (
           <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
