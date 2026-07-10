@@ -53,6 +53,14 @@ const isUsdToPenRate = (value: unknown): value is number => {
   return rate != null && rate >= 2 && rate <= 10;
 };
 
+const isUsdCurrency = (value: unknown): boolean =>
+  typeof value === 'string' && value.toUpperCase() === 'USD';
+
+const almostSameMoney = (value: number | null, target: number | null): boolean => {
+  if (value == null || target == null || target <= 0) return false;
+  return Math.abs(value - target) <= Math.max(0.05, target * 0.02);
+};
+
 const normalizeName = (value: unknown): string =>
   String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -96,18 +104,26 @@ function buildProductCostLookup(products: Product[], catalogRows: Record<string,
   catalogRows.forEach((row) => {
     const productId = pickProductId(row);
     const productName = pickProductName(row);
+    const currency = pickString(row, ['currency', 'moneda']).toUpperCase();
     const exchangeRate = firstPositive(row.exchangeRate, row.exchange_rate);
     const canConvertUsd = isUsdToPenRate(exchangeRate);
-    const cost = firstPositive(
-      row.unitCost,
-      row.unit_cost,
+    const penCost = firstPositive(
       row.unitPriceConIgvPen,
       row.unit_price_con_igv_pen,
       row.unitPriceSinIgvPen,
       row.unit_price_sin_igv_pen,
-      canConvertUsd && row.unitPriceConIgvUsd ? numberFrom(row.unitPriceConIgvUsd)! * exchangeRate! : null,
-      canConvertUsd && row.unit_price_con_igv_usd ? numberFrom(row.unit_price_con_igv_usd)! * exchangeRate! : null,
+      currency !== 'USD' ? row.unitCost : null,
+      currency !== 'USD' ? row.unit_cost : null,
     );
+    const usdCost = firstPositive(
+      row.unitPriceConIgvUsd,
+      row.unit_price_con_igv_usd,
+      row.unitPriceSinIgvUsd,
+      row.unit_price_sin_igv_usd,
+      currency === 'USD' ? row.unitCost : null,
+      currency === 'USD' ? row.unit_cost : null,
+    );
+    const cost = penCost ?? (canConvertUsd && usdCost ? usdCost * exchangeRate! : null);
     if (!cost) return;
     if (productId) byId.set(productId, cost);
     if (productName) byName.set(productName, cost);
@@ -139,6 +155,18 @@ function saleExchangeRate(sale: Sale): number | null {
   if (isUsdToPenRate(direct)) return direct;
   const totalPen = numberFrom(sale.total);
   const totalUsd = numberFrom(sale.totalUsd);
+  if (totalPen && totalUsd && totalUsd > 0) {
+    const derived = totalPen / totalUsd;
+    if (Number.isFinite(derived) && isUsdToPenRate(derived)) return derived;
+  }
+  return null;
+}
+
+function purchaseExchangeRate(purchase: Record<string, any>): number | null {
+  const direct = firstPositive(purchase.exchangeRate, purchase.exchange_rate);
+  if (isUsdToPenRate(direct)) return direct;
+  const totalPen = numberFrom(purchase.totalCost);
+  const totalUsd = numberFrom(purchase.totalCostUsd);
   if (totalPen && totalUsd && totalUsd > 0) {
     const derived = totalPen / totalUsd;
     if (Number.isFinite(derived) && isUsdToPenRate(derived)) return derived;
@@ -179,6 +207,37 @@ function saleItemRevenuePen(sale: Sale, item: Record<string, any>): number | nul
   }
 
   return exchangeRate ? subtotal * exchangeRate : null;
+}
+
+function inferPurchaseUnitCostCurrency(purchase: Record<string, any>): 'PEN' | 'USD' | null {
+  const items = Array.isArray(purchase.items) ? purchase.items : [];
+  const unitCostTotal = items.reduce((sum: number, item: Record<string, any>) => {
+    const quantity = numberFrom(item.quantity) || 0;
+    const unitCost = pickNumber(item, ['unitCost', 'unit_cost', 'cost', 'purchasePrice', 'purchase_price']);
+    return unitCost != null && quantity > 0 ? sum + unitCost * quantity : sum;
+  }, 0);
+  if (unitCostTotal <= 0) return null;
+  if (almostSameMoney(unitCostTotal, numberFrom(purchase.totalCostUsd))) return 'USD';
+  if (almostSameMoney(unitCostTotal, numberFrom(purchase.totalCost))) return 'PEN';
+  return null;
+}
+
+function purchaseItemCostPen(
+  purchase: Record<string, any>,
+  item: Record<string, any>,
+  exchangeRate: number | null,
+  unitCostCurrency: 'PEN' | 'USD' | null,
+): number | null {
+  const isUsdPurchase = isUsdCurrency(purchase.currency) || purchase.totalCostUsd != null;
+  const unitCost = pickNumber(item, ['unitCost', 'unit_cost', 'cost', 'purchasePrice', 'purchase_price']);
+  const unitPriceConIgv = pickNumber(item, ['unitPriceConIgv', 'unit_price_con_igv', 'unitPriceWithTax']);
+  const unitPriceSinIgv = pickNumber(item, ['unitPriceSinIgv', 'unit_price_sin_igv', 'unitPriceWithoutTax']);
+  if (!isUsdPurchase) return firstPositive(unitCost, unitPriceConIgv, unitPriceSinIgv);
+
+  if (unitCostCurrency === 'PEN' && unitCost) return unitCost;
+  const usdCost = firstPositive(unitPriceConIgv, unitPriceSinIgv, unitCostCurrency === 'USD' || unitCostCurrency == null ? unitCost : null);
+  if (!usdCost || !exchangeRate) return null;
+  return usdCost * exchangeRate;
 }
 
 function buildProfitabilityRowsFromSales(
@@ -297,21 +356,13 @@ function buildLatestCostByProduct(purchases: Purchase[], productNameById: Map<st
   purchases.forEach((purchase: any) => {
     if (purchase.isCancelled || purchase.cancelledAt) return;
     const at = new Date(purchase.issueDate || purchase.date || purchase.createdAt || 0).getTime() || 0;
-    const exchangeRate = firstPositive(purchase.exchangeRate, purchase.exchange_rate);
-    const canConvertUsd = isUsdToPenRate(exchangeRate);
-    const isUsd = purchase.totalCostUsd != null;
+    const exchangeRate = purchaseExchangeRate(purchase);
+    const unitCostCurrency = inferPurchaseUnitCostCurrency(purchase);
 
     (purchase.items || []).forEach((item: any) => {
       const productId = pickProductId(item);
       const productName = pickProductName(item) || (productId ? productNameById.get(productId) || '' : '');
-      const unitCost = pickNumber(item, ['unitCost', 'unit_cost', 'cost', 'purchasePrice', 'purchase_price']);
-      const unitPriceConIgv = pickNumber(item, ['unitPriceConIgv', 'unit_price_con_igv', 'unitPriceWithTax']);
-      const unitPriceSinIgv = pickNumber(item, ['unitPriceSinIgv', 'unit_price_sin_igv', 'unitPriceWithoutTax']);
-      const cost = firstPositive(
-        unitCost,
-        isUsd && unitPriceConIgv ? (canConvertUsd ? unitPriceConIgv * exchangeRate! : null) : unitPriceConIgv,
-        isUsd && unitPriceSinIgv ? (canConvertUsd ? unitPriceSinIgv * exchangeRate! : null) : unitPriceSinIgv,
-      );
+      const cost = purchaseItemCostPen(purchase, item, exchangeRate, unitCostCurrency);
       if (!cost) return;
       if (productId) {
         const current = latest.get(productId);
