@@ -40,7 +40,7 @@ export function ExportClientStatementButton({ client, credits, variant = 'button
     try {
       let list: CreditAccount[] = credits || [];
       if (!credits) {
-        const result = await creditService.getAll({ clientId: client.id, limit: 1000 });
+        const result = await creditService.getByClient(client.id, { limit: 100000 });
         list = Array.isArray(result?.data) ? result.data : Array.isArray(result) ? result : [];
       }
       if (list.length === 0) {

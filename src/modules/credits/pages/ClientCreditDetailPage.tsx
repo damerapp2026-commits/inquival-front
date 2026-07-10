@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useClientCredits } from '../hooks/useCredits';
+import { useClientCredits, useOpenClientCredits } from '../hooks/useCredits';
 import { useClients } from '../../clients/hooks/useClients';
 import { Pagination } from '../../../shared/components/Pagination';
 import { BatchPaymentModal } from '../components/BatchPaymentModal';
@@ -27,6 +27,7 @@ export function ClientCreditDetailPage() {
   const [showBatch, setShowBatch] = useState(false);
 
   const { data, isLoading } = useClientCredits(clientId!, { page, limit: 20 });
+  const { data: openCreditsData } = useOpenClientCredits(clientId || '');
   const { data: clientsData } = useClients({ limit: 200 });
 
   const credits: CreditAccount[] = data?.data || [];
@@ -39,7 +40,8 @@ export function ClientCreditDetailPage() {
   const totalPaid = credits.reduce((sum, c) => sum + c.paidAmount, 0);
   const currencies = Array.from(new Set(credits.map((c) => creditCurrency(c.currency))));
   const pageMoney = (amount: number) => currencies.length === 1 ? formatMoney(amount, currencies[0]) : 'Mixto';
-  const openCredits = credits.filter((c) => c.status !== 'PAID');
+  const openCredits = (Array.isArray(openCreditsData) ? openCreditsData : credits)
+    .filter((c) => c.status !== 'PAID' && c.pendingAmount > 0);
 
   const transactionGroups: TransactionGroup[] = useMemo(() => {
     const byGroup = new Map<string, TransactionGroup>();

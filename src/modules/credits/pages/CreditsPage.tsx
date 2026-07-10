@@ -70,7 +70,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   const { data: detailCredit } = useCreditById(showDetailModal && selectedCredit ? selectedCredit.id : '');
   const fullCredit: CreditAccount | null = detailCredit || selectedCredit;
 
-  const { data, isLoading } = useCredits({ limit: 1000, status: statusFilter || undefined });
+  const { data, isLoading } = useCredits({ limit: 100000, status: statusFilter || undefined });
   const { data: clientsData } = useClients({ limit: 500 });
   const deleteCreditMutation = useDeleteCredit();
   const editCreditMutation = useEditCredit();
@@ -139,7 +139,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   };
 
   const openBatchForGroup = (group: ClientGroup) => {
-    const openCredits = group.credits.filter((c) => c.status !== 'PAID');
+    const openCredits = group.credits.filter((c) => c.status !== 'PAID' && c.pendingAmount > 0);
     if (openCredits.length === 0) return;
     setBatchClient({ id: group.clientId, name: group.clientName, credits: openCredits });
   };
