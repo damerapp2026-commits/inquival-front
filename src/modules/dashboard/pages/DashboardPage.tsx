@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart, useExchangeRate, useProfitability } from '../hooks/useDashboard';
 import { useAPAlerts } from '../../accounts-payable/hooks/useAccountsPayable';
 import { useSales } from '../../sales/hooks/useSales';
@@ -6,6 +7,7 @@ import { usePriceCatalog, usePurchases } from '../../purchases/hooks/usePurchase
 import { useProducts } from '../../products/hooks/useProducts';
 import { useUsers } from '../../users/hooks/useUsers';
 import { useAuth } from '../../../app/providers/AuthProvider';
+import { lookupService } from '../../../shared/services/lookupService';
 import { TrendingUp, TrendingDown, DollarSign, CreditCard, FileText, AlertTriangle, Clock, Tag, Truck, ShoppingCart, Package, BarChart3, Wallet, Users as UsersIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -61,6 +63,19 @@ const almostSameMoney = (value: number | null, target: number | null): boolean =
   return Math.abs(value - target) <= Math.max(0.05, target * 0.02);
 };
 
+const dateKeyFromValue = (value: unknown): string => {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+    if (match) return match[1];
+  }
+  const date = new Date(value as any);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+};
+
+const purchaseDateKey = (purchase: Record<string, any>): string =>
+  dateKeyFromValue(purchase.issueDate || purchase.date || purchase.createdAt);
+
 const normalizeName = (value: unknown): string =>
   String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -97,7 +112,11 @@ function buildProductNameById(products: Product[]) {
   return new Map(products.map((product) => [product.id, normalizeName(product.name)]));
 }
 
-function buildProductCostLookup(products: Product[], catalogRows: Record<string, any>[]) {
+function buildProductCostLookup(
+  products: Product[],
+  catalogRows: Record<string, any>[],
+  exchangeRatesByDate: Map<string, number>,
+) {
   const byId = new Map<string, number>();
   const byName = new Map<string, number>();
 
@@ -105,21 +124,29 @@ function buildProductCostLookup(products: Product[], catalogRows: Record<string,
     const productId = pickProductId(row);
     const productName = pickProductName(row);
     const currency = pickString(row, ['currency', 'moneda']).toUpperCase();
-    const exchangeRate = firstPositive(row.exchangeRate, row.exchange_rate);
+    const exchangeRate =
+      firstPositive(row.exchangeRate, row.exchange_rate) ??
+      exchangeRatesByDate.get(dateKeyFromValue(row.lastPurchaseDate || row.last_purchase_date || row.purchaseDate || row.date));
     const canConvertUsd = isUsdToPenRate(exchangeRate);
-    const penCost = firstPositive(
-      row.unitPriceConIgvPen,
-      row.unit_price_con_igv_pen,
-      row.unitPriceSinIgvPen,
-      row.unit_price_sin_igv_pen,
-      currency !== 'USD' ? row.unitCost : null,
-      currency !== 'USD' ? row.unit_cost : null,
-    );
+    const penCost = currency === 'USD'
+      ? null
+      : firstPositive(
+        row.unitPriceConIgvPen,
+        row.unit_price_con_igv_pen,
+        row.unitPriceSinIgvPen,
+        row.unit_price_sin_igv_pen,
+        row.unitCost,
+        row.unit_cost,
+      );
     const usdCost = firstPositive(
       row.unitPriceConIgvUsd,
       row.unit_price_con_igv_usd,
       row.unitPriceSinIgvUsd,
       row.unit_price_sin_igv_usd,
+      currency === 'USD' ? row.unitPriceConIgv : null,
+      currency === 'USD' ? row.unit_price_con_igv : null,
+      currency === 'USD' ? row.unitPriceSinIgv : null,
+      currency === 'USD' ? row.unit_price_sin_igv : null,
       currency === 'USD' ? row.unitCost : null,
       currency === 'USD' ? row.unit_cost : null,
     );
@@ -162,9 +189,11 @@ function saleExchangeRate(sale: Sale): number | null {
   return null;
 }
 
-function purchaseExchangeRate(purchase: Record<string, any>): number | null {
+function purchaseExchangeRate(purchase: Record<string, any>, exchangeRatesByDate: Map<string, number> = new Map()): number | null {
   const direct = firstPositive(purchase.exchangeRate, purchase.exchange_rate);
   if (isUsdToPenRate(direct)) return direct;
+  const dateRate = exchangeRatesByDate.get(purchaseDateKey(purchase));
+  if (isUsdToPenRate(dateRate)) return dateRate;
   const totalPen = numberFrom(purchase.totalCost);
   const totalUsd = numberFrom(purchase.totalCostUsd);
   if (totalPen && totalUsd && totalUsd > 0) {
@@ -349,14 +378,18 @@ function buildProductSalePriceLookup(products: Product[], catalogRows: Record<st
   return { byId, byName };
 }
 
-function buildLatestCostByProduct(purchases: Purchase[], productNameById: Map<string, string>) {
+function buildLatestCostByProduct(
+  purchases: Purchase[],
+  productNameById: Map<string, string>,
+  exchangeRatesByDate: Map<string, number>,
+) {
   const latest = new Map<string, { cost: number; at: number }>();
   const byName = new Map<string, { cost: number; at: number }>();
 
   purchases.forEach((purchase: any) => {
     if (purchase.isCancelled || purchase.cancelledAt) return;
     const at = new Date(purchase.issueDate || purchase.date || purchase.createdAt || 0).getTime() || 0;
-    const exchangeRate = purchaseExchangeRate(purchase);
+    const exchangeRate = purchaseExchangeRate(purchase, exchangeRatesByDate);
     const unitCostCurrency = inferPurchaseUnitCostCurrency(purchase);
 
     (purchase.items || []).forEach((item: any) => {
@@ -397,11 +430,54 @@ function buildSoldQuantityByProduct(sales: Sale[], productNameById: Map<string, 
   return { byId, byName };
 }
 
-function enrichProfitabilityRows(rows: unknown, purchases: Purchase[], sales: Sale[], products: Product[], catalogRows: Record<string, any>[]) {
+function buildSoldProductKeys(sales: Sale[], productNameById: Map<string, string>) {
+  const keys = new Set<string>();
+  sales.forEach((sale) => {
+    if (sale.isCancelled) return;
+    (sale.items || []).forEach((item: any) => {
+      const productId = pickProductId(item);
+      const productName = pickProductName(item) || (productId ? productNameById.get(productId) || '' : '');
+      if (productId) keys.add(productId);
+      if (productName) keys.add(productName);
+    });
+  });
+  return keys;
+}
+
+function buildMissingPurchaseExchangeRateDates(purchases: Purchase[], sales: Sale[], products: Product[]) {
+  const productNameById = buildProductNameById(products);
+  const soldProductKeys = buildSoldProductKeys(sales, productNameById);
+  const dates = new Set<string>();
+
+  purchases.forEach((purchase: any) => {
+    if (purchase.isCancelled || purchase.cancelledAt) return;
+    const isUsdPurchase = isUsdCurrency(purchase.currency) || purchase.totalCostUsd != null;
+    if (!isUsdPurchase || purchaseExchangeRate(purchase)) return;
+    const date = purchaseDateKey(purchase);
+    if (!date) return;
+    const touchesSoldProduct = (purchase.items || []).some((item: any) => {
+      const productId = pickProductId(item);
+      const productName = pickProductName(item) || (productId ? productNameById.get(productId) || '' : '');
+      return (productId && soldProductKeys.has(productId)) || (productName && soldProductKeys.has(productName));
+    });
+    if (touchesSoldProduct) dates.add(date);
+  });
+
+  return Array.from(dates).sort();
+}
+
+function enrichProfitabilityRows(
+  rows: unknown,
+  purchases: Purchase[],
+  sales: Sale[],
+  products: Product[],
+  catalogRows: Record<string, any>[],
+  exchangeRatesByDate: Map<string, number>,
+) {
   if (!Array.isArray(rows)) return rows;
   const productNameById = buildProductNameById(products);
-  const productCostLookup = buildProductCostLookup(products, catalogRows);
-  const latestCostByProduct = buildLatestCostByProduct(purchases, productNameById);
+  const productCostLookup = buildProductCostLookup(products, catalogRows, exchangeRatesByDate);
+  const latestCostByProduct = buildLatestCostByProduct(purchases, productNameById, exchangeRatesByDate);
   const calculatedRows = buildProfitabilityRowsFromSales(sales, productNameById, latestCostByProduct, productCostLookup);
   if (calculatedRows.length > 0) return calculatedRows;
 
@@ -627,9 +703,32 @@ export function DashboardPage() {
   const profitabilitySales: Sale[] = Array.isArray(profitabilitySalesData) ? profitabilitySalesData : profitabilitySalesData?.data || [];
   const products: Product[] = Array.isArray(productsData) ? productsData : productsData?.data || [];
   const priceCatalogRows: Record<string, any>[] = Array.isArray(priceCatalogData) ? priceCatalogData : [];
+  const missingPurchaseExchangeRateDates = useMemo(
+    () => buildMissingPurchaseExchangeRateDates(purchases, profitabilitySales, products),
+    [purchases, profitabilitySales, products],
+  );
+  const purchaseExchangeRateQueries = useQueries({
+    queries: missingPurchaseExchangeRateDates.map((date) => ({
+      queryKey: ['tipo-cambio', date],
+      queryFn: () => lookupService.getTipoCambio(date),
+      enabled: user?.role === 'ADMIN',
+      staleTime: 12 * 60 * 60 * 1000,
+      gcTime: 24 * 60 * 60 * 1000,
+      retry: false,
+    })),
+  });
+  const purchaseExchangeRatesByDate = useMemo(() => {
+    const rates = new Map<string, number>();
+    purchaseExchangeRateQueries.forEach((query, index) => {
+      const venta = numberFrom(query.data?.venta);
+      if (isUsdToPenRate(venta)) rates.set(missingPurchaseExchangeRateDates[index], venta);
+    });
+    return rates;
+  }, [missingPurchaseExchangeRateDates, purchaseExchangeRateQueries]);
+  const purchaseExchangeRatesLoading = purchaseExchangeRateQueries.some((query) => query.isLoading || query.isFetching);
   const enrichedProfitabilityData = useMemo(
-    () => enrichProfitabilityRows(profitabilityData, purchases, profitabilitySales, products, priceCatalogRows),
-    [profitabilityData, purchases, profitabilitySales, products, priceCatalogRows],
+    () => enrichProfitabilityRows(profitabilityData, purchases, profitabilitySales, products, priceCatalogRows, purchaseExchangeRatesByDate),
+    [profitabilityData, purchases, profitabilitySales, products, priceCatalogRows, purchaseExchangeRatesByDate],
   );
 
   const activeCategories = useMemo(
@@ -1067,7 +1166,7 @@ export function DashboardPage() {
             />
           </div>
 
-          {profitLoading || purchasesLoading || profitabilitySalesLoading || productsLoading || priceCatalogLoading ? (
+          {profitLoading || purchasesLoading || profitabilitySalesLoading || productsLoading || priceCatalogLoading || purchaseExchangeRatesLoading ? (
             <div className="h-[360px] flex items-center justify-center text-gray-400 text-sm">Calculando rentabilidad...</div>
           ) : !Array.isArray(enrichedProfitabilityData) || enrichedProfitabilityData.length === 0 ? (
             <div className="h-[360px] flex items-center justify-center text-gray-400 text-sm">Sin ventas en el período seleccionado</div>
