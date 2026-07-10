@@ -68,6 +68,10 @@ const pickProductName = (source: Record<string, any>): string =>
     pickString(source.product || {}, ['name', 'productName']),
   );
 
+const pickProductDisplayName = (source: Record<string, any>): string =>
+  pickString(source, ['productName', 'name', 'product_name', 'product']) ||
+  pickString(source.product || {}, ['name', 'productName']);
+
 const pickNumber = (source: Record<string, any>, keys: string[]): number | null => {
   for (const key of keys) {
     const value = numberFrom(source[key]);
@@ -104,7 +108,17 @@ function buildProductCostLookup(products: Product[], catalogRows: Record<string,
   });
 
   products.forEach((product) => {
-    const cost = firstPositive((product as any).lastCostPrice, (product as any).last_cost_price);
+    const rawCost = firstPositive((product as any).lastCostPrice, (product as any).last_cost_price);
+    const costCurrency = pickString(product as any, ['lastCostCurrency', 'last_cost_currency']);
+    const costExchangeRate = firstPositive(
+      (product as any).lastCostExchangeRate,
+      (product as any).last_cost_exchange_rate,
+      (product as any).exchangeRate,
+      (product as any).exchange_rate,
+    );
+    const cost = costCurrency === 'USD'
+      ? (rawCost && costExchangeRate ? rawCost * costExchangeRate : null)
+      : rawCost;
     if (!cost) return;
     byId.set(product.id, cost);
     const name = normalizeName(product.name);
@@ -112,6 +126,126 @@ function buildProductCostLookup(products: Product[], catalogRows: Record<string,
   });
 
   return { byId, byName };
+}
+
+function saleExchangeRate(sale: Sale): number | null {
+  const direct = numberFrom(sale.exchangeRate);
+  if (direct && direct > 0) return direct;
+  const totalPen = numberFrom(sale.total);
+  const totalUsd = numberFrom(sale.totalUsd);
+  if (totalPen && totalUsd && totalUsd > 0) {
+    const derived = totalPen / totalUsd;
+    if (Number.isFinite(derived) && derived > 0) return derived;
+  }
+  return null;
+}
+
+function saleItemRevenuePen(sale: Sale, item: Record<string, any>): number {
+  const quantity = numberFrom(item.quantity) || 0;
+  const subtotal = numberFrom(item.subtotal);
+  const unitPrice = numberFrom(item.unitPrice);
+  if (sale.currency !== 'USD') {
+    return subtotal ?? (unitPrice != null ? quantity * unitPrice : 0);
+  }
+
+  const exchangeRate = saleExchangeRate(sale);
+  const subtotalUsd = numberFrom(item.subtotalUsd);
+  if (subtotalUsd != null && exchangeRate) return subtotalUsd * exchangeRate;
+  const unitPriceUsd = numberFrom(item.unitPriceUsd);
+  if (unitPriceUsd != null && exchangeRate) return unitPriceUsd * quantity * exchangeRate;
+
+  if (subtotal == null) {
+    return unitPrice != null && exchangeRate ? quantity * unitPrice * exchangeRate : 0;
+  }
+
+  const saleTotalPen = numberFrom(sale.total);
+  const saleTotalUsd = numberFrom(sale.totalUsd);
+  if (saleTotalPen && saleTotalUsd && exchangeRate) {
+    const expectedPen = saleTotalUsd * exchangeRate;
+    const diff = Math.abs(saleTotalPen - expectedPen);
+    if (diff <= Math.max(0.05, expectedPen * 0.01)) return subtotal;
+  }
+
+  return exchangeRate ? subtotal * exchangeRate : subtotal;
+}
+
+function buildProfitabilityRowsFromSales(
+  sales: Sale[],
+  productNameById: Map<string, string>,
+  latestCostByProduct: ReturnType<typeof buildLatestCostByProduct>,
+  productCostLookup: ReturnType<typeof buildProductCostLookup>,
+) {
+  const groups = new Map<string, {
+    productId: string;
+    productName: string;
+    totalRevenue: number;
+    totalSold: number;
+    totalCost: number | null;
+    unitCost: number | null;
+    missingCost: boolean;
+  }>();
+
+  sales.forEach((sale) => {
+    if (sale.isCancelled) return;
+    (sale.items || []).forEach((item: any) => {
+      const quantity = numberFrom(item.quantity) || 0;
+      if (quantity <= 0) return;
+      const productId = pickProductId(item);
+      const normalizedName = pickProductName(item) || (productId ? productNameById.get(productId) || '' : '');
+      const displayName = pickProductDisplayName(item) || (productId ? productNameById.get(productId) || '' : '') || 'Producto';
+      const key = productId || normalizedName;
+      if (!key) return;
+
+      const revenuePen = saleItemRevenuePen(sale, item);
+      const unitCost =
+        (productId ? latestCostByProduct.byId.get(productId)?.cost : null) ??
+        (normalizedName ? latestCostByProduct.byName.get(normalizedName)?.cost : null) ??
+        (productId ? productCostLookup.byId.get(productId) : null) ??
+        (normalizedName ? productCostLookup.byName.get(normalizedName) : null) ??
+        null;
+
+      const current = groups.get(key) || {
+        productId,
+        productName: displayName,
+        totalRevenue: 0,
+        totalSold: 0,
+        totalCost: unitCost != null ? 0 : null,
+        unitCost,
+        missingCost: unitCost == null,
+      };
+
+      current.totalRevenue += revenuePen;
+      current.totalSold += quantity;
+      if (unitCost != null) {
+        current.unitCost = unitCost;
+        current.totalCost = (current.totalCost || 0) + quantity * unitCost;
+      } else {
+        current.missingCost = true;
+      }
+      groups.set(key, current);
+    });
+  });
+
+  return Array.from(groups.values())
+    .map((row) => {
+      const totalRevenue = Math.round(row.totalRevenue * 100) / 100;
+      const totalSold = Math.round(row.totalSold * 100) / 100;
+      const totalCost = row.totalCost == null || row.missingCost ? null : Math.round(row.totalCost * 100) / 100;
+      const grossProfit = totalCost == null ? null : Math.round((totalRevenue - totalCost) * 100) / 100;
+      return {
+        productId: row.productId,
+        productName: row.productName,
+        totalRevenue,
+        totalSold,
+        totalCost,
+        unitCost: row.unitCost,
+        grossProfit,
+        marginPercent: grossProfit != null && totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : null,
+      };
+    })
+    .filter((row) => row.totalRevenue > 0)
+    .sort((a, b) => (b.grossProfit ?? Number.NEGATIVE_INFINITY) - (a.grossProfit ?? Number.NEGATIVE_INFINITY))
+    .slice(0, 15);
 }
 
 function buildProductSalePriceLookup(products: Product[], catalogRows: Record<string, any>[]) {
@@ -202,8 +336,11 @@ function enrichProfitabilityRows(rows: unknown, purchases: Purchase[], sales: Sa
   if (!Array.isArray(rows)) return rows;
   const productNameById = buildProductNameById(products);
   const productCostLookup = buildProductCostLookup(products, catalogRows);
-  const productSalePriceLookup = buildProductSalePriceLookup(products, catalogRows);
   const latestCostByProduct = buildLatestCostByProduct(purchases, productNameById);
+  const calculatedRows = buildProfitabilityRowsFromSales(sales, productNameById, latestCostByProduct, productCostLookup);
+  if (calculatedRows.length > 0) return calculatedRows;
+
+  const productSalePriceLookup = buildProductSalePriceLookup(products, catalogRows);
   const soldQuantityByProduct = buildSoldQuantityByProduct(sales, productNameById);
 
   return rows.map((raw) => {
@@ -374,7 +511,7 @@ export function DashboardPage() {
   const { data: sellerSalesData, isLoading: sellerSalesLoading } = useSales({ page: 1, limit: 1000, startDate: chartRange.start, endDate: chartRange.end });
   const { data: profitabilitySalesData, isLoading: profitabilitySalesLoading } = useSales({
     page: 1,
-    limit: 5000,
+    limit: 100000,
     startDate: profitRange.start,
     endDate: profitRange.end,
   });
@@ -384,7 +521,7 @@ export function DashboardPage() {
     user?.role === 'ADMIN' ? profitRange.end : undefined,
   );
   const { data: purchasesData, isLoading: purchasesLoading } = usePurchases(
-    { page: 1, limit: 1000 },
+    { page: 1, limit: 100000 },
     { enabled: user?.role === 'ADMIN' },
   );
   const { data: priceCatalogData, isLoading: priceCatalogLoading } = usePriceCatalog({ enabled: user?.role === 'ADMIN' });
@@ -944,10 +1081,14 @@ export function DashboardPage() {
                 {(() => {
                   const rows = enrichedProfitabilityData as any[];
                   const totalRev = rows.reduce((s: number, r: any) => s + (r.totalRevenue || 0), 0);
-                  const totalCost = rows.filter((r: any) => r.totalCost != null).reduce((s: number, r: any) => s + r.totalCost, 0);
-                  const totalProfit = totalRev - totalCost;
-                  const avgMargin = totalRev > 0 ? (totalProfit / totalRev) * 100 : 0;
-                  const hasCost = rows.some((r: any) => r.totalCost != null);
+                  const rowsWithCost = rows.filter((r: any) => r.totalCost != null);
+                  const rowsWithoutCost = rows.filter((r: any) => r.totalCost == null);
+                  const costedRevenue = rowsWithCost.reduce((s: number, r: any) => s + (r.totalRevenue || 0), 0);
+                  const totalCost = rowsWithCost.reduce((s: number, r: any) => s + r.totalCost, 0);
+                  const totalProfit = costedRevenue - totalCost;
+                  const avgMargin = costedRevenue > 0 ? (totalProfit / costedRevenue) * 100 : 0;
+                  const uncaughtRevenue = rowsWithoutCost.reduce((s: number, r: any) => s + (r.totalRevenue || 0), 0);
+                  const hasCost = rowsWithCost.length > 0;
                   return (
                     <>
                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
@@ -965,6 +1106,11 @@ export function DashboardPage() {
                             Margen promedio: {avgMargin.toFixed(1)}%
                           </span>
                         </>
+                      )}
+                      {rowsWithoutCost.length > 0 && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-50 text-gray-600">
+                          Sin costo: {rowsWithoutCost.length} producto(s) · S/ {uncaughtRevenue.toFixed(2)}
+                        </span>
                       )}
                     </>
                   );
