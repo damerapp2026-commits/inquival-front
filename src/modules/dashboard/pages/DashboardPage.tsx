@@ -48,6 +48,11 @@ const firstPositive = (...values: Array<unknown>): number | null => {
   return null;
 };
 
+const isUsdToPenRate = (value: unknown): value is number => {
+  const rate = numberFrom(value);
+  return rate != null && rate >= 2 && rate <= 10;
+};
+
 const normalizeName = (value: unknown): string =>
   String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -91,7 +96,8 @@ function buildProductCostLookup(products: Product[], catalogRows: Record<string,
   catalogRows.forEach((row) => {
     const productId = pickProductId(row);
     const productName = pickProductName(row);
-    const exchangeRate = numberFrom(row.exchangeRate) || 1;
+    const exchangeRate = firstPositive(row.exchangeRate, row.exchange_rate);
+    const canConvertUsd = isUsdToPenRate(exchangeRate);
     const cost = firstPositive(
       row.unitCost,
       row.unit_cost,
@@ -99,8 +105,8 @@ function buildProductCostLookup(products: Product[], catalogRows: Record<string,
       row.unit_price_con_igv_pen,
       row.unitPriceSinIgvPen,
       row.unit_price_sin_igv_pen,
-      row.unitPriceConIgvUsd ? numberFrom(row.unitPriceConIgvUsd)! * exchangeRate : null,
-      row.unit_price_con_igv_usd ? numberFrom(row.unit_price_con_igv_usd)! * exchangeRate : null,
+      canConvertUsd && row.unitPriceConIgvUsd ? numberFrom(row.unitPriceConIgvUsd)! * exchangeRate! : null,
+      canConvertUsd && row.unit_price_con_igv_usd ? numberFrom(row.unit_price_con_igv_usd)! * exchangeRate! : null,
     );
     if (!cost) return;
     if (productId) byId.set(productId, cost);
@@ -117,7 +123,7 @@ function buildProductCostLookup(products: Product[], catalogRows: Record<string,
       (product as any).exchange_rate,
     );
     const cost = costCurrency === 'USD'
-      ? (rawCost && costExchangeRate ? rawCost * costExchangeRate : null)
+      ? (rawCost && isUsdToPenRate(costExchangeRate) ? rawCost * costExchangeRate : null)
       : rawCost;
     if (!cost) return;
     byId.set(product.id, cost);
@@ -130,22 +136,28 @@ function buildProductCostLookup(products: Product[], catalogRows: Record<string,
 
 function saleExchangeRate(sale: Sale): number | null {
   const direct = numberFrom(sale.exchangeRate);
-  if (direct && direct > 0) return direct;
+  if (isUsdToPenRate(direct)) return direct;
   const totalPen = numberFrom(sale.total);
   const totalUsd = numberFrom(sale.totalUsd);
   if (totalPen && totalUsd && totalUsd > 0) {
     const derived = totalPen / totalUsd;
-    if (Number.isFinite(derived) && derived > 0) return derived;
+    if (Number.isFinite(derived) && isUsdToPenRate(derived)) return derived;
   }
   return null;
 }
 
-function saleItemRevenuePen(sale: Sale, item: Record<string, any>): number {
+function saleItemRevenuePen(sale: Sale, item: Record<string, any>): number | null {
   const quantity = numberFrom(item.quantity) || 0;
   const subtotal = numberFrom(item.subtotal);
   const unitPrice = numberFrom(item.unitPrice);
-  if (sale.currency !== 'USD') {
-    return subtotal ?? (unitPrice != null ? quantity * unitPrice : 0);
+  const isUsdSale =
+    sale.currency === 'USD' ||
+    sale.totalUsd != null ||
+    item.subtotalUsd != null ||
+    item.unitPriceUsd != null;
+
+  if (!isUsdSale) {
+    return subtotal ?? (unitPrice != null ? quantity * unitPrice : null);
   }
 
   const exchangeRate = saleExchangeRate(sale);
@@ -155,7 +167,7 @@ function saleItemRevenuePen(sale: Sale, item: Record<string, any>): number {
   if (unitPriceUsd != null && exchangeRate) return unitPriceUsd * quantity * exchangeRate;
 
   if (subtotal == null) {
-    return unitPrice != null && exchangeRate ? quantity * unitPrice * exchangeRate : 0;
+    return unitPrice != null && exchangeRate ? quantity * unitPrice * exchangeRate : null;
   }
 
   const saleTotalPen = numberFrom(sale.total);
@@ -166,7 +178,7 @@ function saleItemRevenuePen(sale: Sale, item: Record<string, any>): number {
     if (diff <= Math.max(0.05, expectedPen * 0.01)) return subtotal;
   }
 
-  return exchangeRate ? subtotal * exchangeRate : subtotal;
+  return exchangeRate ? subtotal * exchangeRate : null;
 }
 
 function buildProfitabilityRowsFromSales(
@@ -197,6 +209,7 @@ function buildProfitabilityRowsFromSales(
       if (!key) return;
 
       const revenuePen = saleItemRevenuePen(sale, item);
+      if (revenuePen == null) return;
       const unitCost =
         (productId ? latestCostByProduct.byId.get(productId)?.cost : null) ??
         (normalizedName ? latestCostByProduct.byName.get(normalizedName)?.cost : null) ??
@@ -284,7 +297,8 @@ function buildLatestCostByProduct(purchases: Purchase[], productNameById: Map<st
   purchases.forEach((purchase: any) => {
     if (purchase.isCancelled || purchase.cancelledAt) return;
     const at = new Date(purchase.issueDate || purchase.date || purchase.createdAt || 0).getTime() || 0;
-    const exchangeRate = numberFrom(purchase.exchangeRate) || 1;
+    const exchangeRate = firstPositive(purchase.exchangeRate, purchase.exchange_rate);
+    const canConvertUsd = isUsdToPenRate(exchangeRate);
     const isUsd = purchase.totalCostUsd != null;
 
     (purchase.items || []).forEach((item: any) => {
@@ -295,8 +309,8 @@ function buildLatestCostByProduct(purchases: Purchase[], productNameById: Map<st
       const unitPriceSinIgv = pickNumber(item, ['unitPriceSinIgv', 'unit_price_sin_igv', 'unitPriceWithoutTax']);
       const cost = firstPositive(
         unitCost,
-        isUsd && unitPriceConIgv ? unitPriceConIgv * exchangeRate : unitPriceConIgv,
-        isUsd && unitPriceSinIgv ? unitPriceSinIgv * exchangeRate : unitPriceSinIgv,
+        isUsd && unitPriceConIgv ? (canConvertUsd ? unitPriceConIgv * exchangeRate! : null) : unitPriceConIgv,
+        isUsd && unitPriceSinIgv ? (canConvertUsd ? unitPriceSinIgv * exchangeRate! : null) : unitPriceSinIgv,
       );
       if (!cost) return;
       if (productId) {
