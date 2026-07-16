@@ -21,6 +21,7 @@ import { useAuth } from '../../../app/providers/AuthProvider';
 import { useUsers } from '../../users/hooks/useUsers';
 import type { VoucherSnapshot } from '../../sales/components/VoucherPreviewModal';
 import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
+import { getQuoteItemProductName, getQuoteItemProductUnit, getQuoteItemTaxType } from '../../quotes/hooks/useQuoteProducts';
 
 const IGV_RATE = 0.18;
 const POS_PRODUCT_BATCH_SIZE = 120;
@@ -395,7 +396,7 @@ export function POSPage() {
       const preferredCompanyId = i.sourceCompanyId || i.companyId || preloadedQuote.companyId || undefined;
       const sourceCompanyId = resolveSourceCompanyForProduct(i.productId, requestedQty, preferredCompanyId);
       const availableQty = stockForProductInCompany(i.productId, sourceCompanyId);
-      const name = p?.name || i.productName || i.name || i.product?.name || i.productId || 'Producto';
+      const name = getQuoteItemProductName(i, p);
       if (!sourceCompanyId || availableQty <= 0) {
         unavailableItems.push(name);
         return [];
@@ -405,10 +406,10 @@ export function POSPage() {
       return [{
         productId: i.productId,
         name,
-        unit: p?.unit || i.unit || i.product?.unit || '',
+        unit: getQuoteItemProductUnit(i, p),
         quantity,
         unitPrice: i.unitPrice,
-        taxType: normalizeTaxType(p?.taxType || i.taxType || i.product?.taxType),
+        taxType: normalizeTaxType(getQuoteItemTaxType(i, p)),
         tierOverride: i.priceTier,
         isCustomPrice: true,
         sourceCompanyId,

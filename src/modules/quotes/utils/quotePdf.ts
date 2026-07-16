@@ -1,6 +1,7 @@
 import type { Quote, Product, Company, Client } from '../../../shared/types';
 import { numberToWords } from './numberToWords';
 import { COMPANY_INFO } from '../../../config/companyInfo';
+import { getQuoteItemProductName, getQuoteItemProductUnit } from '../hooks/useQuoteProducts';
 
 let pdfMakePromise: Promise<any> | null = null;
 function loadPdfMake() {
@@ -200,9 +201,9 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
     const p = getProduct(it.productId);
     return [
       { text: idx + 1, alignment: 'center', fontSize: 8 },
-      { text: p?.name || '—', alignment: 'left', fontSize: 8 },
+      { text: getQuoteItemProductName(it, p), alignment: 'left', fontSize: 8 },
       { text: it.quantity.toFixed(2), alignment: 'center', fontSize: 8 },
-      { text: (p?.unit || 'UND').toUpperCase().slice(0, 4), alignment: 'center', fontSize: 8 },
+      { text: (getQuoteItemProductUnit(it, p) || 'UND').toUpperCase().slice(0, 4), alignment: 'center', fontSize: 8 },
       { text: it.unitPrice.toFixed(2), alignment: 'right', fontSize: 8 },
       { text: it.subtotal.toFixed(2), alignment: 'right', fontSize: 8 },
     ];

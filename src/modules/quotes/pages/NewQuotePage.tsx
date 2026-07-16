@@ -14,6 +14,7 @@ import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import type { Product, ProductPrice, Company, Client, PriceTier, QuotePayment, Quote } from '../../../shared/types';
+import { getQuoteItemProductName, getQuoteItemProductUnit, getQuoteItemTaxType, useQuoteProducts } from '../hooks/useQuoteProducts';
 
 const IGV_RATE = 0.18;
 type DocType = 'DNI' | 'RUC' | 'CE' | 'OTRO';
@@ -96,6 +97,8 @@ export function NewQuotePage() {
     const list: Product[] = Array.isArray(raw) ? raw : raw?.data || [];
     return list.filter((p) => p.isActive);
   }, [productsData]);
+  const editQuoteItems = useMemo(() => (editQuote as Quote | undefined)?.items || [], [editQuote]);
+  const { productById: editProductById, isLoading: editProductsLoading } = useQuoteProducts(editQuoteItems, products);
 
   const companies: Company[] = useMemo(() => {
     const list: Company[] = Array.isArray(companiesData) ? companiesData : [];
@@ -172,7 +175,7 @@ export function NewQuotePage() {
   }, [tiers, tierId]);
 
   useEffect(() => {
-    if (!isEditing || didLoadEditQuote || !editQuote) return;
+    if (!isEditing || didLoadEditQuote || !editQuote || editProductsLoading) return;
 
     const quote = editQuote as Quote;
     const client = quote.clientId ? clients.find((c) => c.id === quote.clientId) : undefined;
@@ -211,20 +214,20 @@ export function NewQuotePage() {
     setInternalNotes(parsedNotes.internalNotes);
     setPayments(quote.payments || []);
     setLines(quote.items.map((item) => {
-      const product = products.find((p) => p.id === item.productId);
+      const product = editProductById.get(item.productId);
       return {
         productId: item.productId,
-        name: product?.name || item.productId,
-        unit: product?.unit || '',
+        name: getQuoteItemProductName(item, product),
+        unit: getQuoteItemProductUnit(item, product),
         quantity: item.quantity,
         unitPrice: item.unitPrice,
-        taxType: product?.taxType,
+        taxType: getQuoteItemTaxType(item, product),
         tierOverride: item.priceTier,
         sourceCompanyId: item.companyId,
       };
     }));
     setDidLoadEditQuote(true);
-  }, [isEditing, didLoadEditQuote, editQuote, clients, products, companies, tiers, creditDueDate]);
+  }, [isEditing, didLoadEditQuote, editQuote, editProductsLoading, editProductById, clients, companies, tiers, creditDueDate]);
 
   useEffect(() => {
     if (currency !== 'USD' || !tipoCambioData?.venta) return;

@@ -25,7 +25,7 @@ export interface PurchaseOrder { id: string; orderNumber: string; companyId: str
 export interface ProductLot { id: string; productId: string; productName?: string; productUnit?: string; companyId: string; companyName?: string; lotNumber: string; expirationDate?: string; initialQuantity: number; currentQuantity: number; purchaseId?: string; receivedAt: string; isActive: boolean; }
 
 export type QuoteStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'CONVERTED';
-export interface QuoteItem { productId: string; companyId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number; }
+export interface QuoteItem { productId: string; productName?: string; name?: string; unit?: string; taxType?: string; product?: { name?: string; unit?: string; taxType?: string }; companyId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number; }
 export interface QuotePayment { paymentMethodName: string; amount: number; }
 export interface Quote { id: string; quoteNumber: string; series: string; number: number; companyId?: string; clientId?: string; clientName?: string; items: QuoteItem[]; total: number; notes?: string; status: QuoteStatus; issueDate: string; validUntil: string; convertedSaleId?: string; createdBy?: string; sellerId?: string; sellerName?: string; participantIds?: string[]; participantNames?: string[]; currency?: 'PEN' | 'USD'; exchangeRate?: number; paymentMethod?: string; creditDays?: number; payments?: QuotePayment[]; createdAt: string; }
 

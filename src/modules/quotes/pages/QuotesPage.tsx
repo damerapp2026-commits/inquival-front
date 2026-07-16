@@ -12,6 +12,7 @@ import type { Quote, QuoteStatus, Product, Company, Client } from '../../../shar
 import { downloadQuotePdf, printQuotePdf } from '../utils/quotePdf';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useDeleteQuote } from '../hooks/useQuotes';
+import { getQuoteItemProductName, useQuoteProducts } from '../hooks/useQuoteProducts';
 
 const STATUS_LABELS: Record<QuoteStatus, { label: string; short: string; color: string; chip: string }> = {
   PENDING:   { label: 'Borrador',  short: 'borr.',  color: 'bg-yellow-100 text-yellow-800 border-yellow-300', chip: 'text-yellow-700' },
@@ -59,7 +60,12 @@ export function QuotesPage() {
 
   const quotes: Quote[] = data?.data || [];
   const total = data?.total || 0;
-  const products: Product[] = productsData?.data || [];
+  const catalogProducts: Product[] = useMemo(() => {
+    const raw: any = productsData;
+    return Array.isArray(raw) ? raw : (raw?.data ?? []);
+  }, [productsData]);
+  const quoteItems = useMemo(() => quotes.flatMap((quote) => quote.items), [quotes]);
+  const { products } = useQuoteProducts(quoteItems, catalogProducts);
   const companies: Company[] = useMemo(() => {
     const raw: any = companiesData;
     return Array.isArray(raw) ? raw : (raw?.data ?? []);
@@ -636,7 +642,7 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
                     return (
                       <tr key={i} className="hover:bg-gray-50">
                         <td className="px-3 py-2.5 text-gray-800 font-medium">
-                          {prod?.name || item.productId}
+                          {getQuoteItemProductName(item, prod)}
                           {(prod as any)?.code && <span className="ml-1.5 text-xs font-mono text-gray-400">{(prod as any).code}</span>}
                         </td>
                         <td className="px-3 py-2.5 text-center text-gray-600">{item.quantity}</td>
