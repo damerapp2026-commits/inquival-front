@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useQueries } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import type { Product, QuoteItem } from '../../../shared/types';
 import { productService } from '../../products/services/productService';
 
@@ -25,22 +25,19 @@ export function useQuoteProducts(items: QuoteItem[], catalogProducts: Product[])
       .map((item) => item.productId)
       .filter((productId) => productId && !catalogById.has(productId)),
   )), [items, catalogById]);
-  const queries = useQueries({
-    queries: missingProductIds.map((productId) => ({
-      queryKey: ['product', productId],
-      queryFn: () => productService.getById(productId),
-      staleTime: 5 * 60_000,
-      retry: false,
-    })),
+  const allProductsQuery = useQuery({
+    queryKey: ['products', 'quote-resolver'],
+    queryFn: () => productService.getAll({ limit: 10000, includeInactive: true }),
+    enabled: missingProductIds.length > 0,
+    staleTime: 5 * 60_000,
   });
   const products = useMemo(() => {
     const resolved = new Map(catalogById);
-    queries.forEach((query, index) => {
-      const product = query.data as Product | undefined;
-      if (product) resolved.set(missingProductIds[index], product);
-    });
+    const raw: any = allProductsQuery.data;
+    const allProducts: Product[] = Array.isArray(raw) ? raw : (raw?.data ?? []);
+    allProducts.forEach((product) => resolved.set(product.id, product));
     return Array.from(resolved.values());
-  }, [catalogById, missingProductIds, queries]);
+  }, [catalogById, allProductsQuery.data]);
   const productById = useMemo(
     () => new Map(products.map((product) => [product.id, product])),
     [products],
@@ -49,6 +46,6 @@ export function useQuoteProducts(items: QuoteItem[], catalogProducts: Product[])
   return {
     products,
     productById,
-    isLoading: queries.some((query) => query.isPending),
+    isLoading: missingProductIds.length > 0 && allProductsQuery.isPending,
   };
 }

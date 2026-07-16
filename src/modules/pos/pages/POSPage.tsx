@@ -10,9 +10,8 @@ import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods
 import { useCreateSale } from '../../sales/hooks/useSales';
 import { useQuote, useConvertQuote } from '../../quotes/hooks/useQuotes';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { stockService } from '../../stock/services/stockService';
-import { productService } from '../../products/services/productService';
 import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark, ChevronLeft, ChevronRight, Receipt, Building2, FileText, CheckCircle2, Eye, Banknote, Calendar, Gift, DollarSign } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { Product, ProductPrice, Category, Company, Client, PriceTier, PaymentMethod, CreditAccount } from '../../../shared/types';
@@ -21,7 +20,7 @@ import { useAuth } from '../../../app/providers/AuthProvider';
 import { useUsers } from '../../users/hooks/useUsers';
 import type { VoucherSnapshot } from '../../sales/components/VoucherPreviewModal';
 import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
-import { getQuoteItemProductName, getQuoteItemProductUnit, getQuoteItemTaxType } from '../../quotes/hooks/useQuoteProducts';
+import { getQuoteItemProductName, getQuoteItemProductUnit, getQuoteItemTaxType, useQuoteProducts } from '../../quotes/hooks/useQuoteProducts';
 
 const IGV_RATE = 0.18;
 const POS_PRODUCT_BATCH_SIZE = 120;
@@ -207,36 +206,8 @@ export function POSPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const fromQuoteId = searchParams.get('fromQuote') || '';
   const { data: preloadedQuote } = useQuote(fromQuoteId);
-  const quoteProductIds = useMemo<string[]>(() => {
-    const items = Array.isArray(preloadedQuote?.items) ? preloadedQuote.items : [];
-    return Array.from(new Set<string>(
-      items
-        .map((item: any) => String(item.productId || '').trim())
-        .filter((productId: string) => productId.length > 0),
-    ));
-  }, [preloadedQuote]);
-  const missingQuoteProductIds = useMemo(
-    () => quoteProductIds.filter((productId) => !productById.has(productId)),
-    [quoteProductIds, productById],
-  );
-  const missingQuoteProductQueries = useQueries({
-    queries: missingQuoteProductIds.map((productId) => ({
-      queryKey: ['product', productId],
-      queryFn: () => productService.getById(productId),
-      enabled: !!fromQuoteId,
-      staleTime: 5 * 60_000,
-      retry: false,
-    })),
-  });
-  const quoteProductById = useMemo(() => {
-    const result = new Map(productById);
-    missingQuoteProductQueries.forEach((query, index) => {
-      const product = query.data as Product | undefined;
-      if (product) result.set(missingQuoteProductIds[index], product);
-    });
-    return result;
-  }, [productById, missingQuoteProductIds, missingQuoteProductQueries]);
-  const quoteProductsLoading = missingQuoteProductQueries.some((query) => query.isPending);
+  const quoteItems = useMemo(() => preloadedQuote?.items || [], [preloadedQuote]);
+  const { productById: quoteProductById, isLoading: quoteProductsLoading } = useQuoteProducts(quoteItems, products);
   const [sourceQuoteId, setSourceQuoteId] = useState<string>('');
   const [clientId, setClientId] = useState<string>(persistedDraft?.clientId || '');
   const [voucherType, setVoucherType] = useState<'NONE' | 'BOLETA' | 'FACTURA'>(persistedDraft?.voucherType || 'NONE');
