@@ -10,8 +10,9 @@ import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods
 import { useCreateSale } from '../../sales/hooks/useSales';
 import { useQuote, useConvertQuote } from '../../quotes/hooks/useQuotes';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { stockService } from '../../stock/services/stockService';
+import { productService } from '../../products/services/productService';
 import { Search, Plus, Minus, Trash2, Package, X, ShoppingCart, CreditCard, User, Pencil, Tag, ScrollText, Landmark, ChevronLeft, ChevronRight, Receipt, Building2, FileText, CheckCircle2, Eye, Banknote, Calendar, Gift, DollarSign } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { Product, ProductPrice, Category, Company, Client, PriceTier, PaymentMethod, CreditAccount } from '../../../shared/types';
@@ -205,6 +206,36 @@ export function POSPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const fromQuoteId = searchParams.get('fromQuote') || '';
   const { data: preloadedQuote } = useQuote(fromQuoteId);
+  const quoteProductIds = useMemo<string[]>(() => {
+    const items = Array.isArray(preloadedQuote?.items) ? preloadedQuote.items : [];
+    return Array.from(new Set<string>(
+      items
+        .map((item: any) => String(item.productId || '').trim())
+        .filter((productId: string) => productId.length > 0),
+    ));
+  }, [preloadedQuote]);
+  const missingQuoteProductIds = useMemo(
+    () => quoteProductIds.filter((productId) => !productById.has(productId)),
+    [quoteProductIds, productById],
+  );
+  const missingQuoteProductQueries = useQueries({
+    queries: missingQuoteProductIds.map((productId) => ({
+      queryKey: ['product', productId],
+      queryFn: () => productService.getById(productId),
+      enabled: !!fromQuoteId,
+      staleTime: 5 * 60_000,
+      retry: false,
+    })),
+  });
+  const quoteProductById = useMemo(() => {
+    const result = new Map(productById);
+    missingQuoteProductQueries.forEach((query, index) => {
+      const product = query.data as Product | undefined;
+      if (product) result.set(missingQuoteProductIds[index], product);
+    });
+    return result;
+  }, [productById, missingQuoteProductIds, missingQuoteProductQueries]);
+  const quoteProductsLoading = missingQuoteProductQueries.some((query) => query.isPending);
   const [sourceQuoteId, setSourceQuoteId] = useState<string>('');
   const [clientId, setClientId] = useState<string>(persistedDraft?.clientId || '');
   const [voucherType, setVoucherType] = useState<'NONE' | 'BOLETA' | 'FACTURA'>(persistedDraft?.voucherType || 'NONE');
@@ -348,7 +379,7 @@ export function POSPage() {
 
   // Preload cart from quote (if ?fromQuote=... param)
   useEffect(() => {
-    if (!preloadedQuote || !products.length || !stockReady || sourceQuoteId === preloadedQuote.id) return;
+    if (!preloadedQuote || productsLoading || quoteProductsLoading || !stockReady || sourceQuoteId === preloadedQuote.id) return;
     if (preloadedQuote.status === 'CONVERTED' || preloadedQuote.status === 'REJECTED') {
       toast.error('Esta cotización ya no puede convertirse');
       navigate('/quotes');
@@ -359,12 +390,12 @@ export function POSPage() {
     const unavailableItems: string[] = [];
     const adjustedItems: string[] = [];
     const items: CartItem[] = preloadedQuote.items.flatMap((i: any) => {
-      const p = productById.get(i.productId);
+      const p = quoteProductById.get(i.productId);
       const requestedQty = Number(i.quantity || 0);
       const preferredCompanyId = i.sourceCompanyId || i.companyId || preloadedQuote.companyId || undefined;
       const sourceCompanyId = resolveSourceCompanyForProduct(i.productId, requestedQty, preferredCompanyId);
       const availableQty = stockForProductInCompany(i.productId, sourceCompanyId);
-      const name = p?.name || i.productName || 'Producto';
+      const name = p?.name || i.productName || i.name || i.product?.name || i.productId || 'Producto';
       if (!sourceCompanyId || availableQty <= 0) {
         unavailableItems.push(name);
         return [];
@@ -374,10 +405,10 @@ export function POSPage() {
       return [{
         productId: i.productId,
         name,
-        unit: p?.unit || '',
+        unit: p?.unit || i.unit || i.product?.unit || '',
         quantity,
         unitPrice: i.unitPrice,
-        taxType: normalizeTaxType(p?.taxType),
+        taxType: normalizeTaxType(p?.taxType || i.taxType || i.product?.taxType),
         tierOverride: i.priceTier,
         isCustomPrice: true,
         sourceCompanyId,
@@ -392,7 +423,7 @@ export function POSPage() {
     if (unavailableItems.length > 0) {
       toast.error(`Sin stock: ${unavailableItems.slice(0, 3).join(', ')}${unavailableItems.length > 3 ? '…' : ''}`);
     }
-  }, [preloadedQuote, products.length, productById, stockReady, stockByCompany, sourceQuoteId, navigate]);
+  }, [preloadedQuote, productsLoading, quoteProductsLoading, quoteProductById, stockReady, stockByCompany, sourceQuoteId, navigate]);
 
   // Defaults once data loads
   useEffect(() => {
