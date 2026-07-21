@@ -208,8 +208,7 @@ export function StockPage() {
         const { productId, companyId } = parseRowKey(key);
         const rawLotId = row?.tracksLot ? (adjLotId[key] || '') : undefined;
         const isNewLot = rawLotId === '__new__';
-        const selectedLot = (!isNewLot && rawLotId) ? adjLotsByRowKey.get(key)?.find(l => l.id === rawLotId) : undefined;
-        const current = isNewLot ? 0 : (selectedLot ? selectedLot.currentQuantity : (row?.currentQty ?? 0));
+        const current = row?.currentQty ?? 0;
         const raw = adjNewQty[key];
         const parsed = raw === undefined || raw === '' ? current : Number(raw);
         const next = isNaN(parsed) ? current : parsed;
@@ -222,9 +221,36 @@ export function StockPage() {
         };
       })
       .filter(c => Math.abs(c.delta) > 0.0001 && c.next >= 0 && !!c.companyId);
-  }, [adjSelected, adjNewQty, adjRowsByKey, adjLotId, adjLotsByRowKey, adjLotNumber, adjLotExpDate]);
-  const adjHasInvalid = useMemo(() => {
+  }, [adjSelected, adjNewQty, adjRowsByKey, adjLotId, adjLotNumber, adjLotExpDate]);
+  const adjHasNewLotDecrease = useMemo(() => {
     return Object.entries(adjSelected)
+      .filter(([, sel]) => sel)
+      .some(([key]) => {
+        if (adjLotId[key] !== '__new__') return false;
+        const row = adjRowsByKey.get(key);
+        const raw = adjNewQty[key];
+        if (!row || raw === undefined || raw === '') return false;
+        const parsed = Number(raw);
+        return !isNaN(parsed) && parsed < row.currentQty;
+      });
+  }, [adjSelected, adjLotId, adjNewQty, adjRowsByKey]);
+  const adjHasInsufficientLotStock = useMemo(() => {
+    return Object.entries(adjSelected)
+      .filter(([, sel]) => sel)
+      .some(([key]) => {
+        const lotId = adjLotId[key];
+        if (!lotId || lotId === '__new__') return false;
+        const row = adjRowsByKey.get(key);
+        const selectedLot = adjLotsByRowKey.get(key)?.find(lot => lot.id === lotId);
+        const raw = adjNewQty[key];
+        if (!row || !selectedLot || raw === undefined || raw === '') return false;
+        const parsed = Number(raw);
+        const delta = parsed - row.currentQty;
+        return !isNaN(parsed) && delta < 0 && selectedLot.currentQuantity < Math.abs(delta);
+      });
+  }, [adjSelected, adjLotId, adjNewQty, adjRowsByKey, adjLotsByRowKey]);
+  const adjHasInvalid = useMemo(() => {
+    return adjHasNewLotDecrease || adjHasInsufficientLotStock || Object.entries(adjSelected)
       .filter(([, sel]) => sel)
       .some(([key]) => {
         const row = adjRowsByKey.get(key);
@@ -235,7 +261,7 @@ export function StockPage() {
         const parsed = Number(raw);
         return isNaN(parsed) || parsed < 0;
       });
-  }, [adjSelected, adjNewQty, adjRowsByKey, adjLotId, adjLotNumber]);
+  }, [adjHasNewLotDecrease, adjHasInsufficientLotStock, adjSelected, adjNewQty, adjRowsByKey, adjLotId, adjLotNumber]);
   const adjCanApply = !adjApplying && (adjAllWarehouses || !!adjCompanyId) && !!adjReason && adjPendingChanges.length > 0 && !adjHasInvalid;
 
   // Bulk import state
@@ -1308,6 +1334,7 @@ export function StockPage() {
         <div className="space-y-4">
           <p className="text-sm text-gray-600 -mt-2">
             Seleccioná uno o varios productos y registrá su nuevo stock. Cada cambio queda asentado en el ledger de movimientos.
+            Para productos controlados por lotes, el lote seleccionado indica dónde se aplicará la diferencia.
           </p>
 
           {companyList.length > 1 && (
@@ -1384,12 +1411,18 @@ export function StockPage() {
                   ) : adjVisibleRows.map(row => {
                     const isSelected = !!adjSelected[row.key];
                     const selectedLotId = row.tracksLot ? (adjLotId[row.key] || '') : '';
-                    const selectedLot = selectedLotId ? adjLotsByRowKey.get(row.key)?.find(l => l.id === selectedLotId) : undefined;
-                    const current = selectedLot ? selectedLot.currentQuantity : row.currentQty;
+                    const isNewLot = selectedLotId === '__new__';
+                    const selectedLot = selectedLotId && !isNewLot
+                      ? adjLotsByRowKey.get(row.key)?.find(lot => lot.id === selectedLotId)
+                      : undefined;
+                    const current = row.currentQty;
                     const raw = adjNewQty[row.key];
                     const parsed = raw === undefined || raw === '' ? current : Number(raw);
                     const noLotSelected = isSelected && !!row.tracksLot && !selectedLotId;
-                    const isInvalid = isSelected && !noLotSelected && raw !== undefined && raw !== '' && (isNaN(parsed) || parsed < 0);
+                    const newLotCannotDecrease = isNewLot && !isNaN(parsed) && parsed < current;
+                    const requestedDelta = isNaN(parsed) ? 0 : Math.round((parsed - current) * 100) / 100;
+                    const lotHasInsufficientStock = !!selectedLot && requestedDelta < 0 && selectedLot.currentQuantity < Math.abs(requestedDelta);
+                    const isInvalid = isSelected && !noLotSelected && raw !== undefined && raw !== '' && (isNaN(parsed) || parsed < 0 || newLotCannotDecrease || lotHasInsufficientStock);
                     const next = (isInvalid || noLotSelected) ? current : (isNaN(parsed) ? current : parsed);
                     const delta = Math.round((next - current) * 100) / 100;
                     const flash = adjFlashProductId === row.productId;
@@ -1422,7 +1455,7 @@ export function StockPage() {
                                 className="w-full px-2 py-1 border border-orange-300 rounded text-xs focus:ring-1 focus:ring-orange-400 bg-white disabled:opacity-50"
                               >
                                 <option value="">— Selecciona un lote —</option>
-                                <option value="__new__">➕ Crear lote nuevo</option>
+                                <option value="__new__">➕ Crear lote nuevo (solo aumento)</option>
                                 {(adjLotsByRowKey.get(row.key) || []).map(lot => (
                                   <option key={lot.id} value={lot.id}>
                                     {lot.lotNumber} · {lot.currentQuantity} uds{lot.expirationDate ? ` · FV ${new Date(lot.expirationDate).toLocaleDateString('es-PE')}` : ''}
@@ -1430,23 +1463,28 @@ export function StockPage() {
                                 ))}
                               </select>
                               {adjLotId[row.key] === '__new__' && (
-                                <div className="flex gap-1.5">
-                                  <input
-                                    type="text"
-                                    placeholder="N° lote (ej: KZ-2025-001)"
-                                    value={adjLotNumber[row.key] || ''}
-                                    onChange={(e) => setAdjLotNumber(prev => ({ ...prev, [row.key]: e.target.value }))}
-                                    disabled={adjApplying}
-                                    className={`flex-1 px-2 py-1 border rounded text-xs focus:ring-1 focus:ring-orange-400 disabled:opacity-50 ${!adjLotNumber[row.key]?.trim() ? 'border-red-300 bg-red-50' : 'border-orange-300'}`}
-                                  />
-                                  <input
-                                    type="date"
-                                    title="Fecha de vencimiento (opcional)"
-                                    value={adjLotExpDate[row.key] || ''}
-                                    onChange={(e) => setAdjLotExpDate(prev => ({ ...prev, [row.key]: e.target.value }))}
-                                    disabled={adjApplying}
-                                    className="w-32 px-2 py-1 border border-orange-300 rounded text-xs focus:ring-1 focus:ring-orange-400 disabled:opacity-50"
-                                  />
+                                <div className="space-y-1">
+                                  <div className="flex gap-1.5">
+                                    <input
+                                      type="text"
+                                      placeholder="N° lote (ej: KZ-2025-001)"
+                                      value={adjLotNumber[row.key] || ''}
+                                      onChange={(e) => setAdjLotNumber(prev => ({ ...prev, [row.key]: e.target.value }))}
+                                      disabled={adjApplying}
+                                      className={`flex-1 px-2 py-1 border rounded text-xs focus:ring-1 focus:ring-orange-400 disabled:opacity-50 ${!adjLotNumber[row.key]?.trim() ? 'border-red-300 bg-red-50' : 'border-orange-300'}`}
+                                    />
+                                    <input
+                                      type="date"
+                                      title="Fecha de vencimiento (opcional)"
+                                      value={adjLotExpDate[row.key] || ''}
+                                      onChange={(e) => setAdjLotExpDate(prev => ({ ...prev, [row.key]: e.target.value }))}
+                                      disabled={adjApplying}
+                                      className="w-32 px-2 py-1 border border-orange-300 rounded text-xs focus:ring-1 focus:ring-orange-400 disabled:opacity-50"
+                                    />
+                                  </div>
+                                  <div className="text-[11px] text-orange-600">
+                                    El lote nuevo recibirá solo el incremento necesario para llegar al stock final.
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -1535,7 +1573,15 @@ export function StockPage() {
             <div className="text-xs flex items-center gap-1.5 min-h-[20px]">
               {adjHasInvalid ? (
                 <span className="text-red-600 font-medium flex items-center gap-1.5">
-                  <AlertTriangle size={14} /> {Object.entries(adjSelected).filter(([,s])=>s).some(([k])=>adjLotId[k]==='__new__'&&!adjLotNumber[k]?.trim()) ? 'Ingresa el número de lote para los lotes nuevos' : 'Selecciona el lote o completa los valores'}
+                  <AlertTriangle size={14} /> {
+                    Object.entries(adjSelected).filter(([,s])=>s).some(([k])=>adjLotId[k]==='__new__'&&!adjLotNumber[k]?.trim())
+                      ? 'Ingresa el número de lote para los lotes nuevos'
+                      : adjHasNewLotDecrease
+                        ? 'Para reducir el stock selecciona un lote existente'
+                        : adjHasInsufficientLotStock
+                          ? 'El lote seleccionado no tiene suficiente stock para aplicar la reducción'
+                        : 'Selecciona el lote o completa los valores'
+                  }
                 </span>
               ) : adjSelectedCount > 0 && adjPendingChanges.length === 0 ? (
                 <span className="text-amber-700 flex items-center gap-1.5">
