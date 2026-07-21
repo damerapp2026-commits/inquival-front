@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { usePurchases, useUpdatePurchaseMeta } from '../hooks/usePurchases';
+import { usePurchases, useUpdatePurchaseFiscalEntity, useUpdatePurchaseMeta } from '../hooks/usePurchases';
 import { purchaseService } from '../services/purchaseService';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
@@ -9,7 +9,7 @@ import { PurchaseOrdersPage } from './PurchaseOrdersPage';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
-import { Plus, ShoppingCart, Eye, Wrench, Search, X, FileText, Download, ClipboardList, Percent } from 'lucide-react';
+import { Plus, ShoppingCart, Eye, Wrench, Search, X, FileText, Download, ClipboardList, Percent, Loader2 } from 'lucide-react';
 import type { Purchase, Company, Product, FiscalEntity } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
 import toast from 'react-hot-toast';
@@ -49,7 +49,12 @@ export function PurchasesPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [grModal, setGrModal] = useState<{ purchaseId: string; grSeries: string; grNumber: string; grDate: string } | null>(null);
+  const [pendingFiscalEntityChange, setPendingFiscalEntityChange] = useState<{
+    purchaseId: string;
+    fiscalEntityId: string;
+  } | null>(null);
   const updateMeta = useUpdatePurchaseMeta();
+  const updateFiscalEntity = useUpdatePurchaseFiscalEntity();
 
   // Todo el estado vive en la URL para que "Atrás" desde el detalle restaure la página y filtros
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
@@ -260,9 +265,44 @@ export function PurchasesPage() {
     setGrModal(null);
   };
 
+  const handleFiscalEntityChange = async (purchase: Purchase, fiscalEntityId: string) => {
+    if (updateFiscalEntity.isPending || !fiscalEntityId || fiscalEntityId === purchase.fiscalEntityId) return;
+    setPendingFiscalEntityChange({ purchaseId: purchase.id, fiscalEntityId });
+    try {
+      await updateFiscalEntity.mutateAsync({ id: purchase.id, fiscalEntityId });
+    } finally {
+      setPendingFiscalEntityChange(null);
+    }
+  };
+
   const columns = [
     { key: 'date', header: 'F. Emisión', render: (item: Purchase) => formatDateEs(item.issueDate || item.date, { day: '2-digit', month: '2-digit', year: 'numeric' }) },
     { key: 'supplier', header: 'Proveedor' },
+    { key: 'fiscalEntityId', header: 'Empresa', render: (item: Purchase) => {
+      const isChanging = pendingFiscalEntityChange?.purchaseId === item.id;
+      const selectedFiscalEntityId = isChanging
+        ? pendingFiscalEntityChange.fiscalEntityId
+        : item.fiscalEntityId || '';
+      return (
+        <div className="relative min-w-[190px]" onClick={(event) => event.stopPropagation()}>
+          <select
+            value={selectedFiscalEntityId}
+            onChange={(event) => handleFiscalEntityChange(item, event.target.value)}
+            disabled={updateFiscalEntity.isPending || fiscalEntities.length === 0}
+            aria-label={`Empresa receptora de la compra de ${item.supplier}`}
+            className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-1.5 pl-2.5 pr-8 text-xs font-medium text-gray-700 outline-none transition-colors hover:border-primary-300 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 disabled:cursor-wait disabled:opacity-60"
+          >
+            <option value="" disabled>Seleccionar empresa</option>
+            {fiscalEntities.map((entity) => (
+              <option key={entity.id} value={entity.id}>{entity.legalName}</option>
+            ))}
+          </select>
+          {isChanging && (
+            <Loader2 size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-primary-600" />
+          )}
+        </div>
+      );
+    }},
     { key: 'document', header: 'Comprobante', render: (item: Purchase) => item.documentSeries && item.documentNumber
       ? <span className="font-mono text-xs text-gray-700">{item.documentSeries}-{item.documentNumber}</span>
       : <span className="text-gray-300">—</span>

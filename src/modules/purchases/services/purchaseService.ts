@@ -43,6 +43,7 @@ export const purchaseService = {
   update: (
     id: string,
     data: {
+      fiscalEntityId?: string;
       supplier?: string;
       supplierId?: string | null;
       supplierRuc?: string | null;

@@ -154,6 +154,22 @@ export function useUpdatePurchaseMeta() {
     },
   });
 }
+export function useUpdatePurchaseFiscalEntity() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, fiscalEntityId }: { id: string; fiscalEntityId: string }) =>
+      purchaseService.update(id, { fiscalEntityId }),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['purchase', id] });
+      toast.success('Empresa de la compra actualizada');
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg[0] : msg || 'Error al cambiar la empresa');
+    },
+  });
+}
 export function useUpdatePurchaseFull() {
   const qc = useQueryClient();
   return useMutation({
