@@ -6,6 +6,10 @@ export function useUsers(params?: any) {
   return useQuery({ queryKey: ['users', params], queryFn: () => userService.getAll(params) });
 }
 
+export function useCollectors() {
+  return useQuery({ queryKey: ['users', 'collectors'], queryFn: userService.getCollectors });
+}
+
 export function useCreateUser() {
   const qc = useQueryClient();
   return useMutation({

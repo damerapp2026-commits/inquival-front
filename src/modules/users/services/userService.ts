@@ -2,6 +2,7 @@ import { api } from '../../../shared/services/api';
 
 export const userService = {
   getAll: (params?: any) => api.get('/users', { params }).then((r) => r.data.data),
+  getCollectors: () => api.get('/users/collectors').then((r) => r.data.data),
   getById: (id: string) => api.get(`/users/${id}`).then((r) => r.data.data),
   create: (data: any) => api.post('/users', data).then((r) => r.data.data),
   update: (id: string, data: any) => api.put(`/users/${id}`, data).then((r) => r.data.data),

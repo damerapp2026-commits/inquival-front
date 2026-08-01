@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../shared/components/Modal';
-import { AlertCircle, CalendarDays, DollarSign, History, Layers, Loader2 } from 'lucide-react';
+import { AlertCircle, CalendarDays, DollarSign, History, Layers, Loader2, UserCheck } from 'lucide-react';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
+import { useCollectors } from '../../users/hooks/useUsers';
+import { useAuth } from '../../../app/providers/AuthProvider';
 import { useBatchPayment, useOpenClientCredits } from '../hooks/useCredits';
-import type { CreditAccount, PaymentMethod } from '../../../shared/types';
+import type { CreditAccount, PaymentMethod, User } from '../../../shared/types';
 import { creditCurrency, formatMoney, moneySymbol, type MoneyCurrency } from '../utils/money';
 
 type Mode = 'EXPLICIT' | 'FIFO';
@@ -31,12 +33,21 @@ interface PaymentSplit {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openCredits }: Props) {
+  const { user } = useAuth();
   const { data: paymentMethodsData } = usePaymentMethods();
   const { data: fetchedOpenCredits, isFetching: isFetchingOpenCredits } = useOpenClientCredits(isOpen ? clientId : '');
   const paymentMethods: PaymentMethod[] = useMemo(
     () => (Array.isArray(paymentMethodsData) ? paymentMethodsData.filter((m: PaymentMethod) => m.isActive) : []),
     [paymentMethodsData],
   );
+  const { data: usersData } = useCollectors();
+  const workers: User[] = useMemo(() => {
+    const raw: any = usersData;
+    const list: User[] = Array.isArray(raw) ? raw : raw?.data || [];
+    return list
+      .filter((worker) => worker.isActive !== false)
+      .sort((a, b) => (a.fullName || a.username).localeCompare(b.fullName || b.username, 'es'));
+  }, [usersData]);
   const latestOpenCredits = useMemo<CreditAccount[]>(() => {
     const source: CreditAccount[] = Array.isArray(fetchedOpenCredits) ? fetchedOpenCredits : openCredits;
     return source.filter((c) => c.status !== 'PAID' && c.pendingAmount > 0);
@@ -53,6 +64,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('SINGLE');
   const [paymentMethodId, setPaymentMethodId] = useState('');
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplit[]>([]);
+  const [receivedBy, setReceivedBy] = useState('');
   const [notes, setNotes] = useState('');
   const [paymentDate, setPaymentDate] = useState<string>(todayLocal);
   const [rows, setRows] = useState<ExplicitRow[]>([]);
@@ -108,12 +120,13 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
         { paymentMethodId: paymentMethods[0]?.id || '', amount: 0 },
         { paymentMethodId: paymentMethods[1]?.id || '', amount: 0 },
       ]);
+      setReceivedBy(user?.id || '');
       setNotes('');
       setPaymentDate(todayLocal);
       setFifoAmount(0);
       setRows(initialPayableCredits.map((c) => ({ creditId: c.id, selected: false, amount: 0 })));
     }
-  }, [isOpen, openCreditKey, paymentMethods, availableCurrencyKey, latestOpenCredits, todayLocal]);
+  }, [isOpen, openCreditKey, paymentMethods, availableCurrencyKey, latestOpenCredits, todayLocal, user?.id]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -174,6 +187,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
 
   const paymentErrors = useMemo(() => {
     const errs: string[] = [];
+    if (!receivedBy) errs.push('Selecciona quién cobró el crédito');
     if (paymentCurrency !== currency && (!exchangeRate || exchangeRate <= 0)) {
       errs.push('Ingresa un tipo de cambio mayor a 0');
     }
@@ -190,7 +204,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
       errs.push(`La suma del pago mixto (${formatMoney(splitTotal, currency)}) debe ser ${formatMoney(paymentTotal, currency)}`);
     }
     return errs;
-  }, [currency, exchangeRate, paymentCurrency, paymentMethodId, paymentMode, paymentSplits, paymentTotal, splitTotal]);
+  }, [currency, exchangeRate, paymentCurrency, paymentMethodId, paymentMode, paymentSplits, paymentTotal, receivedBy, splitTotal]);
 
   const disabled =
     batchPayment.isPending ||
@@ -266,6 +280,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
         .map((r) => ({ creditId: r.creditId, amount: round2(r.amount) }));
       await batchPayment.mutateAsync({
         clientId,
+        receivedBy,
         ...(paymentMode === 'SINGLE'
           ? { paymentMethodId }
           : { payments: paymentSplits.filter((p) => p.paymentMethodId && p.amount > 0).map((p) => ({ ...p, amount: round2(p.amount) })) }),
@@ -278,6 +293,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
     } else {
       await batchPayment.mutateAsync({
         clientId,
+        receivedBy,
         ...(paymentMode === 'SINGLE'
           ? { paymentMethodId }
           : { payments: paymentSplits.filter((p) => p.paymentMethodId && p.amount > 0).map((p) => ({ ...p, amount: round2(p.amount) })) }),
@@ -470,8 +486,8 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
-          <div className="lg:col-span-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 items-start">
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
               <CalendarDays size={13} /> Fecha del pago
             </label>
@@ -491,7 +507,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
               </div>
             )}
           </div>
-          <div className="lg:col-span-4">
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Forma de pago</label>
             <div className="flex gap-2 mb-2">
               <button
@@ -538,7 +554,28 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
               </select>
             )}
           </div>
-          <div className="lg:col-span-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+              <UserCheck size={14} /> Cobrado por
+            </label>
+            <select
+              value={receivedBy}
+              onChange={(e) => setReceivedBy(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              required
+            >
+              <option value="">Seleccionar trabajador...</option>
+              {workers.map((worker) => (
+                <option key={worker.id} value={worker.id}>
+                  {worker.fullName || worker.username}
+                </option>
+              ))}
+              {user && !workers.some((worker) => worker.id === user.id) && (
+                <option value={user.id}>{user.fullName || user.username}</option>
+              )}
+            </select>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
             <input
               type="text"
