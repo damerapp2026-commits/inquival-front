@@ -19,6 +19,7 @@ import toast from 'react-hot-toast';
 import type { CashRegisterEntry, Sale, Client, CreditAccount } from '../../../shared/types';
 import { groupEntries } from '../utils/groupEntries';
 import { EXPENSE_CATEGORIES } from '../utils/expenseCategories';
+import { entryResponsibleId } from '../utils/entryResponsible';
 import { formatMoney } from '../../credits/utils/money';
 
 // --- Helpers --------------------------------------------------------------
@@ -365,7 +366,7 @@ export function CashRegisterPage() {
 
   const filteredEntries = useMemo(() => {
     let result = activeTab === 'USD' ? usdActiveEntries : penActiveEntries;
-    if (vendorFilter) result = result.filter((e) => e.createdBy === vendorFilter);
+    if (vendorFilter) result = result.filter((e) => entryResponsibleId(e) === vendorFilter);
     if (paymentMethodFilter) {
       result = result.filter((e) => methodFromEntry(e) === paymentMethodFilter);
     }
@@ -378,9 +379,10 @@ export function CashRegisterPage() {
     const seen = new Set<string>();
     const result: { id: string; name: string }[] = [];
     for (const e of tabEntries) {
-      if (e.createdBy && !seen.has(e.createdBy)) {
-        seen.add(e.createdBy);
-        result.push({ id: e.createdBy, name: userById[e.createdBy] || 'Usuario' });
+      const responsibleId = entryResponsibleId(e);
+      if (responsibleId && !seen.has(responsibleId)) {
+        seen.add(responsibleId);
+        result.push({ id: responsibleId, name: userById[responsibleId] || 'Usuario' });
       }
     }
     return result.sort((a, b) => a.name.localeCompare(b.name));
@@ -621,7 +623,7 @@ export function CashRegisterPage() {
                 onChange={(e) => setVendorFilter(e.target.value || null)}
                 className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400"
               >
-                <option value="">Todos los vendedores</option>
+                <option value="">Todos los responsables</option>
                 {uniqueSellersInEntries.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
@@ -655,7 +657,7 @@ export function CashRegisterPage() {
           <div className="px-5 sm:px-6 py-2.5 bg-primary-50/50 border-b border-primary-100 flex items-center justify-between text-xs gap-3 flex-wrap">
             <span className="text-gray-500 flex items-center gap-1.5 flex-wrap">
               Filtrado por
-              {vendorFilter && <strong className="text-gray-700">{userById[vendorFilter] || 'vendedor'}</strong>}
+              {vendorFilter && <strong className="text-gray-700">{userById[vendorFilter] || 'responsable'}</strong>}
               {vendorFilter && paymentMethodFilter && <span className="text-gray-400">·</span>}
               {paymentMethodFilter && <strong className="text-gray-700">{paymentMethodFilter}</strong>}
             </span>
@@ -699,7 +701,7 @@ export function CashRegisterPage() {
                   <th className="px-4 py-3 text-left">Tipo</th>
                   <th className="px-4 py-3 text-left">Categoría</th>
                   <th className="px-4 py-3 text-left">Cliente</th>
-                  <th className="px-4 py-3 text-left">Vendedor</th>
+                  <th className="px-4 py-3 text-left">Responsable</th>
                   <th className="px-4 py-3 text-left">Método</th>
                   <th className="px-4 py-3 text-right">Monto</th>
                   <th className="px-4 py-3 text-center">Comprobante</th>
@@ -721,7 +723,8 @@ export function CashRegisterPage() {
                   const baseRaw = sanitizeEntryDesc(first.description).replace(/\s*\(\d+ de \d+\)\s*$/, '');
                   const baseDesc = isSaleGroup ? clientFromSaleDescription(baseRaw) : stripMethod(baseRaw);
                   const groupMethods = methodsFromEntries(group.entries);
-                  const vendor = first.createdBy ? (userById[first.createdBy] || 'Usuario') : '';
+                  const responsibleId = entryResponsibleId(first);
+                  const vendor = responsibleId ? (userById[responsibleId] || 'Usuario') : '';
                   return (
                     <React.Fragment key={group.groupId}>
                       <tr
@@ -1487,7 +1490,8 @@ function renderEntryRow(entry: CashRegisterEntry, nested: boolean, key: React.Ke
   const hasClient = !!clientId;
   const description = isSale ? getClientName(clientId) : stripMethod(entry.description);
   const method = methodFromEntry(entry);
-  const vendor = entry.createdBy ? (userById[entry.createdBy] || 'Usuario') : '';
+  const responsibleId = entryResponsibleId(entry);
+  const vendor = responsibleId ? (userById[responsibleId] || 'Usuario') : '';
 
   return (
     <tr

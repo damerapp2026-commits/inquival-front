@@ -12,6 +12,7 @@ import {
 import type { CashRegister, CashRegisterEntry } from '../../../shared/types';
 import { getTodayDateString, getMonthRange } from '../../../shared/utils/date.util';
 import { groupEntries } from '../utils/groupEntries';
+import { entryResponsibleId } from '../utils/entryResponsible';
 
 const categoryLabels: Record<string, string> = {
   SALE: 'Venta',
@@ -141,7 +142,8 @@ export function CashRegisterHistoryPage() {
       r.entries.filter((e) => !e.isDeleted).forEach((e) => {
         const m = methodFromEntry(e);
         if (m) methods.add(m);
-        if (e.createdBy) vendors.add(e.createdBy);
+        const responsibleId = entryResponsibleId(e);
+        if (responsibleId) vendors.add(responsibleId);
         if (getEntryUsdAmount(e) != null) usd = true;
       });
     });
@@ -150,7 +152,7 @@ export function CashRegisterHistoryPage() {
 
   const passesFilter = (e: CashRegisterEntry): boolean => {
     if (methodFilter && methodFromEntry(e) !== methodFilter) return false;
-    if (vendorFilter && e.createdBy !== vendorFilter) return false;
+    if (vendorFilter && entryResponsibleId(e) !== vendorFilter) return false;
     if (currencyFilter === 'USD' && getEntryUsdAmount(e) == null) return false;
     if (currencyFilter === 'PEN' && getEntryUsdAmount(e) != null) return false;
     return true;
@@ -166,7 +168,7 @@ export function CashRegisterHistoryPage() {
       const active = r.entries.filter((e) => !e.isDeleted);
       active.filter((e) => e.type === 'INCOME').forEach((e) => {
         if (methodFilter && methodFromEntry(e) !== methodFilter) return;
-        if (vendorFilter && e.createdBy !== vendorFilter) return;
+        if (vendorFilter && entryResponsibleId(e) !== vendorFilter) return;
         const usd = getEntryUsdAmount(e);
         if (usd != null) {
           incomeUsd += usd;
@@ -178,7 +180,7 @@ export function CashRegisterHistoryPage() {
       });
       active.filter((e) => e.type === 'EXPENSE').forEach((e) => {
         if (methodFilter && methodFromEntry(e) !== methodFilter) return;
-        if (vendorFilter && e.createdBy !== vendorFilter) return;
+        if (vendorFilter && entryResponsibleId(e) !== vendorFilter) return;
         expense += e.amount;
       });
       if (r.status === 'OPEN') opens += 1;
@@ -228,7 +230,8 @@ export function CashRegisterHistoryPage() {
 
   const renderDetailEntry = (e: CashRegisterEntry, nested: boolean, key: React.Key) => {
     const method = methodFromEntry(e);
-    const vendor = e.createdBy ? (userById[e.createdBy] || 'Usuario') : '';
+    const responsibleId = entryResponsibleId(e);
+    const vendor = responsibleId ? (userById[responsibleId] || 'Usuario') : '';
     const isSale = e.referenceType === 'Sale' && !!e.referenceId;
     const descStripped = isSale ? stripMethod(e.description) : null;
     const clientFromDesc = descStripped && /^Venta\s+a\s+/i.test(descStripped)
@@ -384,7 +387,7 @@ export function CashRegisterHistoryPage() {
             )}
             {uniqueVendors.length > 0 && (
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Vendedor</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Responsable</label>
                 <select
                   value={vendorFilter || ''}
                   onChange={(e) => setVendorFilter(e.target.value || null)}
@@ -617,7 +620,7 @@ export function CashRegisterHistoryPage() {
                   <th className="px-3 py-2 text-left">Categoría</th>
                   <th className="px-3 py-2 text-left">Cliente</th>
                   <th className="px-3 py-2 text-left">Método de Pago</th>
-                  <th className="px-3 py-2 text-left">Vendedor</th>
+                  <th className="px-3 py-2 text-left">Responsable</th>
                   <th className="px-3 py-2 text-center">Comprobante</th>
                   <th className="px-3 py-2 text-right">Monto</th>
                   <th className="px-3 py-2 text-center"></th>
@@ -635,7 +638,8 @@ export function CashRegisterHistoryPage() {
                   const first = g.entries[0];
                   const total = g.total ?? g.entries.reduce((s, e) => s + e.amount, 0);
                   const baseDesc = stripMethod(first.description.replace(/\s*\(\d+ de \d+\)\s*$/, ''));
-                  const vendor = first.createdBy ? (userById[first.createdBy] || 'Usuario') : '';
+                  const responsibleId = entryResponsibleId(first);
+                  const vendor = responsibleId ? (userById[responsibleId] || 'Usuario') : '';
                   const groupMethods = Array.from(new Set(g.entries.map(methodFromEntry).filter(Boolean)));
                   return (
                     <React.Fragment key={g.groupId}>
