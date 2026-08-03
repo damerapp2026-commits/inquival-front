@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../shared/components/Modal';
-import { AlertCircle, CalendarDays, DollarSign, History } from 'lucide-react';
+import { AlertCircle, CalendarDays, DollarSign, History, UserCheck } from 'lucide-react';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
+import { useCollectors } from '../../users/hooks/useUsers';
+import { useAuth } from '../../../app/providers/AuthProvider';
 import { useEditCreditPayment } from '../hooks/useCredits';
-import type { CreditAccount, CreditPayment, PaymentMethod } from '../../../shared/types';
+import type { CreditAccount, CreditPayment, PaymentMethod, User } from '../../../shared/types';
 import { formatMoney, moneySymbol } from '../utils/money';
 
 interface Props {
@@ -16,10 +18,19 @@ interface Props {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function EditCreditPaymentModal({ isOpen, onClose, credit, payment }: Props) {
+  const { user } = useAuth();
   const { data: paymentMethodsData } = usePaymentMethods();
   const paymentMethods: PaymentMethod[] = Array.isArray(paymentMethodsData)
     ? paymentMethodsData.filter((m: PaymentMethod) => m.isActive)
     : [];
+  const { data: usersData } = useCollectors();
+  const workers: User[] = useMemo(() => {
+    const raw: any = usersData;
+    const list: User[] = Array.isArray(raw) ? raw : raw?.data || [];
+    return list
+      .filter((worker) => worker.isActive !== false)
+      .sort((a, b) => (a.fullName || a.username).localeCompare(b.fullName || b.username, 'es'));
+  }, [usersData]);
 
   const editPayment = useEditCreditPayment();
 
@@ -31,6 +42,7 @@ export function EditCreditPaymentModal({ isOpen, onClose, credit, payment }: Pro
   const [amount, setAmount] = useState<number>(0);
   const [paymentMethodId, setPaymentMethodId] = useState('');
   const [paymentDate, setPaymentDate] = useState<string>(todayLocal);
+  const [receivedBy, setReceivedBy] = useState('');
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
@@ -38,10 +50,11 @@ export function EditCreditPaymentModal({ isOpen, onClose, credit, payment }: Pro
       setAmount(payment.amount);
       setPaymentMethodId(payment.paymentMethodId || '');
       setPaymentDate(payment.paymentDate.slice(0, 10));
+      setReceivedBy(payment.receivedBy || user?.id || '');
       setNotes(payment.notes || '');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, payment?.id]);
+  }, [isOpen, payment?.id, user?.id]);
 
   if (!credit || !payment) return null;
 
@@ -55,11 +68,16 @@ export function EditCreditPaymentModal({ isOpen, onClose, credit, payment }: Pro
   if (!amount || amount <= 0) errors.push('El monto debe ser mayor a 0');
   if (amount > maxAmount + 0.001) errors.push(`El monto excede el total. Máximo: ${formatMoney(maxAmount, currency)}`);
   if (!paymentMethodId) errors.push('Selecciona un método de pago');
+  if (!receivedBy) errors.push('Selecciona quién cobró el crédito');
+
+  const previousCollectorUnavailable = !!payment.receivedBy
+    && !workers.some((worker) => worker.id === payment.receivedBy);
 
   const noChange =
     amount === payment.amount &&
     paymentMethodId === (payment.paymentMethodId || '') &&
     paymentDate === payment.paymentDate.slice(0, 10) &&
+    receivedBy === (payment.receivedBy || '') &&
     (notes || '') === (payment.notes || '');
 
   const disabled = editPayment.isPending || errors.length > 0 || noChange;
@@ -71,6 +89,7 @@ export function EditCreditPaymentModal({ isOpen, onClose, credit, payment }: Pro
     if (amount !== payment.amount) data.amount = round2(amount);
     if (paymentMethodId !== (payment.paymentMethodId || '')) data.paymentMethodId = paymentMethodId;
     if (paymentDate !== payment.paymentDate.slice(0, 10)) data.paymentDate = paymentDate;
+    if (receivedBy !== (payment.receivedBy || '')) data.receivedBy = receivedBy;
     if ((notes || '') !== (payment.notes || '')) data.notes = notes;
     await editPayment.mutateAsync({ creditId: credit.id, paymentId: payment.id, data });
     onClose();
@@ -125,6 +144,33 @@ export function EditCreditPaymentModal({ isOpen, onClose, credit, payment }: Pro
               ))}
             </select>
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+            <UserCheck size={14} /> Cobrado por
+          </label>
+          <select
+            value={receivedBy}
+            onChange={(e) => setReceivedBy(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            required
+          >
+            <option value="">Seleccionar trabajador...</option>
+            {previousCollectorUnavailable && (
+              <option value={payment.receivedBy}>
+                {payment.receivedByName || 'Responsable anterior'} (no disponible)
+              </option>
+            )}
+            {workers.map((worker) => (
+              <option key={worker.id} value={worker.id}>
+                {worker.fullName || worker.username}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-gray-500">
+            Este responsable también se actualizará en el movimiento de Caja.
+          </p>
         </div>
 
         <div>
