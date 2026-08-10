@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cashRegisterService, MigrateMisplacedSalesResult, MigrateMisplacedPurchasesResult, MigrateMisplacedCreditPaymentsResult, MigrateMisplacedAPPaymentsResult } from '../services/cashRegisterService';
 import toast from 'react-hot-toast';
 
@@ -20,6 +20,13 @@ export function useOpenCashRegister() {
 }
 export function useCashRegisters(params?: any) {
   return useQuery({ queryKey: ['cash-registers', params], queryFn: () => cashRegisterService.getAll(params) });
+}
+export function useCashRegisterSummary(params?: any) {
+  return useQuery({
+    queryKey: ['cash-registers', 'summary', params],
+    queryFn: () => cashRegisterService.getSummary(params),
+    placeholderData: keepPreviousData,
+  });
 }
 export function useCashRegisterById(id: string) {
   return useQuery({ queryKey: ['cash-register', id], queryFn: () => cashRegisterService.getById(id), enabled: !!id });

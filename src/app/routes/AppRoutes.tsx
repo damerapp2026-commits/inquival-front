@@ -46,6 +46,7 @@ const CategoriesPage = lazy(() => import('../../modules/categories/pages/Categor
 const LaboratoriesPage = lazy(() => import('../../modules/laboratories/pages/LaboratoriesPage').then(m => ({ default: m.LaboratoriesPage })));
 const UnitsPage = lazy(() => import('../../modules/units/pages/UnitsPage').then(m => ({ default: m.UnitsPage })));
 const DashboardPage = lazy(() => import('../../modules/dashboard/pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const ProfitabilityDetailPage = lazy(() => import('../../modules/dashboard/pages/ProfitabilityDetailPage').then(m => ({ default: m.ProfitabilityDetailPage })));
 const SettingsPage = lazy(() => import('../../modules/settings/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const KardexPage = lazy(() => import('../../modules/kardex/pages/KardexPage').then(m => ({ default: m.KardexPage })));
 const KardexProductDetailPage = lazy(() => import('../../modules/kardex/pages/KardexProductDetailPage').then(m => ({ default: m.KardexProductDetailPage })));
@@ -68,6 +69,7 @@ export function AppRoutes() {
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<IndexRedirect />} />
         <Route path="dashboard" element={<AdminOnly><Suspense fallback={<Loading />}><DashboardPage /></Suspense></AdminOnly>} />
+        <Route path="dashboard/profitability" element={<AdminOnly><Suspense fallback={<Loading />}><ProfitabilityDetailPage /></Suspense></AdminOnly>} />
         <Route path="products" element={<Suspense fallback={<Loading />}><ProductsPage /></Suspense>} />
         <Route path="purchases" element={<AdminOnly><Suspense fallback={<Loading />}><PurchasesPage /></Suspense></AdminOnly>} />
         <Route path="purchases/new" element={<AdminOnly><Suspense fallback={<Loading />}><NewPurchasePage /></Suspense></AdminOnly>} />

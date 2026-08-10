@@ -10,6 +10,7 @@ import { Pagination } from '../../../shared/components/Pagination';
 import { ScrollText, Download, Printer, CheckCircle2, XCircle, ShoppingCart, Plus, Search, Calendar, Eye, X, Trash2, AlertTriangle, List, ChevronLeft, ChevronRight, Edit2 } from 'lucide-react';
 import type { Quote, QuoteStatus, Product, Company, Client } from '../../../shared/types';
 import { downloadQuotePdf, printQuotePdf } from '../utils/quotePdf';
+import { getQuoteCommercialDetails } from '../utils/quoteDetails';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useDeleteQuote } from '../hooks/useQuotes';
 import { getQuoteItemProductName, useQuoteProducts } from '../hooks/useQuoteProducts';
@@ -54,7 +55,7 @@ export function QuotesPage() {
   const { data: allQuotesData } = useQuotes({ limit: 1000, sellerId: sellerScope });
   const { data: productsData } = useProducts({ limit: 10000 });
   const { data: companiesData } = useCompanies();
-  const { data: clientsData } = useClients();
+  const { data: clientsData } = useClients({ limit: 500 });
   const updateStatus = useUpdateQuoteStatus();
   const deleteMutation = useDeleteQuote();
 
@@ -95,8 +96,13 @@ export function QuotesPage() {
 
   const getCompany = (id?: string) => companies.find(c => c.id === id);
   const getClient = (id?: string) => clients.find(c => c.id === id);
-  const vendor = { name: user?.fullName, email: user?.email };
-  const pdfParams = (q: Quote) => ({ quote: q, products, company: getCompany(q.companyId), client: getClient(q.clientId), vendor });
+  const pdfParams = (q: Quote) => ({
+    quote: q,
+    products,
+    company: getCompany(q.companyId),
+    client: getClient(q.clientId),
+    vendor: { name: q.sellerName || user?.fullName, email: q.sellerId === user?.id ? user?.email : undefined },
+  });
 
   const columns = [
     { key: 'quoteNumber', header: 'Nº', render: (q: Quote) => <span className="font-mono font-semibold text-primary-700">{q.quoteNumber}</span> },
@@ -375,11 +381,18 @@ function CreditCalendar({ allQuotes, clientById, onSelectQuote }: CreditCalendar
 
   const creditQuotes = useMemo(() => {
     return allQuotes
-      .filter(q => q.paymentMethod === 'CRÉDITO' && q.creditDays)
-      .map(q => {
+      .filter(q => q.paymentMethod === 'CRÉDITO')
+      .flatMap(q => {
+        if (q.paymentScheduleType === 'INSTALLMENTS' && q.installments?.length) {
+          return q.installments.map((installment, installmentIndex) => {
+            const due = new Date(`${installment.dueDate.slice(0, 10)}T00:00:00`);
+            return { ...q, dueDate: due, dueDateKey: toDateKey(due), installmentIndex: installmentIndex + 1 };
+          });
+        }
+        if (!q.creditDays) return [];
         const issueParts = q.issueDate.slice(0, 10).split('-').map(Number);
         const due = new Date(issueParts[0], issueParts[1] - 1, issueParts[2] + q.creditDays!);
-        return { ...q, dueDate: due, dueDateKey: toDateKey(due) };
+        return [{ ...q, dueDate: due, dueDateKey: toDateKey(due), installmentIndex: undefined as number | undefined }];
       });
   }, [allQuotes]);
 
@@ -422,7 +435,7 @@ function CreditCalendar({ allQuotes, clientById, onSelectQuote }: CreditCalendar
         <div className="text-center">
           <h2 className="text-base font-semibold text-gray-900 capitalize">{monthName}</h2>
           <p className="text-xs text-amber-600 mt-0.5">
-            {creditQuotes.filter(q => q.dueDate.getMonth() === monthIdx && q.dueDate.getFullYear() === year).length} créditos vencen este mes
+            {creditQuotes.filter(q => q.dueDate.getMonth() === monthIdx && q.dueDate.getFullYear() === year).length} vencimientos este mes
           </p>
         </div>
         <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors">
@@ -466,7 +479,7 @@ function CreditCalendar({ allQuotes, clientById, onSelectQuote }: CreditCalendar
                     <button
                       key={j}
                       onClick={() => onSelectQuote(q)}
-                      title={`${name} — ${q.quoteNumber} (${q.creditDays}d)`}
+                      title={`${name} — ${q.quoteNumber}${q.installmentIndex ? ` · cuota ${q.installmentIndex}` : ` (${q.creditDays}d)`}`}
                       className={`w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate transition-colors
                         ${isOverdue
                           ? 'bg-red-100 text-red-700 hover:bg-red-200'
@@ -474,7 +487,7 @@ function CreditCalendar({ allQuotes, clientById, onSelectQuote }: CreditCalendar
                         }
                       `}
                     >
-                      {name}
+                      {q.installmentIndex ? `${name} · C${q.installmentIndex}` : name}
                     </button>
                   );
                 })}
@@ -522,6 +535,7 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
   }, [products]);
 
   const meta = STATUS_LABELS[quote.status];
+  const commercial = getQuoteCommercialDetails(quote);
   const issueDate = new Date(quote.issueDate).toLocaleDateString('es-PE');
   const validUntil = new Date(quote.validUntil).toLocaleDateString('es-PE');
   const daysLeft = Math.ceil((new Date(quote.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
@@ -535,11 +549,15 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
   const solEquiv = quote.currency === 'USD' && (quote.exchangeRate || 0) > 0 ? Math.round(quote.total * quote.exchangeRate! * 100) / 100 : null;
 
   const creditDueDate = useMemo(() => {
+    if (quote.paymentScheduleType === 'INSTALLMENTS' && quote.installments?.length) {
+      const ordered = [...quote.installments].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+      return new Date(`${ordered[ordered.length - 1].dueDate.slice(0, 10)}T00:00:00`).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
     if (!quote.creditDays) return null;
     const issueParts = quote.issueDate.slice(0, 10).split('-').map(Number);
     const due = new Date(issueParts[0], issueParts[1] - 1, issueParts[2] + quote.creditDays);
     return due.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  }, [quote.issueDate, quote.creditDays]);
+  }, [quote.issueDate, quote.creditDays, quote.paymentScheduleType, quote.installments]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -577,9 +595,10 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
             <div className="space-y-3">
               <div>
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Cliente</p>
-                <p className="text-sm font-semibold text-gray-800 mt-0.5">{client?.name || quote.clientName || '—'}</p>
-                {client?.documentNumber && <p className="text-xs font-mono text-gray-400">{client.documentNumber}</p>}
-                {client?.phone && <p className="text-xs text-gray-400">{client.phone}</p>}
+                <p className="text-sm font-semibold text-gray-800 mt-0.5">{quote.clientName || client?.name || '—'}</p>
+                {(quote.clientDocumentNumber || client?.documentNumber) && <p className="text-xs font-mono text-gray-400">{quote.clientDocumentNumber || client?.documentNumber}</p>}
+                {(quote.clientContact) && <p className="text-xs text-gray-500">Contacto: {quote.clientContact}</p>}
+                {(quote.clientPhone || client?.phone) && <p className="text-xs text-gray-400">{quote.clientPhone || client?.phone}</p>}
               </div>
               {quote.sellerName && (
                 <div>
@@ -616,12 +635,54 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
               </div>
               {quote.paymentMethod === 'CRÉDITO' && creditDueDate && (
                 <div>
-                  <p className="text-[11px] font-semibold text-amber-500 uppercase tracking-wider">Vence crédito ({quote.creditDays}d)</p>
+                  <p className="text-[11px] font-semibold text-amber-500 uppercase tracking-wider">
+                    {quote.paymentScheduleType === 'INSTALLMENTS' ? `Última cuota (${quote.creditDays}d)` : `Vence crédito (${quote.creditDays}d)`}
+                  </p>
                   <p className="text-sm font-semibold text-amber-700 mt-0.5">{creditDueDate}</p>
                 </div>
               )}
             </div>
           </div>
+
+          {/* Commercial conditions */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Condiciones comerciales</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-2 text-sm">
+              <div><span className="text-gray-500">Forma de pago:</span> <span className="font-medium text-gray-800">{commercial.paymentTerm}</span></div>
+              <div><span className="text-gray-500">Validez:</span> <span className="font-medium text-gray-800">hasta {validUntil}</span></div>
+              <div><span className="text-gray-500">Tiempo de entrega:</span> <span className="font-medium text-gray-800">{commercial.deliveryTime || '—'}</span></div>
+              <div><span className="text-gray-500">Lugar de entrega:</span> <span className="font-medium text-gray-800">{commercial.deliveryPlace || quote.clientAddress || client?.address || '—'}</span></div>
+            </div>
+          </div>
+
+          {quote.paymentScheduleType === 'INSTALLMENTS' && quote.installments && quote.installments.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider">Cronograma de cuotas</p>
+                <span className="text-xs text-gray-500">{quote.installments.length} cuotas</span>
+              </div>
+              <div className="rounded-xl border border-amber-200 overflow-hidden">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-amber-50 text-amber-800">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-[11px] font-semibold">CUOTA</th>
+                      <th className="px-3 py-2 text-center text-[11px] font-semibold">VENCIMIENTO</th>
+                      <th className="px-3 py-2 text-right text-[11px] font-semibold">MONTO</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100">
+                    {[...quote.installments].sort((a, b) => a.dueDate.localeCompare(b.dueDate)).map((installment, index) => (
+                      <tr key={`${installment.dueDate}-${index}`}>
+                        <td className="px-3 py-2 text-gray-600">#{index + 1}</td>
+                        <td className="px-3 py-2 text-center text-gray-700">{new Date(`${installment.dueDate.slice(0, 10)}T00:00:00`).toLocaleDateString('es-PE')}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-gray-800">{currSymbol} {installment.amount.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Items table */}
           <div>
@@ -646,8 +707,8 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
                           {(prod as any)?.code && <span className="ml-1.5 text-xs font-mono text-gray-400">{(prod as any).code}</span>}
                         </td>
                         <td className="px-3 py-2.5 text-center text-gray-600">{item.quantity}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">S/ {item.unitPrice.toFixed(2)}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-gray-800">S/ {item.subtotal.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">{currSymbol} {item.unitPrice.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-gray-800">{currSymbol} {item.subtotal.toFixed(2)}</td>
                       </tr>
                     );
                   })}
@@ -719,10 +780,17 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
           })()}
 
           {/* Notes */}
-          {quote.notes && (
+          {commercial.observations && (
             <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
               <p className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider mb-1">Observaciones</p>
-              <p className="text-sm text-amber-900">{quote.notes}</p>
+              <p className="text-sm text-amber-900 whitespace-pre-wrap">{commercial.observations}</p>
+            </div>
+          )}
+
+          {commercial.internalNotes && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+              <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Nota interna · no aparece en el PDF</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{commercial.internalNotes}</p>
             </div>
           )}
         </div>

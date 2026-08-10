@@ -639,7 +639,7 @@ export function DashboardPage() {
   const [chartRange, setChartRange] = useState(thisMonth);
   const [disabledCats, setDisabledCats] = useState<Set<string>>(new Set());
   const [exchangeDays, setExchangeDays] = useState(7);
-  const [profitRange, setProfitRange] = useState(last30Days);
+  const [profitRange, setProfitRange] = useState(thisMonth);
 
   const { data: summary } = useDashboardSummary(period);
   const { data: creditsSummary } = useCreditsSummary();
@@ -730,6 +730,19 @@ export function DashboardPage() {
     () => enrichProfitabilityRows(profitabilityData, purchases, profitabilitySales, products, priceCatalogRows, purchaseExchangeRatesByDate),
     [profitabilityData, purchases, profitabilitySales, products, priceCatalogRows, purchaseExchangeRatesByDate],
   );
+  const topProfitabilityData = useMemo(() => {
+    if (!Array.isArray(enrichedProfitabilityData)) return [];
+    return [...enrichedProfitabilityData]
+      .sort((a: any, b: any) => {
+        const profitA = numberFrom(a?.grossProfit);
+        const profitB = numberFrom(b?.grossProfit);
+        if (profitA != null && profitB != null) return profitB - profitA;
+        if (profitA != null) return -1;
+        if (profitB != null) return 1;
+        return (numberFrom(b?.totalRevenue) || 0) - (numberFrom(a?.totalRevenue) || 0);
+      })
+      .slice(0, 15);
+  }, [enrichedProfitabilityData]);
 
   const activeCategories = useMemo(
     () => allCategories.filter((c) => !disabledCats.has(c)),
@@ -1158,12 +1171,26 @@ export function DashboardPage() {
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">Precio Venta − Precio Costo · Top 15 productos</p>
             </div>
-            <DateRangeFilter
-              range={profitRange}
-              onChange={setProfitRange}
-              onReset={() => setProfitRange(last30Days())}
-              resetLabel="Últimos 30 días"
-            />
+            <div className="flex flex-col sm:items-end gap-2">
+              <DateRangeFilter
+                range={profitRange}
+                onChange={setProfitRange}
+                onReset={() => setProfitRange(thisMonth())}
+                resetLabel="Este mes"
+              />
+              <button
+                type="button"
+                onClick={() => navigate(`/dashboard/profitability?start=${profitRange.start}&end=${profitRange.end}`)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-600 hover:text-primary-700 hover:underline"
+              >
+                <BarChart3 size={14} /> Ver todos los productos
+              </button>
+            </div>
+          </div>
+
+          <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-800">
+            <span className="font-semibold">Cómo leer este reporte:</span>{' '}
+            los totales consideran todos los productos vendidos en el período; el gráfico muestra únicamente los 15 con mayor ganancia bruta. Los ingresos son ventas registradas, tanto al contado como a crédito, y no necesariamente dinero ya cobrado.
           </div>
 
           {profitLoading || purchasesLoading || profitabilitySalesLoading || productsLoading || priceCatalogLoading || purchaseExchangeRatesLoading ? (
@@ -1172,8 +1199,8 @@ export function DashboardPage() {
             <div className="h-[360px] flex items-center justify-center text-gray-400 text-sm">Sin ventas en el período seleccionado</div>
           ) : (
             <>
-              <ResponsiveContainer width="100%" height={Math.max(320, enrichedProfitabilityData.length * 48)}>
-                <BarChart data={enrichedProfitabilityData} layout="vertical" margin={{ left: 10, right: 60 }} barCategoryGap="25%" barGap={3}>
+              <ResponsiveContainer width="100%" height={Math.max(320, topProfitabilityData.length * 48)}>
+                <BarChart data={topProfitabilityData} layout="vertical" margin={{ left: 10, right: 60 }} barCategoryGap="25%" barGap={3}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `S/${v}`} />
                   <YAxis
@@ -1256,18 +1283,18 @@ export function DashboardPage() {
                   return (
                     <>
                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
-                        Ingresos totales: S/ {totalRev.toFixed(2)}
+                        Ingresos de todos los productos: S/ {totalRev.toFixed(2)}
                       </span>
                       {hasCost && (
                         <>
                           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">
-                            Costo total: S/ {totalCost.toFixed(2)}
+                            Costo de todos los productos: S/ {totalCost.toFixed(2)}
                           </span>
                           <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${totalProfit >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                            Ganancia bruta: S/ {totalProfit.toFixed(2)}
+                            Ganancia bruta total: S/ {totalProfit.toFixed(2)}
                           </span>
                           <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${avgMargin >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                            Margen promedio: {avgMargin.toFixed(1)}%
+                            Margen bruto total: {avgMargin.toFixed(1)}%
                           </span>
                         </>
                       )}

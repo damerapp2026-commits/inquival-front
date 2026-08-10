@@ -27,7 +27,8 @@ export interface ProductLot { id: string; productId: string; productName?: strin
 export type QuoteStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'CONVERTED';
 export interface QuoteItem { productId: string; productName?: string; name?: string; unit?: string; taxType?: string; product?: { name?: string; unit?: string; taxType?: string }; companyId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number; }
 export interface QuotePayment { paymentMethodName: string; amount: number; }
-export interface Quote { id: string; quoteNumber: string; series: string; number: number; companyId?: string; clientId?: string; clientName?: string; items: QuoteItem[]; total: number; notes?: string; status: QuoteStatus; issueDate: string; validUntil: string; convertedSaleId?: string; createdBy?: string; sellerId?: string; sellerName?: string; participantIds?: string[]; participantNames?: string[]; currency?: 'PEN' | 'USD'; exchangeRate?: number; paymentMethod?: string; creditDays?: number; payments?: QuotePayment[]; createdAt: string; }
+export interface QuoteInstallment { amount: number; dueDate: string; }
+export interface Quote { id: string; quoteNumber: string; series: string; number: number; companyId?: string; clientId?: string; clientName?: string; clientDocumentType?: 'DNI' | 'RUC' | 'CE' | 'OTRO'; clientDocumentNumber?: string; clientContact?: string; clientEmail?: string; clientPhone?: string; clientAddress?: string; items: QuoteItem[]; total: number; notes?: string; internalNotes?: string; deliveryTime?: string; deliveryPlace?: string; status: QuoteStatus; issueDate: string; validUntil: string; convertedSaleId?: string; createdBy?: string; sellerId?: string; sellerName?: string; participantIds?: string[]; participantNames?: string[]; currency?: 'PEN' | 'USD'; exchangeRate?: number; paymentMethod?: string; creditDays?: number; paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS'; installments?: QuoteInstallment[]; payments?: QuotePayment[]; createdAt: string; }
 
 export type WorkerExpenseCategory = 'ALOJAMIENTO' | 'TRANSPORTE' | 'COMBUSTIBLE' | 'ALIMENTACION' | 'OTROS';
 export type WorkerExpenseReportStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
@@ -63,6 +64,25 @@ export interface StockAdjustment { id: string; productId: string; companyId: str
 
 export interface CashRegisterEntry { id: string; type: 'INCOME' | 'EXPENSE'; category: 'SALE' | 'CREDIT_PAYMENT' | 'PURCHASE' | 'ADJUSTMENT' | 'SERVICES' | 'SALARY' | 'SUPPLIES' | 'RENT' | 'TRANSPORT' | 'OTHER'; description: string; amount: number; referenceId?: string; referenceType?: string; clientId?: string; clientName?: string; paymentMethodName?: string; voucherType: string; voucherSeries?: string; voucherNumber?: string; isDeleted: boolean; deletedBy?: string; deletedAt?: string; deleteReason?: string; editHistory: { previousAmount: number; newAmount: number; reason: string; editedBy: string; editedAt: string }[]; createdBy?: string; receivedBy?: string; createdAt?: string; paymentGroupId?: string; paymentGroupTotal?: number; currency?: string; amountUsd?: number; }
 export interface CashRegister { id: string; date: string; openingBalance: number; openingBalanceUsd?: number; status: 'OPEN' | 'CLOSED'; entries: CashRegisterEntry[]; closingBalance?: number; closingBalanceUsd?: number; closedBy?: string; closedAt?: string; notes?: string; createdBy?: string; }
+export interface CashRegisterMethodTotal { method: string; amountPen: number; amountUsd: number; }
+export interface CashRegisterPeriodSummary {
+  registerCount: number;
+  openCount: number;
+  salesPen: number;
+  salesUsd: number;
+  creditPaymentsPen: number;
+  creditPaymentsUsd: number;
+  otherIncomePen: number;
+  otherIncomeUsd: number;
+  totalIncomePen: number;
+  totalIncomeUsd: number;
+  expensePen: number;
+  expenseUsd: number;
+  methodTotals: CashRegisterMethodTotal[];
+  availableMethods: string[];
+  availableResponsibleIds: string[];
+  hasUsdEntries: boolean;
+}
 
 export interface CreditPayment { id: string; amount: number; currency?: 'PEN' | 'USD'; paymentCurrency?: 'PEN' | 'USD'; receivedAmount?: number; exchangeRate?: number; paymentDate: string; paymentMethodId?: string; paymentMethodName?: string; cashRegisterEntryId?: string; notes?: string; receivedBy?: string; receivedByName?: string; paymentGroupId?: string; }
 export interface CreditSaleDetail { saleId: string; saleNumber?: string; date: string; total: number; currency?: 'PEN' | 'USD'; exchangeRate?: number; totalUsd?: number; items: { productId: string; productName: string; companyId: string; companyName: string; priceTier?: string; quantity: number; unitPrice: number; subtotal: number; unitPriceUsd?: number; subtotalUsd?: number; }[]; }

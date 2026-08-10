@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useCashRegisters, useCashRegisterById, useCloseCashRegister } from '../hooks/useCashRegister';
+import { useCashRegisters, useCashRegisterSummary, useCashRegisterById, useCloseCashRegister } from '../hooks/useCashRegister';
 import { useUsers } from '../../users/hooks/useUsers';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { Pagination } from '../../../shared/components/Pagination';
@@ -9,7 +9,7 @@ import {
   History, Wallet, Lock, ChevronDown, ChevronRight, Layers, Clock, ExternalLink,
   Eye, AlertCircle, ArrowUpCircle, ArrowDownCircle, ReceiptText, FileText, Calendar, Wrench,
 } from 'lucide-react';
-import type { CashRegister, CashRegisterEntry } from '../../../shared/types';
+import type { CashRegister, CashRegisterEntry, CashRegisterPeriodSummary } from '../../../shared/types';
 import { getTodayDateString, getMonthRange } from '../../../shared/utils/date.util';
 import { groupEntries } from '../utils/groupEntries';
 import { entryResponsibleId } from '../utils/entryResponsible';
@@ -98,6 +98,34 @@ function getEntryUsdAmount(e: { currency?: string; amountUsd?: number; descripti
   return legacyUsdAmount(e.description);
 }
 
+const MONEY_FORMATTER = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function formatMoney(value: number): string {
+  return MONEY_FORMATTER.format(value);
+}
+
+const EMPTY_PERIOD_SUMMARY: CashRegisterPeriodSummary = {
+  registerCount: 0,
+  openCount: 0,
+  salesPen: 0,
+  salesUsd: 0,
+  creditPaymentsPen: 0,
+  creditPaymentsUsd: 0,
+  otherIncomePen: 0,
+  otherIncomeUsd: 0,
+  totalIncomePen: 0,
+  totalIncomeUsd: 0,
+  expensePen: 0,
+  expenseUsd: 0,
+  methodTotals: [],
+  availableMethods: [],
+  availableResponsibleIds: [],
+  hasUsdEntries: false,
+};
+
 export function CashRegisterHistoryPage() {
   const navigate = useNavigate();
   const monthRange = getMonthRange();
@@ -115,6 +143,13 @@ export function CashRegisterHistoryPage() {
   const [detailTab, setDetailTab] = useState<'PEN' | 'USD'>('PEN');
 
   const { data, isLoading } = useCashRegisters({ page, limit: 20, startDate: startDate || undefined, endDate: endDate || undefined });
+  const { data: periodSummary, isLoading: isSummaryLoading } = useCashRegisterSummary({
+    startDate: startDate || undefined,
+    endDate: endDate || undefined,
+    method: methodFilter || undefined,
+    responsibleId: vendorFilter || undefined,
+    currency: currencyFilter || undefined,
+  });
   const { data: detail } = useCashRegisterById(selectedId);
   const closeRegister = useCloseCashRegister();
   const { data: usersData } = useUsers({ limit: 200 });
@@ -132,23 +167,13 @@ export function CashRegisterHistoryPage() {
 
   const registers: CashRegister[] = data?.data || [];
   const total = data?.total || 0;
+  const summary = periodSummary || EMPTY_PERIOD_SUMMARY;
+  const uniqueMethods = summary.availableMethods;
+  const uniqueVendors = summary.availableResponsibleIds;
+  const hasUsdEntries = summary.hasUsdEntries;
+  const firstVisibleRegister = total > 0 ? ((page - 1) * 20) + 1 : 0;
+  const lastVisibleRegister = Math.min(page * 20, total);
   const today = getTodayDateString();
-
-  const { uniqueMethods, uniqueVendors, hasUsdEntries } = useMemo(() => {
-    const methods = new Set<string>();
-    const vendors = new Set<string>();
-    let usd = false;
-    registers.forEach((r) => {
-      r.entries.filter((e) => !e.isDeleted).forEach((e) => {
-        const m = methodFromEntry(e);
-        if (m) methods.add(m);
-        const responsibleId = entryResponsibleId(e);
-        if (responsibleId) vendors.add(responsibleId);
-        if (getEntryUsdAmount(e) != null) usd = true;
-      });
-    });
-    return { uniqueMethods: Array.from(methods).sort(), uniqueVendors: Array.from(vendors), hasUsdEntries: usd };
-  }, [registers]);
 
   const passesFilter = (e: CashRegisterEntry): boolean => {
     if (methodFilter && methodFromEntry(e) !== methodFilter) return false;
@@ -157,37 +182,6 @@ export function CashRegisterHistoryPage() {
     if (currencyFilter === 'PEN' && getEntryUsdAmount(e) != null) return false;
     return true;
   };
-
-  const summary = useMemo(() => {
-    let income = 0;
-    let expense = 0;
-    let incomeUsd = 0;
-    let opens = 0;
-    const methodMap = new Map<string, number>();
-    registers.forEach((r) => {
-      const active = r.entries.filter((e) => !e.isDeleted);
-      active.filter((e) => e.type === 'INCOME').forEach((e) => {
-        if (methodFilter && methodFromEntry(e) !== methodFilter) return;
-        if (vendorFilter && entryResponsibleId(e) !== vendorFilter) return;
-        const usd = getEntryUsdAmount(e);
-        if (usd != null) {
-          incomeUsd += usd;
-        } else {
-          income += e.amount;
-          const m = methodFromEntry(e);
-          if (m) methodMap.set(m, (methodMap.get(m) || 0) + e.amount);
-        }
-      });
-      active.filter((e) => e.type === 'EXPENSE').forEach((e) => {
-        if (methodFilter && methodFromEntry(e) !== methodFilter) return;
-        if (vendorFilter && entryResponsibleId(e) !== vendorFilter) return;
-        expense += e.amount;
-      });
-      if (r.status === 'OPEN') opens += 1;
-    });
-    const methodTotals = Array.from(methodMap.entries()).sort((a, b) => b[1] - a[1]);
-    return { income, expense, incomeUsd, opens, count: registers.length, methodTotals };
-  }, [registers, methodFilter, vendorFilter, currencyFilter]);
 
   const openDetail = (reg: CashRegister) => { setSelectedId(reg.id); setShowDetail(true); setDetailTab('PEN'); };
   const openClose = (reg: CashRegister) => { setCloseTarget(reg); setCloseNotes(''); setShowCloseModal(true); };
@@ -292,8 +286,8 @@ export function CashRegisterHistoryPage() {
             const usdAmt = getEntryUsdAmount(e);
             const isUsd = usdAmt != null;
             return isUsd
-              ? <>{e.type === 'INCOME' ? '+' : '−'} $ {usdAmt!.toFixed(2)} <span className="text-[10px] font-bold">USD</span></>
-              : <>{e.type === 'INCOME' ? '+' : '−'} S/ {e.amount.toFixed(2)}</>;
+              ? <>{e.type === 'INCOME' ? '+' : '−'} $ {formatMoney(usdAmt!)} <span className="text-[10px] font-bold">USD</span></>
+              : <>{e.type === 'INCOME' ? '+' : '−'} S/ {formatMoney(e.amount)}</>;
           })()}
         </td>
         <td className="px-3 py-2.5 text-center">
@@ -361,12 +355,12 @@ export function CashRegisterHistoryPage() {
                 <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium">
                   <button
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setCurrencyFilter(currencyFilter === 'PEN' ? null : 'PEN')}
+                    onClick={() => { setCurrencyFilter(currencyFilter === 'PEN' ? null : 'PEN'); setPage(1); }}
                     className={`px-3 py-2 transition-colors ${currencyFilter === 'PEN' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                   >S/</button>
                   <button
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setCurrencyFilter(currencyFilter === 'USD' ? null : 'USD')}
+                    onClick={() => { setCurrencyFilter(currencyFilter === 'USD' ? null : 'USD'); setPage(1); }}
                     className={`px-3 py-2 border-l border-gray-200 transition-colors ${currencyFilter === 'USD' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                   >$</button>
                 </div>
@@ -377,7 +371,7 @@ export function CashRegisterHistoryPage() {
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Método de Pago</label>
                 <select
                   value={methodFilter || ''}
-                  onChange={(e) => setMethodFilter(e.target.value || null)}
+                  onChange={(e) => { setMethodFilter(e.target.value || null); setPage(1); }}
                   className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
                 >
                   <option value="">Todos</option>
@@ -390,7 +384,7 @@ export function CashRegisterHistoryPage() {
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Responsable</label>
                 <select
                   value={vendorFilter || ''}
-                  onChange={(e) => setVendorFilter(e.target.value || null)}
+                  onChange={(e) => { setVendorFilter(e.target.value || null); setPage(1); }}
                   className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
                 >
                   <option value="">Todos</option>
@@ -401,7 +395,7 @@ export function CashRegisterHistoryPage() {
             {(methodFilter || vendorFilter || currencyFilter) && (
               <button
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => { setMethodFilter(null); setVendorFilter(null); setCurrencyFilter(null); }}
+                onClick={() => { setMethodFilter(null); setVendorFilter(null); setCurrencyFilter(null); setPage(1); }}
                 className="text-sm text-rose-500 hover:underline font-medium self-end pb-2"
               >Limpiar filtros</button>
             )}
@@ -413,35 +407,43 @@ export function CashRegisterHistoryPage() {
             >Mes actual</button>
           )}
         </div>
-        {(summary.methodTotals.length > 0 || summary.incomeUsd > 0) && (
+        {summary.methodTotals.length > 0 && (
           <div className="flex flex-wrap gap-2 items-center pt-3 border-t border-gray-100">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mr-1">Ingresos del período</span>
-            {summary.methodTotals.map(([method, amount]) => (
+            {summary.methodTotals.map(({ method, amountPen, amountUsd }) => (
               <span key={method} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-100">
-                {method}: S/ {amount.toFixed(2)}
+                {method}:
+                {amountPen > 0 && <span>S/ {formatMoney(amountPen)}</span>}
+                {amountPen > 0 && amountUsd > 0 && <span className="text-blue-300">·</span>}
+                {amountUsd > 0 && <span className="text-emerald-700">$ {formatMoney(amountUsd)} USD</span>}
               </span>
             ))}
-            {summary.incomeUsd > 0 && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-100">
-                $ {summary.incomeUsd.toFixed(2)} USD
-              </span>
-            )}
           </div>
         )}
       </div>
 
       {/* Period summary */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiTile icon={Calendar} label="Cajas" value={`${summary.count}`} accent="bg-gray-100 text-gray-700" />
-        <KpiTile icon={ArrowUpCircle} label="Ingresos" value={`S/ ${summary.income.toFixed(2)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" subValue={summary.incomeUsd > 0 ? `+ $ ${summary.incomeUsd.toFixed(2)} USD` : undefined} />
-        <KpiTile icon={ArrowDownCircle} label="Egresos" value={`S/ ${summary.expense.toFixed(2)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" />
-        <KpiTile icon={Lock} label="Abiertas" value={`${summary.opens}`} accent="bg-amber-100 text-amber-700" valueAccent="text-amber-700" />
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <KpiTile icon={Calendar} label="Cajas" value={isSummaryLoading && !periodSummary ? '—' : `${summary.registerCount}`} accent="bg-gray-100 text-gray-700" />
+        <KpiTile icon={ReceiptText} label="Ventas en caja" value={isSummaryLoading && !periodSummary ? '—' : `S/ ${formatMoney(summary.salesPen)}`} accent="bg-blue-100 text-blue-700" valueAccent="text-blue-700" subValue={summary.salesUsd > 0 ? `+ $ ${formatMoney(summary.salesUsd)} USD` : undefined} />
+        <KpiTile icon={ArrowUpCircle} label="Pagos de créditos" value={isSummaryLoading && !periodSummary ? '—' : `S/ ${formatMoney(summary.creditPaymentsPen)}`} accent="bg-cyan-100 text-cyan-700" valueAccent="text-cyan-700" subValue={summary.creditPaymentsUsd > 0 ? `+ $ ${formatMoney(summary.creditPaymentsUsd)} USD` : undefined} />
+        {(summary.otherIncomePen > 0 || summary.otherIncomeUsd > 0) && (
+          <KpiTile icon={ArrowUpCircle} label="Otros ingresos" value={`S/ ${formatMoney(summary.otherIncomePen)}`} accent="bg-violet-100 text-violet-700" valueAccent="text-violet-700" subValue={summary.otherIncomeUsd > 0 ? `+ $ ${formatMoney(summary.otherIncomeUsd)} USD` : undefined} />
+        )}
+        <KpiTile icon={ArrowUpCircle} label="Ingresos totales" value={isSummaryLoading && !periodSummary ? '—' : `S/ ${formatMoney(summary.totalIncomePen)}`} accent="bg-primary-100 text-primary-700" valueAccent="text-primary-700" subValue={summary.totalIncomeUsd > 0 ? `+ $ ${formatMoney(summary.totalIncomeUsd)} USD` : undefined} />
+        <KpiTile icon={ArrowDownCircle} label="Egresos" value={isSummaryLoading && !periodSummary ? '—' : `S/ ${formatMoney(summary.expensePen)}`} accent="bg-rose-100 text-rose-600" valueAccent="text-rose-600" subValue={summary.expenseUsd > 0 ? `Incluye $ ${formatMoney(summary.expenseUsd)} USD` : undefined} subValueAccent="text-rose-500" />
+        <KpiTile icon={Lock} label="Abiertas" value={isSummaryLoading && !periodSummary ? '—' : `${summary.openCount}`} accent="bg-amber-100 text-amber-700" valueAccent="text-amber-700" />
       </div>
 
       {/* Registers list */}
       <div className="bg-white rounded-2xl shadow-card overflow-hidden">
-        <div className="px-5 sm:px-6 py-4 border-b border-gray-100">
+        <div className="px-5 sm:px-6 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-gray-800">Cajas del periodo</h2>
+          {!isLoading && total > 0 && (
+            <span className="text-xs font-medium text-gray-400">
+              Mostrando {firstVisibleRegister}–{lastVisibleRegister} de {total} cajas
+            </span>
+          )}
         </div>
         {isLoading ? (
           <div className="p-6 space-y-3 animate-pulse">
@@ -489,15 +491,15 @@ export function CashRegisterHistoryPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-right tabular-nums text-gray-700">S/ {reg.openingBalance.toFixed(2)}</td>
+                      <td className="px-4 py-3.5 text-right tabular-nums text-gray-700">S/ {formatMoney(reg.openingBalance)}</td>
                       <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-primary-700">
-                        <div>+ S/ {income.toFixed(2)}</div>
-                        {incomeUsdRow > 0 && <div className="text-emerald-600 text-[11px]">+ $ {incomeUsdRow.toFixed(2)}</div>}
+                        <div>+ S/ {formatMoney(income)}</div>
+                        {incomeUsdRow > 0 && <div className="text-emerald-600 text-[11px]">+ $ {formatMoney(incomeUsdRow)}</div>}
                       </td>
-                      <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-rose-600">− S/ {expense.toFixed(2)}</td>
+                      <td className="px-4 py-3.5 text-right tabular-nums font-semibold text-rose-600">− S/ {formatMoney(expense)}</td>
                       <td className="px-4 py-3.5 text-right tabular-nums font-bold text-gray-800">
-                        {reg.closingBalance != null ? <div>S/ {reg.closingBalance.toFixed(2)}</div> : <span className="text-gray-300 font-normal">—</span>}
-                        {reg.closingBalanceUsd != null && <div className="text-xs font-semibold text-emerald-600">$ {reg.closingBalanceUsd.toFixed(2)}</div>}
+                        {reg.closingBalance != null ? <div>S/ {formatMoney(reg.closingBalance)}</div> : <span className="text-gray-300 font-normal">—</span>}
+                        {reg.closingBalanceUsd != null && <div className="text-xs font-semibold text-emerald-600">$ {formatMoney(reg.closingBalanceUsd)}</div>}
                       </td>
                       <td className="px-4 py-3.5 text-center">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${reg.status === 'CLOSED' ? 'bg-gray-100 text-gray-600' : 'bg-emerald-100 text-emerald-700'}`}>
@@ -549,10 +551,10 @@ export function CashRegisterHistoryPage() {
                 const penExpense = penEntries.filter(e => e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0);
                 return (
                   <>
-                    <div className="flex justify-between"><span className="text-gray-500">Apertura</span><span className="font-semibold tabular-nums">S/ {(detail?.openingBalance || 0).toFixed(2)}</span></div>
-                    <div className="flex justify-between text-primary-700"><span>+ Ingresos</span><span className="font-semibold tabular-nums">S/ {penIncome.toFixed(2)}</span></div>
-                    <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">S/ {penExpense.toFixed(2)}</span></div>
-                    <div className="flex justify-between font-bold pt-2 border-t border-gray-200 mt-1"><span>Cierre</span><span className="tabular-nums">{detail?.closingBalance != null ? `S/ ${detail.closingBalance.toFixed(2)}` : '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Apertura</span><span className="font-semibold tabular-nums">S/ {formatMoney(detail?.openingBalance || 0)}</span></div>
+                    <div className="flex justify-between text-primary-700"><span>+ Ingresos</span><span className="font-semibold tabular-nums">S/ {formatMoney(penIncome)}</span></div>
+                    <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">S/ {formatMoney(penExpense)}</span></div>
+                    <div className="flex justify-between font-bold pt-2 border-t border-gray-200 mt-1"><span>Cierre</span><span className="tabular-nums">{detail?.closingBalance != null ? `S/ ${formatMoney(detail.closingBalance)}` : '—'}</span></div>
                   </>
                 );
               })()}
@@ -565,10 +567,10 @@ export function CashRegisterHistoryPage() {
                 const usdExpense = usdEntries.filter(e => e.type === 'EXPENSE').reduce((s, e) => s + (getEntryUsdAmount(e) ?? e.amount ?? 0), 0);
                 return (
                   <>
-                    <div className="flex justify-between"><span className="text-gray-500">Apertura</span><span className="font-semibold tabular-nums">$ {(detail?.openingBalanceUsd || 0).toFixed(2)}</span></div>
-                    <div className="flex justify-between text-emerald-600"><span>+ Ingresos</span><span className="font-semibold tabular-nums">$ {usdIncome.toFixed(2)}</span></div>
-                    <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">$ {usdExpense.toFixed(2)}</span></div>
-                    <div className="flex justify-between font-bold text-emerald-700 pt-2 border-t border-emerald-200 mt-1"><span>Cierre</span><span className="tabular-nums">{detail?.closingBalanceUsd != null ? `$ ${detail.closingBalanceUsd.toFixed(2)}` : '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Apertura</span><span className="font-semibold tabular-nums">$ {formatMoney(detail?.openingBalanceUsd || 0)}</span></div>
+                    <div className="flex justify-between text-emerald-600"><span>+ Ingresos</span><span className="font-semibold tabular-nums">$ {formatMoney(usdIncome)}</span></div>
+                    <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">$ {formatMoney(usdExpense)}</span></div>
+                    <div className="flex justify-between font-bold text-emerald-700 pt-2 border-t border-emerald-200 mt-1"><span>Cierre</span><span className="tabular-nums">{detail?.closingBalanceUsd != null ? `$ ${formatMoney(detail.closingBalanceUsd)}` : '—'}</span></div>
                   </>
                 );
               })()}
@@ -585,8 +587,8 @@ export function CashRegisterHistoryPage() {
                   <div key={method} className="flex items-center justify-between px-4 py-2.5 text-sm">
                     <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">{method}</span>
                     <div className="flex items-center gap-3 tabular-nums font-semibold">
-                      {totals.pen > 0 && <span className="text-primary-700">+ S/ {totals.pen.toFixed(2)}</span>}
-                      {totals.usd > 0 && <span className="text-emerald-600">+ $ {totals.usd.toFixed(2)}</span>}
+                      {totals.pen > 0 && <span className="text-primary-700">+ S/ {formatMoney(totals.pen)}</span>}
+                      {totals.usd > 0 && <span className="text-emerald-600">+ $ {formatMoney(totals.usd)}</span>}
                     </div>
                   </div>
                 ))}
@@ -684,7 +686,7 @@ export function CashRegisterHistoryPage() {
                         </td>
                         <td className="px-3 py-2.5 text-center"><span className="text-gray-300 text-xs">—</span></td>
                         <td className={`px-3 py-2.5 text-right text-xs font-bold tabular-nums ${first.type === 'INCOME' ? 'text-primary-700' : 'text-rose-600'}`}>
-                          {first.type === 'INCOME' ? '+' : '−'} S/ {total.toFixed(2)}
+                          {first.type === 'INCOME' ? '+' : '−'} S/ {formatMoney(total)}
                         </td>
                         <td className="px-3 py-2.5" />
                       </tr>
@@ -706,9 +708,9 @@ export function CashRegisterHistoryPage() {
             <p className="text-sm text-amber-800">Esta caja quedó abierta. Al cerrarla no se podrán modificar sus entradas.</p>
           </div>
           <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 space-y-1.5 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500">Saldo apertura</span><span className="font-semibold tabular-nums">S/ {(closeTarget?.openingBalance || 0).toFixed(2)}</span></div>
-            <div className="flex justify-between text-primary-700"><span>+ Ingresos</span><span className="font-semibold tabular-nums">S/ {(closeTarget?.entries.filter(e => !e.isDeleted && e.type === 'INCOME').reduce((s, e) => s + e.amount, 0) || 0).toFixed(2)}</span></div>
-            <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">S/ {(closeTarget?.entries.filter(e => !e.isDeleted && e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0) || 0).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Saldo apertura</span><span className="font-semibold tabular-nums">S/ {formatMoney(closeTarget?.openingBalance || 0)}</span></div>
+            <div className="flex justify-between text-primary-700"><span>+ Ingresos</span><span className="font-semibold tabular-nums">S/ {formatMoney(closeTarget?.entries.filter(e => !e.isDeleted && e.type === 'INCOME').reduce((s, e) => s + e.amount, 0) || 0)}</span></div>
+            <div className="flex justify-between text-rose-600"><span>− Egresos</span><span className="font-semibold tabular-nums">S/ {formatMoney(closeTarget?.entries.filter(e => !e.isDeleted && e.type === 'EXPENSE').reduce((s, e) => s + e.amount, 0) || 0)}</span></div>
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Notas <span className="text-gray-400 normal-case font-normal">— opcional</span></label>
@@ -726,7 +728,7 @@ export function CashRegisterHistoryPage() {
   );
 }
 
-function KpiTile({ icon: Icon, label, value, accent, valueAccent, subValue }: { icon: any; label: string; value: string; accent: string; valueAccent?: string; subValue?: string }) {
+function KpiTile({ icon: Icon, label, value, accent, valueAccent, subValue, subValueAccent }: { icon: any; label: string; value: string; accent: string; valueAccent?: string; subValue?: string; subValueAccent?: string }) {
   return (
     <div className="bg-white rounded-xl shadow-card p-5 hover:shadow-card-hover transition-shadow">
       <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
@@ -734,7 +736,7 @@ function KpiTile({ icon: Icon, label, value, accent, valueAccent, subValue }: { 
         {label}
       </div>
       <div className={`text-2xl font-bold tabular-nums ${valueAccent || 'text-gray-800'}`}>{value}</div>
-      {subValue && <div className="text-sm font-semibold tabular-nums text-emerald-600 mt-0.5">{subValue}</div>}
+      {subValue && <div className={`text-sm font-semibold tabular-nums mt-0.5 ${subValueAccent || 'text-emerald-600'}`}>{subValue}</div>}
     </div>
   );
 }

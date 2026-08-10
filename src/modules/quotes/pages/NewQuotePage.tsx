@@ -13,14 +13,27 @@ import { useUsers } from '../../users/hooks/useUsers';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import type { Product, ProductPrice, Company, Client, PriceTier, QuotePayment, Quote } from '../../../shared/types';
+import type { Product, ProductPrice, Company, Client, PriceTier, QuotePayment, QuoteInstallment, Quote } from '../../../shared/types';
 import { getQuoteItemProductName, getQuoteItemProductUnit, getQuoteItemTaxType, useQuoteProducts } from '../hooks/useQuoteProducts';
+import { parseLegacyQuoteNotes } from '../utils/quoteDetails';
 
 const IGV_RATE = 0.18;
 type DocType = 'DNI' | 'RUC' | 'CE' | 'OTRO';
 
 const toDateKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const addDaysToDateKey = (dateKey: string, days: number) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+};
+
+const daysBetweenDateKeys = (from: string, to: string) => {
+  const fromMs = new Date(`${from}T00:00:00Z`).getTime();
+  const toMs = new Date(`${to}T00:00:00Z`).getTime();
+  return Math.round((toMs - fromMs) / 86400000);
+};
 
 interface CartLine {
   productId: string;
@@ -45,37 +58,11 @@ function resolvePrice(product: Product, tierId: string): number | undefined {
   return product.prices.find((p: ProductPrice) => p.priceTierId === tierId && !p.companyId)?.price;
 }
 
-function parseQuoteNotes(notes?: string) {
-  const result = {
-    paymentTerm: '',
-    deliveryTime: '',
-    deliveryPlace: '',
-    observations: '',
-    internalNotes: '',
-  };
-  if (!notes) return result;
-
-  const [publicNotes, internal = ''] = notes.split(/\n\n\[Interno\]\s*/);
-  result.internalNotes = internal.trim();
-
-  const lines = publicNotes.split('\n');
-  const bodyLines: string[] = [];
-  for (const line of lines) {
-    if (line.startsWith('Forma de pago:')) result.paymentTerm = line.replace('Forma de pago:', '').trim();
-    else if (line.startsWith('Tiempo de entrega:')) result.deliveryTime = line.replace('Tiempo de entrega:', '').trim();
-    else if (line.startsWith('Lugar de entrega:')) result.deliveryPlace = line.replace('Lugar de entrega:', '').trim();
-    else bodyLines.push(line);
-  }
-  result.observations = bodyLines.join('\n').trim();
-  return result;
-}
-
 export function NewQuotePage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id: editQuoteId } = useParams();
   const { user } = useAuth();
-  const isSellerRole = user?.role === 'VENDEDOR' || user?.role === 'VENDEDOR_CAMPO';
   const isEditing = !!editQuoteId;
 
   const preload = (location.state as { cart?: CartPreload } | null)?.cart;
@@ -116,11 +103,17 @@ export function NewQuotePage() {
     return list.filter((t) => t.isActive).sort((a, b) => (a.priority || 0) - (b.priority || 0));
   }, [tiersData]);
 
+  const activeUsers: any[] = useMemo(() => {
+    const raw: any = usersData;
+    return Array.isArray(raw) ? raw : raw?.data || [];
+  }, [usersData]);
+
   // ----- form state -----
   const [docType, setDocType] = useState<DocType>('DNI');
   const [docNumber, setDocNumber] = useState('');
   const [clientId, setClientId] = useState('');
   const [clientName, setClientName] = useState('');
+  const [clientContact, setClientContact] = useState('');
   const [clientEmail, setClientEmail] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [clientAddress, setClientAddress] = useState('');
@@ -140,7 +133,7 @@ export function NewQuotePage() {
 
   const [companyId, setCompanyId] = useState(preload?.companyId || '');
   const [tierId, setTierId] = useState(preload?.tierId || '');
-  const [sellerId] = useState(preload?.sellerId || (isSellerRole ? user?.id : '') || '');
+  const [sellerId, setSellerId] = useState(preload?.sellerId || user?.id || '');
 
   const [currency, setCurrency] = useState<'PEN' | 'USD'>('PEN');
   const [exchangeRate, setExchangeRate] = useState('');
@@ -148,9 +141,12 @@ export function NewQuotePage() {
   const [participantIds, setParticipantIds] = useState<string[]>([]);
   const [validityDays, setValidityDays] = useState(15);
   const [paymentTerm, setPaymentTerm] = useState('CONTADO');
+  const [paymentScheduleType, setPaymentScheduleType] = useState<'SINGLE_DATE' | 'INSTALLMENTS'>('SINGLE_DATE');
   const [creditDueDate, setCreditDueDate] = useState<string>(() => {
     const d = new Date(); d.setDate(d.getDate() + 30); return toDateKey(d);
   });
+  const [creditInstallments, setCreditInstallments] = useState<QuoteInstallment[]>([]);
+  const [installmentGen, setInstallmentGen] = useState({ count: 3, intervalDays: 30, firstDays: 30 });
   const [deliveryTime, setDeliveryTime] = useState('INMEDIATO');
   const [deliveryPlace, setDeliveryPlace] = useState('');
   const [internalNotes, setInternalNotes] = useState('');
@@ -173,6 +169,9 @@ export function NewQuotePage() {
   useEffect(() => {
     if (!tierId && tiers.length) setTierId(tiers[0].id);
   }, [tiers, tierId]);
+  useEffect(() => {
+    if (!sellerId && user?.id) setSellerId(user.id);
+  }, [sellerId, user?.id]);
 
   useEffect(() => {
     if (!isEditing || didLoadEditQuote || !editQuote || editProductsLoading) return;
@@ -180,10 +179,10 @@ export function NewQuotePage() {
     const quote = editQuote as Quote;
     const client = quote.clientId ? clients.find((c) => c.id === quote.clientId) : undefined;
     const firstItem = quote.items[0];
-    const parsedNotes = parseQuoteNotes(quote.notes);
+    const parsedNotes = parseLegacyQuoteNotes(quote.notes);
     const parsedValidityDays = Math.max(
       1,
-      Math.ceil((new Date(quote.validUntil).getTime() - Date.now()) / 86400000),
+      daysBetweenDateKeys(quote.issueDate.slice(0, 10), quote.validUntil.slice(0, 10)),
     );
     const creditDue = (() => {
       if (quote.paymentMethod !== 'CRÉDITO' || !quote.creditDays) return creditDueDate;
@@ -193,25 +192,38 @@ export function NewQuotePage() {
 
     setCompanyId(quote.companyId || firstItem?.companyId || companies[0]?.id || '');
     setTierId(firstItem?.priceTier || tiers[0]?.id || '');
+    setSellerId(quote.sellerId || user?.id || '');
     setClientId(quote.clientId || '');
-    setClientName(client?.name || quote.clientName || '');
-    setClientEmail(client?.email || '');
-    setClientPhone(client?.phone || '');
-    setClientAddress(client?.address || '');
+    setClientName(quote.clientName || client?.name || '');
+    setClientContact(quote.clientContact || '');
+    setClientEmail(quote.clientEmail || client?.email || '');
+    setClientPhone(quote.clientPhone || client?.phone || '');
+    setClientAddress(quote.clientAddress || client?.address || '');
     setClientSearch(client?.name || quote.clientName || '');
-    setDocNumber(client?.documentNumber || '');
-    if (client?.documentNumber?.length === 8) setDocType('DNI');
-    else if (client?.documentNumber?.length === 11) setDocType('RUC');
+    const savedDocumentNumber = quote.clientDocumentNumber || client?.documentNumber || '';
+    setDocNumber(savedDocumentNumber);
+    if (quote.clientDocumentType) setDocType(quote.clientDocumentType);
+    else if (savedDocumentNumber.length === 8) setDocType('DNI');
+    else if (savedDocumentNumber.length === 11) setDocType('RUC');
     setCurrency(quote.currency || 'PEN');
     setExchangeRate(quote.exchangeRate ? String(quote.exchangeRate) : '');
     setParticipantIds(quote.participantIds || []);
     setValidityDays(parsedValidityDays);
     setPaymentTerm(parsedNotes.paymentTerm || quote.paymentMethod || 'CONTADO');
+    const savedScheduleType = quote.paymentScheduleType || (quote.installments?.length ? 'INSTALLMENTS' : 'SINGLE_DATE');
+    setPaymentScheduleType(savedScheduleType);
     setCreditDueDate(creditDue);
-    setDeliveryTime(parsedNotes.deliveryTime || 'INMEDIATO');
-    setDeliveryPlace(parsedNotes.deliveryPlace);
+    setCreditInstallments((quote.installments || []).map((installment) => ({
+      amount: installment.amount,
+      dueDate: installment.dueDate.slice(0, 10),
+    })));
+    if (quote.installments?.length) {
+      setInstallmentGen((prev) => ({ ...prev, count: quote.installments!.length }));
+    }
+    setDeliveryTime(quote.deliveryTime || parsedNotes.deliveryTime || 'INMEDIATO');
+    setDeliveryPlace(quote.deliveryPlace || parsedNotes.deliveryPlace);
     setObservations(parsedNotes.observations);
-    setInternalNotes(parsedNotes.internalNotes);
+    setInternalNotes(quote.internalNotes || parsedNotes.internalNotes);
     setPayments(quote.payments || []);
     setLines(quote.items.map((item) => {
       const product = editProductById.get(item.productId);
@@ -227,7 +239,7 @@ export function NewQuotePage() {
       };
     }));
     setDidLoadEditQuote(true);
-  }, [isEditing, didLoadEditQuote, editQuote, editProductsLoading, editProductById, clients, companies, tiers, creditDueDate]);
+  }, [isEditing, didLoadEditQuote, editQuote, editProductsLoading, editProductById, clients, companies, tiers, creditDueDate, user?.id]);
 
   useEffect(() => {
     if (currency !== 'USD' || !tipoCambioData?.venta) return;
@@ -235,20 +247,19 @@ export function NewQuotePage() {
     setExchangeRate(String(tipoCambioData.venta));
   }, [currency, exchangeRate, isEditing, tipoCambioData]);
 
-  const validUntilISO = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + (Number.isFinite(validityDays) ? validityDays : 15));
-    return d.toISOString().slice(0, 10);
-  }, [validityDays]);
-
   const todayKey = toDateKey(new Date());
+  const issueDateKey = isEditing && editQuote
+    ? (editQuote as Quote).issueDate.slice(0, 10)
+    : todayKey;
+
+  const validUntilISO = useMemo(
+    () => addDaysToDateKey(issueDateKey, Number.isFinite(validityDays) ? validityDays : 15),
+    [issueDateKey, validityDays],
+  );
 
   const creditDaysForApi = useMemo(() => {
-    const [y, m, d] = creditDueDate.split('-').map(Number);
-    const due = new Date(y, m - 1, d);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    return Math.max(1, Math.round((due.getTime() - today.getTime()) / 86400000));
-  }, [creditDueDate]);
+    return Math.max(1, daysBetweenDateKeys(issueDateKey, creditDueDate));
+  }, [creditDueDate, issueDateKey]);
 
   const creditDueDateLabel = useMemo(() => {
     const [y, m, d] = creditDueDate.split('-').map(Number);
@@ -256,12 +267,14 @@ export function NewQuotePage() {
   }, [creditDueDate]);
 
   const isPresetActive = (days: number) => {
-    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + days);
-    return toDateKey(d) === creditDueDate;
+    return addDaysToDateKey(issueDateKey, days) === creditDueDate;
   };
   const setPreset = (days: number) => {
-    const d = new Date(); d.setDate(d.getDate() + days);
-    setCreditDueDate(toDateKey(d));
+    setCreditDueDate(addDaysToDateKey(issueDateKey, days));
+  };
+  const setCreditDays = (days: number) => {
+    const safeDays = Math.max(1, Math.min(3650, Math.trunc(days || 1)));
+    setCreditDueDate(addDaysToDateKey(issueDateKey, safeDays));
   };
 
   const paymentMethodNames: string[] = useMemo(() => {
@@ -299,6 +312,54 @@ export function NewQuotePage() {
   const solEquiv = currency === 'USD' && exchangeRateNum > 0 ? Math.round(total * exchangeRateNum * 100) / 100 : null;
   const paidAmount = Math.round(payments.reduce((s, p) => s + p.amount, 0) * 100) / 100;
   const saldoAmount = Math.round((total - paidAmount) * 100) / 100;
+  const financedAmount = Math.max(0, saldoAmount);
+  const installmentTotal = Math.round(creditInstallments.reduce((sum, installment) => sum + (installment.amount || 0), 0) * 100) / 100;
+  const installmentDueDates = creditInstallments
+    .map((installment) => installment.dueDate)
+    .filter(Boolean)
+    .sort();
+  const lastInstallmentDueDate = installmentDueDates[installmentDueDates.length - 1];
+  const creditDaysToSave = paymentScheduleType === 'INSTALLMENTS' && lastInstallmentDueDate
+    ? Math.max(1, daysBetweenDateKeys(issueDateKey, lastInstallmentDueDate))
+    : creditDaysForApi;
+
+  const generateCreditInstallments = () => {
+    const { count, intervalDays, firstDays } = installmentGen;
+    if (count < 1 || count > 36) { toast.error('Indicá entre 1 y 36 cuotas'); return; }
+    if (intervalDays < 1) { toast.error('El intervalo debe ser de al menos 1 día'); return; }
+    if (firstDays < 0) { toast.error('Los días de la primera cuota no pueden ser negativos'); return; }
+    if (financedAmount <= 0) { toast.error('No hay saldo pendiente para financiar'); return; }
+
+    const regularAmount = Math.round((financedAmount / count) * 100) / 100;
+    let accumulated = 0;
+    const generated: QuoteInstallment[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const amount = index === count - 1
+        ? Math.round((financedAmount - accumulated) * 100) / 100
+        : regularAmount;
+      accumulated = Math.round((accumulated + amount) * 100) / 100;
+      generated.push({
+        amount,
+        dueDate: addDaysToDateKey(issueDateKey, firstDays + index * intervalDays),
+      });
+    }
+    setCreditInstallments(generated);
+    toast.success(`${count} cuota${count === 1 ? '' : 's'} generada${count === 1 ? '' : 's'}`);
+  };
+
+  const addCreditInstallment = () => {
+    const remaining = Math.max(0, Math.round((financedAmount - installmentTotal) * 100) / 100);
+    setCreditInstallments((current) => [
+      ...current,
+      { amount: remaining, dueDate: addDaysToDateKey(issueDateKey, 30 * (current.length + 1)) },
+    ]);
+  };
+
+  const updateCreditInstallment = (index: number, patch: Partial<QuoteInstallment>) => {
+    setCreditInstallments((current) => current.map((installment, installmentIndex) => (
+      installmentIndex === index ? { ...installment, ...patch } : installment
+    )));
+  };
 
   const productOptions = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
@@ -311,6 +372,7 @@ export function NewQuotePage() {
   const pickClient = (c: Client) => {
     setClientId(c.id);
     setClientName(c.name);
+    setClientContact('');
     setClientEmail(c.email || '');
     setClientPhone(c.phone || '');
     setClientAddress(c.address || '');
@@ -324,6 +386,7 @@ export function NewQuotePage() {
   const clearClient = () => {
     setClientId('');
     setClientName('');
+    setClientContact('');
     setClientEmail('');
     setClientPhone('');
     setClientAddress('');
@@ -342,6 +405,7 @@ export function NewQuotePage() {
       if (localMatch) {
         setClientId(localMatch.id);
         setClientName(localMatch.name);
+        setClientContact('');
         setClientEmail(localMatch.email || '');
         setClientPhone(localMatch.phone || '');
         setClientAddress(localMatch.address || '');
@@ -413,41 +477,63 @@ export function NewQuotePage() {
     setProductSearch('');
   };
 
-  const buildNotes = () => {
-    const parts: string[] = [];
-    if (paymentTerm.trim()) parts.push(`Forma de pago: ${paymentTerm.trim()}`);
-    if (deliveryTime.trim()) parts.push(`Tiempo de entrega: ${deliveryTime.trim()}`);
-    if (deliveryPlace.trim()) parts.push(`Lugar de entrega: ${deliveryPlace.trim()}`);
-    const header = parts.join('\n');
-    const body = observations.trim();
-    const internal = internalNotes.trim() ? `\n\n[Interno] ${internalNotes.trim()}` : '';
-    return [header, body].filter(Boolean).join('\n\n') + internal;
-  };
-
   const canSave = lines.length > 0 && lines.every((l) => l.productId && l.quantity > 0 && l.unitPrice >= 0)
     && !!companyId && !!tierId
+    && !!sellerId
     && (!!clientId || !!clientName.trim());
 
   const handleSubmit = async () => {
     if (!canSave) {
       if (!lines.length) toast.error('Agregá al menos un producto');
       else if (!clientId && !clientName.trim()) toast.error('Indicá el nombre del cliente');
+      else if (!sellerId) toast.error('Seleccioná al responsable de la cotización');
       else toast.error('Completá producto, cantidad y precio en cada línea');
       return;
+    }
+    if (paymentTerm === 'CRÉDITO' && paymentScheduleType === 'INSTALLMENTS') {
+      if (creditInstallments.length === 0) {
+        toast.error('Generá o agregá al menos una cuota');
+        return;
+      }
+      if (creditInstallments.some((installment) => installment.amount <= 0 || !installment.dueDate)) {
+        toast.error('Todas las cuotas deben tener un monto y una fecha');
+        return;
+      }
+      if (creditInstallments.some((installment) => installment.dueDate < issueDateKey)) {
+        toast.error('Las cuotas no pueden vencer antes de la emisión de la cotización');
+        return;
+      }
+      if (Math.abs(installmentTotal - financedAmount) > 0.01) {
+        toast.error(`Las cuotas (${currSymbol} ${installmentTotal.toFixed(2)}) deben sumar el saldo (${currSymbol} ${financedAmount.toFixed(2)})`);
+        return;
+      }
     }
     try {
       const payload = {
         companyId,
         clientId: clientId || undefined,
-        clientName: clientId ? undefined : clientName.trim(),
+        clientName: clientName.trim(),
+        clientDocumentType: docType,
+        clientDocumentNumber: docNumber.trim() || undefined,
+        clientContact: clientContact.trim() || undefined,
+        clientEmail: clientEmail.trim() || undefined,
+        clientPhone: clientPhone.trim() || undefined,
+        clientAddress: clientAddress.trim() || undefined,
         validUntil: validUntilISO,
-        notes: buildNotes() || undefined,
+        notes: observations.trim() || undefined,
+        internalNotes: internalNotes.trim() || undefined,
+        deliveryTime: deliveryTime.trim() || undefined,
+        deliveryPlace: deliveryPlace.trim() || undefined,
         sellerId: sellerId || undefined,
         participantIds: participantIds.length ? participantIds : undefined,
         currency,
         exchangeRate: exchangeRateNum || undefined,
         paymentMethod: paymentTerm,
-        creditDays: paymentTerm === 'CRÉDITO' ? creditDaysForApi : undefined,
+        creditDays: paymentTerm === 'CRÉDITO' ? creditDaysToSave : undefined,
+        paymentScheduleType: paymentTerm === 'CRÉDITO' ? paymentScheduleType : undefined,
+        installments: paymentTerm === 'CRÉDITO' && paymentScheduleType === 'INSTALLMENTS'
+          ? creditInstallments.map((installment) => ({ amount: installment.amount, dueDate: installment.dueDate }))
+          : undefined,
         payments: payments.length ? payments : undefined,
         items: lines.map((l) => ({
           productId: l.productId,
@@ -467,6 +553,14 @@ export function NewQuotePage() {
   };
 
   const company = companies.find((c) => c.id === companyId);
+  const responsibleUser = activeUsers.find((candidate: any) => candidate.id === sellerId);
+  const responsibleName = responsibleUser?.fullName
+    || responsibleUser?.username
+    || (isEditing ? (editQuote as Quote | undefined)?.sellerName : undefined)
+    || user?.fullName
+    || user?.username
+    || '—';
+  const responsibleEmail = responsibleUser?.email || (sellerId === user?.id ? user?.email : undefined);
   const docTabs: DocType[] = ['DNI', 'RUC', 'CE', 'OTRO'];
   const saving = createQuote.isPending || updateQuote.isPending;
 
@@ -628,6 +722,11 @@ export function NewQuotePage() {
                   placeholder="Distribuidora Los Andes S.A.C."
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Persona de contacto</label>
+                <input value={clientContact} onChange={(e) => setClientContact(e.target.value)} placeholder="Nombre de quien recibirá la cotización" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500" />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -814,21 +913,57 @@ export function NewQuotePage() {
                     </div>
                   </div>
                   {paymentTerm === 'CRÉDITO' && (
-                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 space-y-2">
-                      <label className="block text-xs font-medium text-amber-700">Accesos rápidos</label>
-                      <div className="grid grid-cols-5 gap-1 p-1 bg-white/70 rounded-lg">
-                        {[15, 30, 45, 60, 90].map((d) => (
+                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-amber-800 mb-1.5">Modalidad del crédito</label>
+                        <div className="grid grid-cols-2 gap-1 p-1 bg-white/70 rounded-lg">
                           <button
-                            key={d}
                             type="button"
-                            onClick={() => setPreset(d)}
-                            className={`py-1.5 text-xs font-semibold rounded-md transition-all ${isPresetActive(d) ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-700 hover:bg-amber-100'}`}
+                            onClick={() => setPaymentScheduleType('SINGLE_DATE')}
+                            className={`py-1.5 text-xs font-semibold rounded-md transition-all ${paymentScheduleType === 'SINGLE_DATE' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-700 hover:bg-amber-100'}`}
                           >
-                            {d}d
+                            Pago único
                           </button>
-                        ))}
+                          <button
+                            type="button"
+                            onClick={() => setPaymentScheduleType('INSTALLMENTS')}
+                            className={`py-1.5 text-xs font-semibold rounded-md transition-all ${paymentScheduleType === 'INSTALLMENTS' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-700 hover:bg-amber-100'}`}
+                          >
+                            Por cuotas
+                          </button>
+                        </div>
                       </div>
-                      <p className="text-xs text-amber-600">Vence el <span className="font-semibold">{creditDueDateLabel}</span></p>
+                      {paymentScheduleType === 'SINGLE_DATE' && (
+                        <div className="space-y-2">
+                          <label className="block text-xs font-medium text-amber-800">Días de crédito</label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min={1}
+                              max={3650}
+                              step={1}
+                              value={creditDaysForApi}
+                              onChange={(e) => setCreditDays(parseInt(e.target.value, 10) || 1)}
+                              onWheel={(e) => e.currentTarget.blur()}
+                              className="w-full px-3 py-2 pr-14 border border-amber-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-amber-700">días</span>
+                          </div>
+                          <div className="grid grid-cols-5 gap-1">
+                            {[15, 30, 45, 60, 90].map((d) => (
+                              <button
+                                key={d}
+                                type="button"
+                                onClick={() => setPreset(d)}
+                                className={`py-1 text-[11px] font-semibold rounded-md transition-all ${isPresetActive(d) ? 'bg-amber-500 text-white shadow-sm' : 'bg-white text-amber-700 hover:bg-amber-100'}`}
+                              >
+                                {d}d
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-xs text-amber-600">Vence el <span className="font-semibold">{creditDueDateLabel}</span></p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -842,10 +977,79 @@ export function NewQuotePage() {
                 </div>
               </div>
 
+              {paymentTerm === 'CRÉDITO' && paymentScheduleType === 'INSTALLMENTS' && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-4">
+                  <div className="flex flex-col lg:flex-row lg:items-end gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
+                      <div>
+                        <label className="block text-[11px] font-medium text-amber-800 mb-1">Número de cuotas</label>
+                        <input type="number" min={1} max={36} step={1} value={installmentGen.count || ''} onChange={(e) => setInstallmentGen((current) => ({ ...current, count: parseInt(e.target.value, 10) || 0 }))} onWheel={(e) => e.currentTarget.blur()} className="w-full px-3 py-2 border border-amber-200 rounded-lg bg-white text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-amber-800 mb-1">Cada cuántos días</label>
+                        <input type="number" min={1} step={1} value={installmentGen.intervalDays || ''} onChange={(e) => setInstallmentGen((current) => ({ ...current, intervalDays: parseInt(e.target.value, 10) || 0 }))} onWheel={(e) => e.currentTarget.blur()} className="w-full px-3 py-2 border border-amber-200 rounded-lg bg-white text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-amber-800 mb-1">Primera cuota en</label>
+                        <div className="relative">
+                          <input type="number" min={0} step={1} value={installmentGen.firstDays} onChange={(e) => setInstallmentGen((current) => ({ ...current, firstDays: parseInt(e.target.value, 10) || 0 }))} onWheel={(e) => e.currentTarget.blur()} className="w-full px-3 py-2 pr-12 border border-amber-200 rounded-lg bg-white text-sm" />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-amber-700">días</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button type="button" onClick={generateCreditInstallments} className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 inline-flex items-center justify-center gap-1.5">
+                      <Sparkles size={14} /> Generar cuotas
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {[3, 4, 6, 12].map((count) => (
+                      <button key={count} type="button" onClick={() => setInstallmentGen({ count, intervalDays: 30, firstDays: 30 })} className="px-2.5 py-1 bg-white border border-amber-200 text-amber-700 rounded-lg text-[11px] font-medium hover:bg-amber-100">
+                        {count} × 30 días
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t border-amber-200 pt-3">
+                    <div className="text-xs text-amber-800">
+                      Saldo a financiar: <strong>{currSymbol} {financedAmount.toFixed(2)}</strong>
+                      {creditInstallments.length > 0 && (
+                        <span className={Math.abs(installmentTotal - financedAmount) > 0.01 ? ' text-red-600' : ' text-emerald-700'}>
+                          {' '}· Cuotas: <strong>{currSymbol} {installmentTotal.toFixed(2)}</strong>
+                        </span>
+                      )}
+                    </div>
+                    <button type="button" onClick={addCreditInstallment} className="text-xs text-amber-700 hover:text-amber-900 font-semibold">+ Agregar cuota</button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {creditInstallments.map((installment, index) => (
+                      <div key={index} className="grid grid-cols-[32px_1fr_1fr_28px] gap-2 items-end bg-white border border-amber-100 rounded-lg p-2">
+                        <div className="pb-2 text-xs font-semibold text-amber-600 text-center">#{index + 1}</div>
+                        <div>
+                          <label className="block text-[10px] text-gray-500 mb-1">Monto ({currSymbol})</label>
+                          <input type="number" min={0.01} step={0.01} value={installment.amount || ''} onChange={(e) => updateCreditInstallment(index, { amount: parseFloat(e.target.value) || 0 })} onWheel={(e) => e.currentTarget.blur()} className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-gray-500 mb-1">Fecha de vencimiento</label>
+                          <input type="date" min={issueDateKey} value={installment.dueDate} onChange={(e) => updateCreditInstallment(index, { dueDate: e.target.value })} className="w-full px-2 py-1.5 border border-gray-200 rounded text-sm" />
+                        </div>
+                        <button type="button" onClick={() => setCreditInstallments((current) => current.filter((_, installmentIndex) => installmentIndex !== index))} className="pb-1.5 text-red-400 hover:text-red-600" title="Eliminar cuota">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                    {creditInstallments.length === 0 && (
+                      <p className="text-xs text-amber-700/70 text-center py-2">Usá el generador o agregá las cuotas manualmente.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1.5">Notas internas</label>
                 <input value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} placeholder="Nota corta visible solo al equipo" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                <p className="text-[11px] text-gray-400 mt-1">Las notas internas se prefijan con <span className="font-mono">[Interno]</span> y no se destacan al cliente.</p>
+                <p className="text-[11px] text-gray-400 mt-1">Uso exclusivo del equipo. No se incluyen en el PDF entregado al cliente.</p>
               </div>
 
               <div>
@@ -1052,9 +1256,10 @@ export function NewQuotePage() {
             )}
 
             <div className="mt-4 pt-4 border-t border-gray-100">
-              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Atendido por</h4>
-              <p className="text-sm font-semibold text-gray-800">{user?.fullName || '—'}</p>
-              {user?.email && <p className="text-xs text-gray-500">{user.email}</p>}
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Responsable de la cotización</h4>
+              <p className="text-sm font-semibold text-gray-800">{responsibleName}</p>
+              {responsibleEmail && <p className="text-xs text-gray-500">{responsibleEmail}</p>}
+              <p className="text-[11px] text-gray-400 mt-1">Asignado automáticamente al usuario que creó la cotización.</p>
             </div>
 
             <div className="mt-4 pt-4 border-t border-gray-100">
@@ -1072,8 +1277,8 @@ export function NewQuotePage() {
                 defaultValue=""
               >
                 <option value="" disabled>Agregar empleado…</option>
-                {(Array.isArray(usersData) ? usersData : usersData?.data || [])
-                  .filter((u: any) => u.id !== user?.id && !participantIds.includes(u.id))
+                {activeUsers
+                  .filter((u: any) => u.id !== sellerId && !participantIds.includes(u.id))
                   .map((u: any) => (
                     <option key={u.id} value={u.id}>{u.fullName || u.username}</option>
                   ))}
@@ -1081,7 +1286,7 @@ export function NewQuotePage() {
               {participantIds.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {participantIds.map(id => {
-                    const u = (Array.isArray(usersData) ? usersData : usersData?.data || []).find((u: any) => u.id === id);
+                    const u = activeUsers.find((u: any) => u.id === id);
                     return (
                       <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
                         {u?.fullName || u?.username || id}
@@ -1097,7 +1302,7 @@ export function NewQuotePage() {
           </div>
 
           {/* Mini calendario de crédito */}
-          {paymentTerm === 'CRÉDITO' && (
+          {paymentTerm === 'CRÉDITO' && paymentScheduleType === 'SINGLE_DATE' && (
             <div className="bg-white border border-amber-200 rounded-2xl shadow-sm p-4">
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
@@ -1108,7 +1313,7 @@ export function NewQuotePage() {
                   <p className="text-[11px] text-gray-400">Selecciona el día límite de pago</p>
                 </div>
               </div>
-              <CreditDatePicker value={creditDueDate} onChange={setCreditDueDate} todayKey={todayKey} />
+              <CreditDatePicker value={creditDueDate} onChange={setCreditDueDate} todayKey={isEditing ? issueDateKey : todayKey} />
             </div>
           )}
         </aside>
