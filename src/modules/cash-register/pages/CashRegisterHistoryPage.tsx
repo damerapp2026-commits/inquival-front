@@ -1,13 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useCashRegisters, useCashRegisterSummary, useCashRegisterById, useCloseCashRegister } from '../hooks/useCashRegister';
+import { useCashRegisters, useCashRegisterSummary, useCashRegisterById, useCloseCashRegister, useAssignCashEntryResponsible } from '../hooks/useCashRegister';
 import { useUsers } from '../../users/hooks/useUsers';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
 import {
   History, Wallet, Lock, ChevronDown, ChevronRight, Layers, Clock, ExternalLink,
-  Eye, AlertCircle, ArrowUpCircle, ArrowDownCircle, ReceiptText, FileText, Calendar, Wrench,
+  Eye, AlertCircle, ArrowUpCircle, ArrowDownCircle, ReceiptText, FileText, Calendar, Wrench, Loader2,
 } from 'lucide-react';
 import type { CashRegister, CashRegisterEntry, CashRegisterPeriodSummary } from '../../../shared/types';
 import { getTodayDateString, getMonthRange } from '../../../shared/utils/date.util';
@@ -141,6 +141,7 @@ export function CashRegisterHistoryPage() {
   const [vendorFilter, setVendorFilter] = useState<string | null>(null);
   const [currencyFilter, setCurrencyFilter] = useState<'PEN' | 'USD' | null>(null);
   const [detailTab, setDetailTab] = useState<'PEN' | 'USD'>('PEN');
+  const [savingResponsibleEntryId, setSavingResponsibleEntryId] = useState<string | null>(null);
 
   const { data, isLoading } = useCashRegisters({ page, limit: 20, startDate: startDate || undefined, endDate: endDate || undefined });
   const { data: periodSummary, isLoading: isSummaryLoading } = useCashRegisterSummary({
@@ -152,8 +153,20 @@ export function CashRegisterHistoryPage() {
   });
   const { data: detail } = useCashRegisterById(selectedId);
   const closeRegister = useCloseCashRegister();
+  const assignResponsible = useAssignCashEntryResponsible();
   const { data: usersData } = useUsers({ limit: 200 });
   const { user: currentUser } = useAuth();
+
+  const workers = useMemo(() => {
+    const list: any[] = Array.isArray(usersData) ? usersData : (usersData as any)?.data || [];
+    const active = list.filter((worker) => worker.isActive !== false);
+    if (currentUser?.id && !active.some((worker) => worker.id === currentUser.id)) {
+      active.push(currentUser);
+    }
+    return active.sort((a, b) =>
+      (a.fullName || a.username || '').localeCompare(b.fullName || b.username || '', 'es'),
+    );
+  }, [usersData, currentUser]);
 
   const userById = useMemo(() => {
     const list: any[] = Array.isArray(usersData) ? usersData : (usersData as any)?.data || [];
@@ -222,10 +235,56 @@ export function CashRegisterHistoryPage() {
     return next;
   });
 
+  const handleResponsibleChange = async (entry: CashRegisterEntry, responsibleId: string) => {
+    if (!selectedId || !responsibleId || responsibleId === entryResponsibleId(entry)) return;
+    setSavingResponsibleEntryId(entry.id);
+    try {
+      await assignResponsible.mutateAsync({ registerId: selectedId, entryId: entry.id, responsibleId });
+    } catch {
+      // El hook muestra el mensaje devuelto por el servidor.
+    } finally {
+      setSavingResponsibleEntryId(null);
+    }
+  };
+
+  const renderResponsibleSelect = (entry: CashRegisterEntry) => {
+    const responsibleId = entryResponsibleId(entry) || '';
+    const vendor = responsibleId ? (userById[responsibleId] || 'Usuario') : '';
+    const isSaving = savingResponsibleEntryId === entry.id;
+    const responsibleIsInactive = responsibleId && !workers.some((worker) => worker.id === responsibleId);
+
+    return (
+      <div className="flex items-center gap-1.5 min-w-[150px]" onClick={(event) => event.stopPropagation()}>
+        {vendor && (
+          <span className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[8px] font-bold ${vendorColor(vendor)}`}>
+            {initialsFor(vendor)}
+          </span>
+        )}
+        <div className="relative flex-1">
+          <select
+            value={responsibleId}
+            onChange={(event) => void handleResponsibleChange(entry, event.target.value)}
+            disabled={isSaving}
+            aria-label="Responsable del movimiento"
+            title="Seleccionar responsable"
+            className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-1.5 pl-2 pr-7 text-xs text-gray-700 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100 disabled:cursor-wait disabled:bg-gray-50"
+          >
+            <option value="" disabled>Seleccionar</option>
+            {responsibleIsInactive && <option value={responsibleId}>{vendor} (inactivo)</option>}
+            {workers.map((worker) => (
+              <option key={worker.id} value={worker.id}>{worker.fullName || worker.username}</option>
+            ))}
+          </select>
+          {isSaving
+            ? <Loader2 size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-primary-600" />
+            : <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400" />}
+        </div>
+      </div>
+    );
+  };
+
   const renderDetailEntry = (e: CashRegisterEntry, nested: boolean, key: React.Key) => {
     const method = methodFromEntry(e);
-    const responsibleId = entryResponsibleId(e);
-    const vendor = responsibleId ? (userById[responsibleId] || 'Usuario') : '';
     const isSale = e.referenceType === 'Sale' && !!e.referenceId;
     const descStripped = isSale ? stripMethod(e.description) : null;
     const clientFromDesc = descStripped && /^Venta\s+a\s+/i.test(descStripped)
@@ -269,12 +328,7 @@ export function CashRegisterHistoryPage() {
             : <span className="text-gray-300 text-xs">—</span>}
         </td>
         <td className="px-3 py-2.5">
-          {vendor ? (
-            <div className="inline-flex items-center gap-1.5">
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold ${vendorColor(vendor)}`}>{initialsFor(vendor)}</span>
-              <span className="text-xs text-gray-600 truncate max-w-[100px]">{vendor.split(' ')[0]}</span>
-            </div>
-          ) : <span className="text-gray-300 text-xs">—</span>}
+          {renderResponsibleSelect(e)}
         </td>
         <td className="px-3 py-2.5 text-center">
           {e.voucherType === 'BOLETA' ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100"><ReceiptText size={10} /> Boleta</span>
@@ -640,8 +694,6 @@ export function CashRegisterHistoryPage() {
                   const first = g.entries[0];
                   const total = g.total ?? g.entries.reduce((s, e) => s + e.amount, 0);
                   const baseDesc = stripMethod(first.description.replace(/\s*\(\d+ de \d+\)\s*$/, ''));
-                  const responsibleId = entryResponsibleId(first);
-                  const vendor = responsibleId ? (userById[responsibleId] || 'Usuario') : '';
                   const groupMethods = Array.from(new Set(g.entries.map(methodFromEntry).filter(Boolean)));
                   return (
                     <React.Fragment key={g.groupId}>
@@ -677,12 +729,7 @@ export function CashRegisterHistoryPage() {
                           ) : <span className="text-gray-300 text-xs">—</span>}
                         </td>
                         <td className="px-3 py-2.5">
-                          {vendor ? (
-                            <div className="inline-flex items-center gap-1.5">
-                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold ${vendorColor(vendor)}`}>{initialsFor(vendor)}</span>
-                              <span className="text-xs text-gray-600 truncate max-w-[100px]">{vendor.split(' ')[0]}</span>
-                            </div>
-                          ) : <span className="text-gray-300 text-xs">—</span>}
+                          {renderResponsibleSelect(first)}
                         </td>
                         <td className="px-3 py-2.5 text-center"><span className="text-gray-300 text-xs">—</span></td>
                         <td className={`px-3 py-2.5 text-right text-xs font-bold tabular-nums ${first.type === 'INCOME' ? 'text-primary-700' : 'text-rose-600'}`}>

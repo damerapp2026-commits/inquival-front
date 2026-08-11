@@ -10,6 +10,8 @@ export const cashRegisterService = {
   getByDate: (date: string) => api.get('/cash-registers/by-date', { params: { date } }).then((r) => r.data.data),
   addEntry: (id: string, data: any) => api.post(`/cash-registers/${id}/entries`, data).then((r) => r.data.data),
   editEntry: (id: string, entryId: string, data: any) => api.patch(`/cash-registers/${id}/entries/${entryId}`, data).then((r) => r.data.data),
+  assignResponsible: (id: string, entryId: string, responsibleId: string) =>
+    api.patch(`/cash-registers/${id}/entries/${entryId}/responsible`, { responsibleId }).then((r) => r.data.data),
   deleteEntry: (id: string, entryId: string, data: any) => api.delete(`/cash-registers/${id}/entries/${entryId}`, { data }).then((r) => r.data.data),
   close: (id: string, data?: any) => api.post(`/cash-registers/${id}/close`, data || {}).then((r) => r.data.data),
   adjustOpening: (id: string, data: { openingBalance: number; reason: string }) =>

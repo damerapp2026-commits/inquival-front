@@ -47,6 +47,20 @@ export function useEditCashEntry() {
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error'),
   });
 }
+export function useAssignCashEntryResponsible() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ registerId, entryId, responsibleId }: { registerId: string; entryId: string; responsibleId: string }) =>
+      cashRegisterService.assignResponsible(registerId, entryId, responsibleId),
+    onSuccess: (register, variables) => {
+      qc.setQueryData(['cash-register', variables.registerId], register);
+      qc.invalidateQueries({ queryKey: ['cash-register-today'] });
+      qc.invalidateQueries({ queryKey: ['cash-registers'] });
+      toast.success('Responsable actualizado');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || 'No se pudo actualizar el responsable'),
+  });
+}
 export function useDeleteCashEntry() {
   const qc = useQueryClient();
   return useMutation({
