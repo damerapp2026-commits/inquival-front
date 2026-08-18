@@ -1,7 +1,7 @@
 import type { Quote, Product, Company, Client } from '../../../shared/types';
 import { numberToWords } from './numberToWords';
 import { COMPANY_INFO } from '../../../config/companyInfo';
-import { getQuoteItemProductName, getQuoteItemProductUnit } from '../hooks/useQuoteProducts';
+import { getQuoteItemProductName, getQuoteItemProductUnit } from './quoteItemDetails';
 import { getQuoteCommercialDetails } from './quoteDetails';
 
 let pdfMakePromise: Promise<any> | null = null;
@@ -63,55 +63,22 @@ const formatDate = (d?: string | Date) => {
   return `${match[3]}/${match[2]}/${match[1]}`;
 };
 
-const formatLongDate = (d?: string | Date) => {
-  if (!d) return '—';
-  const raw = d instanceof Date ? d.toISOString() : d;
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.slice(0, 10));
-  if (!match) return '—';
-  const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  return `${Number(match[3])} de ${months[Number(match[2]) - 1]} de ${match[1]}`;
-};
-
-const daysBetween = (from?: string | Date, to?: string | Date) => {
-  if (!from || !to) return 0;
-  const fromKey = (from instanceof Date ? from.toISOString() : from).slice(0, 10);
-  const toKey = (to instanceof Date ? to.toISOString() : to).slice(0, 10);
-  return Math.max(0, Math.round((new Date(`${toKey}T00:00:00Z`).getTime() - new Date(`${fromKey}T00:00:00Z`).getTime()) / 86400000));
-};
-
 const IGV_RATE = 0.18;
-const BRAND_GREEN = '#16a34a';
 const BRAND_GREEN_DARK = '#15803d';
 const BORDER_GRAY = '#94a3b8';
-
-function labeledCell(label: string, value: string) {
-  return [
-    { text: label, bold: true, fontSize: 8 },
-    { text: ':', fontSize: 8, alignment: 'center' },
-    { text: value || ' ', fontSize: 8 },
-  ];
-}
+const TABLE_HEADER_FILL = '#dcfce7';
 
 function buildPaymentMethodsBlock(): any[] {
-  const { bankAccounts, yape, plin } = COMPANY_INFO;
-  const hasAny = (bankAccounts && bankAccounts.length > 0) || yape || plin;
+  const { bankAccounts, detraccionAccount, yape, plin } = COMPANY_INFO;
+  const hasAny = (bankAccounts && bankAccounts.length > 0) || detraccionAccount?.accountNumber || yape || plin;
   if (!hasAny) return [];
 
-  const bankRows: any[] = [];
-  bankAccounts?.forEach((acc) => {
-    bankRows.push([
-      { text: `${acc.bank} (${acc.currency})`, bold: true, fontSize: 8 },
-      { text: 'Cuenta', fontSize: 8, color: '#6b7280' },
-      { text: acc.accountNumber || '—', fontSize: 8 },
-      { text: 'CCI', fontSize: 8, color: '#6b7280' },
-      { text: acc.cci || '—', fontSize: 8 },
-    ]);
-    bankRows.push([
-      { text: '', fontSize: 8 },
-      { text: 'Titular', fontSize: 8, color: '#6b7280' },
-      { text: acc.holder || '—', fontSize: 8, colSpan: 3 }, {}, {},
-    ]);
-  });
+  const bankRows: any[] = (bankAccounts || []).map((acc) => [
+    { text: `${acc.bank} (${acc.currency})`, bold: true, fontSize: 8, alignment: 'center' },
+    { text: acc.accountNumber || '—', fontSize: 8, alignment: 'center' },
+    { text: acc.cci || '—', fontSize: 8, alignment: 'center' },
+    { text: acc.holder || '—', fontSize: 8, alignment: 'center' },
+  ]);
 
   const walletRows: any[] = [];
   if (yape?.number) walletRows.push([
@@ -126,23 +93,45 @@ function buildPaymentMethodsBlock(): any[] {
   ]);
 
   return [
-    { text: '', margin: [0, 8] },
-    {
-      table: {
-        widths: ['*'],
-        body: [[{ text: 'FORMAS DE PAGO', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, margin: [4, 3] }]],
-      },
-      layout: 'noBorders',
-    },
+    { text: '', margin: [0, 6] },
+    { text: 'FORMAS DE PAGO', bold: true, alignment: 'center', fontSize: 9, margin: [0, 0, 0, 2] },
     ...(bankRows.length > 0 ? [{
-      table: { widths: ['auto', 'auto', '*', 'auto', '*'], body: bankRows },
+      table: {
+        widths: [75, 100, 135, '*'],
+        body: [
+          [
+            { text: '', fontSize: 8 },
+            { text: 'Cuenta:', bold: true, fontSize: 8, alignment: 'center' },
+            { text: 'CCI:', bold: true, fontSize: 8, alignment: 'center' },
+            { text: 'Titular:', bold: true, fontSize: 8, alignment: 'center' },
+          ],
+          ...bankRows,
+        ],
+      },
       layout: {
-        hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
-        hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 1 : 0),
-        vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1 : 0),
+        hLineColor: () => BRAND_GREEN_DARK, vLineColor: () => BRAND_GREEN_DARK,
+        hLineWidth: () => 0.8, vLineWidth: () => 0.8,
         paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
       },
     }] : []),
+    ...(detraccionAccount?.accountNumber ? [
+      { text: '', margin: [0, 2] },
+      {
+        table: {
+          widths: [105, 145, '*'],
+          body: [[
+            { text: 'Cta. Detracciones:', bold: true, fontSize: 8 },
+            { text: `${detraccionAccount.bank}:`, fontSize: 8 },
+            { text: detraccionAccount.accountNumber, fontSize: 8, alignment: 'center' },
+          ]],
+        },
+        layout: {
+          hLineColor: () => BRAND_GREEN_DARK, vLineColor: () => BRAND_GREEN_DARK,
+          hLineWidth: () => 0.8, vLineWidth: () => 0.8,
+          paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
+        },
+      },
+    ] : []),
     ...(walletRows.length > 0 ? [
       { text: '', margin: [0, 3] },
       {
@@ -195,7 +184,7 @@ function buildPaymentsBlock(quote: any, currencySymbol: string): any[] {
   ];
 }
 
-function buildDocDefinition({ quote, products, company, client, vendor, currency, logoDataUrl }: BuildParams) {
+export function buildQuotePdfDefinition({ quote, products, company, client, vendor, currency, logoDataUrl }: BuildParams) {
   const getProduct = (id: string) => products.find(p => p.id === id);
   const commercial = getQuoteCommercialDetails(quote);
   const effectiveCurrency = quote.currency || currency || 'PEN';
@@ -213,19 +202,18 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
   const clientEmail = quote.clientEmail || client?.email || '—';
   const clientContact = quote.clientContact || '—';
   const vendorName = quote.sellerName || vendor?.name || 'Equipo Comercial';
-  const greetingName = clientContact !== '—' ? clientContact : clientName;
-  const validityDays = daysBetween(quote.issueDate, quote.validUntil);
+  const vendorPhone = vendor?.phone || headerPhone || '—';
+  const salesEmail = COMPANY_INFO.salesEmail || vendor?.email || headerEmail || '—';
   const creditInstallments = [...(quote.installments || [])].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const hasInstallments = commercial.paymentTerm === 'CRÉDITO'
     && quote.paymentScheduleType === 'INSTALLMENTS'
     && creditInstallments.length > 0;
-
-  const creditDueDateStr = (() => {
-    if (commercial.paymentTerm !== 'CRÉDITO' || !quote.creditDays) return null;
-    if (hasInstallments) return formatDate(creditInstallments[creditInstallments.length - 1].dueDate);
-    const p = (quote.issueDate as string).slice(0, 10).split('-').map(Number);
-    return formatDate(new Date(p[0], p[1] - 1, p[2] + quote.creditDays));
-  })();
+  const commercialNoteParts = [`Forma de pago: ${commercial.paymentTerm}`];
+  if (commercial.paymentTerm === 'CRÉDITO') {
+    commercialNoteParts.push(`Plazo: ${quote.creditDays ? `${quote.creditDays} días` : '—'}`);
+    commercialNoteParts.push(`Cuotas: ${hasInstallments ? creditInstallments.length : 1}`);
+  }
+  const commercialNote = `${commercialNoteParts.join(', ')}${commercial.observations ? `. ${commercial.observations}` : ''}`;
 
   const isExonerado = (taxType?: string) => taxType === 'EXONERADO' || taxType === 'INAFECTO';
   const gravadoTotal = quote.items.filter(it => !isExonerado(getProduct(it.productId)?.taxType)).reduce((s, it) => s + it.subtotal, 0);
@@ -256,18 +244,18 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
     pageSize: 'A4',
     pageMargins: [24, 18, 24, 24],
     content: [
-      {
-        text: `Fecha: ${formatLongDate(quote.issueDate)}`,
-        alignment: 'right',
-        fontSize: 8,
-        color: '#4b5563',
-        margin: [0, 0, 0, 3],
-      },
       // ===== HEADER =====
       {
         columns: [
           ...(logoDataUrl
-            ? [{ image: logoDataUrl, width: 125, margin: [0, 0, 6, 0] } as any]
+            ? [{
+              image: logoDataUrl,
+              // El archivo del logo es cuadrado y tiene bastante espacio blanco.
+              // `cover` recorta ese margen al mostrarlo para que la marca se vea
+              // realmente más grande sin aumentar la altura del encabezado.
+              cover: { width: 170, height: 88, align: 'center', valign: 'center' },
+              margin: [0, 0, 6, 0],
+            } as any]
             : []),
           {
             width: '*',
@@ -280,33 +268,30 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
             margin: [0, 7, 4, 0],
           },
           {
-            width: 185,
-            stack: [
-              {
-                table: { widths: ['*'], body: [[{ text: `R.U.C. ${headerRuc}`, alignment: 'center', bold: true, fontSize: 10, margin: [0, 4] }]] },
-                layout: { hLineColor: () => BRAND_GREEN, vLineColor: () => BRAND_GREEN, hLineWidth: () => 1, vLineWidth: () => 1 },
-              },
-              {
-                table: { widths: ['*'], body: [[{ text: 'COTIZACIÓN', alignment: 'center', bold: true, fontSize: 12, color: 'white', fillColor: BRAND_GREEN, margin: [0, 5] }]] },
-                layout: 'noBorders',
-                margin: [0, 3, 0, 0],
-              },
-              {
-                table: { widths: ['*'], body: [[{ text: `NRO-${String(quote.number || 0).padStart(8, '0')}`, alignment: 'center', bold: true, fontSize: 11, color: BRAND_GREEN_DARK, margin: [0, 4] }]] },
-                layout: { hLineColor: () => BRAND_GREEN, vLineColor: () => BRAND_GREEN, hLineWidth: () => 1, vLineWidth: () => 1 },
-                margin: [0, 3, 0, 0],
-              },
-            ],
+            width: 175,
+            table: {
+              widths: ['*'],
+              body: [
+                [{ text: `R.U.C. ${headerRuc}`, alignment: 'center', bold: true, fontSize: 10, margin: [0, 3] }],
+                [{ text: 'COTIZACIÓN', alignment: 'center', bold: true, fontSize: 13, fillColor: TABLE_HEADER_FILL, margin: [0, 4] }],
+                [{ text: `NRO-${String(quote.number || 0).padStart(8, '0')}`, alignment: 'center', bold: true, fontSize: 10, margin: [0, 3] }],
+              ],
+            },
+            layout: {
+              hLineColor: () => BRAND_GREEN_DARK, vLineColor: () => BRAND_GREEN_DARK,
+              hLineWidth: () => 0.8, vLineWidth: () => 0.8,
+            },
           },
         ],
       },
 
-      { text: '', margin: [0, 5] },
+      { text: '', margin: [0, 4] },
 
       // ===== CLIENT BLOCK =====
+      { text: 'DATOS DEL CLIENTE', bold: true, fontSize: 9, margin: [2, 0, 0, 2] },
       {
         table: {
-          widths: ['auto', 5, '*', 'auto', 5, '*'],
+          widths: [62, 5, '*', 82, 5, 95],
           body: [
             [
               { text: 'Cliente', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: clientName.toUpperCase(), fontSize: 8, colSpan: 4 }, {}, {}, {},
@@ -315,35 +300,38 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
               { text: 'R.U.C. / D.N.I.', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: clientDocumentNumber, fontSize: 8, colSpan: 4 }, {}, {}, {},
             ],
             [
-              { text: 'Dirección', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: clientAddress, fontSize: 8, colSpan: 4 }, {}, {}, {},
+              { text: 'Dirección', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: clientAddress, fontSize: 8 },
+              { text: 'Vendedor', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: vendorName.toUpperCase(), fontSize: 8 },
             ],
             [
               { text: 'Contacto', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: clientContact, fontSize: 8 },
+              { text: 'Teléfono', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: vendorPhone, fontSize: 8 },
+            ],
+            [
               { text: 'Teléfono', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: clientPhone, fontSize: 8 },
+              { text: 'E-mail', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: salesEmail, fontSize: 7 },
             ],
             [
-              { text: 'E-mail', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: clientEmail, fontSize: 8, colSpan: 4 }, {}, {}, {},
+              { text: 'E-mail', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: clientEmail, fontSize: 8 },
+              { text: '', fontSize: 8 }, { text: '', fontSize: 8 }, { text: '', fontSize: 8 },
             ],
             [
-              { text: 'Válido hasta', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: formatDate(quote.validUntil), fontSize: 8, colSpan: 4 }, {}, {}, {},
+              { text: 'Fecha Emisión', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: formatDate(quote.issueDate), fontSize: 8 },
+              { text: 'Fecha Vencimiento', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: formatDate(quote.validUntil), fontSize: 8 },
             ],
-            ...(creditDueDateStr ? [[
-              { text: hasInstallments ? 'Última cuota' : 'Venc. Crédito', bold: true, fontSize: 8, color: '#b45309' }, { text: ':', fontSize: 8 }, { text: creditDueDateStr, fontSize: 8, bold: true, color: '#b45309', colSpan: 4 }, {}, {}, {},
-            ]] : []),
           ],
         },
         layout: {
           hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
-          hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 1 : 0),
-          vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1 : 0),
+          hLineWidth: () => 0.6, vLineWidth: () => 0.6,
           paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
         },
       },
 
       {
         stack: [
-          { text: `Estimado(a) ${greetingName}:`, bold: true, fontSize: 9 },
-          { text: 'Reciba un cordial saludo. En atención a su requerimiento, presentamos la siguiente cotización:', fontSize: 8, color: '#374151', margin: [0, 2, 0, 0] },
+          { text: 'Estimado(s) Sr(s):', fontSize: 9 },
+          { text: 'Reciba nuestro más cordial saludo, a la vez, aprovechamos en hacer llegar la cotización solicitada.', fontSize: 8, color: '#374151', margin: [0, 2, 0, 0] },
         ],
         margin: [2, 5, 2, 5],
       },
@@ -366,7 +354,7 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
           ],
         },
         layout: {
-          fillColor: (row: number) => (row === 0 ? BRAND_GREEN : null),
+          fillColor: (row: number) => (row === 0 ? TABLE_HEADER_FILL : null),
           hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
           hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0),
           vLineWidth: () => 1,
@@ -392,25 +380,25 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
         columns: [
           {
             width: '*',
-            table: {
-              widths: ['auto', 5, '*'],
-              body: [
-                [{ text: 'CONDICIONES COMERCIALES', colSpan: 3, bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, margin: [4, 3] }, {}, {}],
-                [{ text: 'Forma de Pago', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercial.paymentTerm, fontSize: 8 }],
-                ...(hasInstallments ? [[{ text: 'Modalidad', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: `${creditInstallments.length} cuotas`, fontSize: 8 }]] : []),
-                ...(creditDueDateStr ? [[{ text: hasInstallments ? 'Plazo Total' : 'Plazo de Pago', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: `${quote.creditDays} días · ${hasInstallments ? 'última cuota' : 'vence'} ${creditDueDateStr}`, fontSize: 8 }]] : []),
-                [{ text: 'Validez de Oferta', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: `${validityDays} días · hasta ${formatDate(quote.validUntil)}`, fontSize: 8 }],
-                [{ text: 'Tiempo de Entrega', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercial.deliveryTime || '—', fontSize: 8 }],
-                [{ text: 'Lugar de Entrega', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercial.deliveryPlace || clientAddress, fontSize: 8 }],
-                [{ text: 'Observaciones', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercial.observations || '—', fontSize: 8 }],
-              ],
-            },
-            layout: {
-              hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
-              hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0),
-              vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1 : 0),
-              paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
-            },
+            stack: [
+              { text: 'CONDICIONES COMERCIALES', bold: true, fontSize: 9, margin: [2, 0, 0, 2] },
+              {
+                table: {
+                  widths: [90, 5, '*'],
+                  body: [
+                    [{ text: 'Condición de Venta', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercial.paymentTerm, fontSize: 8 }],
+                    [{ text: 'Tiempo de Entrega', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercial.deliveryTime || '—', fontSize: 8 }],
+                    [{ text: 'Lugar de Entrega', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercial.deliveryPlace || clientAddress, fontSize: 8 }],
+                    [{ text: 'Nota', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercialNote, fontSize: 8 }],
+                  ],
+                },
+                layout: {
+                  hLineColor: () => BORDER_GRAY, vLineColor: () => BORDER_GRAY,
+                  hLineWidth: () => 0.6, vLineWidth: () => 0.6,
+                  paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 4, paddingRight: () => 4,
+                },
+              },
+            ],
           },
           { width: 10, text: '' },
           {
@@ -419,22 +407,22 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
               widths: ['*', 30, 60],
               body: [
                 [
-                  { text: 'OP. GRAVADAS', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
+                  { text: 'OP. GRAVADAS', bold: true, fillColor: TABLE_HEADER_FILL, fontSize: 9, alignment: 'right', margin: [4, 3] },
                   { text: currencySymbol, fontSize: 9, alignment: 'center', margin: [0, 3] },
                   { text: opGravadas.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
                 ],
                 ...(exoneradoTotal > 0 ? [[
-                  { text: 'OP. EXONERADAS', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
+                  { text: 'OP. EXONERADAS', bold: true, fillColor: TABLE_HEADER_FILL, fontSize: 9, alignment: 'right', margin: [4, 3] },
                   { text: currencySymbol, fontSize: 9, alignment: 'center', margin: [0, 3] },
                   { text: exoneradoTotal.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
                 ]] : []),
                 [
-                  { text: 'I.G.V. 18%', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 9, alignment: 'right', margin: [4, 3] },
+                  { text: 'I.G.V. 18%', bold: true, fillColor: TABLE_HEADER_FILL, fontSize: 9, alignment: 'right', margin: [4, 3] },
                   { text: currencySymbol, fontSize: 9, alignment: 'center', margin: [0, 3] },
                   { text: igv.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
                 ],
                 [
-                  { text: 'IMPORTE TOTAL', bold: true, color: 'white', fillColor: BRAND_GREEN, fontSize: 10, alignment: 'right', margin: [4, 3] },
+                  { text: 'IMPORTE TOTAL', bold: true, fillColor: TABLE_HEADER_FILL, fontSize: 10, alignment: 'right', margin: [4, 3] },
                   { text: currencySymbol, fontSize: 10, alignment: 'center', bold: true, margin: [0, 3] },
                   { text: quote.total.toFixed(2), fontSize: 10, alignment: 'right', bold: true, margin: [0, 3] },
                 ],
@@ -473,7 +461,7 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
             ],
           },
           layout: {
-            fillColor: (row: number) => (row === 0 ? BRAND_GREEN : null),
+            fillColor: (row: number) => (row === 0 ? TABLE_HEADER_FILL : null),
             hLineColor: () => BORDER_GRAY,
             vLineColor: () => BORDER_GRAY,
             hLineWidth: () => 1,
@@ -489,18 +477,16 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
       {
         unbreakable: true,
         stack: [
-          { text: 'Quedamos atentos a cualquier consulta y pendientes de su requerimiento.', fontSize: 8, color: '#374151' },
-          { text: 'Atentamente,', fontSize: 9, margin: [0, 7, 0, 12] },
-          { text: vendorName.toUpperCase(), bold: true, fontSize: 9, color: BRAND_GREEN_DARK },
-          { text: 'Responsable de la cotización', fontSize: 8, color: '#6b7280', margin: [0, 1, 0, 0] },
+          { text: 'Sin otro particular me despido pendiente de su requerimiento.', alignment: 'center', fontSize: 8, color: '#374151' },
+          { text: `Atte: ${vendorName} - Área de Ventas, email: ${salesEmail}`, alignment: 'center', fontSize: 8, margin: [0, 3, 0, 0] },
         ],
-        margin: [2, 10, 2, 0],
+        margin: [2, 8, 2, 0],
       },
     ],
     styles: {
       companyName: { fontSize: 18, bold: true, color: '#111827', margin: [0, 0, 0, 2] },
       companyDetail: { fontSize: 10, color: '#1f2937', margin: [0, 1.5, 0, 0], lineHeight: 1.1 },
-      thead: { bold: true, color: 'white', fontSize: 9, alignment: 'center' },
+      thead: { bold: true, color: '#111827', fontSize: 9, alignment: 'center' },
     },
     defaultStyle: { fontSize: 9 },
   };
@@ -508,10 +494,10 @@ function buildDocDefinition({ quote, products, company, client, vendor, currency
 
 export async function downloadQuotePdf(params: GenerateParams) {
   const [pdfMake, logoDataUrl] = await Promise.all([loadPdfMake(), loadLogoDataUrl()]);
-  pdfMake.createPdf(buildDocDefinition({ ...params, logoDataUrl })).download(`${params.quote.quoteNumber}.pdf`);
+  pdfMake.createPdf(buildQuotePdfDefinition({ ...params, logoDataUrl })).download(`${params.quote.quoteNumber}.pdf`);
 }
 
 export async function printQuotePdf(params: GenerateParams) {
   const [pdfMake, logoDataUrl] = await Promise.all([loadPdfMake(), loadLogoDataUrl()]);
-  pdfMake.createPdf(buildDocDefinition({ ...params, logoDataUrl })).open();
+  pdfMake.createPdf(buildQuotePdfDefinition({ ...params, logoDataUrl })).open();
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Save } from 'lucide-react';
 import { useBusinessSettings, useUpdateBusinessSettings } from '../hooks/useBusinessSettings';
-import type { CompanyInfo, BankAccount, WalletInfo } from '../../../config/companyInfo';
+import type { CompanyInfo, BankAccount, WalletInfo, DetraccionAccountInfo } from '../../../config/companyInfo';
 
 const EMPTY_BANK: BankAccount = { bank: '', currency: 'PEN', accountNumber: '', cci: '', holder: '' };
 
@@ -11,9 +11,11 @@ type FormState = {
   address: string;
   phone: string;
   email: string;
+  salesEmail: string;
   website: string;
   logoUrl: string;
   bankAccounts: BankAccount[];
+  detraccionAccount: DetraccionAccountInfo;
   yape: WalletInfo;
   plin: WalletInfo;
 };
@@ -24,9 +26,11 @@ const blankForm = (): FormState => ({
   address: '',
   phone: '',
   email: '',
+  salesEmail: 'clientesquiven@outlook.es',
   website: '',
   logoUrl: '',
   bankAccounts: [],
+  detraccionAccount: { bank: 'Banco de la Nación', accountNumber: '00771130054' },
   yape: { number: '', holder: '' },
   plin: { number: '', holder: '' },
 });
@@ -44,9 +48,11 @@ export function CompanyInfoForm() {
       address: data.address || '',
       phone: data.phone || '',
       email: data.email || '',
+      salesEmail: data.salesEmail || 'clientesquiven@outlook.es',
       website: data.website || '',
       logoUrl: data.logoUrl || '',
       bankAccounts: data.bankAccounts || [],
+      detraccionAccount: data.detraccionAccount ?? { bank: 'Banco de la Nación', accountNumber: '00771130054' },
       yape: data.yape ?? { number: '', holder: '' },
       plin: data.plin ?? { number: '', holder: '' },
     });
@@ -76,11 +82,18 @@ export function CompanyInfoForm() {
       address: form.address.trim() || undefined,
       phone: form.phone.trim() || undefined,
       email: form.email.trim() || undefined,
+      salesEmail: form.salesEmail.trim() || undefined,
       website: form.website.trim() || undefined,
       logoUrl: form.logoUrl.trim() || undefined,
       bankAccounts: form.bankAccounts
         .filter((b) => b.bank.trim() && b.accountNumber.trim() && b.holder.trim())
         .map((b) => ({ ...b, cci: b.cci?.trim() || undefined })),
+      detraccionAccount: form.detraccionAccount.accountNumber.trim()
+        ? {
+            bank: form.detraccionAccount.bank.trim() || 'Banco de la Nación',
+            accountNumber: form.detraccionAccount.accountNumber.trim(),
+          }
+        : undefined,
       yape,
       plin,
     };
@@ -134,6 +147,14 @@ export function CompanyInfoForm() {
               type="email"
               value={form.email}
               onChange={(e) => setField('email', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </Field>
+          <Field label="Email del área de ventas">
+            <input
+              type="email"
+              value={form.salesEmail}
+              onChange={(e) => setField('salesEmail', e.target.value)}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </Field>
@@ -205,6 +226,27 @@ export function CompanyInfoForm() {
               </div>
             </div>
           ))}
+        </div>
+        <div className="mt-4 border border-emerald-200 rounded-lg p-3 bg-emerald-50/50">
+          <p className="text-xs font-semibold text-emerald-800 mb-3">Cuenta de detracciones</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="Banco">
+              <input
+                type="text"
+                value={form.detraccionAccount.bank}
+                onChange={(e) => setField('detraccionAccount', { ...form.detraccionAccount, bank: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </Field>
+            <Field label="N° de cuenta">
+              <input
+                type="text"
+                value={form.detraccionAccount.accountNumber}
+                onChange={(e) => setField('detraccionAccount', { ...form.detraccionAccount, accountNumber: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </Field>
+          </div>
         </div>
       </section>
 

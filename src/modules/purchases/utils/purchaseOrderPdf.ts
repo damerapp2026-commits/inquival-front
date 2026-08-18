@@ -1,5 +1,7 @@
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import type { Company, FiscalEntity, Product, PurchaseOrder } from '../../../shared/types';
+import { numberToWords } from '../../quotes/utils/numberToWords';
+import { getPurchaseOrderDetails } from './purchaseOrderDetails';
 
 let pdfMakePromise: Promise<any> | null = null;
 function loadPdfMake() {
@@ -23,7 +25,7 @@ let logoPromise: Promise<string | null> | null = null;
 function loadLogoDataUrl(): Promise<string | null> {
   if (!logoPromise) {
     logoPromise = fetch(COMPANY_INFO.logoUrl)
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('logo not found'))))
+      .then((response) => (response.ok ? response.blob() : Promise.reject(new Error('logo not found'))))
       .then((blob) => new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
@@ -46,190 +48,217 @@ interface BuildParams extends PurchaseOrderPdfParams {
   logoDataUrl?: string | null;
 }
 
-const BRAND_GREEN = '#16a34a';
-const BRAND_GREEN_DARK = '#15803d';
-const BORDER_GRAY = '#cbd5e1';
+const BRAND_BLUE = '#25638c';
+const BRAND_BLUE_DARK = '#174766';
+const SECTION_FILL = '#dbe5ec';
+const BORDER_GRAY = '#94a3b8';
 const TEXT_DARK = '#111827';
 const TEXT_MUTED = '#64748b';
 
+const roundMoney = (value: number) => Math.round(value * 100) / 100;
+
 const formatDate = (value?: string | Date) => {
   if (!value) return '—';
-  return new Date(value).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const raw = value instanceof Date ? value.toISOString() : value;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : '—';
+};
+
+const selected = (active: boolean) => active ? '[X]' : '[ ]';
+
+const borderedLayout = {
+  hLineColor: () => BORDER_GRAY,
+  vLineColor: () => BORDER_GRAY,
+  hLineWidth: () => 0.8,
+  vLineWidth: () => 0.8,
+  paddingTop: () => 3,
+  paddingBottom: () => 3,
+  paddingLeft: () => 4,
+  paddingRight: () => 4,
 };
 
 function buildDocDefinition({ order, products, companies, fiscalEntity, logoDataUrl }: BuildParams) {
   const productById = new Map(products.map((product) => [product.id, product]));
   const companyById = new Map(companies.map((company) => [company.id, company]));
+  const details = getPurchaseOrderDetails(order);
   const currency = order.currency || (order.totalCostUsd != null ? 'USD' : 'PEN');
   const symbol = currency === 'USD' ? 'US$' : 'S/';
-  const total = currency === 'USD' && order.totalCostUsd != null ? order.totalCostUsd : order.totalCost;
+  const total = roundMoney(currency === 'USD' && order.totalCostUsd != null ? order.totalCostUsd : order.totalCost);
   const headerName = fiscalEntity?.legalName || COMPANY_INFO.legalName || 'EMPRESA';
   const headerRuc = fiscalEntity?.ruc || COMPANY_INFO.ruc || '—';
   const headerAddress = fiscalEntity?.address || COMPANY_INFO.address || '';
-  const firstCompany = order.items.find((item) => item.companyId)?.companyId || order.companyId;
-  const deliveryCompany = firstCompany ? companyById.get(firstCompany) : undefined;
+  const warehouses = [...new Set(order.items.map((item) => item.companyId || order.companyId).filter(Boolean))]
+    .map((id) => companyById.get(id))
+    .filter((company): company is Company => !!company);
+  const warehouseNames = warehouses.map((company) => company.name).join(', ') || 'Almacén indicado por línea';
+  const warehouseAddresses = warehouses.map((company) => company.address).filter(Boolean).join(' / ');
+  const deliveryPlace = details.deliveryPlace || warehouseNames;
+  const deliveryAddress = details.deliveryAddress || warehouseAddresses || headerAddress || 'Por coordinar';
+  const transport = details.transport || 'Directo (a cargo del proveedor)';
   const statusLabel: Record<string, string> = {
     PENDING: 'Pendiente',
     APPROVED: 'Aprobada',
     CANCELLED: 'Cancelada',
     CONVERTED: 'Convertida',
   };
-  const orderBoxLayout = {
-    hLineColor: () => BORDER_GRAY,
-    vLineColor: () => BORDER_GRAY,
-    hLineWidth: () => 1,
-    vLineWidth: () => 1,
-    paddingTop: () => 0,
-    paddingBottom: () => 0,
-    paddingLeft: () => 0,
-    paddingRight: () => 0,
-  };
 
-  const rows = order.items.map((item, idx) => {
+  let taxableGross = 0;
+  let nonTaxableGross = 0;
+  const rows = order.items.map((item, index) => {
     const product = productById.get(item.productId);
-    const company = item.companyId ? companyById.get(item.companyId) : undefined;
-    const unitPrice = item.unitCost ?? item.unitPriceConIgv ?? item.unitPriceSinIgv ?? 0;
-    const subtotal = Math.round(item.quantity * unitPrice * 100) / 100;
+    const company = companyById.get(item.companyId || order.companyId);
+    const unitPrice = Number(item.unitPriceConIgv ?? item.unitCost ?? item.unitPriceSinIgv ?? 0);
+    const lineTotal = roundMoney(item.quantity * unitPrice);
+    const isTaxable = !product?.taxType || product.taxType === 'GRAVADO';
+    if (isTaxable) taxableGross += lineTotal;
+    else nonTaxableGross += lineTotal;
     return [
-      { text: String(idx + 1).padStart(2, '0'), alignment: 'center', fontSize: 8, color: TEXT_MUTED },
+      { text: String(index + 1).padStart(2, '0'), alignment: 'center', fontSize: 7.5 },
       {
         stack: [
-          { text: product?.name || item.productId, fontSize: 8.5, bold: true, color: TEXT_DARK },
+          { text: product?.name || item.productId, fontSize: 8, bold: true, color: TEXT_DARK },
           { text: product?.activeIngredient || product?.description || ' ', fontSize: 7, color: TEXT_MUTED },
         ],
       },
-      { text: company?.name || item.companyId || '—', fontSize: 8 },
-      { text: item.quantity.toFixed(2), alignment: 'center', fontSize: 8, bold: true },
-      { text: (product?.unit || 'UND').toUpperCase().slice(0, 5), alignment: 'center', fontSize: 8 },
-      { text: `${symbol} ${unitPrice.toFixed(2)}`, alignment: 'right', fontSize: 8 },
-      { text: `${symbol} ${subtotal.toFixed(2)}`, alignment: 'right', fontSize: 8, bold: true },
+      { text: company?.name || '—', fontSize: 7.5 },
+      { text: item.quantity.toFixed(2), alignment: 'center', fontSize: 7.5 },
+      { text: (product?.unit || 'UND').toUpperCase().slice(0, 8), alignment: 'center', fontSize: 7.5 },
+      { text: `${symbol} ${unitPrice.toFixed(2)}`, alignment: 'right', fontSize: 7.5 },
+      { text: `${symbol} ${lineTotal.toFixed(2)}`, alignment: 'right', fontSize: 7.5, bold: true },
     ];
   });
 
-  while (rows.length < 8) {
+  while (rows.length < 4) {
     rows.push([
-      { text: ' ', alignment: 'center', fontSize: 8 },
-      { text: ' ', fontSize: 8 },
-      { text: ' ', fontSize: 8 },
-      { text: ' ', alignment: 'center', fontSize: 8 },
-      { text: ' ', alignment: 'center', fontSize: 8 },
-      { text: ' ', alignment: 'right', fontSize: 8 },
-      { text: ' ', alignment: 'right', fontSize: 8 },
+      { text: ' ', alignment: 'center', fontSize: 7.5 },
+      { text: ' ', fontSize: 7.5 },
+      { text: ' ', fontSize: 7.5 },
+      { text: ' ', alignment: 'center', fontSize: 7.5 },
+      { text: ' ', alignment: 'center', fontSize: 7.5 },
+      { text: ' ', alignment: 'right', fontSize: 7.5 },
+      { text: ' ', alignment: 'right', fontSize: 7.5 },
     ]);
   }
 
+  const calculatedGross = roundMoney(taxableGross + nonTaxableGross);
+  const effectiveTaxableGross = calculatedGross > 0 && Math.abs(calculatedGross - total) > 0.02
+    ? roundMoney(taxableGross * (total / calculatedGross))
+    : roundMoney(taxableGross);
+  const effectiveNonTaxableGross = roundMoney(total - effectiveTaxableGross);
+  const taxableBase = roundMoney(effectiveTaxableGross / 1.18);
+  const subtotal = roundMoney(taxableBase + effectiveNonTaxableGross);
+  const igv = roundMoney(total - subtotal);
+  const creditDays = details.creditDays ? `${details.creditDays} días` : '—';
+  const paymentType = order.paymentType || 'CONTADO';
+  const paymentForm = details.paymentForm || 'CONTADO';
+
   return {
     pageSize: 'A4',
-    pageMargins: [34, 32, 34, 34],
+    pageMargins: [32, 28, 32, 34],
     content: [
       {
         columns: [
           {
             width: '*',
             columns: [
-              ...(logoDataUrl ? [{ image: logoDataUrl, width: 62, margin: [0, 0, 12, 0] } as any] : []),
+              ...(logoDataUrl ? [{ image: logoDataUrl, width: 78, margin: [0, 0, 12, 0] } as any] : []),
               {
                 width: '*',
                 stack: [
-                  { text: headerName, style: 'companyName' },
-                  { text: `RUC ${headerRuc}`, style: 'companyDetail' },
-                  ...(headerAddress ? [{ text: headerAddress, style: 'companyDetail' }] : []),
-                  ...(COMPANY_INFO.phone ? [{ text: `Tel. ${COMPANY_INFO.phone}`, style: 'companyDetail' }] : []),
-                  ...(COMPANY_INFO.email ? [{ text: COMPANY_INFO.email, style: 'companyDetail' }] : []),
+                  { text: headerName.toUpperCase(), bold: true, fontSize: 13, color: TEXT_DARK, margin: [0, 3, 0, 2] },
+                  { text: `RUC: ${headerRuc}`, fontSize: 7.5, color: TEXT_DARK },
+                  ...(headerAddress ? [{ text: headerAddress, fontSize: 7.5, color: TEXT_DARK }] : []),
+                  ...(COMPANY_INFO.phone ? [{ text: `Tel. ${COMPANY_INFO.phone}`, fontSize: 7.5, color: TEXT_DARK }] : []),
                 ],
               },
             ],
           },
           {
             width: 190,
-            stack: [
-              { text: 'ORDEN DE COMPRA', alignment: 'right', bold: true, fontSize: 20, color: BRAND_GREEN_DARK },
-              { text: order.orderNumber, alignment: 'right', bold: true, fontSize: 13, color: TEXT_DARK, margin: [0, 4, 0, 0] },
-              {
-                text: statusLabel[order.status] || order.status,
-                alignment: 'right',
-                fontSize: 9,
-                bold: true,
-                color: order.status === 'CANCELLED' ? '#dc2626' : order.status === 'CONVERTED' ? BRAND_GREEN_DARK : '#2563eb',
-                margin: [0, 5, 0, 0],
-              },
-            ],
+            table: {
+              widths: ['*'],
+              body: [
+                [{ text: `RUC: ${headerRuc}`, alignment: 'right', bold: true, fontSize: 8, color: 'white', fillColor: BRAND_BLUE, margin: [4, 1] }],
+                [{ text: 'ORDEN DE COMPRA', alignment: 'center', bold: true, fontSize: 15, color: TEXT_DARK, margin: [3, 4, 3, 1] }],
+                [{ text: order.orderNumber, alignment: 'center', bold: true, fontSize: 10, color: TEXT_DARK }],
+                [{ text: statusLabel[order.status] || order.status, alignment: 'center', fontSize: 8, color: order.status === 'CANCELLED' ? '#dc2626' : BRAND_BLUE_DARK, margin: [3, 0, 3, 4] }],
+              ],
+            },
+            layout: borderedLayout,
           },
         ],
       },
       {
-        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 527, y2: 0, lineWidth: 1.5, lineColor: BRAND_GREEN }],
-        margin: [0, 14, 0, 12],
+        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 1.2, lineColor: BRAND_BLUE_DARK }],
+        margin: [0, 8, 0, 6],
       },
-      {
-        columns: [
-          {
-            width: '*',
-            table: {
-              widths: ['*'],
-              body: [
-                [{ text: 'PROVEEDOR', style: 'sectionTitle' }],
-                [{ text: order.supplier.toUpperCase(), style: 'boxMain' }],
-                [{ text: `RUC: ${order.supplierRuc || '—'}`, style: 'boxLine' }],
-              ],
-            },
-            layout: orderBoxLayout,
-          },
-          { width: 12, text: '' },
-          {
-            width: '*',
-            table: {
-              widths: ['*'],
-              body: [
-                [{ text: 'ENTREGA / DESTINO', style: 'sectionTitle' }],
-                [{ text: deliveryCompany?.name || 'Almacén indicado por línea', style: 'boxMain' }],
-                [{ text: deliveryCompany?.address || headerAddress || 'Dirección por coordinar', style: 'boxLine' }],
-              ],
-            },
-            layout: orderBoxLayout,
-          },
-        ],
-      },
-      { text: '', margin: [0, 5] },
       {
         table: {
-          widths: ['auto', '*', 'auto', '*', 'auto', '*'],
+          widths: [75, '*', 55, 115],
           body: [
-            [
-              { text: 'Fecha de emisión', style: 'metaLabel' },
-              { text: formatDate(order.createdAt), style: 'metaValue' },
-              { text: 'Moneda', style: 'metaLabel' },
-              { text: currency, style: 'metaValue' },
-              { text: 'Condición', style: 'metaLabel' },
-              { text: order.paymentType || '—', style: 'metaValue' },
-            ],
-            [
-              { text: 'Vencimiento', style: 'metaLabel' },
-              { text: formatDate(order.dueDate), style: 'metaValue' },
-              { text: 'Documento ref.', style: 'metaLabel' },
-              { text: [order.documentType, order.documentSeries, order.documentNumber].filter(Boolean).join(' ') || '—', style: 'metaValue' },
-              { text: 'T.C.', style: 'metaLabel' },
-              { text: order.exchangeRate ? order.exchangeRate.toFixed(3) : '—', style: 'metaValue' },
-            ],
+            [{ text: 'PROVEEDOR', colSpan: 4, style: 'sectionTitle' }, {}, {}, {}],
+            [{ text: 'Nombre/Razón Social:', style: 'dataLabel' }, { text: order.supplier, colSpan: 3, style: 'dataValue' }, {}, {}],
+            [{ text: 'RUC:', style: 'dataLabel' }, { text: order.supplierRuc || '—', colSpan: 3, style: 'dataValue' }, {}, {}],
+            [{ text: 'Contacto:', style: 'dataLabel' }, { text: details.supplierContact || '—', style: 'dataValue' }, { text: 'Teléfono:', style: 'dataLabel' }, { text: details.supplierPhone || '—', style: 'dataValue' }],
           ],
         },
-        layout: {
-          hLineColor: () => BORDER_GRAY,
-          vLineColor: () => BORDER_GRAY,
-          hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 1 : 0),
-          vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1 : 0),
-          paddingTop: () => 2,
-          paddingBottom: () => 2,
-          paddingLeft: () => 4,
-          paddingRight: () => 4,
-        },
+        layout: borderedLayout,
       },
-      { text: '', margin: [0, 10] },
-      { text: 'PRODUCTOS SOLICITADOS', bold: true, fontSize: 10, color: TEXT_DARK, margin: [0, 0, 0, 5] },
+      { text: '', margin: [0, 2] },
+      {
+        table: {
+          widths: [95, '*', 145, '*'],
+          body: [
+            [{ text: 'FECHA Y MONEDA', colSpan: 4, style: 'sectionTitle' }, {}, {}, {}],
+            [{ text: 'Fecha de emisión:', style: 'dataLabel' }, { text: formatDate(order.issueDate || order.createdAt), style: 'dataValue' }, { text: 'Vencimiento de cotización:', style: 'dataLabel' }, { text: formatDate(details.quotationValidUntil), style: 'dataValue' }],
+            [{ text: 'Moneda:', style: 'dataLabel' }, { text: currency === 'USD' ? 'USD — Dólares americanos' : 'PEN — Soles', colSpan: 3, style: 'dataValue' }, {}, {}],
+          ],
+        },
+        layout: borderedLayout,
+      },
+      { text: '', margin: [0, 2] },
+      {
+        table: {
+          widths: [95, '*'],
+          body: [
+            [{ text: 'PUNTO DE LLEGADA', colSpan: 2, style: 'sectionTitle' }, {}],
+            [{ text: 'Entrega / destino:', style: 'dataLabel' }, { text: deliveryPlace, style: 'dataValue' }],
+            [{ text: 'Almacén:', style: 'dataLabel' }, { text: warehouseNames, style: 'dataValue' }],
+            [{ text: 'Dirección:', style: 'dataLabel' }, { text: deliveryAddress, style: 'dataValue' }],
+            [{ text: 'Transporte:', style: 'dataLabel' }, { text: transport, style: 'dataValue' }],
+          ],
+        },
+        layout: borderedLayout,
+      },
+      { text: '', margin: [0, 2] },
+      {
+        table: {
+          widths: [95, '*'],
+          body: [
+            [{ text: 'CONDICIONES DE PAGO', colSpan: 2, style: 'sectionTitle' }, {}],
+            [{ text: 'Forma de pago:', style: 'dataLabel' }, { text: `${selected(paymentForm === 'CONTADO')} Contado     ${selected(paymentForm === 'LETRA')} Letra     ${selected(paymentForm === 'FACTURA')} Factura`, style: 'dataValue' }],
+            [{ text: 'Condición:', style: 'dataLabel' }, { text: `${selected(paymentType === 'CONTADO')} Contado     ${selected(paymentType === 'CREDITO')} Crédito`, style: 'dataValue' }],
+            [{ text: 'Plazo:', style: 'dataLabel' }, { text: `${selected(details.creditDays === 30)} 30 días     ${selected(details.creditDays === 60)} 60 días     ${selected(details.creditDays === 150)} 150 días     Vencimiento: ${formatDate(order.dueDate)} (${creditDays})`, style: 'dataValue' }],
+          ],
+        },
+        layout: borderedLayout,
+      },
+      { text: '', margin: [0, 2] },
+      {
+        table: {
+          widths: [95, '*', 95, 115],
+          body: [
+            [{ text: 'DATOS DE FACTURACIÓN', colSpan: 4, style: 'sectionTitle' }, {}, {}, {}],
+            [{ text: 'Empresa receptora:', style: 'dataLabel' }, { text: headerName, style: 'dataValue' }, { text: 'RUC receptora:', style: 'dataLabel' }, { text: headerRuc, style: 'dataValue' }],
+          ],
+        },
+        layout: borderedLayout,
+      },
+      { text: '', margin: [0, 3] },
       {
         table: {
           headerRows: 1,
-          widths: [25, '*', 75, 35, 30, 48, 55],
+          widths: [24, '*', 73, 34, 35, 55, 61],
           body: [
             [
               { text: 'ÍTEM', style: 'thead' },
@@ -244,80 +273,57 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
           ],
         },
         layout: {
-          fillColor: (row: number) => (row === 0 ? '#f1f5f9' : null),
-          hLineColor: () => BORDER_GRAY,
-          vLineColor: () => BORDER_GRAY,
-          hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0),
-          vLineWidth: () => 1,
-          paddingTop: () => 4,
-          paddingBottom: () => 4,
-          paddingLeft: () => 4,
-          paddingRight: () => 4,
+          ...borderedLayout,
+          fillColor: (row: number) => row === 0 ? SECTION_FILL : null,
         },
       },
-      { text: '', margin: [0, 6] },
-      {
-        columns: [
-          {
-            width: '*',
-            table: {
-              widths: ['auto', 5, '*'],
-              body: [
-                [{ text: 'CONDICIONES Y OBSERVACIONES', colSpan: 3, style: 'sectionTitle' }, {}, {}],
-                [{ text: 'Notas', style: 'metaLabel' }, { text: ':', fontSize: 8 }, { text: order.notes || ' ', fontSize: 8 }],
-                [{ text: 'Importante', style: 'metaLabel' }, { text: ':', fontSize: 8 }, { text: 'Esta orden no confirma ingreso de stock hasta convertirse en compra.', fontSize: 8, color: TEXT_MUTED }],
-              ],
-            },
-            layout: {
-              hLineColor: () => BORDER_GRAY,
-              vLineColor: () => BORDER_GRAY,
-              hLineWidth: (i: number, node: any) => (i === 0 || i === 1 || i === node.table.body.length ? 1 : 0),
-              vLineWidth: (i: number, node: any) => (i === 0 || i === node.table.widths.length ? 1 : 0),
-              paddingTop: () => 2,
-              paddingBottom: () => 2,
-              paddingLeft: () => 4,
-              paddingRight: () => 4,
-            },
-          },
-          { width: 10, text: '' },
-          {
-            width: 200,
-            table: {
-              widths: ['*', 70],
-              body: [
-                [{ text: 'RESUMEN', colSpan: 2, style: 'sectionTitle' }, {}],
-                [{ text: 'Productos', fontSize: 8 }, { text: String(order.items.length), fontSize: 8, alignment: 'right' }],
-                [{ text: 'Total estimado', bold: true, fontSize: 10 }, { text: `${symbol} ${total.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 10, color: BRAND_GREEN_DARK }],
-              ],
-            },
-            layout: {
-              hLineColor: () => BORDER_GRAY,
-              vLineColor: () => BORDER_GRAY,
-              hLineWidth: () => 1,
-              vLineWidth: () => 1,
-              paddingTop: () => 4,
-              paddingBottom: () => 4,
-              paddingLeft: () => 5,
-              paddingRight: () => 5,
-            },
-          },
-        ],
-      },
-      { text: '', margin: [0, 18] },
+      { text: `Son: ${numberToWords(total, currency).toLowerCase()}.`, fontSize: 7.5, color: TEXT_DARK, margin: [0, 5, 0, 3] },
       {
         columns: [
           {
             width: '*',
             stack: [
-              { canvas: [{ type: 'line', x1: 20, y1: 0, x2: 180, y2: 0, lineWidth: 0.8, lineColor: BORDER_GRAY }] },
-              { text: 'Solicitado por', alignment: 'center', fontSize: 8, color: TEXT_MUTED, margin: [0, 5, 0, 0] },
+              { text: 'NOTAS IMPORTANTES', bold: true, fontSize: 8, color: TEXT_DARK, margin: [0, 0, 0, 2] },
+              { text: '1. Toda guía de remisión o factura deberá incluir el N.° de la orden de compra correspondiente.', fontSize: 7 },
+              { text: '2. Los productos con fecha de vencimiento deberán mantener más de un año de vida útil, salvo indicación distinta.', fontSize: 7 },
+              { text: '3. La entrega posterior a la fecha acordada podrá ser rechazada.', fontSize: 7 },
+              { text: '4. No se aceptará mercadería cuyos precios no figuren en la orden de compra.', fontSize: 7 },
+              ...(details.observations ? [{ text: `Observaciones: ${details.observations}`, fontSize: 7, bold: true, margin: [0, 3, 0, 0] }] : []),
+            ],
+          },
+          { width: 10, text: '' },
+          {
+            width: 185,
+            table: {
+              widths: ['*', 70],
+              body: [
+                [{ text: 'RESTRICCIONES Y RESUMEN', colSpan: 2, style: 'sectionTitle' }, {}],
+                [{ text: 'Subtotal', fontSize: 8 }, { text: `${symbol} ${subtotal.toFixed(2)}`, alignment: 'right', fontSize: 8 }],
+                [{ text: 'I.G.V. (18%)', fontSize: 8 }, { text: `${symbol} ${igv.toFixed(2)}`, alignment: 'right', fontSize: 8 }],
+                [{ text: 'Total estimado', bold: true, fontSize: 8.5 }, { text: `${symbol} ${total.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 8.5 }],
+              ],
+            },
+            layout: borderedLayout,
+          },
+        ],
+      },
+      { text: '', margin: [0, 12] },
+      {
+        columns: [
+          {
+            width: '*',
+            stack: [
+              { text: details.requestedBy || ' ', alignment: 'center', bold: true, fontSize: 8, margin: [0, 0, 0, 2] },
+              { canvas: [{ type: 'line', x1: 20, y1: 0, x2: 190, y2: 0, lineWidth: 0.7, lineColor: BORDER_GRAY }] },
+              { text: 'Solicitado por', alignment: 'center', fontSize: 7.5, color: TEXT_MUTED, margin: [0, 3, 0, 0] },
             ],
           },
           {
             width: '*',
             stack: [
-              { canvas: [{ type: 'line', x1: 20, y1: 0, x2: 180, y2: 0, lineWidth: 0.8, lineColor: BORDER_GRAY }] },
-              { text: 'Aprobado por', alignment: 'center', fontSize: 8, color: TEXT_MUTED, margin: [0, 5, 0, 0] },
+              { text: details.approvedBy || ' ', alignment: 'center', bold: true, fontSize: 8, margin: [0, 0, 0, 2] },
+              { canvas: [{ type: 'line', x1: 20, y1: 0, x2: 190, y2: 0, lineWidth: 0.7, lineColor: BORDER_GRAY }] },
+              { text: 'Aprobado por', alignment: 'center', fontSize: 7.5, color: TEXT_MUTED, margin: [0, 3, 0, 0] },
             ],
           },
         ],
@@ -325,22 +331,18 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
     ],
     footer: (currentPage: number, pageCount: number) => ({
       columns: [
-        { text: `OC ${order.orderNumber}`, color: TEXT_MUTED, fontSize: 7 },
+        { text: order.orderNumber, color: TEXT_MUTED, fontSize: 7 },
         { text: `Página ${currentPage} de ${pageCount}`, alignment: 'right', color: TEXT_MUTED, fontSize: 7 },
       ],
-      margin: [34, 0, 34, 16],
+      margin: [32, 0, 32, 14],
     }),
     styles: {
-      companyName: { fontSize: 14, bold: true, color: '#111827' },
-      companyDetail: { fontSize: 8, color: '#374151', margin: [0, 1, 0, 0] },
-      sectionTitle: { bold: true, color: TEXT_DARK, fillColor: '#f1f5f9', fontSize: 8, margin: [5, 4] },
-      boxMain: { bold: true, fontSize: 9, color: TEXT_DARK, margin: [5, 5, 5, 1] },
-      boxLine: { fontSize: 8, color: TEXT_MUTED, margin: [5, 1, 5, 5] },
-      metaLabel: { bold: true, fontSize: 8, color: TEXT_MUTED },
-      metaValue: { fontSize: 8, color: TEXT_DARK },
-      thead: { bold: true, color: TEXT_DARK, fontSize: 8, alignment: 'center' },
+      sectionTitle: { bold: true, color: TEXT_DARK, fillColor: SECTION_FILL, fontSize: 8, margin: [1, 1] },
+      dataLabel: { bold: true, fontSize: 7.5, color: TEXT_DARK },
+      dataValue: { fontSize: 7.5, color: TEXT_DARK },
+      thead: { bold: true, color: TEXT_DARK, fontSize: 7.5, alignment: 'center' },
     },
-    defaultStyle: { fontSize: 9 },
+    defaultStyle: { fontSize: 8 },
   };
 }
 

@@ -127,11 +127,26 @@ export function ProductsPage() {
   const emptyBulkProduct = (): BulkProduct => ({ name: '', description: '', categoryId: '', laboratoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', prices: [], initialStocks: [], expanded: true });
 
 
-  const openCreate = () => { setEditing(null); setForm({ name: '', description: '', categoryId: '', laboratoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [], initialStocks: [], commissions: [] }); setShowModal(true); };
-  const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, laboratoryId: product.laboratoryId || '', unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, imageUrl: product.imageUrl || '', prices: globalPricesOnly(product.prices || []), initialStocks: [], commissions: product.commissions || [] }); setShowModal(true); };
-  const openBulk = () => { setBulkProducts([emptyBulkProduct()]); setShowBulkModal(true); };
+  const openCreate = () => {
+    if (!isAdmin) return;
+    setEditing(null);
+    setForm({ name: '', description: '', categoryId: '', laboratoryId: '', unit: allUnits[0]?.value || '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [], initialStocks: [], commissions: [] });
+    setShowModal(true);
+  };
+  const openEdit = (product: Product) => {
+    if (!isAdmin) return;
+    setEditing(product);
+    setForm({ name: product.name, description: product.description || '', categoryId: product.categoryId, laboratoryId: product.laboratoryId || '', unit: product.unit, activeIngredient: product.activeIngredient || '', taxType: product.taxType || 'GRAVADO', tracksLot: product.tracksLot || false, imageUrl: product.imageUrl || '', prices: globalPricesOnly(product.prices || []), initialStocks: [], commissions: product.commissions || [] });
+    setShowModal(true);
+  };
+  const openBulk = () => {
+    if (!isAdmin) return;
+    setBulkProducts([emptyBulkProduct()]);
+    setShowBulkModal(true);
+  };
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isAdmin) return;
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) { toast.error('Solo se permiten imágenes'); return; }
@@ -151,6 +166,10 @@ export function ProductsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin) {
+      toast.error('Solo los administradores pueden modificar productos y precios');
+      return;
+    }
     const cleanCommissions = form.commissions.filter((c) => c.workerId && c.value > 0);
     if (editing) {
       const { initialStocks, ...editData } = form;
@@ -607,8 +626,12 @@ export function ProductsPage() {
     { key: 'actions', header: 'Acciones', render: (item: Product) => (
       <div className="flex gap-2">
         <button onClick={() => setSuppliersTarget(item)} className="text-gray-500 hover:text-primary-600" title="Ver proveedores"><Truck size={16} /></button>
-        <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={16} /></button>
-        <button onClick={() => setDeleteTarget(item)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 size={16} /></button>
+        {isAdmin && (
+          <>
+            <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={16} /></button>
+            <button onClick={() => setDeleteTarget(item)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 size={16} /></button>
+          </>
+        )}
       </div>
     )},
   ];
@@ -627,11 +650,15 @@ export function ProductsPage() {
               {exportingCatalog ? <Loader2 size={16} className="animate-spin" /> : <BookOpen size={16} />}
               Catálogo PDF
             </button>
-            <button onClick={handleDownloadTemplate} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Download size={16} /> Plantilla .xlsx</button>
-            <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Upload size={16} /> Importar</button>
-            <button onClick={openBulk} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"><Layers size={16} /> Carga Masiva</button>
-            <button onClick={openCreate} className="flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm"><Plus size={16} /> Nuevo Producto</button>
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" />
+            {isAdmin && (
+              <>
+                <button onClick={handleDownloadTemplate} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Download size={16} /> Plantilla .xlsx</button>
+                <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"><Upload size={16} /> Importar</button>
+                <button onClick={openBulk} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"><Layers size={16} /> Carga Masiva</button>
+                <button onClick={openCreate} className="flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm"><Plus size={16} /> Nuevo Producto</button>
+                <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" />
+              </>
+            )}
           </div>
         )}
       </div>
@@ -662,7 +689,7 @@ export function ProductsPage() {
         )}
       </div>
 
-      {view === 'catalog' && <PriceCatalogView enabled={view === 'catalog'} />}
+      {view === 'catalog' && <PriceCatalogView enabled={view === 'catalog'} readOnly={!isAdmin} />}
       {view === 'stock-valued' && isAdmin && <StockValuedView enabled={view === 'stock-valued'} />}
 
       {view === 'list' && (<>

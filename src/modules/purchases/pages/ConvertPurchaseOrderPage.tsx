@@ -12,6 +12,9 @@ function orderToInitial(order: PurchaseOrder): PurchaseInitial {
   const currency = order.currency || (order.totalCostUsd ? 'USD' : 'PEN');
   const exchangeRate = order.exchangeRate || null;
   const items = order.items.length ? order.items.map((item) => {
+    const unitPriceSinIgv = item.unitPriceSinIgv ?? item.unitPriceConIgv ?? item.unitCost ?? 0;
+    const unitPriceConIgv = item.unitPriceConIgv ?? item.unitCost ?? unitPriceSinIgv;
+    const applyIgv = unitPriceConIgv > unitPriceSinIgv + 0.0001;
     const base = {
       ...emptyItem(),
       companyId: item.companyId || order.companyId,
@@ -19,16 +22,16 @@ function orderToInitial(order: PurchaseOrder): PurchaseInitial {
       quantity: item.quantity,
       lotNumber: item.lotNumber || '',
       expirationDate: item.expirationDate?.slice(0, 10) || '',
-      unitPriceSinIgv: item.unitPriceSinIgv || 0,
-      unitPriceSinIgvInput: item.unitPriceSinIgv ? String(item.unitPriceSinIgv) : '',
-      unitPriceConIgv: item.unitPriceConIgv || item.unitCost || 0,
-      costoAdquisicion: item.unitPriceConIgv || item.unitCost || 0,
+      unitPriceSinIgv,
+      unitPriceSinIgvInput: unitPriceSinIgv ? String(unitPriceSinIgv) : '',
+      unitPriceConIgv,
+      costoAdquisicion: unitPriceConIgv,
       costoEnSoles: item.unitCost || item.unitPriceConIgv || 0,
       precioVenta: item.precioVenta || 0,
       markupPercent: item.markupPercent || 0,
       precioVentaMode: 'direct' as const,
     };
-    return recalcItem(base, currency, exchangeRate, true);
+    return recalcItem(base, currency, exchangeRate, applyIgv);
   }) : fallback.state.items;
 
   return {

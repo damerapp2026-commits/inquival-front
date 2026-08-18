@@ -12,6 +12,11 @@ type ProfitabilityRow = {
   totalRevenue: number;
   avgUnitPrice: number;
   unitCost: number | null;
+  costCurrency: 'PEN' | 'USD' | null;
+  costOriginal: number | null;
+  costExchangeRate: number | null;
+  costExchangeRateEstimated: boolean;
+  costPurchaseDate: string | null;
   totalCost: number | null;
   grossProfit: number | null;
   marginPercent: number | null;
@@ -80,6 +85,11 @@ export function ProfitabilityDetailPage() {
       totalRevenue: numberOrZero(raw?.totalRevenue),
       avgUnitPrice: numberOrZero(raw?.avgUnitPrice),
       unitCost: nullableNumber(raw?.unitCost),
+      costCurrency: raw?.costCurrency === 'USD' || raw?.costCurrency === 'PEN' ? raw.costCurrency : null,
+      costOriginal: nullableNumber(raw?.costOriginal),
+      costExchangeRate: nullableNumber(raw?.costExchangeRate),
+      costExchangeRateEstimated: raw?.costExchangeRateEstimated === true,
+      costPurchaseDate: typeof raw?.costPurchaseDate === 'string' ? raw.costPurchaseDate : null,
       totalCost: nullableNumber(raw?.totalCost),
       grossProfit: nullableNumber(raw?.grossProfit),
       marginPercent: nullableNumber(raw?.marginPercent),
@@ -146,8 +156,13 @@ export function ProfitabilityDetailPage() {
         'Cantidad vendida': row.totalSold,
         'Ingresos (S/)': Math.round(row.totalRevenue * 100) / 100,
         'Precio promedio (S/)': Math.round(row.avgUnitPrice * 100) / 100,
-        'Costo unitario (S/)': row.unitCost == null ? 'Sin costo' : Math.round(row.unitCost * 100) / 100,
-        'Costo total (S/)': row.totalCost == null ? 'Sin costo' : Math.round(row.totalCost * 100) / 100,
+        'Costo unitario con IGV (S/)': row.unitCost == null ? 'Sin costo' : Math.round(row.unitCost * 100) / 100,
+        'Moneda de compra': row.costCurrency || 'Sin costo',
+        'Costo con IGV en moneda original': row.costOriginal == null ? 'Sin costo' : Math.round(row.costOriginal * 100) / 100,
+        'Tipo de cambio aplicado': row.costExchangeRate == null ? '' : row.costExchangeRate,
+        'Tipo de cambio estimado': row.costExchangeRateEstimated ? 'Sí' : 'No',
+        'Fecha de compra usada': row.costPurchaseDate || '',
+        'Costo total con IGV (S/)': row.totalCost == null ? 'Sin costo' : Math.round(row.totalCost * 100) / 100,
         'Ganancia bruta (S/)': row.grossProfit == null ? 'Sin costo' : Math.round(row.grossProfit * 100) / 100,
         'Margen bruto (%)': row.marginPercent == null ? 'Sin costo' : Math.round(row.marginPercent * 100) / 100,
       }));
@@ -290,8 +305,8 @@ export function ProfitabilityDetailPage() {
                     <th className="min-w-[240px] px-4 py-3 text-left">Producto</th>
                     <th className="px-4 py-3 text-right">Cantidad</th>
                     <th className="px-4 py-3 text-right">Ingresos</th>
-                    <th className="px-4 py-3 text-right">Costo unitario</th>
-                    <th className="px-4 py-3 text-right">Costo total</th>
+                    <th className="px-4 py-3 text-right">Costo unitario con IGV</th>
+                    <th className="px-4 py-3 text-right">Costo total con IGV</th>
                     <th className="px-4 py-3 text-right">Ganancia bruta</th>
                     <th className="px-4 py-3 text-right">Margen</th>
                   </tr>
@@ -303,7 +318,19 @@ export function ProfitabilityDetailPage() {
                       <td className="px-4 py-3 font-medium text-gray-800">{row.productName}</td>
                       <td className="px-4 py-3 text-right text-gray-700">{formatQuantity(row.totalSold)}</td>
                       <td className="px-4 py-3 text-right font-medium text-blue-700">S/ {formatAmount(row.totalRevenue)}</td>
-                      <td className="px-4 py-3 text-right text-gray-700">{row.unitCost == null ? <MissingCost /> : `S/ ${formatAmount(row.unitCost)}`}</td>
+                      <td className="px-4 py-3 text-right text-gray-700">
+                        {row.unitCost == null ? <MissingCost /> : (
+                          <div>
+                            <div>S/ {formatAmount(row.unitCost)}</div>
+                            {row.costCurrency === 'USD' && row.costOriginal != null && row.costExchangeRate != null && (
+                              <div className="mt-0.5 whitespace-nowrap text-[11px] text-gray-400">
+                                US$ {formatAmount(row.costOriginal)} × TC {row.costExchangeRate.toFixed(3)}
+                                {row.costExchangeRateEstimated ? ' estimado' : ''}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right text-orange-600">{row.totalCost == null ? <MissingCost /> : `S/ ${formatAmount(row.totalCost)}`}</td>
                       <td className={`px-4 py-3 text-right font-semibold ${row.grossProfit == null ? '' : row.grossProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
                         {row.grossProfit == null ? <MissingCost /> : `S/ ${formatAmount(row.grossProfit)}`}

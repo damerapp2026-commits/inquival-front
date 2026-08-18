@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CheckCircle2, Download, FileText, Plus, RefreshCw, Search, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, Eye, FileText, Plus, RefreshCw, Search, Trash2, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
@@ -12,6 +12,7 @@ import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities
 import { useProducts } from '../../products/hooks/useProducts';
 import { useDeletePurchaseOrder, usePurchaseOrders, useUpdatePurchaseOrderStatus } from '../hooks/usePurchases';
 import { downloadPurchaseOrderPdf } from '../utils/purchaseOrderPdf';
+import { PurchaseOrderDetailModal } from '../components/PurchaseOrderDetailModal';
 
 const STATUS_META: Record<PurchaseOrderStatus, { label: string; className: string }> = {
   PENDING: { label: 'Pendiente', className: 'bg-yellow-100 text-yellow-800' },
@@ -26,6 +27,7 @@ export function PurchaseOrdersPage() {
   const [supplier, setSupplier] = useState('');
   const [status, setStatus] = useState<'' | PurchaseOrderStatus>('');
   const [deleteTarget, setDeleteTarget] = useState<PurchaseOrder | null>(null);
+  const [detailOrder, setDetailOrder] = useState<PurchaseOrder | null>(null);
   const { data, isLoading } = usePurchaseOrders({
     page,
     limit: 20,
@@ -110,6 +112,16 @@ export function PurchaseOrdersPage() {
       header: '',
       render: (o: PurchaseOrder) => (
         <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setDetailOrder(o);
+            }}
+            className="text-gray-500 hover:text-primary-700"
+            title="Ver detalle"
+          >
+            <Eye size={15} />
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -203,8 +215,17 @@ export function PurchaseOrdersPage() {
         </select>
       </div>
 
-      <DataTable columns={columns} data={orders} isLoading={isLoading} hoverClass="hover:bg-primary-50" />
+      <DataTable columns={columns} data={orders} isLoading={isLoading} onRowClick={setDetailOrder} hoverClass="hover:bg-primary-50" />
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+
+      <PurchaseOrderDetailModal
+        order={detailOrder}
+        products={products}
+        companies={companies}
+        fiscalEntity={detailOrder?.fiscalEntityId ? fiscalEntityMap.get(detailOrder.fiscalEntityId) : undefined}
+        onClose={() => setDetailOrder(null)}
+        onDownload={handleDownload}
+      />
 
       <Modal isOpen={!!deleteTarget} onClose={() => { if (!deleteOrder.isPending) setDeleteTarget(null); }} title="Eliminar orden">
         {deleteTarget && (

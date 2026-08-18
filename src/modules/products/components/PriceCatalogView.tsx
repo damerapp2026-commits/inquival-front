@@ -93,6 +93,7 @@ interface MergedRow {
 
 interface Props {
   enabled: boolean;
+  readOnly?: boolean;
 }
 
 type EditableField =
@@ -109,7 +110,7 @@ const fmtDate = (d?: string) => {
   return date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: '2-digit' });
 };
 
-export function PriceCatalogView({ enabled }: Props) {
+export function PriceCatalogView({ enabled, readOnly = false }: Props) {
   const { data: catalogData, isLoading: catalogLoading, isFetching: catalogFetching } = usePriceCatalog({ enabled });
   const { data: productsData, isLoading: productsLoading, isFetching: productsFetching } = useProducts(
     enabled ? { page: 1, limit: 1000 } : undefined,
@@ -331,6 +332,7 @@ export function PriceCatalogView({ enabled }: Props) {
   };
 
   const handleBlur = async (row: MergedRow, field: EditableField) => {
+    if (readOnly) return;
     const editedValue = edits[row.productId]?.[field];
     if (editedValue === undefined) return;
 
@@ -398,6 +400,10 @@ export function PriceCatalogView({ enabled }: Props) {
 
   const renderInput = (row: MergedRow, field: EditableField, bgClass: string) => {
     const isSaving = savingIds.has(row.productId);
+    if (readOnly) {
+      const value = getInputValue(row, field);
+      return <span className={`inline-block w-20 px-1.5 py-1 text-right tabular-nums ${bgClass}`}>{value || '—'}</span>;
+    }
     return (
       <input
         type="number"
@@ -456,6 +462,10 @@ export function PriceCatalogView({ enabled }: Props) {
     const bgClass = isFromFallback
       ? 'bg-cyan-50/40 text-cyan-700 italic'
       : 'bg-cyan-50 text-cyan-900';
+
+    if (readOnly) {
+      return <span className={`inline-block w-20 px-1.5 py-1 text-right tabular-nums ${bgClass}`}>{value || '—'}</span>;
+    }
 
     return (
       <input
@@ -564,8 +574,9 @@ export function PriceCatalogView({ enabled }: Props) {
                   inputMode="decimal"
                   value={tcInput !== '' ? tcInput : (tcDay != null ? tcDay.toFixed(4) : '')}
                   onChange={(e) => handleTcChange(e.target.value)}
+                  disabled={readOnly}
                   placeholder="3.50"
-                  className="w-20 bg-transparent text-sm font-semibold text-blue-900 tabular-nums focus:outline-none"
+                  className="w-20 bg-transparent text-sm font-semibold text-blue-900 tabular-nums focus:outline-none disabled:cursor-default"
                 />
               )}
             </div>
@@ -589,7 +600,8 @@ export function PriceCatalogView({ enabled }: Props) {
               inputMode="decimal"
               value={margenDistInput}
               onChange={(e) => handleMargenChange('dist', e.target.value)}
-              className="w-24 px-2 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-sm font-semibold text-emerald-800 tabular-nums focus:outline-none focus:border-emerald-400"
+              disabled={readOnly}
+              className="w-24 px-2 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-sm font-semibold text-emerald-800 tabular-nums focus:outline-none focus:border-emerald-400 disabled:cursor-default"
             />
             <span className="text-[10px] text-gray-400 mt-0.5">PEN c/IGV × este factor</span>
           </div>
@@ -601,22 +613,27 @@ export function PriceCatalogView({ enabled }: Props) {
               inputMode="decimal"
               value={margenFinalInput}
               onChange={(e) => handleMargenChange('final', e.target.value)}
-              className="w-24 px-2 py-1 rounded-md bg-orange-50 border border-orange-200 text-sm font-semibold text-orange-800 tabular-nums focus:outline-none focus:border-orange-400"
+              disabled={readOnly}
+              className="w-24 px-2 py-1 rounded-md bg-orange-50 border border-orange-200 text-sm font-semibold text-orange-800 tabular-nums focus:outline-none focus:border-orange-400 disabled:cursor-default"
             />
             <span className="text-[10px] text-gray-400 mt-0.5">PEN s/IGV × este factor</span>
           </div>
 
           <div className="flex flex-col items-start md:items-end gap-1">
-            <button
-              type="button"
-              onClick={resetRates}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-md"
-              title="Volver a valores por defecto (TC del día, 1.12, 1.09)"
-            >
-              <RotateCcw size={11} /> Restablecer
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={resetRates}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-md"
+                title="Volver a valores por defecto (TC del día, 1.12, 1.09)"
+              >
+                <RotateCcw size={11} /> Restablecer
+              </button>
+            )}
             <p className="text-[11px] text-gray-500 max-w-md text-left md:text-right">
-              Editá <span className="font-medium text-amber-700">USD s/IGV</span> para autocompletar precios con el T.C. de arriba. Si no hay precio distribuidor guardado, se sugiere automáticamente.
+              {readOnly
+                ? 'Catálogo en modo consulta. Solo un administrador puede modificar los precios.'
+                : <>Editá <span className="font-medium text-amber-700">USD s/IGV</span> para autocompletar precios con el T.C. de arriba. Si no hay precio distribuidor guardado, se sugiere automáticamente.</>}
             </p>
           </div>
         </div>

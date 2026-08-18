@@ -43,6 +43,6 @@ export function numberToWords(amount: number, currency: 'PEN' | 'USD' = 'PEN'): 
     }
     out = millPart + restPart;
   }
-  const suffix = currency === 'USD' ? 'DOLARES AMERICANOS' : 'SOLES';
+  const suffix = currency === 'USD' ? 'DÓLARES AMERICANOS' : 'SOLES';
   return `${out} CON ${String(cent).padStart(2, '0')}/100 ${suffix}`;
 }

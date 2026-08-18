@@ -80,12 +80,14 @@ export function QuotesPage() {
   const allQuotes: Quote[] = allQuotesData?.data || [];
   const stats = useMemo(() => {
     const counts: Record<QuoteStatus, number> = { PENDING: 0, ACCEPTED: 0, REJECTED: 0, EXPIRED: 0, CONVERTED: 0 };
-    let totalAmount = 0;
+    let totalPen = 0;
+    let totalUsd = 0;
     allQuotes.forEach((q) => {
       counts[q.status] = (counts[q.status] || 0) + 1;
-      totalAmount += q.total || 0;
+      if (q.currency === 'USD') totalUsd += q.total || 0;
+      else totalPen += q.total || 0;
     });
-    return { totalCount: allQuotes.length, totalAmount, counts };
+    return { totalCount: allQuotes.length, totalPen, totalUsd, counts };
   }, [allQuotes]);
 
   const clientById = useMemo(() => {
@@ -123,7 +125,7 @@ export function QuotesPage() {
     },
     ...(!isSellerRole ? [{ key: 'sellerName', header: 'Vendedor', render: (q: Quote) => q.sellerName ? <span className="text-emerald-700 text-sm">{q.sellerName}</span> : <span className="text-gray-300">—</span> }] : []),
     { key: 'items', header: 'Items', render: (q: Quote) => <span className="text-sm text-gray-600">{q.items.length}</span> },
-    { key: 'total', header: 'Total', render: (q: Quote) => <span className="font-medium text-gray-800">S/ {q.total.toFixed(2)}</span> },
+    { key: 'total', header: 'Total', render: (q: Quote) => <span className="font-medium text-gray-800">{q.currency === 'USD' ? 'US$' : 'S/'} {q.total.toFixed(2)}</span> },
     {
       key: 'status', header: 'Estado', render: (q: Quote) => {
         const meta = STATUS_LABELS[q.status];
@@ -244,8 +246,11 @@ export function QuotesPage() {
         </div>
         <div className="bg-white border border-gray-200 rounded-2xl p-5">
           <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Monto total</p>
-          <p className="text-3xl font-bold text-primary-600 mt-1">S/ {stats.totalAmount.toFixed(2)}</p>
-          <p className="text-xs text-gray-500 mt-1">Sumado de todas las cotizaciones</p>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <p className="text-2xl font-bold text-primary-600">S/ {stats.totalPen.toFixed(2)}</p>
+            {stats.totalUsd > 0 && <p className="text-xl font-bold text-emerald-600">US$ {stats.totalUsd.toFixed(2)}</p>}
+          </div>
+          <p className="text-xs text-gray-500 mt-1">Totales separados por moneda</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-2xl p-5">
           <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Por estado</p>

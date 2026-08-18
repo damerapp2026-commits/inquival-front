@@ -1,13 +1,9 @@
 import { useState, useMemo } from 'react';
-import { useQueries } from '@tanstack/react-query';
 import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart, useExchangeRate, useProfitability } from '../hooks/useDashboard';
 import { useAPAlerts } from '../../accounts-payable/hooks/useAccountsPayable';
 import { useSales } from '../../sales/hooks/useSales';
-import { usePriceCatalog, usePurchases } from '../../purchases/hooks/usePurchases';
-import { useProducts } from '../../products/hooks/useProducts';
 import { useUsers } from '../../users/hooks/useUsers';
 import { useAuth } from '../../../app/providers/AuthProvider';
-import { lookupService } from '../../../shared/services/lookupService';
 import { TrendingUp, TrendingDown, DollarSign, CreditCard, FileText, AlertTriangle, Clock, Tag, Truck, ShoppingCart, Package, BarChart3, Wallet, Users as UsersIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -650,24 +646,11 @@ export function DashboardPage() {
   const { data: topSuppliers } = useTopSuppliers(chartRange.start, chartRange.end);
   const { data: catSalesChart } = useCategorySalesChart(catChartRange.start, catChartRange.end);
   const { data: sellerSalesData, isLoading: sellerSalesLoading } = useSales({ page: 1, limit: 1000, startDate: chartRange.start, endDate: chartRange.end });
-  const { data: profitabilitySalesData, isLoading: profitabilitySalesLoading } = useSales({
-    page: 1,
-    limit: 100000,
-    startDate: profitRange.start,
-    endDate: profitRange.end,
-  });
   const { data: usersData } = useUsers({ limit: 200 });
   const { data: profitabilityData, isLoading: profitLoading } = useProfitability(
     user?.role === 'ADMIN' ? profitRange.start : undefined,
     user?.role === 'ADMIN' ? profitRange.end : undefined,
   );
-  const { data: purchasesData, isLoading: purchasesLoading } = usePurchases(
-    { page: 1, limit: 100000 },
-    { enabled: user?.role === 'ADMIN' },
-  );
-  const { data: priceCatalogData, isLoading: priceCatalogLoading } = usePriceCatalog({ enabled: user?.role === 'ADMIN' });
-  const { data: productsData, isLoading: productsLoading } = useProducts({ limit: 10000 });
-
   const sellersList: any[] = useMemo(() => {
     const raw: any = usersData;
     const list: any[] = Array.isArray(raw) ? raw : raw?.data || [];
@@ -699,37 +682,9 @@ export function DashboardPage() {
   const topSuppliersData: { name: string; total: number; count: number }[] = Array.isArray(topSuppliers) ? topSuppliers : [];
   const catChartData: Record<string, any>[] = catSalesChart?.dailyData || [];
   const allCategories: string[] = catSalesChart?.categories || [];
-  const purchases: Purchase[] = Array.isArray(purchasesData) ? purchasesData : purchasesData?.data || [];
-  const profitabilitySales: Sale[] = Array.isArray(profitabilitySalesData) ? profitabilitySalesData : profitabilitySalesData?.data || [];
-  const products: Product[] = Array.isArray(productsData) ? productsData : productsData?.data || [];
-  const priceCatalogRows: Record<string, any>[] = Array.isArray(priceCatalogData) ? priceCatalogData : [];
-  const missingPurchaseExchangeRateDates = useMemo(
-    () => buildMissingPurchaseExchangeRateDates(purchases, profitabilitySales, products),
-    [purchases, profitabilitySales, products],
-  );
-  const purchaseExchangeRateQueries = useQueries({
-    queries: missingPurchaseExchangeRateDates.map((date) => ({
-      queryKey: ['tipo-cambio', date],
-      queryFn: () => lookupService.getTipoCambio(date),
-      enabled: user?.role === 'ADMIN',
-      staleTime: 12 * 60 * 60 * 1000,
-      gcTime: 24 * 60 * 60 * 1000,
-      retry: false,
-    })),
-  });
-  const purchaseExchangeRatesByDate = useMemo(() => {
-    const rates = new Map<string, number>();
-    purchaseExchangeRateQueries.forEach((query, index) => {
-      const venta = numberFrom(query.data?.venta);
-      if (isUsdToPenRate(venta)) rates.set(missingPurchaseExchangeRateDates[index], venta);
-    });
-    return rates;
-  }, [missingPurchaseExchangeRateDates, purchaseExchangeRateQueries]);
-  const purchaseExchangeRatesLoading = purchaseExchangeRateQueries.some((query) => query.isLoading || query.isFetching);
-  const enrichedProfitabilityData = useMemo(
-    () => enrichProfitabilityRows(profitabilityData, purchases, profitabilitySales, products, priceCatalogRows, purchaseExchangeRatesByDate),
-    [profitabilityData, purchases, profitabilitySales, products, priceCatalogRows, purchaseExchangeRatesByDate],
-  );
+  // Tabla, gráfico, orden y totales usan exactamente la misma respuesta del
+  // backend para impedir cálculos divergentes de costo o tipo de cambio.
+  const enrichedProfitabilityData = profitabilityData;
   const topProfitabilityData = useMemo(() => {
     if (!Array.isArray(enrichedProfitabilityData)) return [];
     return [...enrichedProfitabilityData]
@@ -758,6 +713,9 @@ export function DashboardPage() {
   };
 
   const periodLabels: Record<string, string> = { daily: 'Hoy', weekly: 'Esta Semana', monthly: 'Este Mes' };
+  const incomePen = numberFrom(summary?.totalIncomePen) ?? numberFrom(summary?.totalIncome);
+  const incomeUsd = numberFrom(summary?.totalIncomeUsd);
+  const hasUsdIncomeSplit = incomeUsd != null;
 
   const salesTickInterval = dailySales.length > 60 ? 6 : dailySales.length > 30 ? 4 : 1;
   const catTickInterval = catChartData.length > 60 ? 6 : catChartData.length > 30 ? 4 : 1;
@@ -780,13 +738,23 @@ export function DashboardPage() {
         <div className="absolute -bottom-16 -right-16 w-56 h-56 bg-white/5 rounded-full" />
         <div className="relative">
           <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <div className="text-xs font-semibold tracking-wider text-primary-100 mb-2 uppercase">
-                Ingresos · {periodLabels[period]}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-4">
+              <div>
+                <div className="text-xs font-semibold tracking-wider text-primary-100 mb-2 uppercase">
+                  Ingresos en soles · {periodLabels[period]}
+                </div>
+                <div className="text-4xl sm:text-5xl font-bold">S/ {formatAmount(incomePen)}</div>
               </div>
-              <div className="text-5xl font-bold">S/ {formatAmount(summary?.totalIncome)}</div>
-              <div className="text-sm text-primary-100 mt-2">
-                Ganancia neta: S/ {formatAmount(summary?.netProfit)}
+              {hasUsdIncomeSplit && (
+              <div>
+                <div className="text-xs font-semibold tracking-wider text-primary-100 mb-2 uppercase">
+                  Ingresos en dólares · {periodLabels[period]}
+                </div>
+                <div className="text-4xl sm:text-5xl font-bold">$ {formatAmount(incomeUsd)}</div>
+              </div>
+              )}
+              <div className="text-sm text-primary-100 sm:col-span-2">
+                Ganancia neta consolidada: S/ {formatAmount(summary?.netProfit)}
               </div>
             </div>
             <div className="flex gap-1 bg-white/15 backdrop-blur rounded-lg p-1">
@@ -803,10 +771,24 @@ export function DashboardPage() {
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4 mt-6 pt-5 border-t border-white/20 max-w-md">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-6 pt-5 border-t border-white/20 max-w-3xl">
             <div>
-              <div className="text-xs text-primary-100">Egresos</div>
+              <div className="text-xs text-primary-100">Total consolidado en soles</div>
+              <div className="text-xl font-semibold">S/ {formatAmount(summary?.totalIncome)}</div>
+              {Number(summary?.totalIncomeUsdPen || 0) > 0 && (
+                <div className="text-xs text-primary-100 mt-0.5">
+                  Incluye S/ {formatAmount(summary?.totalIncomeUsdPen)} equivalentes de USD
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="text-xs text-primary-100">Egresos consolidados</div>
               <div className="text-xl font-semibold">S/ {formatAmount(summary?.totalExpense)}</div>
+              {Number(summary?.totalExpenseUsd || 0) > 0 && (
+                <div className="text-xs text-primary-100 mt-0.5">
+                  Incluye $ {formatAmount(summary?.totalExpenseUsd)} USD
+                </div>
+              )}
             </div>
             <div>
               <div className="text-xs text-primary-100">Deudas por cobrar</div>
@@ -817,17 +799,26 @@ export function DashboardPage() {
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <KpiCard
           icon={TrendingUp}
-          label="Ingresos"
-          value={`S/ ${formatAmount(summary?.totalIncome)}`}
+          label="Ingresos en soles"
+          value={`S/ ${formatAmount(incomePen)}`}
           accent="bg-primary-100 text-primary-700"
         />
+        {hasUsdIncomeSplit && (
+        <KpiCard
+          icon={DollarSign}
+          label="Ingresos en dólares"
+          value={`$ ${formatAmount(incomeUsd)}`}
+          accent="bg-emerald-100 text-emerald-700"
+        />
+        )}
         <KpiCard
           icon={TrendingDown}
-          label="Egresos"
+          label="Egresos consolidados"
           value={`S/ ${formatAmount(summary?.totalExpense)}`}
+          sublabel={Number(summary?.totalExpenseUsd || 0) > 0 ? `$ ${formatAmount(summary?.totalExpenseUsd)} USD incluidos` : undefined}
           accent="bg-red-100 text-red-600"
         />
         <KpiCard
@@ -1169,7 +1160,7 @@ export function DashboardPage() {
                 <TrendingUp size={20} className="text-emerald-600" />
                 Rentabilidad Bruta por Producto
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">Precio Venta − Precio Costo · Top 15 productos</p>
+              <p className="text-xs text-gray-400 mt-0.5">Precio de venta − costo de última compra con IGV en soles · Top 15 productos</p>
             </div>
             <div className="flex flex-col sm:items-end gap-2">
               <DateRangeFilter
@@ -1193,7 +1184,7 @@ export function DashboardPage() {
             los totales consideran todos los productos vendidos en el período; el gráfico muestra únicamente los 15 con mayor ganancia bruta. Los ingresos son ventas registradas, tanto al contado como a crédito, y no necesariamente dinero ya cobrado.
           </div>
 
-          {profitLoading || purchasesLoading || profitabilitySalesLoading || productsLoading || priceCatalogLoading || purchaseExchangeRatesLoading ? (
+          {profitLoading ? (
             <div className="h-[360px] flex items-center justify-center text-gray-400 text-sm">Calculando rentabilidad...</div>
           ) : !Array.isArray(enrichedProfitabilityData) || enrichedProfitabilityData.length === 0 ? (
             <div className="h-[360px] flex items-center justify-center text-gray-400 text-sm">Sin ventas en el período seleccionado</div>
@@ -1223,14 +1214,22 @@ export function DashboardPage() {
                           </div>
                           {row?.totalCost != null && (
                             <div className="flex justify-between gap-4">
-                              <span className="text-gray-500">Costo total</span>
+                              <span className="text-gray-500">Costo total con IGV</span>
                               <span className="font-medium text-orange-500">S/ {Number(row.totalCost).toFixed(2)}</span>
                             </div>
                           )}
                           {row?.unitCost != null && (
                             <div className="flex justify-between gap-4">
-                              <span className="text-gray-500">Precio costo</span>
-                              <span className="font-medium text-orange-500">S/ {Number(row.unitCost).toFixed(2)}</span>
+                              <span className="text-gray-500">Costo unitario con IGV</span>
+                              <span className="text-right font-medium text-orange-500">
+                                <span className="block">S/ {Number(row.unitCost).toFixed(2)}</span>
+                                {row?.costCurrency === 'USD' && row?.costOriginal != null && row?.costExchangeRate != null && (
+                                  <span className="block text-[10px] font-normal text-gray-400">
+                                    US$ {Number(row.costOriginal).toFixed(2)} × TC {Number(row.costExchangeRate).toFixed(3)}
+                                    {row?.costExchangeRateEstimated ? ' estimado' : ''}
+                                  </span>
+                                )}
+                              </span>
                             </div>
                           )}
                           {row?.totalSold != null && (
