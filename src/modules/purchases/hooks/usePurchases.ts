@@ -34,7 +34,7 @@ export function useProductSuppliers(productId: string) {
     queryKey: ['product-suppliers', productId],
     queryFn: () => purchaseService.getProductSuppliers(productId),
     enabled: !!productId,
-    staleTime: 30_000,
+    staleTime: 0,
   });
 }
 export function useLastPrice(productId: string, supplierId: string) {

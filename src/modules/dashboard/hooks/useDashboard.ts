@@ -1,8 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
-import { dashboardService } from '../services/dashboardService';
+import { dashboardService, type DashboardPeriodQuery } from '../services/dashboardService';
 
-export function useDashboardSummary(period?: string) {
-  return useQuery({ queryKey: ['dashboard-summary', period], queryFn: () => dashboardService.getSummary(period) });
+function hasCompleteCustomRange(query?: DashboardPeriodQuery) {
+  if (query?.period !== 'custom') return true;
+  return Boolean(query.startDate && query.endDate);
+}
+
+export function useDashboardSummary(query?: DashboardPeriodQuery) {
+  return useQuery({
+    queryKey: ['dashboard-summary', query],
+    queryFn: () => dashboardService.getSummary(query),
+    placeholderData: (previous) => previous,
+    enabled: hasCompleteCustomRange(query),
+  });
 }
 export function useProfitability(startDate?: string, endDate?: string) {
   return useQuery({
@@ -10,8 +20,21 @@ export function useProfitability(startDate?: string, endDate?: string) {
     queryFn: () => dashboardService.getProfitability(startDate, endDate),
   });
 }
-export function useCreditsSummary() {
-  return useQuery({ queryKey: ['dashboard-credits-summary'], queryFn: () => dashboardService.getCreditsSummary() });
+export function useCreditsSummary(query?: DashboardPeriodQuery) {
+  return useQuery({
+    queryKey: ['dashboard-credits-summary', query],
+    queryFn: () => dashboardService.getCreditsSummary(query),
+    placeholderData: (previous) => previous,
+    enabled: hasCompleteCustomRange(query),
+  });
+}
+export function usePayablesSummary(query?: DashboardPeriodQuery) {
+  return useQuery({
+    queryKey: ['dashboard-payables-summary', query],
+    queryFn: () => dashboardService.getPayablesSummary(query),
+    placeholderData: (previous) => previous,
+    enabled: hasCompleteCustomRange(query),
+  });
 }
 export function useSalesChart(startDate?: string, endDate?: string) {
   return useQuery({

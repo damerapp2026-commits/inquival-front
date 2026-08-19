@@ -16,11 +16,12 @@ import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, Download, Upload, Truck, ImagePlus, Loader2, Tag, Boxes, Receipt, Wallet, PackageSearch, FlaskConical, Percent, BookOpen, LayoutGrid, List as ListIcon, Check } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, ChevronDown, ChevronUp, Copy, X, Layers, Download, Upload, Truck, ImagePlus, Camera, Loader2, Tag, Boxes, Receipt, Wallet, PackageSearch, FlaskConical, Percent, BookOpen, LayoutGrid, List as ListIcon, Check } from 'lucide-react';
 import { ProductSuppliersModal } from '../components/ProductSuppliersModal';
 import { PriceCatalogView } from '../components/PriceCatalogView';
 import { StockValuedView } from '../components/StockValuedView';
 import { downloadProductCatalogPdf, openCatalogWindow } from '../utils/productCatalogPdf';
+import { compressImageFile } from '../utils/compressImage';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import toast from 'react-hot-toast';
 import type { Product, ProductCommission } from '../../../shared/types';
@@ -62,6 +63,21 @@ const productCategoryId = (product: Product) =>
 
 const productLaboratoryId = (product: Product) =>
   product.laboratoryId || (product as any).laboratory?.id || (product as any).laboratory?._id || '';
+
+const applyProductFilters = (
+  items: Product[],
+  filters: { search: string; ingredient: string; categoryId: string; laboratoryId: string },
+) => {
+  const q = filters.search.trim().toLowerCase();
+  const ingredient = filters.ingredient.trim().toLowerCase();
+  return items.filter((p) => {
+    if (q && !p.name.toLowerCase().includes(q)) return false;
+    if (ingredient && !(p.activeIngredient || '').toLowerCase().includes(ingredient)) return false;
+    if (filters.categoryId && productCategoryId(p) !== filters.categoryId) return false;
+    if (filters.laboratoryId && productLaboratoryId(p) !== filters.laboratoryId) return false;
+    return true;
+  });
+};
 
 export function ProductsPage() {
   const { user } = useAuth();
@@ -114,6 +130,9 @@ export function ProductsPage() {
   const [form, setForm] = useState({ name: '', description: '', categoryId: '', laboratoryId: '', unit: '', activeIngredient: '', taxType: 'GRAVADO', tracksLot: false, imageUrl: '', prices: [] as { priceTierId: string; companyId?: string; price: number }[], initialStocks: [] as { companyId: string; quantity: number }[], commissions: [] as ProductCommission[] });
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [suppliersTarget, setSuppliersTarget] = useState<Product | null>(null);
+  const [photoTarget, setPhotoTarget] = useState<Product | null>(null);
+  const [uploadingPhotoId, setUploadingPhotoId] = useState<string | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkProducts, setBulkProducts] = useState<BulkProduct[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -143,6 +162,33 @@ export function ProductsPage() {
     if (!isAdmin) return;
     setBulkProducts([emptyBulkProduct()]);
     setShowBulkModal(true);
+  };
+
+  const openCamera = (product: Product) => {
+    setPhotoTarget(product);
+    requestAnimationFrame(() => cameraInputRef.current?.click());
+  };
+
+  const handleQuickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const product = photoTarget;
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
+    if (!file || !product) return;
+    if (!file.type.startsWith('image/')) { toast.error('Solo se permiten imágenes'); return; }
+    setUploadingPhotoId(product.id);
+    const t = toast.loading(`Subiendo foto de ${product.name}…`);
+    try {
+      const compressed = await compressImageFile(file);
+      const { url } = await productService.uploadImage(compressed);
+      await productService.updateImage(product.id, url);
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast.success('Foto actualizada', { id: t });
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Error al subir la foto', { id: t });
+    } finally {
+      setUploadingPhotoId(null);
+      setPhotoTarget(null);
+    }
   };
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -454,20 +500,24 @@ export function ProductsPage() {
     setExportingCatalog(true);
     const t = toast.loading('Generando catálogo…');
     try {
-      const result = await productService.getAll({
-        limit: 1000,
-        search: debouncedSearch || undefined,
-        activeIngredient: debouncedIngredient || undefined,
-        laboratoryId: laboratoryFilter || undefined,
-        category: categoryFilter || undefined,
+      // The listing filters client-side. Re-querying the API with server
+      // filters returns a different (usually smaller) set, so the PDF must
+      // reuse that same client filter over a full product fetch.
+      const source = hasProductFilters
+        ? rawProducts
+        : ((await productService.getAll({ page: 1, limit: 10000 }))?.data || []);
+      const allProducts = applyProductFilters(source, {
+        search: debouncedSearch,
+        ingredient: debouncedIngredient,
+        categoryId: categoryFilter,
+        laboratoryId: laboratoryFilter,
       });
-      const allProducts: Product[] = result?.data || [];
       const catsList = Array.isArray(categories) ? categories : [];
       const labsList = Array.isArray(laboratories) ? laboratories : [];
       const enriched = allProducts.map((p) => ({
         ...p,
-        categoryName: catsList.find((c: any) => c.id === p.categoryId)?.name,
-        laboratoryName: labsList.find((l: any) => l.id === p.laboratoryId)?.name,
+        categoryName: catsList.find((c: any) => c.id === productCategoryId(p))?.name,
+        laboratoryName: labsList.find((l: any) => l.id === productLaboratoryId(p))?.name,
       }));
       if (enriched.length === 0) {
         catalogWin.close();
@@ -544,17 +594,15 @@ export function ProductsPage() {
   const labsById = new Map<string, any>(labs.map((l: any) => [l.id, l]));
   const comps = Array.isArray(companies) ? companies : [];
 
-  const products = React.useMemo(() => {
-    const q = debouncedSearch.trim().toLowerCase();
-    const ingredient = debouncedIngredient.trim().toLowerCase();
-    return rawProducts.filter((p) => {
-      if (q && !p.name.toLowerCase().includes(q)) return false;
-      if (ingredient && !(p.activeIngredient || '').toLowerCase().includes(ingredient)) return false;
-      if (categoryFilter && productCategoryId(p) !== categoryFilter) return false;
-      if (laboratoryFilter && productLaboratoryId(p) !== laboratoryFilter) return false;
-      return true;
-    });
-  }, [rawProducts, debouncedSearch, debouncedIngredient, categoryFilter, laboratoryFilter]);
+  const products = React.useMemo(
+    () => applyProductFilters(rawProducts, {
+      search: debouncedSearch,
+      ingredient: debouncedIngredient,
+      categoryId: categoryFilter,
+      laboratoryId: laboratoryFilter,
+    }),
+    [rawProducts, debouncedSearch, debouncedIngredient, categoryFilter, laboratoryFilter],
+  );
   const total = hasProductFilters ? products.length : (data?.total || 0);
 
   const { data: stockSummaryData } = useStockByProductSummary();
@@ -572,7 +620,18 @@ export function ProductsPage() {
   };
 
   const columns = [
-    { key: 'name', header: 'Nombre' },
+    { key: 'name', header: 'Nombre', render: (item: Product) => (
+      <div className="flex items-center gap-2 min-w-0">
+        {item.imageUrl ? (
+          <img src={item.imageUrl} alt="" className="w-8 h-8 rounded-md object-cover bg-gray-100 shrink-0" />
+        ) : (
+          <span className="w-8 h-8 rounded-md bg-gray-100 text-gray-300 flex items-center justify-center shrink-0">
+            <Camera size={14} />
+          </span>
+        )}
+        <span className="truncate">{item.name}</span>
+      </div>
+    ) },
     { key: 'unit', header: 'Unidad' },
     { key: 'categoryId', header: 'Categoría', render: (item: Product) => { const cat = cats.find((c: any) => c.id === item.categoryId); return cat?.name || item.categoryId; } },
     { key: 'laboratoryId', header: 'Laboratorio', render: (item: Product) => {
@@ -625,11 +684,27 @@ export function ProductsPage() {
     }},
     { key: 'actions', header: 'Acciones', render: (item: Product) => (
       <div className="flex gap-2">
-        <button onClick={() => setSuppliersTarget(item)} className="text-gray-500 hover:text-primary-600" title="Ver proveedores"><Truck size={16} /></button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); openCamera(item); }}
+          disabled={uploadingPhotoId === item.id}
+          className="text-emerald-600 hover:text-emerald-800 disabled:opacity-50"
+          title="Tomar o subir foto"
+        >
+          {uploadingPhotoId === item.id ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setSuppliersTarget(item); }}
+          className="text-gray-500 hover:text-primary-600"
+          title="Ver proveedores"
+        >
+          <Truck size={16} />
+        </button>
         {isAdmin && (
           <>
-            <button onClick={() => openEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={16} /></button>
-            <button onClick={() => setDeleteTarget(item)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 size={16} /></button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={16} /></button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 size={16} /></button>
           </>
         )}
       </div>
@@ -693,6 +768,14 @@ export function ProductsPage() {
       {view === 'stock-valued' && isAdmin && <StockValuedView enabled={view === 'stock-valued'} />}
 
       {view === 'list' && (<>
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleQuickPhoto}
+      />
       <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="relative">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -920,7 +1003,12 @@ export function ProductsPage() {
       </Modal>
       <Modal isOpen={showCatalogTypeModal} onClose={() => setShowCatalogTypeModal(false)} title="Generar catálogo PDF" size="lg">
         <div className="space-y-5">
-          <p className="text-sm text-gray-600">Elegí el formato del catálogo. Se generará con los filtros activos del listado.</p>
+          <p className="text-sm text-gray-600">
+            Elegí el formato del catálogo. Se generará con los filtros activos del listado
+            {hasProductFilters
+              ? ` (${products.length} producto${products.length === 1 ? '' : 's'}).`
+              : ' (catálogo completo).'}
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               type="button"

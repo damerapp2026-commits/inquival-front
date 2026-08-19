@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useDashboardSummary, useCreditsSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart, useExchangeRate, useProfitability } from '../hooks/useDashboard';
+import { useDashboardSummary, useCreditsSummary, usePayablesSummary, useSalesChart, useCategorySales, useTopSuppliers, useCategorySalesChart, useExchangeRate, useProfitability } from '../hooks/useDashboard';
 import { useAPAlerts } from '../../accounts-payable/hooks/useAccountsPayable';
 import { useSales } from '../../sales/hooks/useSales';
 import { useUsers } from '../../users/hooks/useUsers';
@@ -11,6 +11,7 @@ import {
   BarChart, Bar, Cell,
 } from 'recharts';
 import type { AccountPayable, Product, Purchase, Sale } from '../../../shared/types';
+import { formatDateEs, getTodayDateString } from '../../../shared/utils/date.util';
 
 const CHART_COLORS = ['#16a34a', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
 const SUPPLIER_COLORS = ['#15803d', '#0ea5e9', '#f43f5e', '#84cc16', '#fb923c'];
@@ -629,7 +630,15 @@ function QuickAction({ icon: Icon, label, onClick, accent }: {
 export function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [period, setPeriod] = useState('daily');
+  const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>('daily');
+  const [customRange, setCustomRange] = useState(() => {
+    const today = getTodayDateString();
+    const firstOfMonth = `${today.slice(0, 8)}01`;
+    return { start: firstOfMonth, end: today };
+  });
+  const periodQuery = period === 'custom'
+    ? { period: 'custom', startDate: customRange.start, endDate: customRange.end }
+    : { period };
   const [salesRange, setSalesRange] = useState(last30Days);
   const [catChartRange, setCatChartRange] = useState(thisMonth);
   const [chartRange, setChartRange] = useState(thisMonth);
@@ -637,8 +646,9 @@ export function DashboardPage() {
   const [exchangeDays, setExchangeDays] = useState(7);
   const [profitRange, setProfitRange] = useState(thisMonth);
 
-  const { data: summary } = useDashboardSummary(period);
-  const { data: creditsSummary } = useCreditsSummary();
+  const { data: summary } = useDashboardSummary(periodQuery);
+  const { data: creditsSummary } = useCreditsSummary(periodQuery);
+  const { data: payablesSummary } = usePayablesSummary(periodQuery);
   const { data: salesChart } = useSalesChart(salesRange.start, salesRange.end);
   const { data: apAlerts } = useAPAlerts(3);
   const { data: exchangeRateData, isLoading: exchangeLoading } = useExchangeRate(exchangeDays);
@@ -712,7 +722,15 @@ export function DashboardPage() {
     });
   };
 
-  const periodLabels: Record<string, string> = { daily: 'Hoy', weekly: 'Esta Semana', monthly: 'Este Mes' };
+  const periodLabels: Record<string, string> = {
+    daily: 'Hoy',
+    weekly: 'Esta Semana',
+    monthly: 'Este Mes',
+    custom: 'Personalizado',
+  };
+  const periodDisplay = period === 'custom'
+    ? `${formatDateEs(customRange.start)} – ${formatDateEs(customRange.end)}`
+    : periodLabels[period];
   const incomePen = numberFrom(summary?.totalIncomePen) ?? numberFrom(summary?.totalIncome);
   const incomeUsd = numberFrom(summary?.totalIncomeUsd);
   const hasUsdIncomeSplit = incomeUsd != null;
@@ -741,14 +759,14 @@ export function DashboardPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-4">
               <div>
                 <div className="text-xs font-semibold tracking-wider text-primary-100 mb-2 uppercase">
-                  Ingresos en soles · {periodLabels[period]}
+                  Ingresos en soles · {periodDisplay}
                 </div>
                 <div className="text-4xl sm:text-5xl font-bold">S/ {formatAmount(incomePen)}</div>
               </div>
               {hasUsdIncomeSplit && (
               <div>
                 <div className="text-xs font-semibold tracking-wider text-primary-100 mb-2 uppercase">
-                  Ingresos en dólares · {periodLabels[period]}
+                  Ingresos en dólares · {periodDisplay}
                 </div>
                 <div className="text-4xl sm:text-5xl font-bold">$ {formatAmount(incomeUsd)}</div>
               </div>
@@ -757,18 +775,41 @@ export function DashboardPage() {
                 Ganancia neta consolidada: S/ {formatAmount(summary?.netProfit)}
               </div>
             </div>
-            <div className="flex gap-1 bg-white/15 backdrop-blur rounded-lg p-1">
-              {['daily', 'weekly', 'monthly'].map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    period === p ? 'bg-white text-primary-700' : 'text-white/90 hover:bg-white/10'
-                  }`}
-                >
-                  {periodLabels[p]}
-                </button>
-              ))}
+            <div className="flex flex-col items-stretch sm:items-end gap-2">
+              <div className="flex gap-1 bg-white/15 backdrop-blur rounded-lg p-1 flex-wrap">
+                {(['daily', 'weekly', 'monthly', 'custom'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      period === p ? 'bg-white text-primary-700' : 'text-white/90 hover:bg-white/10'
+                    }`}
+                  >
+                    {periodLabels[p]}
+                  </button>
+                ))}
+              </div>
+              {period === 'custom' && (
+                <div className="flex items-center gap-2 flex-wrap bg-white/15 backdrop-blur rounded-lg px-3 py-2">
+                  <label className="text-xs text-primary-100">Desde</label>
+                  <input
+                    type="date"
+                    value={customRange.start}
+                    max={customRange.end}
+                    onChange={(e) => setCustomRange((prev) => ({ ...prev, start: e.target.value }))}
+                    className="rounded-md border-0 px-2 py-1 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-white"
+                  />
+                  <label className="text-xs text-primary-100">Hasta</label>
+                  <input
+                    type="date"
+                    value={customRange.end}
+                    min={customRange.start}
+                    max={getTodayDateString()}
+                    onChange={(e) => setCustomRange((prev) => ({ ...prev, end: e.target.value }))}
+                    className="rounded-md border-0 px-2 py-1 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-white"
+                  />
+                </div>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-6 pt-5 border-t border-white/20 max-w-3xl">
@@ -791,7 +832,7 @@ export function DashboardPage() {
               )}
             </div>
             <div>
-              <div className="text-xs text-primary-100">Deudas por cobrar</div>
+              <div className="text-xs text-primary-100">Deudas por cobrar · {periodDisplay}</div>
               <div className="text-xl font-semibold">S/ {formatAmount(creditsSummary?.totalPending)}</div>
             </div>
           </div>
@@ -802,37 +843,37 @@ export function DashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <KpiCard
           icon={TrendingUp}
-          label="Ingresos en soles"
+          label={`Ingresos en soles · ${periodDisplay}`}
           value={`S/ ${formatAmount(incomePen)}`}
           accent="bg-primary-100 text-primary-700"
         />
         {hasUsdIncomeSplit && (
         <KpiCard
           icon={DollarSign}
-          label="Ingresos en dólares"
+          label={`Ingresos en dólares · ${periodDisplay}`}
           value={`$ ${formatAmount(incomeUsd)}`}
           accent="bg-emerald-100 text-emerald-700"
         />
         )}
         <KpiCard
           icon={TrendingDown}
-          label="Egresos consolidados"
+          label={`Egresos consolidados · ${periodDisplay}`}
           value={`S/ ${formatAmount(summary?.totalExpense)}`}
           sublabel={Number(summary?.totalExpenseUsd || 0) > 0 ? `$ ${formatAmount(summary?.totalExpenseUsd)} USD incluidos` : undefined}
           accent="bg-red-100 text-red-600"
         />
         <KpiCard
           icon={CreditCard}
-          label="Deudas por cobrar"
+          label={`Deudas por cobrar · ${periodDisplay}`}
           value={`S/ ${formatAmount(creditsSummary?.totalPending)}`}
-          sublabel={`${formatCount(creditsSummary?.activeCredits)} créditos activos`}
+          sublabel={`${formatCount(creditsSummary?.activeCredits)} créditos del periodo`}
           accent="bg-orange-100 text-orange-600"
         />
         <KpiCard
           icon={FileText}
-          label="Deudas por pagar"
-          value={`S/ ${formatAmount(apAlerts?.summary?.totalPending)}`}
-          sublabel={`${formatCount(apAlerts?.summary?.count)} cuentas activas`}
+          label={`Deudas por pagar · ${periodDisplay}`}
+          value={`S/ ${formatAmount(payablesSummary?.totalPending)}`}
+          sublabel={`${formatCount(payablesSummary?.count)} cuentas del periodo`}
           accent="bg-purple-100 text-purple-600"
         />
       </div>

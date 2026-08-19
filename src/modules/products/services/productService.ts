@@ -6,6 +6,8 @@ export const productService = {
   update: (id: string, data: any) => api.put(`/products/${id}`, data).then((r) => r.data.data),
   delete: (id: string) => api.delete(`/products/${id}`).then((r) => r.data.data),
   getCountsByCategory: (): Promise<Record<string, number>> => api.get('/products/counts-by-category').then((r) => r.data.data),
+  updateImage: (id: string, imageUrl: string) =>
+    api.patch(`/products/${id}/image`, { imageUrl }).then((r) => r.data.data),
   uploadImage: (file: File): Promise<{ url: string }> => {
     const fd = new FormData();
     fd.append('file', file);

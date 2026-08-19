@@ -16,12 +16,21 @@ export interface DashboardSummary {
   registersCount: number;
 }
 
+export type DashboardPeriodQuery = {
+  period?: string;
+  startDate?: string;
+  endDate?: string;
+};
+
 export const dashboardService = {
-  getSummary: (period?: string): Promise<DashboardSummary> =>
-    api.get('/dashboard/summary', { params: { period } }).then((r) => r.data.data),
+  getSummary: (query?: DashboardPeriodQuery): Promise<DashboardSummary> =>
+    api.get('/dashboard/summary', { params: query }).then((r) => r.data.data),
   getProfitability: (startDate?: string, endDate?: string) =>
     api.get('/dashboard/profitability', { params: { startDate, endDate } }).then((r) => r.data.data),
-  getCreditsSummary: () => api.get('/dashboard/credits-summary').then((r) => r.data.data),
+  getCreditsSummary: (query?: DashboardPeriodQuery) =>
+    api.get('/dashboard/credits-summary', { params: query }).then((r) => r.data.data),
+  getPayablesSummary: (query?: DashboardPeriodQuery) =>
+    api.get('/dashboard/payables-summary', { params: query }).then((r) => r.data.data),
   getSalesChart: (startDate?: string, endDate?: string) =>
     api.get('/dashboard/sales-chart', { params: { startDate, endDate } }).then((r) => r.data.data),
   getCategorySalesChart: (startDate?: string, endDate?: string) =>

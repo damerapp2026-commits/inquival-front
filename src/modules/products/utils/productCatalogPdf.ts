@@ -169,7 +169,7 @@ function buildCatalogHtml(opts: GenerateOptions): string {
     </div>
     <div>
       <div class="badge">CATÁLOGO DE PRODUCTOS</div>
-      <div class="date">${escapeHtml(today)}</div>
+      <div class="date">${products.length} producto${products.length === 1 ? '' : 's'} · ${escapeHtml(today)}</div>
     </div>
   </div>
 
