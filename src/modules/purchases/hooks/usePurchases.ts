@@ -128,8 +128,9 @@ export function useUpdatePurchase() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Parameters<typeof purchaseService.update>[1] }) =>
       purchaseService.update(id, data),
-    onSuccess: () => {
+    onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['purchase', id] });
       toast.success('Compra actualizada');
     },
     onError: (err: any) => {
@@ -175,8 +176,9 @@ export function useUpdatePurchaseFull() {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Parameters<typeof purchaseService.updateFull>[1] }) =>
       purchaseService.updateFull(id, data),
-    onSuccess: () => {
+    onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['purchase', id] });
       qc.invalidateQueries({ queryKey: ['stock'] });
       qc.invalidateQueries({ queryKey: ['accounts-payable'] });
       qc.invalidateQueries({ queryKey: ['cash-register-today'] });
@@ -207,8 +209,9 @@ export function useCancelPurchase() {
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       purchaseService.cancel(id, { reason }),
-    onSuccess: () => {
+    onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['purchase', id] });
       qc.invalidateQueries({ queryKey: ['stock'] });
       qc.invalidateQueries({ queryKey: ['accounts-payable'] });
       qc.invalidateQueries({ queryKey: ['cash-register-today'] });

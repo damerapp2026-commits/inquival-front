@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { isAxiosError } from 'axios';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
-import { usePurchases, useCancelPurchase, useUpdatePurchaseMeta } from '../hooks/usePurchases';
+import { usePurchaseById, useCancelPurchase, useUpdatePurchaseMeta } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useAuth } from '../../../app/providers/AuthProvider';
@@ -203,7 +204,7 @@ export function PurchaseDetailPage() {
   const location = useLocation();
   const backTo: string = (location.state as any)?.from ?? '/purchases';
   const { user } = useAuth();
-  const { data, isLoading } = usePurchases({ limit: 500 });
+  const { data: purchaseData, isLoading, isError, error, refetch } = usePurchaseById(id);
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
   const { data: accountPayables } = useAccountPayablesByPurchaseId(id ?? null);
@@ -213,8 +214,7 @@ export function PurchaseDetailPage() {
   const [grModal, setGrModal] = useState<{ grSeries: string; grNumber: string; grDate: string } | null>(null);
   const isAdmin = user?.role === 'ADMIN';
 
-  const purchases: Purchase[] = data?.data || [];
-  const purchase = purchases.find((p) => p.id === id);
+  const purchase: Purchase | undefined = purchaseData;
   const companyList = Array.isArray(companies) ? companies : [];
   const products = productsData?.data || [];
   const getCompanyName = (cid: string) => companyList.find((c: Company) => c.id === cid)?.name || 'N/A';
@@ -227,16 +227,27 @@ export function PurchaseDetailPage() {
     );
   }
 
-  if (!purchase) {
+  if (isError || !purchase) {
+    const notFound = !isError || (isAxiosError(error) && error.response?.status === 404);
+
     return (
       <div>
         <div className="flex items-center gap-3 mb-6">
           <Link to={backTo} className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"><ArrowLeft size={18} /></Link>
-          <h1 className="text-2xl font-bold text-gray-800">Compra no encontrada</h1>
+          <h1 className="text-2xl font-bold text-gray-800">{notFound ? 'Compra no encontrada' : 'No se pudo cargar la compra'}</h1>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-          <p className="text-sm text-gray-500">La compra que buscas no existe o fue eliminada.</p>
-          <Link to={backTo} className="inline-block mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium">Volver</Link>
+          <p className="text-sm text-gray-500">
+            {notFound ? 'La compra que buscas no existe o fue eliminada.' : 'Ocurrió un error al consultar la compra. Intenta nuevamente.'}
+          </p>
+          <div className="flex justify-center gap-3 mt-4">
+            <Link to={backTo} className="inline-block px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium">Volver</Link>
+            {!notFound && (
+              <button type="button" onClick={() => { void refetch(); }} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium">
+                Reintentar
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
