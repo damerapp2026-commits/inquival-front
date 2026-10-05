@@ -1,0 +1,4 @@
+[build]
+  # Replace incomplete dependencies tracked in Git or restored from cache.
+  command = "npm ci --include=dev && npm run build"
+  publish = "dist"
