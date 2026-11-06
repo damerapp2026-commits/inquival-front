@@ -4,7 +4,7 @@ import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { useConvertPurchaseOrder, useCreatePurchase, usePurchaseOrderById } from '../hooks/usePurchases';
 import { PurchaseFormBody, type PurchaseSubmitPayload } from '../components/PurchaseFormBody';
 import { buildInitialCreate, emptyItem, recalcItem, type PurchaseInitial } from '../utils/purchaseForm';
-import { getTodayDateString } from '../../../shared/utils/date.util';
+import { getTodayDateString, toLocalDateString } from '../../../shared/utils/date.util';
 import type { PurchaseOrder } from '../../../shared/types';
 
 function orderToInitial(order: PurchaseOrder): PurchaseInitial {
@@ -21,7 +21,7 @@ function orderToInitial(order: PurchaseOrder): PurchaseInitial {
       productId: item.productId,
       quantity: item.quantity,
       lotNumber: item.lotNumber || '',
-      expirationDate: item.expirationDate?.slice(0, 10) || '',
+      expirationDate: item.expirationDate ? toLocalDateString(item.expirationDate) : '',
       unitPriceSinIgv,
       unitPriceSinIgvInput: unitPriceSinIgv ? String(unitPriceSinIgv) : '',
       unitPriceConIgv,
@@ -44,13 +44,13 @@ function orderToInitial(order: PurchaseOrder): PurchaseInitial {
       paymentType: order.paymentType || 'CONTADO',
       paymentMethodId: order.paymentMethodId || '',
       paymentScheduleType: order.paymentScheduleType || 'SINGLE_DATE',
-      dueDate: order.dueDate?.slice(0, 10) || '',
-      installments: (order.installments || []).map((i) => ({ amount: i.amount, dueDate: i.dueDate.slice(0, 10) })),
+      dueDate: order.dueDate ? toLocalDateString(order.dueDate) : '',
+      installments: (order.installments || []).map((i) => ({ amount: i.amount, dueDate: toLocalDateString(i.dueDate) })),
       items,
       documentType: order.documentType || fallback.state.documentType,
       documentSeries: order.documentSeries || '',
       documentNumber: order.documentNumber || '',
-      issueDate: order.issueDate?.slice(0, 10) || fallback.state.issueDate,
+      issueDate: order.issueDate ? toLocalDateString(order.issueDate) : fallback.state.issueDate,
     },
     currency,
     exchangeRate,

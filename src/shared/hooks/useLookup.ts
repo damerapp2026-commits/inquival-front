@@ -1,3 +1,4 @@
+import { getTodayDateString } from '../utils/date.util';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { lookupService } from '../services/lookupService';
 import toast from 'react-hot-toast';
@@ -24,7 +25,7 @@ export function useTipoCambio() {
 }
 
 export function useTodayTipoCambio(enabled = true) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayDateString();
   return useQuery({
     queryKey: ['tipo-cambio', today],
     queryFn: () => lookupService.getTipoCambio(),

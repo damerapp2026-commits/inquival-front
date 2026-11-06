@@ -10,7 +10,7 @@ import { ArrowLeft, ShoppingCart, Building2, CreditCard, Package, Pencil, Trash2
 import type { Purchase, Company, Product, AccountPayable } from '../../../shared/types';
 import { CancelPurchaseDialog } from '../components/CancelPurchaseDialog';
 import { Modal } from '../../../shared/components/Modal';
-import { formatDateEs } from '../../../shared/utils/date.util';
+import { formatDateEs, daysUntilDate, toLocalDateString } from '../../../shared/utils/date.util';
 
 function InfoCell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -46,11 +46,10 @@ function AccountPayableSection({ ap, title = 'Cuenta por Pagar' }: { ap: Account
   const sym = ap.currency === 'USD' ? '$' : 'S/';
   const cfg = apStatusConfig[ap.status as keyof typeof apStatusConfig] ?? apStatusConfig.PENDING;
   const StatusIcon = cfg.icon;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
 
   const isOverdue = (dateStr?: string) => {
     if (!dateStr) return false;
-    return new Date(dateStr.slice(0, 10) + 'T00:00:00') < today;
+    return daysUntilDate(dateStr) < 0;
   };
 
   return (
@@ -276,7 +275,7 @@ export function PurchaseDetailPage() {
           onClick={() => setGrModal({
             grSeries: purchase.grSeries || '',
             grNumber: purchase.grNumber || '',
-            grDate: purchase.grDate ? purchase.grDate.slice(0, 10) : '',
+            grDate: purchase.grDate ? toLocalDateString(purchase.grDate) : '',
           })}
           className={`inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border rounded-lg text-sm font-semibold transition-colors ${purchase.grSeries || purchase.grNumber ? 'border-green-200 text-green-700 hover:bg-green-50 hover:border-green-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
           title={purchase.grSeries || purchase.grNumber ? 'Editar Guía de Remisión' : 'Añadir Guía de Remisión'}

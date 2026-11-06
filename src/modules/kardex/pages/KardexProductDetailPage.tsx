@@ -1,3 +1,4 @@
+import { formatDateEs } from '../../../shared/utils/date.util';
 import React, { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -174,7 +175,7 @@ function MovementsTab({ productId, companyList, getCompanyName }: TabProps) {
       key: 'date',
       header: 'Fecha',
       render: (item: StockMovement) =>
-        new Date(item.date).toLocaleDateString('es-PE', {
+        formatDateEs(item.date, {
           day: '2-digit',
           month: '2-digit',
           year: 'numeric',
@@ -401,7 +402,7 @@ function ByClientTab({ productId, companyList, getCompanyName }: TabProps) {
       key: 'date',
       header: 'Fecha',
       render: (r: ClientSaleRow) =>
-        new Date(r.date).toLocaleDateString('es-PE', {
+        formatDateEs(r.date, {
           day: '2-digit',
           month: '2-digit',
           year: 'numeric',

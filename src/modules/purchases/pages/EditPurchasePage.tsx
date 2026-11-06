@@ -1,3 +1,4 @@
+import { formatDateEs, toLocalDateString } from '../../../shared/utils/date.util';
 import { useMemo } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { ArrowLeft, ShoppingCart, AlertTriangle } from 'lucide-react';
@@ -69,11 +70,11 @@ export function EditPurchasePage() {
   if (accountPayable?.paymentScheduleType === 'INSTALLMENTS' && (accountPayable?.installments?.length ?? 0) > 0) {
     initial.state.installments = accountPayable.installments.map((i: AccountPayableInstallment) => ({
       amount: i.amount,
-      dueDate: i.dueDate ? i.dueDate.slice(0, 10) : '',
+      dueDate: i.dueDate ? toLocalDateString(i.dueDate) : '',
       status: i.status as 'PENDING' | 'PAID',
     }));
   } else if (accountPayable?.paymentScheduleType === 'SINGLE_DATE' && accountPayable?.dueDate) {
-    initial.state.dueDate = accountPayable.dueDate.slice(0, 10);
+    initial.state.dueDate = toLocalDateString(accountPayable.dueDate);
   }
 
   const handleSubmit = async (payload: PurchaseSubmitPayload) => {
@@ -119,7 +120,7 @@ export function EditPurchasePage() {
 
   const purchaseRef = purchase.documentSeries && purchase.documentNumber
     ? `${purchase.documentType || ''} ${purchase.documentSeries}-${purchase.documentNumber}`.trim()
-    : `del ${new Date(purchase.date).toLocaleDateString('es-PE')}`;
+    : `del ${formatDateEs(purchase.date)}`;
 
   const totalLabel = purchase.totalCostUsd
     ? `$ ${purchase.totalCostUsd.toFixed(2)} (≈ S/ ${purchase.totalCost.toFixed(2)})`

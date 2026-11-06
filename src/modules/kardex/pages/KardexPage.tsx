@@ -1,3 +1,4 @@
+import { formatDateEs, daysUntilDate } from '../../../shared/utils/date.util';
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -212,7 +213,7 @@ function KardexTab({ products, companyList }: SubProps) {
   const hasStockWithoutMovements = !!productIdParam && !isLoading && movements.length === 0 && selectedProductStock > 0;
 
   const formatDate = (d: string) =>
-    new Date(d).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    formatDateEs(d, { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   const descFor = (m: StockMovement) => m.displayDescription || m.description;
 
@@ -239,7 +240,7 @@ function KardexTab({ products, companyList }: SubProps) {
 
   const lotStatusKardex = (expirationDate?: Date | string | null): { label: string; color: string } => {
     if (!expirationDate) return { label: 'Sin F.V.', color: 'text-gray-400 border-gray-200 bg-white' };
-    const days = Math.ceil((new Date(expirationDate).getTime() - Date.now()) / 86400000);
+    const days = daysUntilDate(expirationDate);
     if (days < 0) return { label: `Vencido (${-days}d)`, color: 'text-red-700 border-red-200 bg-red-50' };
     if (days <= 30) return { label: `Por vencer (${days}d)`, color: 'text-orange-700 border-orange-200 bg-orange-50' };
     return { label: `Vigente (${days}d)`, color: 'text-green-700 border-green-200 bg-green-50' };
@@ -534,7 +535,7 @@ function KardexTab({ products, companyList }: SubProps) {
                                 </span>
                                 {lot.expirationDate && (
                                   <span className={`text-[11px] px-1.5 py-0.5 rounded border font-medium ${lotStatusKardex(lot.expirationDate).color}`}>
-                                    F.V. {new Date(lot.expirationDate).toLocaleDateString('es-PE')}
+                                    F.V. {formatDateEs(lot.expirationDate)}
                                   </span>
                                 )}
                               </span>
@@ -604,12 +605,12 @@ function KardexTab({ products, companyList }: SubProps) {
                           </td>
                           <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-700">
                             {lot.expirationDate
-                              ? new Date(lot.expirationDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                              ? formatDateEs(lot.expirationDate, { day: '2-digit', month: '2-digit', year: 'numeric' })
                               : '—'}
                           </td>
                           <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-500">
                             {lot.receivedAt
-                              ? new Date(lot.receivedAt).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                              ? formatDateEs(lot.receivedAt, { day: '2-digit', month: '2-digit', year: 'numeric' })
                               : '—'}
                           </td>
                           <td className="border border-gray-300 px-2 py-1.5 text-center">
@@ -738,7 +739,7 @@ function ProductsListView({ products, companyList, companyId, productSearch, onS
       Almacenes: formatWarehouses(p.id),
       Unidad: p.unit || '',
       Vencimiento: earliestExpiryByProduct.get(p.id)
-        ? new Date(earliestExpiryByProduct.get(p.id)!).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        ? formatDateEs(earliestExpiryByProduct.get(p.id)!, { day: '2-digit', month: '2-digit', year: 'numeric' })
         : '',
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -856,7 +857,7 @@ function ProductsListView({ products, companyList, companyId, productSearch, onS
                 const labName = labById.get((p as any).laboratoryId || '') || '';
                 const expiry = earliestExpiryByProduct.get(p.id);
                 const expiryDays = expiry
-                  ? Math.ceil((new Date(expiry).getTime() - Date.now()) / 86400000)
+                  ? daysUntilDate(expiry)
                   : null;
                 return (
                   <tr
@@ -924,7 +925,7 @@ function ProductsListView({ products, companyList, companyId, productSearch, onS
                       }
                     >
                       {expiry
-                        ? new Date(expiry).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                        ? formatDateEs(expiry, { day: '2-digit', month: '2-digit', year: 'numeric' })
                         : '—'}
                     </td>
                   </tr>
@@ -1004,7 +1005,7 @@ function MovementsTab({ products, companyList }: SubProps) {
         const isEntry = info?.isEntry;
         const unitPrice = typeof item.unitPrice === 'number' && item.unitPrice > 0 ? item.unitPrice : undefined;
         return {
-          Fecha: new Date(item.date).toLocaleString('es-PE', {
+          Fecha: formatDateEs(item.date, {
             day: '2-digit',
             month: '2-digit',
             year: 'numeric',
@@ -1047,7 +1048,7 @@ function MovementsTab({ products, companyList }: SubProps) {
       key: 'date',
       header: 'Fecha',
       render: (item: StockMovement) =>
-        new Date(item.date).toLocaleDateString('es-PE', {
+        formatDateEs(item.date, {
           day: '2-digit',
           month: '2-digit',
           year: 'numeric',

@@ -1,3 +1,4 @@
+import { getTodayDateString, formatDateEs, formatInstantEs, daysUntilDate, toLocalDateString } from '../../../shared/utils/date.util';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
@@ -297,7 +298,7 @@ export function StockPage() {
 
   const daysUntil = (date?: string) => {
     if (!date) return Infinity;
-    const diff = Math.ceil((new Date(date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const diff = daysUntilDate(date);
     return diff;
   };
   const lotStatus = (lot: ProductLot): { label: string; color: string; days: number } => {
@@ -318,8 +319,8 @@ export function StockPage() {
     }
     if (lotDateFilter) {
       if (!l.expirationDate) return false;
-      const lotDate = new Date(l.expirationDate).getTime();
-      const cutoff = new Date(lotDateFilter).getTime();
+      const lotDate = toLocalDateString(l.expirationDate);
+      const cutoff = lotDateFilter;
       if (lotDateDirection === 'before') return lotDate <= cutoff;
       return lotDate >= cutoff;
     }
@@ -586,7 +587,7 @@ export function StockPage() {
       ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Stock');
-      const dateStr = new Date().toISOString().slice(0, 10);
+      const dateStr = getTodayDateString();
       XLSX.writeFile(wb, `stock_${dateStr}.xlsx`);
       toast.success(`${rows.length} filas exportadas (${freshCompanies.length} almacenes × ${allProducts.length} productos)`);
     } catch (err: any) {
@@ -732,11 +733,11 @@ export function StockPage() {
   const stockColumns = [
     { key: 'productId', header: 'Producto', render: (item: Stock) => getProductName(item.productId) },
     { key: 'quantity', header: 'Cantidad', render: (item: Stock) => <span className={item.quantity <= 10 ? 'text-red-600 font-bold' : ''}>{item.quantity}</span> },
-    { key: 'lastUpdated', header: 'Ultima actualizacion', render: (item: Stock) => new Date(item.lastUpdated).toLocaleDateString('es-PE') },
+    { key: 'lastUpdated', header: 'Ultima actualizacion', render: (item: Stock) => formatInstantEs(item.lastUpdated) },
   ];
 
   const adjColumns = [
-    { key: 'date', header: 'Fecha', render: (item: StockAdjustment) => new Date(item.date).toLocaleDateString('es-PE') },
+    { key: 'date', header: 'Fecha', render: (item: StockAdjustment) => formatDateEs(item.date) },
     { key: 'productId', header: 'Producto', render: (item: StockAdjustment) => getProductName(item.productId) },
     { key: 'companyId', header: 'Almacén', render: (item: StockAdjustment) => getCompanyName(item.companyId) },
     { key: 'type', header: 'Tipo', render: (item: StockAdjustment) => item.type === 'INCREASE' ? <span className="text-primary-600 font-medium">Aumento</span> : <span className="text-red-600 font-medium">Disminucion</span> },
@@ -1047,7 +1048,7 @@ export function StockPage() {
                                                 <span className="text-gray-600">{l.currentQuantity}</span>
                                                 {l.expirationDate && <>
                                                   <span className="text-gray-400">·</span>
-                                                  <span className="text-gray-500">Vence {new Date(l.expirationDate).toLocaleDateString('es-PE')}</span>
+                                                  <span className="text-gray-500">Vence {formatDateEs(l.expirationDate)}</span>
                                                 </>}
                                                 <span className={`ml-auto px-1.5 py-0.5 rounded border text-[10px] font-medium ${st.color}`}>{st.label}</span>
                                               </div>
@@ -1118,7 +1119,7 @@ export function StockPage() {
                           {product?.tracksLot && <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] rounded bg-blue-100 text-blue-700 border border-blue-200">LOTES</span>}
                         </td>
                         <td className={`px-3 py-2 ${item.quantity <= 10 ? 'text-red-600 font-bold' : ''}`}>{item.quantity}</td>
-                        <td className="px-3 py-2 text-gray-500">{new Date(item.lastUpdated).toLocaleDateString('es-PE')}</td>
+                        <td className="px-3 py-2 text-gray-500">{formatInstantEs(item.lastUpdated)}</td>
                       </tr>
                       {hasLots && isExpanded && (
                         <tr className="bg-gray-50/70">
@@ -1134,7 +1135,7 @@ export function StockPage() {
                                     <span className="text-gray-400">·</span>
                                     <span className="text-gray-600">{l.currentQuantity} / {l.initialQuantity}</span>
                                     <span className="text-gray-400">·</span>
-                                    <span className="text-gray-600">{l.expirationDate ? `Vence ${new Date(l.expirationDate).toLocaleDateString('es-PE')}` : 'Sin vencimiento'}</span>
+                                    <span className="text-gray-600">{l.expirationDate ? `Vence ${formatDateEs(l.expirationDate)}` : 'Sin vencimiento'}</span>
                                     <span className={`ml-auto px-1.5 py-0.5 rounded border text-[10px] font-medium ${st.color}`}>{st.label}</span>
                                   </div>
                                 );
@@ -1220,9 +1221,9 @@ export function StockPage() {
                       <td className="px-3 py-2 font-medium">{getProductName(l.productId)}</td>
                       <td className="px-3 py-2 font-mono text-gray-700">{l.lotNumber}</td>
                       <td className="px-3 py-2 text-right">{l.currentQuantity} / {l.initialQuantity}</td>
-                      <td className="px-3 py-2">{l.expirationDate ? new Date(l.expirationDate).toLocaleDateString('es-PE') : '—'}</td>
+                      <td className="px-3 py-2">{l.expirationDate ? formatDateEs(l.expirationDate) : '—'}</td>
                       <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded border text-xs font-medium ${st.color}`}>{st.label}</span></td>
-                      <td className="px-3 py-2 text-gray-500">{l.receivedAt ? new Date(l.receivedAt).toLocaleDateString('es-PE') : '—'}</td>
+                      <td className="px-3 py-2 text-gray-500">{l.receivedAt ? formatDateEs(l.receivedAt) : '—'}</td>
                     </tr>
                   );
                 })}
@@ -1458,7 +1459,7 @@ export function StockPage() {
                                 <option value="__new__">➕ Crear lote nuevo (solo aumento)</option>
                                 {(adjLotsByRowKey.get(row.key) || []).map(lot => (
                                   <option key={lot.id} value={lot.id}>
-                                    {lot.lotNumber} · {lot.currentQuantity} uds{lot.expirationDate ? ` · FV ${new Date(lot.expirationDate).toLocaleDateString('es-PE')}` : ''}
+                                    {lot.lotNumber} · {lot.currentQuantity} uds{lot.expirationDate ? ` · FV ${formatDateEs(lot.expirationDate)}` : ''}
                                   </option>
                                 ))}
                               </select>

@@ -1,6 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { purchaseService } from '../services/purchaseService';
 import toast from 'react-hot-toast';
+
+function invalidatePurchaseCosts(qc: QueryClient) {
+  for (const key of ['products', 'price-catalog', 'last-price', 'product-suppliers', 'dashboard-profitability']) {
+    qc.invalidateQueries({ queryKey: [key] });
+  }
+}
 
 export function usePurchases(params?: any, opts?: { enabled?: boolean }) {
   return useQuery({
@@ -60,12 +66,11 @@ export function useCreatePurchase() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['purchases'] });
       qc.invalidateQueries({ queryKey: ['stock'] });
+      qc.invalidateQueries({ queryKey: ['stock-by-product-summary'] });
       qc.invalidateQueries({ queryKey: ['accounts-payable'] });
       qc.invalidateQueries({ queryKey: ['cash-register-today'] });
       qc.invalidateQueries({ queryKey: ['cash-registers'] });
-      qc.invalidateQueries({ queryKey: ['products'] });
-      qc.invalidateQueries({ queryKey: ['price-catalog'] });
-      qc.invalidateQueries({ queryKey: ['last-price'] });
+      invalidatePurchaseCosts(qc);
       qc.invalidateQueries({ queryKey: ['product-lots'] });
       toast.success('Compra registrada');
     },
@@ -131,6 +136,7 @@ export function useUpdatePurchase() {
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ['purchases'] });
       qc.invalidateQueries({ queryKey: ['purchase', id] });
+      invalidatePurchaseCosts(qc);
       toast.success('Compra actualizada');
     },
     onError: (err: any) => {
@@ -147,6 +153,7 @@ export function useUpdatePurchaseMeta() {
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ['purchases'] });
       qc.invalidateQueries({ queryKey: ['purchase', id] });
+      invalidatePurchaseCosts(qc);
       toast.success('Guía de remisión guardada');
     },
     onError: (err: any) => {
@@ -180,13 +187,12 @@ export function useUpdatePurchaseFull() {
       qc.invalidateQueries({ queryKey: ['purchases'] });
       qc.invalidateQueries({ queryKey: ['purchase', id] });
       qc.invalidateQueries({ queryKey: ['stock'] });
+      qc.invalidateQueries({ queryKey: ['stock-by-product-summary'] });
       qc.invalidateQueries({ queryKey: ['accounts-payable'] });
       qc.invalidateQueries({ queryKey: ['cash-register-today'] });
       qc.invalidateQueries({ queryKey: ['cash-registers'] });
       qc.invalidateQueries({ queryKey: ['kardex'] });
-      qc.invalidateQueries({ queryKey: ['price-catalog'] });
-      qc.invalidateQueries({ queryKey: ['last-price'] });
-      qc.invalidateQueries({ queryKey: ['products'] });
+      invalidatePurchaseCosts(qc);
       qc.invalidateQueries({ queryKey: ['product-lots'] });
       toast.success('Compra actualizada');
     },
@@ -213,12 +219,12 @@ export function useCancelPurchase() {
       qc.invalidateQueries({ queryKey: ['purchases'] });
       qc.invalidateQueries({ queryKey: ['purchase', id] });
       qc.invalidateQueries({ queryKey: ['stock'] });
+      qc.invalidateQueries({ queryKey: ['stock-by-product-summary'] });
       qc.invalidateQueries({ queryKey: ['accounts-payable'] });
       qc.invalidateQueries({ queryKey: ['cash-register-today'] });
       qc.invalidateQueries({ queryKey: ['cash-registers'] });
       qc.invalidateQueries({ queryKey: ['kardex'] });
-      qc.invalidateQueries({ queryKey: ['price-catalog'] });
-      qc.invalidateQueries({ queryKey: ['last-price'] });
+      invalidatePurchaseCosts(qc);
       qc.invalidateQueries({ queryKey: ['product-lots'] });
       toast.success('Compra eliminada');
     },
@@ -243,7 +249,11 @@ export function useUpdatePriceCatalog() {
   return useMutation({
     mutationFn: ({ productId, data }: { productId: string; data: Parameters<typeof purchaseService.updatePriceCatalog>[1] }) =>
       purchaseService.updatePriceCatalog(productId, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['price-catalog'] }); },
+    onSuccess: () => {
+      invalidatePurchaseCosts(qc);
+      qc.invalidateQueries({ queryKey: ['purchases'] });
+      qc.invalidateQueries({ queryKey: ['purchase'] });
+    },
     onError: (err: any) => {
       const msg = err.response?.data?.message;
       toast.error(Array.isArray(msg) ? msg[0] : msg || 'Error al guardar');

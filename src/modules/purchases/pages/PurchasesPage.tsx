@@ -11,7 +11,7 @@ import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
 import { Plus, ShoppingCart, Eye, Wrench, Search, X, FileText, Download, ClipboardList, Percent, Loader2 } from 'lucide-react';
 import type { Purchase, Company, Product, FiscalEntity } from '../../../shared/types';
-import { formatDateEs } from '../../../shared/utils/date.util';
+import { formatDateEs, getTodayDateString, addMonthsToDate, toLocalDateString } from '../../../shared/utils/date.util';
 import toast from 'react-hot-toast';
 
 const DATE_PRESETS = [
@@ -19,27 +19,24 @@ const DATE_PRESETS = [
     id: 'mes',
     label: 'Este mes',
     getRange: () => {
-      const now = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      return { start: start.toISOString().split('T')[0], end: now.toISOString().split('T')[0] };
+      const today = getTodayDateString();
+      return { start: `${today.slice(0, 7)}-01`, end: today };
     },
   },
   {
     id: 'trimestre',
     label: 'Trimestre',
     getRange: () => {
-      const now = new Date();
-      const start = new Date(now);
-      start.setMonth(start.getMonth() - 3);
-      return { start: start.toISOString().split('T')[0], end: now.toISOString().split('T')[0] };
+      const today = getTodayDateString();
+      return { start: addMonthsToDate(today, -3), end: today };
     },
   },
   {
     id: 'año',
     label: 'Este año',
     getRange: () => {
-      const now = new Date();
-      return { start: `${now.getFullYear()}-01-01`, end: now.toISOString().split('T')[0] };
+      const today = getTodayDateString();
+      return { start: `${today.slice(0, 4)}-01-01`, end: today };
     },
   },
 ] as const;
@@ -248,7 +245,7 @@ export function PurchasesPage() {
       purchaseId: item.id,
       grSeries: item.grSeries || '',
       grNumber: item.grNumber || '',
-      grDate: item.grDate ? item.grDate.slice(0, 10) : '',
+      grDate: item.grDate ? toLocalDateString(item.grDate) : '',
     });
   };
 

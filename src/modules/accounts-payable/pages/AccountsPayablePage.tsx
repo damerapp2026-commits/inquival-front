@@ -1,3 +1,4 @@
+import { getTodayDateString, toLocalDateString, formatDateEs, formatInstantEs, daysUntilDate, addDaysToDate } from '../../../shared/utils/date.util';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useAccountsPayable, useAccountPayableById, useRegisterAPPayment, useUpdateNumeroUnico } from '../hooks/useAccountsPayable';
@@ -39,20 +40,20 @@ type DayPayment = { apId: string; supplier: string; purchaseRef?: string; amount
 
 function groupPaymentsByDate(accounts: AccountPayable[]): Record<string, DayPayment[]> {
   const groups: Record<string, DayPayment[]> = {};
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const today = new Date(getTodayDateString() + 'T00:00:00.000Z');
   for (const ap of accounts) {
     if (ap.status === 'PAID' || ap.status === 'CONSOLIDATED') continue;
     if (ap.paymentScheduleType === 'INSTALLMENTS') {
       (ap.installments || []).forEach((inst, i) => {
         if (inst.status === 'PAID') return;
-        const dateStr = inst.dueDate.slice(0, 10);
-        const dueDate = new Date(dateStr + 'T00:00:00');
+        const dateStr = toLocalDateString(inst.dueDate);
+        const dueDate = new Date(dateStr + 'T00:00:00.000Z');
         if (!groups[dateStr]) groups[dateStr] = [];
         groups[dateStr].push({ apId: ap.id, supplier: ap.supplier, purchaseRef: ap.purchaseRef, amount: inst.amount, isOverdue: dueDate < today, ap, installmentId: inst.id, installmentIndex: i + 1 });
       });
     } else if (ap.dueDate) {
-      const dateStr = ap.dueDate.slice(0, 10);
-      const dueDate = new Date(dateStr + 'T00:00:00');
+      const dateStr = toLocalDateString(ap.dueDate);
+      const dueDate = new Date(dateStr + 'T00:00:00.000Z');
       if (!groups[dateStr]) groups[dateStr] = [];
       groups[dateStr].push({ apId: ap.id, supplier: ap.supplier, purchaseRef: ap.purchaseRef, amount: ap.pendingAmount, isOverdue: dueDate < today, ap });
     }
@@ -106,13 +107,13 @@ export function AccountsPayablePage() {
   // ── Calendar state ──
   const [selectedDate, setSelectedDate] = useState<string | null>(() => searchParams.get('date'));
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
-    const d = searchParams.get('date'); return d ? new Date(d + 'T00:00:00') : new Date();
+    const d = searchParams.get('date'); return new Date((d || getTodayDateString()) + 'T00:00:00');
   });
   const [showPayModal, setShowPayModal] = useState(false);
   const [selectedAP, setSelectedAP] = useState<AccountPayable | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
   const todayLocal = useMemo(
-    () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' }),
+    () => getTodayDateString(),
     [],
   );
   const [payForm, setPayForm] = useState({
@@ -176,10 +177,10 @@ export function AccountsPayablePage() {
 
   // Flat list of every pending payment with its date and days-until-due
   const allPending = useMemo(() => {
-    const todayMs = new Date().setHours(0, 0, 0, 0);
+    const todayMs = Date.parse(getTodayDateString() + 'T00:00:00.000Z');
     const list: (DayPayment & { dateStr: string; daysDiff: number })[] = [];
     Object.entries(paymentsByDate).forEach(([dateStr, payments]) => {
-      const dueMs = new Date(dateStr + 'T00:00:00').getTime();
+      const dueMs = Date.parse(dateStr + 'T00:00:00.000Z');
       const daysDiff = Math.ceil((dueMs - todayMs) / 86400000);
       payments.forEach(p => list.push({ ...p, dateStr, daysDiff }));
     });
@@ -267,12 +268,12 @@ export function AccountsPayablePage() {
     return days;
   }, [currentMonth]);
 
-  const todayStr = toDateStr(new Date());
+  const todayStr = getTodayDateString();
   const getDayColor = (dateStr: string): 'red' | 'yellow' | 'blue' | null => {
     const payments = paymentsByDate[dateStr];
     if (!payments?.length) return null;
     if (payments.some(p => p.isOverdue)) return 'red';
-    const diff = Math.ceil((new Date(dateStr + 'T00:00:00').getTime() - new Date(todayStr + 'T00:00:00').getTime()) / 86400000);
+    const diff = daysUntilDate(dateStr, todayStr);
     return diff <= 3 ? 'yellow' : 'blue';
   };
   const colorStyle = {
@@ -361,12 +362,12 @@ export function AccountsPayablePage() {
     if (ap.status === 'PAID') return 'text-primary-600';
     const due = ap.paymentScheduleType === 'INSTALLMENTS' ? ap.installments?.find(i => i.status === 'PENDING')?.dueDate : ap.dueDate;
     if (!due) return 'text-gray-500';
-    const diff = Math.ceil((new Date(due).getTime() - new Date().getTime()) / 86400000);
+    const diff = daysUntilDate(due);
     if (diff < 0) return 'text-red-600 font-bold';
     if (diff <= 3) return 'text-yellow-600 font-medium';
     return 'text-primary-600';
   };
-  const formatSelectedDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const formatSelectedDate = (d: string) => formatDateEs(d, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   // ── Agreement helpers ──
   const openAgPayment = (ag: PaymentAgreement) => {
@@ -402,13 +403,11 @@ export function AccountsPayablePage() {
     if (createInstallmentCount < 1) return;
     if (createTotal <= 0) { toast.error('Selecciona las facturas primero'); return; }
     const base = Math.round((createTotal / createInstallmentCount) * 100) / 100;
-    const todayBase = new Date().toISOString().slice(0, 10);
+    const todayBase = getTodayDateString();
     const result: { amount: number; dueDate: string }[] = [];
     let accumulated = 0;
     for (let i = 0; i < createInstallmentCount; i++) {
-      const due = new Date(todayBase + 'T00:00:00');
-      due.setDate(due.getDate() + (i + 1) * 30);
-      const dueStr = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`;
+      const dueStr = addDaysToDate(todayBase, (i + 1) * 30);
       const isLast = i === createInstallmentCount - 1;
       const amount = isLast ? Math.round((createTotal - accumulated) * 100) / 100 : base;
       accumulated = Math.round((accumulated + amount) * 100) / 100;
@@ -420,18 +419,16 @@ export function AccountsPayablePage() {
 
   const getCreateDiasPlazo = (dueDate: string, idx: number): number => {
     if (!dueDate) return 0;
-    const prevDate = idx === 0 ? new Date().toISOString().slice(0, 10) : createInstallments[idx - 1]?.dueDate;
+    const prevDate = idx === 0 ? getTodayDateString() : createInstallments[idx - 1]?.dueDate;
     if (!prevDate) return 0;
-    return Math.round((new Date(dueDate + 'T00:00:00').getTime() - new Date(prevDate + 'T00:00:00').getTime()) / 86400000);
+    return daysUntilDate(dueDate, prevDate);
   };
 
   const updateCreateDiasPlazo = (idx: number, days: number) => {
     if (days < 1) return;
-    const prevDate = idx === 0 ? new Date().toISOString().slice(0, 10) : createInstallments[idx - 1]?.dueDate;
+    const prevDate = idx === 0 ? getTodayDateString() : createInstallments[idx - 1]?.dueDate;
     if (!prevDate) return;
-    const base = new Date(prevDate + 'T00:00:00');
-    base.setDate(base.getDate() + days);
-    const dueStr = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`;
+    const dueStr = addDaysToDate(prevDate, days);
     const updated = [...createInstallments];
     updated[idx] = { ...updated[idx], dueDate: dueStr };
     setCreateInstallments(updated);
@@ -452,9 +449,9 @@ export function AccountsPayablePage() {
   const getAgNextDue = (ag: PaymentAgreement): string => {
     if (ag.paymentScheduleType === 'INSTALLMENTS') {
       const next = ag.installments.find(i => i.status === 'PENDING');
-      return next ? new Date(next.dueDate).toLocaleDateString('es-PE') : '-';
+      return next ? formatDateEs(next.dueDate) : '-';
     }
-    return ag.dueDate ? new Date(ag.dueDate).toLocaleDateString('es-PE') : '-';
+    return ag.dueDate ? formatDateEs(ag.dueDate) : '-';
   };
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -737,7 +734,7 @@ export function AccountsPayablePage() {
                                   {p.purchaseRef && <span className="text-[11px] font-mono font-semibold text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{p.purchaseRef}</span>}
                                   <span className="text-xs text-gray-500">{p.installmentIndex ? `Cuota ${p.installmentIndex}` : 'Pago único'}</span>
                                   <button onClick={() => handleDayClick(p.dateStr)} className="text-[11px] text-primary-600 hover:underline">
-                                    {new Date(p.dateStr + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}
+                                    {formatDateEs(p.dateStr, { day: '2-digit', month: 'short' })}
                                   </button>
                                   <span className={`text-xs ${dateCls} flex items-center gap-0.5`}>
                                     {p.daysDiff < 0 && <AlertCircle size={10} />}
@@ -828,13 +825,13 @@ export function AccountsPayablePage() {
                 const st = agStatusLabels[ag.status] || { label: ag.status, cls: '' };
                 const isCancelled = ag.status === 'CANCELLED';
                 const isPaid = ag.status === 'PAID';
-                const todayMs = new Date().setHours(0, 0, 0, 0);
+                const todayMs = Date.parse(getTodayDateString() + 'T00:00:00.000Z');
                 const progress = ag.totalAmount > 0 ? (ag.paidAmount / ag.totalAmount) * 100 : 0;
                 const agSym = ag.currency === 'USD' ? '$' : 'S/';
 
                 const instColor = (inst: AgreementInstallment): 'green' | 'red' | 'yellow' | 'blue' => {
                   if (inst.status === 'PAID') return 'green';
-                  const dueMs = new Date(inst.dueDate.slice(0, 10) + 'T00:00:00').getTime();
+                  const dueMs = Date.parse(toLocalDateString(inst.dueDate) + 'T00:00:00.000Z');
                   if (dueMs < todayMs) return 'red';
                   return Math.ceil((dueMs - todayMs) / 86400000) <= 3 ? 'yellow' : 'blue';
                 };
@@ -895,7 +892,7 @@ export function AccountsPayablePage() {
                               {ag.installments.map((inst, i) => {
                                 const c = instColor(inst);
                                 const cm = instColorMap[c];
-                                const dueMs = new Date(inst.dueDate.slice(0, 10) + 'T00:00:00').getTime();
+                                const dueMs = Date.parse(toLocalDateString(inst.dueDate) + 'T00:00:00.000Z');
                                 const daysLeft = inst.status === 'PENDING' ? Math.ceil((dueMs - todayMs) / 86400000) : null;
                                 const daysLabel = daysLeft === null ? '' : daysLeft < 0
                                   ? `Vencida hace ${Math.abs(daysLeft)} día${Math.abs(daysLeft) > 1 ? 's' : ''}`
@@ -909,8 +906,8 @@ export function AccountsPayablePage() {
                                     <div className="flex-1 min-w-0">
                                       <div className={`text-xs font-medium ${cm.date}`}>
                                         {inst.status === 'PAID'
-                                          ? `Pagada el ${inst.paidDate ? new Date(inst.paidDate).toLocaleDateString('es-PE') : '-'}`
-                                          : `Vence: ${new Date(inst.dueDate.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+                                          ? `Pagada el ${inst.paidDate ? formatDateEs(inst.paidDate) : '-'}`
+                                          : `Vence: ${formatDateEs(inst.dueDate, { day: '2-digit', month: 'short', year: 'numeric' })}`}
                                       </div>
                                       {daysLabel && <div className="text-[10px] text-gray-400 mt-0.5">{daysLabel}</div>}
                                     </div>
@@ -932,13 +929,13 @@ export function AccountsPayablePage() {
                             {isPaid ? (
                               <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle size={12} /> Pagado</span>
                             ) : ag.dueDate ? (() => {
-                              const dueMs2 = new Date(ag.dueDate.slice(0, 10) + 'T00:00:00').getTime();
+                              const dueMs2 = Date.parse(toLocalDateString(ag.dueDate) + 'T00:00:00.000Z');
                               const diff = Math.ceil((dueMs2 - todayMs) / 86400000);
                               const cls = diff < 0 ? 'text-red-600 font-bold' : diff <= 3 ? 'text-yellow-600 font-medium' : 'text-gray-700';
                               const label = diff < 0 ? `Vencido hace ${Math.abs(diff)} día${Math.abs(diff) > 1 ? 's' : ''}` : diff === 0 ? 'Vence hoy' : `Faltan ${diff} día${diff > 1 ? 's' : ''}`;
                               return (
                                 <>
-                                  <span className={`text-sm ${cls}`}>{new Date(ag.dueDate.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                                  <span className={`text-sm ${cls}`}>{formatDateEs(ag.dueDate, { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                                   <span className={`text-xs px-2 py-0.5 rounded-full ${diff < 0 ? 'bg-red-100 text-red-700' : diff <= 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>{label}</span>
                                 </>
                               );
@@ -968,7 +965,7 @@ export function AccountsPayablePage() {
                         </div>
                       )}
                       <div className="text-xs text-gray-400 flex-shrink-0">
-                        Creado: {new Date(ag.createdAt).toLocaleDateString('es-PE')}
+                        Creado: {formatInstantEs(ag.createdAt)}
                       </div>
                     </div>
                   </div>
@@ -996,7 +993,7 @@ export function AccountsPayablePage() {
           </div>
           {nextInstallment && (
             <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
-              <div><div className="text-[11px] text-blue-500 uppercase font-semibold">Próxima cuota</div><div className="text-xs text-blue-500 mt-0.5">Vence: {new Date(nextInstallment.dueDate).toLocaleDateString('es-PE')}</div></div>
+              <div><div className="text-[11px] text-blue-500 uppercase font-semibold">Próxima cuota</div><div className="text-xs text-blue-500 mt-0.5">Vence: {formatDateEs(nextInstallment.dueDate)}</div></div>
               <div className="font-bold text-blue-700 text-sm">{symFor(selectedAP)} {nextInstallment.amount.toFixed(2)}</div>
             </div>
           )}
@@ -1164,7 +1161,7 @@ export function AccountsPayablePage() {
                         <div className="text-right">
                           <div className="text-sm font-medium">{symFor(detailAP)} {inst.amount.toFixed(2)}</div>
                           <div className={`text-xs ${inst.status==='PAID'?'text-primary-600':'text-gray-500'}`}>
-                            {inst.status==='PAID' ? `Pagada ${inst.paidDate?new Date(inst.paidDate).toLocaleDateString('es-PE'):''}` : `Vence: ${new Date(inst.dueDate).toLocaleDateString('es-PE')}`}
+                            {inst.status==='PAID' ? `Pagada ${inst.paidDate?formatDateEs(inst.paidDate):''}` : `Vence: ${formatDateEs(inst.dueDate)}`}
                           </div>
                         </div>
                       </div>
@@ -1176,7 +1173,7 @@ export function AccountsPayablePage() {
             )}
             {detailAP.paymentScheduleType==='SINGLE_DATE' && detailAP.dueDate && (
               <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-                <div><span className="block text-xs text-gray-500">Fecha de vencimiento</span><span className={`text-sm font-medium ${getDueDateColor(detailAP)}`}>{new Date(detailAP.dueDate).toLocaleDateString('es-PE',{day:'2-digit',month:'long',year:'numeric'})}</span></div>
+                <div><span className="block text-xs text-gray-500">Fecha de vencimiento</span><span className={`text-sm font-medium ${getDueDateColor(detailAP)}`}>{formatDateEs(detailAP.dueDate,{day:'2-digit',month:'long',year:'numeric'})}</span></div>
                 <div>
                   <div className="flex items-center justify-between mb-1"><span className="text-xs text-gray-500">N° único de la letra</span>{!detailAP.numeroUnico && <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-medium">Pendiente</span>}</div>
                   <NumeroUnicoEditor apId={detailAP.id} value={detailAP.numeroUnico} isPending={updateNumero.isPending} onSave={v=>updateNumero.mutate({apId:detailAP.id,data:{numeroUnico:v}})} />
@@ -1202,7 +1199,7 @@ export function AccountsPayablePage() {
                           )}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {new Date(p.paymentDate).toLocaleDateString('es-PE')}
+                          {formatDateEs(p.paymentDate)}
                           {p.registeredByName ? ` - ${p.registeredByName}` : ''}
                         </div>
                       </div>
@@ -1236,7 +1233,7 @@ export function AccountsPayablePage() {
           </div>
           {selectedAgreement?.paymentScheduleType === 'INSTALLMENTS' && (() => { const ni = selectedAgreement.installments.find(i=>i.status==='PENDING'); return ni ? (
             <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
-              <div><div className="text-[11px] text-blue-500 uppercase font-semibold">Próxima cuota</div><div className="text-xs text-blue-500 mt-0.5">Vence: {new Date(ni.dueDate).toLocaleDateString('es-PE')}</div></div>
+              <div><div className="text-[11px] text-blue-500 uppercase font-semibold">Próxima cuota</div><div className="text-xs text-blue-500 mt-0.5">Vence: {formatDateEs(ni.dueDate)}</div></div>
               <div className="font-bold text-blue-700 text-sm">{symFor(selectedAgreement)} {ni.amount.toFixed(2)}</div>
             </div>
           ) : null; })()}

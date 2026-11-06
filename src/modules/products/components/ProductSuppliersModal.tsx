@@ -1,3 +1,4 @@
+import { formatDateEs } from '../../../shared/utils/date.util';
 import React from 'react';
 import { Modal } from '../../../shared/components/Modal';
 import { useProductSuppliers } from '../../purchases/hooks/usePurchases';
@@ -53,7 +54,7 @@ export function ProductSuppliersModal({ product, onClose }: Props) {
 
   const formatDate = (d: string | Date) => {
     if (!d) return '—';
-    return new Date(d).toLocaleDateString('es-PE', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    return formatDateEs(d, { year: 'numeric', month: '2-digit', day: '2-digit' });
   };
 
   const formatMoney = (n?: number) => (n != null ? `S/ ${n.toFixed(2)}` : '—');

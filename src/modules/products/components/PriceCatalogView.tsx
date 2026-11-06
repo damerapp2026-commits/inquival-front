@@ -7,6 +7,7 @@ import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
 import { useStockByProductSummary } from '../../stock/hooks/useStock';
 import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
+import { formatDateEs } from '../../../shared/utils/date.util';
 import type { Product } from '../../../shared/types';
 
 const IGV_RATE = 0.18;
@@ -105,9 +106,7 @@ type EditableField =
 
 const fmt = (n?: number) => (n != null ? n.toFixed(2) : '');
 const fmtDate = (d?: string) => {
-  if (!d) return '—';
-  const date = new Date(d);
-  return date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: '2-digit' });
+  return formatDateEs(d, { day: '2-digit', month: 'short', year: '2-digit' }) || '—';
 };
 
 export function PriceCatalogView({ enabled, readOnly = false }: Props) {
@@ -642,7 +641,10 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
           <FileSpreadsheet size={16} className="text-primary-600" />
-          <h3 className="text-sm font-semibold text-gray-700">Catálogo de precios por proveedor</h3>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700">Catálogo de precios por proveedor</h3>
+            <p className="text-xs text-gray-500">Última compra con costo según F. Emisión. Sin emisión, se usa F. Recepción.</p>
+          </div>
         </div>
 
         <div className="overflow-x-auto">

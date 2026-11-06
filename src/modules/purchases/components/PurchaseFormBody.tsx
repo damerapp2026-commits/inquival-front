@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import type { Company, Product, Category, Laboratory, PaymentMethod } from '../../../shared/types';
 import toast from 'react-hot-toast';
-import { getTodayDateString } from '../../../shared/utils/date.util';
+import { getTodayDateString, formatDateEs, addDaysToDate } from '../../../shared/utils/date.util';
 import {
   blurOnWheel,
   fmtPrice,
@@ -37,7 +37,7 @@ function LastPriceBadge({ productId, supplierId }: { productId: string; supplier
   if (!data || data.unitPriceSinIgv == null) return null;
   const symbol = data.currency === 'USD' ? '$' : 'S/';
   const dateStr = data.date
-    ? new Date(data.date).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
+    ? formatDateEs(data.date, { day: '2-digit', month: 'short', year: 'numeric' })
     : '';
   const docInfo = data.documentSeries && data.documentNumber
     ? `${data.documentSeries}-${data.documentNumber}`
@@ -262,8 +262,7 @@ export function PurchaseFormBody({
     });
   };
   const autoGenLot = (idx: number) => {
-    const d = new Date();
-    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const stamp = getTodayDateString().replace(/-/g, '');
     setForm(prev => {
       const items = [...prev.items];
       items[idx] = { ...items[idx], lotNumber: `L-${stamp}-${String(idx + 1).padStart(2, '0')}` };
@@ -359,13 +358,10 @@ export function PurchaseFormBody({
     const base = Math.round((creditTotal / count) * 100) / 100;
     const installments: { amount: number; dueDate: string }[] = [];
     let accumulated = 0;
-    const baseDate = new Date(refDate + 'T00:00:00');
 
     for (let i = 0; i < count; i++) {
       const daysOffset = firstDaysFromPurchase + i * intervalDays;
-      const due = new Date(baseDate);
-      due.setDate(due.getDate() + daysOffset);
-      const dueStr = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`;
+      const dueStr = addDaysToDate(refDate, daysOffset);
 
       const isLast = i === count - 1;
       const amount = isLast ? Math.round((creditTotal - accumulated) * 100) / 100 : base;

@@ -1,3 +1,4 @@
+import { formatDateEs } from '../../../shared/utils/date.util';
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import type { Company, FiscalEntity, Product, PurchaseOrder } from '../../../shared/types';
 import { numberToWords } from '../../quotes/utils/numberToWords';
@@ -57,12 +58,8 @@ const TEXT_MUTED = '#64748b';
 
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
 
-const formatDate = (value?: string | Date) => {
-  if (!value) return '—';
-  const raw = value instanceof Date ? value.toISOString() : value;
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : '—';
-};
+const formatDate = (value?: string | Date) =>
+  formatDateEs(value, { day: '2-digit', month: '2-digit', year: 'numeric' }) || '—';
 
 const selected = (active: boolean) => active ? '[X]' : '[ ]';
 

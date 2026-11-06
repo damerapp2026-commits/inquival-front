@@ -1,3 +1,4 @@
+import { getTodayDateString } from '../../../shared/utils/date.util';
 import React, { useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -84,7 +85,7 @@ export function ProductsPage() {
   const isAdmin = user?.role === 'ADMIN';
   const [searchParams, setSearchParams] = useSearchParams();
   const rawView = searchParams.get('view');
-  const view: 'list' | 'catalog' | 'stock-valued' = rawView === 'catalog'
+  const view: 'list' | 'catalog' | 'stock-valued' = rawView === 'catalog' && isAdmin
     ? 'catalog'
     : rawView === 'stock-valued' && isAdmin
       ? 'stock-valued'
@@ -370,7 +371,7 @@ export function ProductsPage() {
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Productos');
-      XLSX.writeFile(wb, `productos_${new Date().toISOString().split('T')[0]}.xlsx`);
+      XLSX.writeFile(wb, `productos_${getTodayDateString()}.xlsx`);
       toast.success(`${allProducts.length} producto(s) exportado(s)`);
     } catch { toast.error('Error al exportar'); }
   };
@@ -693,16 +694,16 @@ export function ProductsPage() {
         >
           {uploadingPhotoId === item.id ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
         </button>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); setSuppliersTarget(item); }}
-          className="text-gray-500 hover:text-primary-600"
-          title="Ver proveedores"
-        >
-          <Truck size={16} />
-        </button>
         {isAdmin && (
           <>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setSuppliersTarget(item); }}
+              className="text-gray-500 hover:text-primary-600"
+              title="Ver proveedores"
+            >
+              <Truck size={16} />
+            </button>
             <button type="button" onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit2 size={16} /></button>
             <button type="button" onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 size={16} /></button>
           </>
@@ -746,13 +747,15 @@ export function ProductsPage() {
         >
           Listado
         </button>
-        <button
-          type="button"
-          onClick={() => setView('catalog')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${view === 'catalog' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-        >
-          Catálogo de precios
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setView('catalog')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${view === 'catalog' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            Catálogo de precios
+          </button>
+        )}
         {isAdmin && (
           <button
             type="button"
@@ -764,7 +767,7 @@ export function ProductsPage() {
         )}
       </div>
 
-      {view === 'catalog' && <PriceCatalogView enabled={view === 'catalog'} readOnly={!isAdmin} />}
+      {view === 'catalog' && isAdmin && <PriceCatalogView enabled={view === 'catalog'} />}
       {view === 'stock-valued' && isAdmin && <StockValuedView enabled={view === 'stock-valued'} />}
 
       {view === 'list' && (<>
@@ -1070,7 +1073,7 @@ export function ProductsPage() {
           </div>
         </div>
       </Modal>
-      <ProductSuppliersModal product={suppliersTarget} onClose={() => setSuppliersTarget(null)} />
+      {isAdmin && <ProductSuppliersModal product={suppliersTarget} onClose={() => setSuppliersTarget(null)} />}
       <Modal isOpen={showBulkModal} onClose={() => setShowBulkModal(false)} title={`Carga Masiva de Productos (${bulkProducts.length})`} size="xl">
         <div className="space-y-3">
           {bulkProducts.map((bp, idx) => (

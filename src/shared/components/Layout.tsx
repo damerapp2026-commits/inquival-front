@@ -1,3 +1,4 @@
+import { getTodayDateString, addDaysToDate, toLocalDateString, daysUntilDate, formatDateEs } from '../utils/date.util';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../app/providers/AuthProvider';
@@ -98,15 +99,15 @@ export function Layout() {
   const dayAlertGroups = useMemo((): DayAlertGroup[] => {
     if (!apAlerts) return [];
     const byDate: Record<string, DayAlertGroup> = {};
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const maxDate = new Date(today); maxDate.setDate(maxDate.getDate() + 3);
+    const today = getTodayDateString();
+    const maxDate = addDaysToDate(today, 3);
 
     const processAP = (ap: AccountPayable, isOverdue: boolean) => {
       if (ap.paymentScheduleType === 'INSTALLMENTS') {
         (ap.installments || []).forEach((inst: any) => {
           if (inst.status !== 'PENDING' || !inst.dueDate) return;
-          const dateStr = String(inst.dueDate).slice(0, 10);
-          const dueDate = new Date(dateStr + 'T00:00:00');
+          const dateStr = toLocalDateString(inst.dueDate);
+          const dueDate = dateStr;
           if (isOverdue && dueDate >= today) return;
           if (!isOverdue && dueDate > maxDate) return;
           if (!byDate[dateStr]) byDate[dateStr] = { dateStr, count: 0, total: 0, isOverdue };
@@ -114,8 +115,8 @@ export function Layout() {
           byDate[dateStr].total += inst.amount;
         });
       } else if (ap.dueDate) {
-        const dateStr = String(ap.dueDate).slice(0, 10);
-        const dueDate = new Date(dateStr + 'T00:00:00');
+        const dateStr = toLocalDateString(ap.dueDate);
+        const dueDate = dateStr;
         if (isOverdue && dueDate >= today) return;
         if (!isOverdue && dueDate > maxDate) return;
         if (!byDate[dateStr]) byDate[dateStr] = { dateStr, count: 0, total: 0, isOverdue };
@@ -131,14 +132,12 @@ export function Layout() {
   }, [apAlerts]);
 
   const expiringSummary = useMemo(() => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
     const expired: ProductLot[] = [];
     const within7: ProductLot[] = [];
     const within30: ProductLot[] = [];
     for (const l of expiringLots) {
       if (!l.expirationDate || l.currentQuantity <= 0) continue;
-      const exp = new Date(l.expirationDate);
-      const days = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      const days = daysUntilDate(l.expirationDate);
       if (days < 0) expired.push(l);
       else if (days <= 7) within7.push(l);
       else if (days <= 30) within30.push(l);
@@ -152,13 +151,11 @@ export function Layout() {
   const alertCount = dayAlertGroups.length + expiringGroupCount;
 
   const formatAlertDate = (dateStr: string): string => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const date = new Date(dateStr + 'T00:00:00');
-    const diffDays = Math.round((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return `Vencido · ${date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}`;
+    const diffDays = daysUntilDate(dateStr);
+    if (diffDays < 0) return `Vencido · ${formatDateEs(dateStr, { day: '2-digit', month: 'short' })}`;
     if (diffDays === 0) return 'Hoy';
     if (diffDays === 1) return 'Mañana';
-    return `En ${diffDays} días · ${date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}`;
+    return `En ${diffDays} días · ${formatDateEs(dateStr, { day: '2-digit', month: 'short' })}`;
   };
 
   useEffect(() => {

@@ -1,3 +1,4 @@
+import { getTodayDateString } from '../../../shared/utils/date.util';
 import { useMemo, useState } from 'react';
 import { Download, Loader2, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -112,7 +113,7 @@ export function StockValuedView({ enabled }: StockValuedViewProps) {
     const ws = XLSX.utils.aoa_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Stock valorizado');
-    XLSX.writeFile(wb, `stock_valorizado_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `stock_valorizado_${getTodayDateString()}.xlsx`);
   };
 
   return (
@@ -173,7 +174,7 @@ export function StockValuedView({ enabled }: StockValuedViewProps) {
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <div>
             <h2 className="text-sm font-bold text-gray-800">Inventario valorizado</h2>
-            <p className="text-xs text-gray-500">Cantidad actual multiplicada por el último costo registrado.</p>
+            <p className="text-xs text-gray-500">Cantidad actual × costo sin IGV de la última compra con costo, según F. Emisión. Sin emisión, se usa F. Recepción.</p>
           </div>
           {isFetching && !isLoading && <Loader2 size={16} className="animate-spin text-gray-400" />}
         </div>

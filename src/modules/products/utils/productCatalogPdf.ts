@@ -1,3 +1,4 @@
+import { formatInstantEs } from '../../../shared/utils/date.util';
 import type { Product } from '../../../shared/types';
 import { COMPANY_INFO } from '../../../config/companyInfo';
 
@@ -77,7 +78,7 @@ function renderListRow(p: CatalogProduct, opts: GenerateOptions): string {
 function buildCatalogHtml(opts: GenerateOptions): string {
   const includeImages = opts.includeImages !== false;
   const products = opts.products;
-  const today = new Date().toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' });
+  const today = formatInstantEs(new Date(), { day: '2-digit', month: 'long', year: 'numeric' });
   const company = COMPANY_INFO.legalName || 'EMPRESA';
   const subhead: string[] = [];
   if (COMPANY_INFO.address) subhead.push(`<div>${escapeHtml(COMPANY_INFO.address)}</div>`);

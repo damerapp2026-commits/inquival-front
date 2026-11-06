@@ -1,3 +1,4 @@
+import { toLocalDateString } from '../../../shared/utils/date.util';
 import type React from 'react';
 import type { Purchase, PurchaseItem, Product } from '../../../shared/types';
 
@@ -86,16 +87,7 @@ export const itemAppliesIgv = (productId: string, products: Product[]): boolean 
   return !taxType || taxType === 'GRAVADO';
 };
 
-const dateInputStr = (d: any): string => {
-  if (!d) return '';
-  if (typeof d === 'string') {
-    const dateOnly = /^(\d{4}-\d{2}-\d{2})/.exec(d);
-    if (dateOnly) return dateOnly[1];
-  }
-  const dt = new Date(d);
-  if (isNaN(dt.getTime())) return '';
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
-};
+const dateInputStr = (value?: string | Date): string => value ? toLocalDateString(value) : '';
 
 export interface PurchaseFormState {
   supplier: string;

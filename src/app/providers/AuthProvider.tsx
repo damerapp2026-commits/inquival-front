@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../shared/services/api';
 import type { User } from '../../shared/types';
 
@@ -13,6 +14,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [isLoading, setIsLoading] = useState(true);
@@ -33,16 +35,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (username: string, password: string) => {
     const { data } = await api.post('/auth/login', { username, password });
     const res = data.data;
+    // No reutilizar datos privados de la cuenta anterior al cambiar de usuario.
+    queryClient.clear();
     localStorage.setItem('token', res.accessToken);
     setToken(res.accessToken);
     setUser(res.user);
-  }, []);
+  }, [queryClient]);
 
   const logout = useCallback(() => {
+    queryClient.clear();
     localStorage.removeItem('token');
     setToken(null);
     setUser(null);
-  }, []);
+  }, [queryClient]);
 
   const value = useMemo(
     () => ({ user, token, login, logout, isLoading }),
