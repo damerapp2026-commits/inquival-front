@@ -12,6 +12,29 @@ const dates = require('../src/shared/utils/date.util.ts');
 const { purchaseToFormState } = require('../src/modules/purchases/utils/purchaseForm.ts');
 const numeric = { day: '2-digit', month: '2-digit', year: 'numeric' };
 
+// Capture the actual PDF document passed to pdfmake without browser downloads.
+let exportedPdf;
+for (const [name, exports] of [
+  ['pdfmake/build/pdfmake', {
+    addVirtualFileSystem() {},
+    createPdf(document) {
+      exportedPdf = document;
+      return { download() {} };
+    },
+  }],
+  ['pdfmake/build/vfs_fonts', {}],
+]) {
+  const filename = require.resolve(name);
+  require.cache[filename] = { id: filename, filename, loaded: true, exports };
+}
+const creditPdfs = require('../src/modules/credits/utils/creditsPdf.ts');
+
+function paymentRows(node) {
+  if (!node || typeof node !== 'object') return [];
+  const rows = node.table?.body?.filter(row => row[1]?.text === 'Método de prueba') || [];
+  return [...rows, ...Object.values(node).flatMap(paymentRows)];
+}
+
 for (const timezone of ['America/Lima', 'UTC', 'Asia/Tokyo', 'America/New_York']) {
   test(`calendar dates and real timestamps in a ${timezone} browser`, t => {
     const previous = process.env.TZ;
@@ -39,6 +62,47 @@ for (const timezone of ['America/Lima', 'UTC', 'Asia/Tokyo', 'America/New_York']
     assert.equal(dates.daysUntilDate('2026-11-01T00:00:00.000Z', '2026-10-31'), 1);
     assert.equal(dates.daysUntilDate('2026-10-31T00:00:00.000Z', '2026-10-31'), 0);
     assert.equal(dates.daysUntilDate('2026-10-31T05:00:00.000Z', '2026-11-01'), -1);
+  });
+
+  test(`client PDF exports preserve payment dates in a ${timezone} browser`, async t => {
+    const previous = process.env.TZ;
+    process.env.TZ = timezone;
+    t.after(() => { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; });
+    const cases = [
+      ['2026-11-09', '09/11/2026'],
+      ['2026-11-09T00:00:00.000Z', '09/11/2026'],
+      ['2026-12-01T00:00:00Z', '01/12/2026'],
+      ['2027-01-01T00:00:00.000Z', '01/01/2027'],
+      ['2028-02-29T00:00:00.000Z', '29/02/2028'],
+      ['2027-01-01T04:59:59.999Z', '31/12/2026'],
+      ['2027-01-01T05:00:00.000Z', '01/01/2027'],
+      ['2026-11-09T23:30:00-05:00', '09/11/2026'],
+      [undefined, '—'],
+    ];
+    const client = { id: 'client', name: 'Cliente de prueba' };
+    const sale = {
+      id: 'sale', clientId: client.id, date: '2026-11-01T00:00:00.000Z',
+      total: 100, isCredit: true, items: [], payments: [],
+    };
+    const credit = {
+      id: 'credit', clientId: client.id, saleIds: [sale.id], saleDetails: [sale],
+      createdAt: '2026-11-01T15:00:00.000Z', totalAmount: 100,
+      paidAmount: cases.length, pendingAmount: 100 - cases.length, status: 'PARTIAL',
+      payments: cases.map(([paymentDate], index) => ({
+        id: String(index), paymentDate, amount: 1, paymentMethodName: 'Método de prueba',
+      })),
+    };
+    const exports = [
+      () => creditPdfs.downloadClientHistoryPdf({ client, sales: [sale], credits: [credit] }),
+      () => creditPdfs.downloadClientStatementPdf({ client, credits: [credit], mode: 'detailed' }),
+      () => creditPdfs.downloadCreditsDetailedPdf({ clients: [client], credits: [credit] }),
+    ];
+    for (const exportPdf of exports) {
+      exportedPdf = undefined;
+      await exportPdf();
+      assert.ok(exportedPdf, 'the export must generate a PDF document');
+      assert.deepEqual(paymentRows(exportedPdf).map(row => row[0].text), cases.map(([, expected]) => expected));
+    }
   });
 }
 

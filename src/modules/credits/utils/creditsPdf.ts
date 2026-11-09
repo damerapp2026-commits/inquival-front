@@ -1,4 +1,5 @@
 import type { CreditAccount, Client, Sale } from '../../../shared/types';
+import { formatDateEs } from '../../../shared/utils/date.util';
 
 let pdfMakePromise: Promise<any> | null = null;
 function loadPdfMake() {
@@ -27,10 +28,8 @@ const BRAND_LIGHT = '#dcfce7';
 const BORDER = '#94a3b8';
 const GRAY = '#6b7280';
 
-const formatDate = (d?: string | Date) => {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-};
+const formatDate = (d?: string | Date) =>
+  formatDateEs(d, { day: '2-digit', month: '2-digit', year: 'numeric' }) || '—';
 
 const money = (n: number) => `S/ ${(n || 0).toFixed(2)}`;
 
