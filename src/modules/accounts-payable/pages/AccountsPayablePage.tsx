@@ -6,6 +6,7 @@ import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods
 import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import { usePaymentAgreements, useCreatePaymentAgreement, useRegisterAgreementPayment, useCancelPaymentAgreement } from '../hooks/usePaymentAgreements';
 import { Modal } from '../../../shared/components/Modal';
+import { PaidAccountsTab } from '../components/PaidAccountsTab';
 import {
   FileText, DollarSign, AlertCircle, Eye, Clock, CheckCircle, Hash, Save,
   ChevronLeft, ChevronRight, CalendarDays, X, Plus, Trash2, Ban, ClipboardList, Wand2, Search, Wrench,
@@ -98,7 +99,13 @@ const fmtBuckets = (b: Buckets): string => {
 // ─── Main Page ───────────────────────────────────────────────────────────────
 export function AccountsPayablePage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'calendar' | 'agreements'>('calendar');
+  const tabParam = searchParams.get('tab');
+  const activeTab = tabParam === 'paid' || tabParam === 'agreements' ? tabParam : 'calendar';
+  const setActiveTab = (tab: 'calendar' | 'agreements' | 'paid') => setSearchParams(previous => {
+    const next = new URLSearchParams(previous);
+    if (tab === 'calendar') next.delete('tab'); else next.set('tab', tab);
+    return next;
+  }, { replace: true });
   const [supplierSearch, setSupplierSearch] = useState('');
   const [currencyFilter, setCurrencyFilter] = useState<'ALL' | 'PEN' | 'USD'>('ALL');
   const [apPage, setApPage] = useState(1);
@@ -151,7 +158,7 @@ export function AccountsPayablePage() {
 
   // ── Data ──
   const { data, isLoading } = useAccountsPayable({ limit: 500 });
-  const { data: detailAP } = useAccountPayableById(viewingId);
+  const { data: detailAP, isLoading: detailLoading, isError: detailError, refetch: refetchDetail } = useAccountPayableById(viewingId);
   const { data: agreements = [], isLoading: agLoading } = usePaymentAgreements();
   const registerAPPayment = useRegisterAPPayment();
   const updateNumero = useUpdateNumeroUnico();
@@ -284,7 +291,11 @@ export function AccountsPayablePage() {
   const handleDayClick = (dateStr: string) => {
     const next = selectedDate === dateStr ? null : dateStr;
     setSelectedDate(next);
-    if (next) setSearchParams({ date: next }, { replace: true }); else setSearchParams({}, { replace: true });
+    setSearchParams(previous => {
+      const params = new URLSearchParams(previous);
+      if (next) params.set('date', next); else params.delete('date');
+      return params;
+    }, { replace: true });
   };
 
   // ── AP payment helpers ──
@@ -457,7 +468,7 @@ export function AccountsPayablePage() {
   // ════════════════════════════════════════════════════════════════════════════
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><FileText size={24} /> Cuentas por Pagar</h1>
         <Link
           to="/cash-register/migrate?tab=ap"
@@ -469,12 +480,12 @@ export function AccountsPayablePage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit">
-        <button onClick={() => setActiveTab('calendar')}
+      <nav aria-label="Vistas de cuentas por pagar" className="flex flex-wrap gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit max-w-full">
+        <button aria-current={activeTab === 'calendar' ? 'page' : undefined} onClick={() => setActiveTab('calendar')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'calendar' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
           <CalendarDays size={16} /> Calendario
         </button>
-        <button onClick={() => setActiveTab('agreements')}
+        <button aria-current={activeTab === 'agreements' ? 'page' : undefined} onClick={() => setActiveTab('agreements')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'agreements' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
           <ClipboardList size={16} /> Acuerdos de Pago
           {agreements.filter((a: PaymentAgreement) => a.status !== 'CANCELLED' && a.status !== 'PAID').length > 0 && (
@@ -483,7 +494,11 @@ export function AccountsPayablePage() {
             </span>
           )}
         </button>
-      </div>
+        <button aria-current={activeTab === 'paid' ? 'page' : undefined} onClick={() => setActiveTab('paid')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'paid' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          <CheckCircle size={16} /> Pagadas
+        </button>
+      </nav>
 
       {/* Buscador + filtro de moneda */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -794,6 +809,8 @@ export function AccountsPayablePage() {
         </div>
         </>
       )}
+
+      {activeTab === 'paid' && <PaidAccountsTab supplier={supplierSearch} currency={currencyFilter} onView={setViewingId} />}
 
       {/* ── TAB: ACUERDOS ── */}
       {activeTab === 'agreements' && (
@@ -1133,7 +1150,9 @@ export function AccountsPayablePage() {
 
       {/* ══ MODAL: Detalle AP ══ */}
       <Modal isOpen={!!viewingId} onClose={() => setViewingId(null)} title="Detalle - Cuenta por Pagar">
-        {detailAP && (
+        {detailLoading && <p role="status" className="text-sm text-gray-500">Cargando historial...</p>}
+        {detailError && <div className="text-center"><p role="alert" className="text-sm text-red-600">No se pudo cargar el historial.</p><button type="button" onClick={() => { void refetchDetail(); }} className="mt-2 text-sm text-primary-700 hover:underline">Reintentar</button></div>}
+        {!detailError && detailAP && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               {[['Proveedor', detailAP.supplier], ['Estado', null], ['Total', `${symFor(detailAP)} ${detailAP.totalAmount.toFixed(2)}`], ['Pendiente', null]].map(([label], i) => (
