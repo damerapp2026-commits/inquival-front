@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Search, Loader2, FileSpreadsheet, X, Check, AlertTriangle, DollarSign, RotateCcw } from 'lucide-react';
 import { usePriceCatalog, useUpdatePriceCatalog } from '../../purchases/hooks/usePurchases';
+import type { PriceCatalogCalculation } from '../../purchases/services/purchaseService';
 import { useProducts } from '../hooks/useProducts';
 import { useCategories } from '../../categories/hooks/useCategories';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
@@ -40,6 +41,7 @@ const loadRates = (): GlobalRates => {
 };
 
 interface PriceCatalogRow {
+  calculation?: PriceCatalogCalculation;
   productId: string;
   productName: string;
   categoryId?: string;
@@ -69,6 +71,7 @@ interface PriceCatalogRow {
 }
 
 interface MergedRow {
+  calculation?: PriceCatalogCalculation;
   productId: string;
   productName: string;
   laboratoryId?: string;
@@ -103,6 +106,14 @@ type EditableField =
   | 'unitPriceConIgvUsd'
   | 'unitPriceConIgvPen'
   | 'precioMinorista';
+
+const FIELD_LABELS: Record<EditableField, string> = {
+  unitPriceSinIgvUsd: 'USD s/IGV',
+  unitPriceSinIgvPen: 'PEN s/IGV',
+  unitPriceConIgvUsd: 'USD c/IGV',
+  unitPriceConIgvPen: 'PEN c/IGV',
+  precioMinorista: 'Precio final',
+};
 
 const fmt = (n?: number) => (n != null ? n.toFixed(2) : '');
 const fmtDate = (d?: string) => {
@@ -215,7 +226,12 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
       const stock = stockByProduct.get(p.id) as any;
       const labName = p.laboratoryId ? (labsById.get(p.laboratoryId) as any)?.name : undefined;
       const { price: storedSellPrice, tierName: storedSellPriceTier } = lookupStoredPrice(p);
+      // PEN purchases store their native price only. Show its USD equivalent
+      // using the same catalog rate used when editing, including after a reload.
+      const penToUsd = (amount?: number) => row?.currency === 'PEN' && tc && amount != null
+        ? r2(amount / tc) : undefined;
       return {
+        calculation: row?.calculation,
         productId: p.id,
         productName: p.name,
         laboratoryId: p.laboratoryId,
@@ -223,10 +239,10 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
         categoryId: p.categoryId,
         activeIngredient: p.activeIngredient,
         taxType: (p as any).taxType ?? row?.taxType,
-        unitPriceSinIgvUsd: row?.unitPriceSinIgvUsd,
-        unitPriceSinIgvPen: row?.unitPriceSinIgvPen,
-        unitPriceConIgvUsd: row?.unitPriceConIgvUsd,
-        unitPriceConIgvPen: row?.unitPriceConIgvPen,
+        unitPriceSinIgvUsd: row?.calculation?.unitPriceSinIgvUsd ?? row?.unitPriceSinIgvUsd ?? penToUsd(row?.unitPriceSinIgvPen),
+        unitPriceSinIgvPen: row?.calculation?.unitPriceSinIgvPen ?? row?.unitPriceSinIgvPen,
+        unitPriceConIgvUsd: row?.calculation?.unitPriceConIgvUsd ?? row?.unitPriceConIgvUsd ?? penToUsd(row?.unitPriceConIgvPen),
+        unitPriceConIgvPen: row?.calculation?.unitPriceConIgvPen ?? row?.unitPriceConIgvPen,
         precioMinorista: row?.precioMinorista,
         precioVenta: row?.precioVenta,
         storedSellPrice,
@@ -240,7 +256,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, catalogByProduct, labsById, preferredSaleTiers, tiersById, stockByProduct]);
+  }, [products, catalogByProduct, labsById, preferredSaleTiers, tiersById, stockByProduct, tc]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -267,17 +283,18 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
     return fmt(row[field] as number | undefined);
   };
 
-  const computeDerivedFromUsdSinIgv = (usdSinIgv: number, taxType?: string): {
-    unitPriceSinIgvPen: number;
-    unitPriceConIgvUsd: number;
-    unitPriceConIgvPen: number;
-  } | null => {
+  const computeDerivedFromUsdSinIgv = (usdSinIgv: number, taxType?: string): PriceCatalogCalculation | null => {
     if (!tc || !Number.isFinite(usdSinIgv) || usdSinIgv < 0) return null;
     const igvFactor = appliesIgv(taxType) ? 1 + IGV_RATE : 1;
     const unitPriceSinIgvPen = r2(usdSinIgv * tc);
     const unitPriceConIgvUsd = r2(usdSinIgv * igvFactor);
     const unitPriceConIgvPen = r2(usdSinIgv * igvFactor * tc);
-    return { unitPriceSinIgvPen, unitPriceConIgvUsd, unitPriceConIgvPen };
+    return {
+      unitPriceSinIgvUsd: usdSinIgv, unitPriceSinIgvPen, unitPriceConIgvUsd, unitPriceConIgvPen,
+      exchangeRate: tc, distributorMargin: margenDist, billingMargin: margenFinal,
+      tentativePrice: r2(unitPriceConIgvPen * margenDist),
+      billingPrice: r2(unitPriceSinIgvPen * margenFinal),
+    };
   };
 
   const handleChange = (productId: string, field: EditableField, value: string) => {
@@ -293,12 +310,14 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
           delete next.unitPriceSinIgvPen;
           delete next.unitPriceConIgvUsd;
           delete next.unitPriceConIgvPen;
+          delete next.precioMinorista;
         } else {
           const derived = computeDerivedFromUsdSinIgv(num, row?.taxType);
           if (derived) {
             next.unitPriceSinIgvPen = derived.unitPriceSinIgvPen.toFixed(2);
             next.unitPriceConIgvUsd = derived.unitPriceConIgvUsd.toFixed(2);
             next.unitPriceConIgvPen = derived.unitPriceConIgvPen.toFixed(2);
+            next.precioMinorista = (row?.precioMinorista ?? row?.storedSellPrice ?? row?.precioVenta ?? derived.tentativePrice).toFixed(2);
           }
         }
       }
@@ -352,24 +371,54 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
       return;
     }
 
-    let payload: Record<string, number> = { [field]: num };
+    let payload: Parameters<typeof updatePriceCatalog.mutateAsync>[0]['data'] = { [field]: num };
     let fieldsToClear: EditableField[] = [field];
 
     if (field === 'unitPriceSinIgvUsd' && tc) {
       const derived = computeDerivedFromUsdSinIgv(num, row.taxType);
       if (derived) {
         payload = {
+          calculation: derived,
           unitPriceSinIgvUsd: num,
           unitPriceSinIgvPen: derived.unitPriceSinIgvPen,
           unitPriceConIgvUsd: derived.unitPriceConIgvUsd,
           unitPriceConIgvPen: derived.unitPriceConIgvPen,
+          precioMinorista: row.precioMinorista ?? row.storedSellPrice ?? row.precioVenta ?? derived.tentativePrice,
         };
         fieldsToClear = [
           'unitPriceSinIgvUsd',
           'unitPriceSinIgvPen',
           'unitPriceConIgvUsd',
           'unitPriceConIgvPen',
+          'precioMinorista',
         ];
+      }
+    } else if (field !== 'precioMinorista') {
+      const rate = row.calculation?.exchangeRate ?? tc;
+      if (rate && row.unitPriceSinIgvUsd != null && row.unitPriceSinIgvPen != null && row.unitPriceConIgvUsd != null && row.unitPriceConIgvPen != null) {
+        const calculation: PriceCatalogCalculation = {
+          exchangeRate: rate,
+          distributorMargin: row.calculation?.distributorMargin ?? margenDist,
+          billingMargin: row.calculation?.billingMargin ?? margenFinal,
+          unitPriceSinIgvUsd: row.unitPriceSinIgvUsd,
+          unitPriceSinIgvPen: row.unitPriceSinIgvPen,
+          unitPriceConIgvUsd: row.unitPriceConIgvUsd,
+          unitPriceConIgvPen: row.unitPriceConIgvPen,
+          tentativePrice: 0, billingPrice: 0,
+        };
+        if (field === 'unitPriceSinIgvPen') {
+          calculation.unitPriceSinIgvPen = num;
+          calculation.unitPriceSinIgvUsd = r2(num / rate);
+        } else if (field === 'unitPriceConIgvUsd') {
+          calculation.unitPriceConIgvUsd = num;
+          calculation.unitPriceConIgvPen = r2(num * rate);
+        } else if (field === 'unitPriceConIgvPen') {
+          calculation.unitPriceConIgvPen = num;
+          calculation.unitPriceConIgvUsd = r2(num / rate);
+        }
+        calculation.tentativePrice = r2(calculation.unitPriceConIgvPen * calculation.distributorMargin);
+        calculation.billingPrice = r2(calculation.unitPriceSinIgvPen * calculation.billingMargin);
+        payload.calculation = calculation;
       }
     }
 
@@ -406,12 +455,16 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
     return (
       <input
         type="number"
+        aria-label={`${FIELD_LABELS[field]} de ${row.productName}`}
         step="0.01"
         min="0"
         value={getInputValue(row, field)}
         placeholder={row.hasPurchase ? '0.00' : '—'}
         onChange={(e) => handleChange(row.productId, field, e.target.value)}
         onBlur={() => handleBlur(row, field)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+        }}
         disabled={isSaving}
         className={`w-20 px-1.5 py-1 border border-transparent rounded text-right tabular-nums focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-200 disabled:opacity-50 ${bgClass}`}
       />
@@ -419,7 +472,9 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
   };
 
   const precioTentativo = (row: MergedRow): number | undefined => {
-    const penConIgv = row.unitPriceConIgvPen;
+    const draft = edits[row.productId]?.unitPriceConIgvPen;
+    if (draft === undefined && row.calculation) return row.calculation.tentativePrice;
+    const penConIgv = draft !== undefined ? Number(draft) : row.unitPriceConIgvPen;
     if (penConIgv != null && Number.isFinite(penConIgv) && penConIgv > 0) {
       return r2(penConIgv * margenDist);
     }
@@ -427,7 +482,9 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
   };
 
   const facturacionSinIgv = (row: MergedRow): number | undefined => {
-    const penSinIgv = row.unitPriceSinIgvPen;
+    const draft = edits[row.productId]?.unitPriceSinIgvPen;
+    if (draft === undefined && row.calculation) return row.calculation.billingPrice;
+    const penSinIgv = draft !== undefined ? Number(draft) : row.unitPriceSinIgvPen;
     if (penSinIgv != null && Number.isFinite(penSinIgv) && penSinIgv > 0) {
       return r2(penSinIgv * margenFinal);
     }
@@ -440,24 +497,24 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
     const hasEdit = editedRaw !== undefined;
     const hasSaved = row.precioMinorista != null;
 
-    const fallbackPrice = row.precioMinorista ?? row.precioVenta;
-    const fallbackSource = row.storedSellPrice != null
+    const fallbackPrice = row.precioVenta ?? precioTentativo(row);
+    const fallbackSource = hasSaved
+      ? 'catálogo'
+      : row.storedSellPrice != null
       ? `${row.storedSellPriceTier ?? 'precio guardado'}`
-      : row.precioMinorista != null
-        ? 'catálogo'
-        : row.precioVenta != null
+      : row.precioVenta != null
         ? 'última compra'
-        : null;
+        : 'precio tentativo';
 
     const value = hasEdit
       ? editedRaw!
-      : row.storedSellPrice != null
-        ? fmt(row.storedSellPrice)
-        : hasSaved
-          ? fmt(row.precioMinorista)
+      : hasSaved
+        ? fmt(row.precioMinorista)
+        : row.storedSellPrice != null
+          ? fmt(row.storedSellPrice)
           : fallbackPrice != null ? fmt(fallbackPrice) : '';
 
-    const isFromFallback = !hasEdit && (row.storedSellPrice != null || (!hasSaved && fallbackPrice != null));
+    const isFromFallback = !hasEdit && !hasSaved && (row.storedSellPrice != null || fallbackPrice != null);
     const bgClass = isFromFallback
       ? 'bg-cyan-50/40 text-cyan-700 italic'
       : 'bg-cyan-50 text-cyan-900';
@@ -472,9 +529,13 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
         step="0.01"
         min="0"
         value={value}
+        aria-label={`Precio final de ${row.productName}`}
         placeholder={row.hasPurchase ? '0.00' : '—'}
         onChange={(e) => handleChange(row.productId, 'precioMinorista', e.target.value)}
         onBlur={() => handleBlur(row, 'precioMinorista')}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+        }}
         disabled={isSaving}
         title={isFromFallback ? `Precio guardado (${fallbackSource}). Editá para sobreescribir solo en este catálogo.` : undefined}
         className={`w-20 px-1.5 py-1 border border-transparent rounded text-right tabular-nums focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-200 disabled:opacity-50 ${bgClass}`}
@@ -570,6 +631,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
               ) : (
                 <input
                   type="text"
+                  aria-label="Tipo de cambio del catálogo"
                   inputMode="decimal"
                   value={tcInput !== '' ? tcInput : (tcDay != null ? tcDay.toFixed(4) : '')}
                   onChange={(e) => handleTcChange(e.target.value)}
@@ -598,6 +660,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
               type="text"
               inputMode="decimal"
               value={margenDistInput}
+              aria-label="Margen tentativo"
               onChange={(e) => handleMargenChange('dist', e.target.value)}
               disabled={readOnly}
               className="w-24 px-2 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-sm font-semibold text-emerald-800 tabular-nums focus:outline-none focus:border-emerald-400 disabled:cursor-default"
@@ -611,6 +674,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
               type="text"
               inputMode="decimal"
               value={margenFinalInput}
+              aria-label="Margen de facturación"
               onChange={(e) => handleMargenChange('final', e.target.value)}
               disabled={readOnly}
               className="w-24 px-2 py-1 rounded-md bg-orange-50 border border-orange-200 text-sm font-semibold text-orange-800 tabular-nums focus:outline-none focus:border-orange-400 disabled:cursor-default"
@@ -632,7 +696,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
             <p className="text-[11px] text-gray-500 max-w-md text-left md:text-right">
               {readOnly
                 ? 'Catálogo en modo consulta. Solo un administrador puede modificar los precios.'
-                : <>Editá <span className="font-medium text-amber-700">USD s/IGV</span> para autocompletar precios con el T.C. de arriba. Si no hay precio distribuidor guardado, se sugiere automáticamente.</>}
+                : <>Edita <span className="font-medium text-amber-700">USD s/IGV</span> para recalcular la fila con estos factores. Presiona Enter o sal del campo para guardar todos los valores. Las filas guardadas conservan sus factores y el precio final que hayas fijado.</>}
             </p>
           </div>
         </div>
@@ -709,6 +773,11 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
                   <tr key={r.productId} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-2 py-2 font-medium text-gray-800 w-[180px] max-w-[180px]">
                       <div className="truncate" title={r.productName}>{r.productName}</div>
+                      {r.calculation && (
+                        <div className="mt-0.5 text-[10px] font-normal text-gray-500" title={`Factores guardados: T.C. ${r.calculation.exchangeRate.toFixed(4)}, margen tentativo ${r.calculation.distributorMargin}, margen de facturación ${r.calculation.billingMargin}`}>
+                          T.C. guardado: {r.calculation.exchangeRate.toFixed(4)}
+                        </div>
+                      )}
                     </td>
                     <td className="px-2 py-2 w-[110px] max-w-[110px]">
                       {r.laboratoryName ? (
@@ -755,11 +824,11 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
                     </td>
                     <td className="px-2 py-2 text-center whitespace-nowrap">
                       {isSaving ? (
-                        <Loader2 size={14} className="animate-spin inline text-gray-500" />
+                        <span className="inline-flex items-center gap-1 text-gray-500" role="status"><Loader2 size={14} className="animate-spin" /> Guardando</span>
                       ) : hasError ? (
-                        <AlertTriangle size={14} className="inline text-red-500" />
+                        <span className="inline-flex items-center gap-1 text-red-600" role="status"><AlertTriangle size={14} /> No se pudo guardar</span>
                       ) : isSaved ? (
-                        <Check size={14} className="inline text-emerald-600" />
+                        <span className="inline-flex items-center gap-1 text-emerald-600" role="status"><Check size={14} /> Guardado</span>
                       ) : (
                         <span className="text-gray-300">—</span>
                       )}

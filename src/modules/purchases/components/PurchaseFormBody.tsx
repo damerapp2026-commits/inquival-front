@@ -28,6 +28,8 @@ import {
   emptyItem,
   recalcItem,
   itemAppliesIgv,
+  purchasePayableTotal,
+  splitPurchaseInstallments,
   type PurchaseFormItem,
   type PurchaseInitial,
 } from '../utils/purchaseForm';
@@ -172,7 +174,10 @@ export function PurchaseFormBody({
   }, [fiscalEntities.length]);
 
   // Al registrar una compra nueva en USD, sugerir el tipo de cambio SUNAT del día
-  const { data: tipoCambioData } = useTodayTipoCambio(mode === 'create' && currency === 'USD');
+  const { data: tipoCambioData, isError: tipoCambioError } = useTodayTipoCambio(mode === 'create' && currency === 'USD');
+  const tipoCambioUnavailable = mode === 'create' && (
+    tipoCambioError || tipoCambioData?.isFallback === true || tipoCambioData?.source === 'ESTIMADO'
+  );
   useEffect(() => {
     if (mode === 'create' && currency === 'USD' && exchangeRate == null && tipoCambioData?.venta) {
       setExchangeRate(tipoCambioData.venta);
@@ -331,15 +336,16 @@ export function PurchaseFormBody({
 
   const documentTotal = Math.round(form.items.reduce((s, i) => s + (i.quantity * i.unitPriceConIgv || 0), 0) * 100) / 100;
   const totalSoles = currency === 'USD' && exchangeRate && documentTotal ? Math.round(documentTotal * exchangeRate * 100) / 100 : 0;
-  const creditTotal = documentTotal;
   const creditSymbol = currency === 'USD' ? '$' : 'S/';
 
   const hasExemptItem = form.items.some(i => i.productId && !itemAppliesIgv(i.productId, products));
+  const hasDetraccion = hasExemptItem && form.detraccion && form.paymentType !== 'BONIFICACION';
   const totalInPen = currency === 'USD' && exchangeRate && documentTotal
     ? Math.round(documentTotal * exchangeRate * 100) / 100
     : documentTotal;
   const detraccionAmountPen = Math.round(totalInPen * 0.015 * 100) / 100;
-  const netAfterDetraccion = Math.round(documentTotal * 0.985 * 100) / 100;
+  const netAfterDetraccion = purchasePayableTotal(documentTotal, true);
+  const creditTotal = purchasePayableTotal(documentTotal, hasDetraccion);
 
   const itemsSubtotal = Math.round(form.items.reduce((s, i) => s + (i.quantity * i.costoAdquisicion || 0), 0) * 100) / 100;
 
@@ -355,19 +361,15 @@ export function PurchaseFormBody({
     const refDate = form.issueDate || form.purchaseDate;
     if (!refDate) { toast.error('Ingresa la fecha de emisión o recepción primero'); return; }
 
-    const base = Math.round((creditTotal / count) * 100) / 100;
+    const amounts = splitPurchaseInstallments(creditTotal, count);
+    if (!amounts.length) { toast.error('La cantidad de cuotas debe permitir un monto mínimo de 0.01 por cuota'); return; }
     const installments: { amount: number; dueDate: string }[] = [];
-    let accumulated = 0;
 
     for (let i = 0; i < count; i++) {
       const daysOffset = firstDaysFromPurchase + i * intervalDays;
       const dueStr = addDaysToDate(refDate, daysOffset);
 
-      const isLast = i === count - 1;
-      const amount = isLast ? Math.round((creditTotal - accumulated) * 100) / 100 : base;
-      accumulated = Math.round((accumulated + amount) * 100) / 100;
-
-      installments.push({ amount, dueDate: dueStr });
+      installments.push({ amount: amounts[i], dueDate: dueStr });
     }
     setForm((prev) => ({ ...prev, installments }));
     toast.success(`${count} cuota${count > 1 ? 's' : ''} generada${count > 1 ? 's' : ''}`);
@@ -501,7 +503,7 @@ export function PurchaseFormBody({
       toast.error('Selecciona la entidad fiscal (RUC emisor)');
       return;
     }
-    if (hasExemptItem && form.detraccion && !form.detraccionDueDate) {
+    if (hasDetraccion && !form.detraccionDueDate) {
       toast.error('Selecciona la fecha límite de pago de la detracción');
       return;
     }
@@ -511,8 +513,8 @@ export function PurchaseFormBody({
     }
     if (form.paymentType === 'CREDITO' && form.paymentScheduleType === 'INSTALLMENTS') {
       const sumInst = form.installments.reduce((s, i) => s + (i.amount || 0), 0);
-      if (Math.abs(sumInst - creditTotal) > 0.01) {
-        toast.error(`Las cuotas (${creditSymbol} ${sumInst.toFixed(2)}) no suman el total (${creditSymbol} ${creditTotal.toFixed(2)})`);
+      if (Math.round(sumInst * 100) !== Math.round(creditTotal * 100)) {
+        toast.error(`Las cuotas (${creditSymbol} ${sumInst.toFixed(2)}) deben sumar el saldo al proveedor (${creditSymbol} ${creditTotal.toFixed(2)})${hasDetraccion ? ', después de la detracción' : ''}`);
         return;
       }
     }
@@ -568,7 +570,7 @@ export function PurchaseFormBody({
       payload.totalCost = 0;
       payload.totalCostUsd = undefined;
     }
-    if (hasExemptItem && form.detraccion && form.detraccionDueDate) {
+    if (hasDetraccion && form.detraccionDueDate) {
       payload.detraccion = true;
       payload.detraccionDueDate = form.detraccionDueDate;
     }
@@ -923,6 +925,17 @@ export function PurchaseFormBody({
                     readOnly
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700 focus:outline-none"
                   />
+                  {tipoCambioUnavailable && (
+                    <div role="alert" className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      <p className="font-semibold">No se pudo consultar el tipo de cambio en Decolecta.</p>
+                      <p className="mt-1">
+                        {exchangeRateSource === 'ESTIMADO' && exchangeRate != null
+                          ? `Se está usando un tipo de cambio estimado de S/ ${exchangeRate.toFixed(4)} por dólar. `
+                          : exchangeRate != null ? 'Se mantiene el tipo de cambio mostrado. ' : ''}
+                        Este aviso no impide registrar la compra.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -960,7 +973,7 @@ export function PurchaseFormBody({
         </SectionCard>
 
         {/* Detracción */}
-        {hasExemptItem && (
+        {hasExemptItem && form.paymentType !== 'BONIFICACION' && (
           <SectionCard title="Detracción (SPOT)" icon={Percent}>
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -990,10 +1003,13 @@ export function PurchaseFormBody({
                       <span>Detracción 1.5%</span>
                       <span className="text-[11px] text-blue-500">(CxP "Detracción - {form.supplier || '…'}")</span>
                     </span>
-                    <span className="font-semibold tabular-nums">S/ {detraccionAmountPen.toFixed(2)}</span>
+                    <span className="text-right font-semibold tabular-nums">
+                      {creditSymbol} {(documentTotal - netAfterDetraccion).toFixed(2)}
+                      {currency === 'USD' && <span className="block text-[11px] font-normal">S/ {detraccionAmountPen.toFixed(2)}</span>}
+                    </span>
                   </div>
                   <div className="flex justify-between font-semibold text-gray-800 border-t border-blue-200 pt-1.5">
-                    <span>A condiciones de pago</span>
+                    <span>Saldo al proveedor / base de las letras</span>
                     <span className="tabular-nums">{creditSymbol} {netAfterDetraccion.toFixed(2)}</span>
                   </div>
                 </div>
@@ -1018,10 +1034,10 @@ export function PurchaseFormBody({
 
         {/* Pago */}
         <SectionCard title="Condiciones de pago" icon={CreditCard}>
-          {hasExemptItem && form.detraccion && (
+          {hasDetraccion && (
             <div className="mb-3 flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
               <Percent size={12} />
-              <span>Aplica al <span className="font-semibold">98.5% restante ({creditSymbol} {netAfterDetraccion.toFixed(2)})</span> después de descontar la detracción.</span>
+              <span>Las letras deben sumar <span className="font-semibold">{creditSymbol} {creditTotal.toFixed(2)}</span>, después de descontar la detracción.</span>
             </div>
           )}
           <div>
@@ -1142,7 +1158,7 @@ export function PurchaseFormBody({
                       Cuotas {form.installments.length > 0 && (
                         <span className="ml-1 text-[11px]">
                           (Total: {creditSymbol} {form.installments.reduce((s, i) => s + (i.amount || 0), 0).toFixed(2)}
-                          {creditTotal > 0 && Math.abs(form.installments.reduce((s, i) => s + (i.amount || 0), 0) - creditTotal) > 0.01 && (
+                          {creditTotal > 0 && Math.round(form.installments.reduce((s, i) => s + (i.amount || 0), 0) * 100) !== Math.round(creditTotal * 100) && (
                             <span className="text-red-600"> · no coincide con {creditSymbol} {creditTotal.toFixed(2)}</span>
                           )}
                           )
@@ -1219,7 +1235,7 @@ export function PurchaseFormBody({
           <div className="flex items-center justify-between gap-3 max-w-full">
             <div className="text-xs text-gray-500 hidden sm:block">
               {form.items.length} producto{form.items.length !== 1 ? 's' : ''}
-              {creditTotal > 0 && <> · Total <span className="font-semibold text-gray-700">{creditSymbol} {creditTotal.toFixed(2)}</span></>}
+              {creditTotal > 0 && <> · {hasDetraccion ? 'Saldo al proveedor' : 'Total'} <span className="font-semibold text-gray-700">{creditSymbol} {creditTotal.toFixed(2)}</span></>}
               {mode === 'edit' && originalTotalForDiff > 0 && diff !== 0 && (
                 <span className={`ml-2 font-semibold ${diff > 0 ? 'text-red-600' : 'text-green-700'}`}>
                   Δ {diff > 0 ? '+' : ''}{creditSymbol} {diff.toFixed(2)}

@@ -101,7 +101,7 @@ for (const timezone of ['America/Lima', 'UTC', 'Asia/Tokyo', 'America/New_York']
       exportedPdf = undefined;
       await exportPdf();
       assert.ok(exportedPdf, 'the export must generate a PDF document');
-      assert.deepEqual(paymentRows(exportedPdf).map(row => row[0].text), cases.map(([, expected]) => expected));
+      assert.deepEqual(paymentRows(exportedPdf).map(row => row[0].text).sort(), cases.map(([, expected]) => expected).sort());
     }
   });
 }

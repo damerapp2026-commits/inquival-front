@@ -3,6 +3,21 @@ import type React from 'react';
 import type { Purchase, PurchaseItem, Product } from '../../../shared/types';
 
 export const IGV_RATE = 0.18;
+export const DETRACCION_RATE = 0.015;
+
+/** Saldo en la moneda del comprobante, descontando la detracción redondeada. */
+export function purchasePayableTotal(total: number, detraccion: boolean): number {
+  const cents = Math.round((total + Number.EPSILON) * 100);
+  return (cents - (detraccion ? Math.round(cents * DETRACCION_RATE) : 0)) / 100;
+}
+
+export function splitPurchaseInstallments(total: number, count: number): number[] {
+  const cents = Math.round((total + Number.EPSILON) * 100);
+  if (!Number.isInteger(count) || count < 1 || count > cents) return [];
+  const base = Math.floor(cents / count);
+  const remainder = cents % count;
+  return Array.from({ length: count }, (_, i) => (base + (i < remainder ? 1 : 0)) / 100);
+}
 
 export const blurOnWheel = (e: React.WheelEvent<HTMLInputElement>) => {
   (e.currentTarget as HTMLInputElement).blur();

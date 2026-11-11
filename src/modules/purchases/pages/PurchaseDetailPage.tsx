@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { isAxiosError } from 'axios';
-import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { usePurchaseById, useCancelPurchase, useUpdatePurchaseMeta } from '../hooks/usePurchases';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
@@ -201,7 +201,9 @@ export function PurchaseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const backTo: string = (location.state as any)?.from ?? '/purchases';
+  const [searchParams] = useSearchParams();
+  const highlightedProductId = searchParams.get('productId') || '';
+  const backTo: string = (location.state as any)?.from ?? `/purchases${highlightedProductId ? `?productId=${encodeURIComponent(highlightedProductId)}` : ''}`;
   const { user } = useAuth();
   const { data: purchaseData, isLoading, isError, error, refetch } = usePurchaseById(id);
   const { data: companies } = useCompanies();
@@ -381,9 +383,17 @@ export function PurchaseDetailPage() {
               <tbody className="divide-y divide-gray-100">
                 {purchase.items.map((item, idx) => {
                   const product = products.find((p: Product) => p.id === item.productId);
+                  const highlighted = !!highlightedProductId && item.productId === highlightedProductId;
                   return (
-                    <tr key={idx}>
-                      <td className="px-3 py-2 font-medium">{product?.name || item.productId}</td>
+                    <tr key={idx} className={highlighted ? 'bg-amber-50' : undefined}>
+                      <td className="px-3 py-2 font-medium">
+                        {highlighted ? (
+                          <>
+                            <mark className="bg-amber-200 text-amber-950 rounded px-1 font-semibold">{product?.name || item.productId}</mark>
+                            <span className="block text-xs text-amber-800 mt-1">Producto buscado</span>
+                          </>
+                        ) : product?.name || item.productId}
+                      </td>
                       <td className="px-3 py-2 text-right">{item.quantity}</td>
                       <td className="px-3 py-2 text-gray-600">{item.lotNumber || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{item.expirationDate ? formatDateEs(item.expirationDate) : '—'}</td>

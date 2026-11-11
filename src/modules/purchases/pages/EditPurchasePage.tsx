@@ -96,6 +96,8 @@ export function EditPurchasePage() {
       currency: payload.currency,
       paymentMethodId: payload.paymentMethodId,
       fiscalEntityId: payload.fiscalEntityId,
+      detraccion: payload.detraccion === true,
+      detraccionDueDate: payload.detraccionDueDate || null,
       items: payload.items,
     };
     if (payload.paymentType !== 'BONIFICACION') {

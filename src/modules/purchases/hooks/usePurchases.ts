@@ -3,9 +3,8 @@ import { purchaseService } from '../services/purchaseService';
 import toast from 'react-hot-toast';
 
 function invalidatePurchaseCosts(qc: QueryClient) {
-  for (const key of ['products', 'price-catalog', 'last-price', 'product-suppliers', 'dashboard-profitability']) {
-    qc.invalidateQueries({ queryKey: [key] });
-  }
+  return Promise.all(['products', 'price-catalog', 'last-price', 'product-suppliers', 'dashboard-profitability']
+    .map((key) => qc.invalidateQueries({ queryKey: [key] })));
 }
 
 export function usePurchases(params?: any, opts?: { enabled?: boolean }) {
@@ -249,10 +248,12 @@ export function useUpdatePriceCatalog() {
   return useMutation({
     mutationFn: ({ productId, data }: { productId: string; data: Parameters<typeof purchaseService.updatePriceCatalog>[1] }) =>
       purchaseService.updatePriceCatalog(productId, data),
-    onSuccess: () => {
-      invalidatePurchaseCosts(qc);
-      qc.invalidateQueries({ queryKey: ['purchases'] });
-      qc.invalidateQueries({ queryKey: ['purchase'] });
+    onSuccess: async () => {
+      await Promise.all([
+        invalidatePurchaseCosts(qc),
+        qc.invalidateQueries({ queryKey: ['purchases'] }),
+        qc.invalidateQueries({ queryKey: ['purchase'] }),
+      ]);
     },
     onError: (err: any) => {
       const msg = err.response?.data?.message;

@@ -9,6 +9,7 @@ import { PurchaseOrdersPage } from './PurchaseOrdersPage';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { Modal } from '../../../shared/components/Modal';
+import { SmartSearchSelect } from '../../../shared/components/SmartSearchSelect';
 import { Plus, ShoppingCart, Eye, Wrench, Search, X, FileText, Download, ClipboardList, Percent, Loader2 } from 'lucide-react';
 import type { Purchase, Company, Product, FiscalEntity } from '../../../shared/types';
 import { formatDateEs, getTodayDateString, addMonthsToDate, toLocalDateString } from '../../../shared/utils/date.util';
@@ -45,6 +46,8 @@ export function PurchasesPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const searchParamsRef = useRef(searchParams);
+  searchParamsRef.current = searchParams;
   const [grModal, setGrModal] = useState<{ purchaseId: string; grSeries: string; grNumber: string; grDate: string } | null>(null);
   const [pendingFiscalEntityChange, setPendingFiscalEntityChange] = useState<{
     purchaseId: string;
@@ -59,6 +62,7 @@ export function PurchasesPage() {
   const endDate = searchParams.get('endDate') || '';
   const activePreset = searchParams.get('preset') || '';
   const supplierParam = searchParams.get('supplier') || '';
+  const productFilter = searchParams.get('productId') || '';
   const currencyFilter = (searchParams.get('currency') || '') as '' | 'PEN' | 'USD';
   const paymentTypeFilter = (searchParams.get('paymentType') || '') as '' | 'CONTADO' | 'CREDITO';
   const fiscalEntityFilter = searchParams.get('fiscalEntityId') || '';
@@ -74,12 +78,16 @@ export function PurchasesPage() {
   useEffect(() => { setSupplierSearch(supplierParam); }, [supplierParam]);
   useEffect(() => { setLocalStartDate(startDate); }, [startDate]);
   useEffect(() => { setLocalEndDate(endDate); }, [endDate]);
+  useEffect(() => () => {
+    if (supplierDebounceRef.current) clearTimeout(supplierDebounceRef.current);
+  }, []);
 
   const updateParams = (updates: Record<string, string | null>) => {
-    const sp = new URLSearchParams(searchParams);
+    const sp = new URLSearchParams(searchParamsRef.current);
     for (const [k, v] of Object.entries(updates)) {
       if (!v) sp.delete(k); else sp.set(k, v);
     }
+    searchParamsRef.current = sp;
     setSearchParams(sp, { replace: true });
   };
   const setActiveTab = (tab: 'purchases' | 'orders') => updateParams({ tab: tab === 'orders' ? 'orders' : null, page: null });
@@ -91,6 +99,7 @@ export function PurchasesPage() {
     page: apiPage,
     limit: apiLimit,
     supplier: supplierParam || undefined,
+    productId: productFilter || undefined,
     startDate: startDate || undefined,
     endDate: endDate || undefined,
     currency: currencyFilter || undefined,
@@ -199,6 +208,7 @@ export function PurchasesPage() {
       const result = await purchaseService.getAll({
         limit: 9999,
         supplier: supplierParam || undefined,
+        productId: productFilter || undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         currency: currencyFilter || undefined,
@@ -304,7 +314,23 @@ export function PurchasesPage() {
       ? <span className="font-mono text-xs text-gray-700">{item.documentSeries}-{item.documentNumber}</span>
       : <span className="text-gray-300">—</span>
     },
-    { key: 'items', header: 'Items', render: (item: Purchase) => `${item.items.length} producto(s)` },
+    { key: 'items', header: 'Productos', render: (item: Purchase) => {
+      const matches = productFilter ? item.items.filter((line) => line.productId === productFilter) : [];
+      const product = productMap.get(productFilter);
+      return (
+        <div className="space-y-1">
+          <span className="text-xs text-gray-500">{item.items.length} producto(s)</span>
+          {matches.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 min-w-[160px] max-w-xs whitespace-normal">
+              <mark className="bg-transparent text-amber-900 font-semibold">{product?.name || productFilter}</mark>
+              <span className="block text-xs text-amber-800 mt-0.5">
+                Cantidad: {matches.reduce((sum, line) => sum + line.quantity, 0).toLocaleString('es-PE', { maximumFractionDigits: 6 })}{product?.unit ? ` ${product.unit}` : ''}
+              </span>
+            </div>
+          )}
+        </div>
+      );
+    }},
     { key: 'totalCost', header: 'Total', render: (item: Purchase) => {
       const isUsd = !!item.totalCostUsd;
       return (
@@ -327,7 +353,7 @@ export function PurchasesPage() {
     )},
     { key: 'actions', header: '', render: (item: Purchase) => (
       <div className="flex items-center gap-2">
-        <button onClick={(e) => { e.stopPropagation(); navigate(`/purchases/${item.id}`, { state: { from: location.pathname + location.search } }); }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
+        <button onClick={(e) => { e.stopPropagation(); navigate(`/purchases/${item.id}${productFilter ? `?productId=${encodeURIComponent(productFilter)}` : ''}`, { state: { from: location.pathname + location.search } }); }} className="text-primary-600 hover:text-primary-800 flex items-center gap-1 text-xs font-medium"><Eye size={15} /> Ver</button>
         <button
           onClick={(e) => { e.stopPropagation(); openGrModal(item); }}
           title={item.grSeries || item.grNumber ? `GR: ${[item.grSeries, item.grNumber].filter(Boolean).join('-')}` : 'Añadir Guía de Remisión'}
@@ -375,16 +401,40 @@ export function PurchasesPage() {
       </div>
       {activeTab === 'orders' ? <PurchaseOrdersPage /> : <>
       <div className="mb-4 flex flex-col gap-3">
-        {/* Búsqueda por proveedor */}
-        <div className="relative flex-1 max-w-md">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            value={supplierSearch}
-            onChange={(e) => handleSupplierChange(e.target.value)}
-            placeholder="Buscar por proveedor..."
-            className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-          />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-4xl">
+          <div>
+            <label htmlFor="purchase-supplier-search" className="block text-xs font-medium text-gray-600 mb-1.5">Proveedor</label>
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                id="purchase-supplier-search"
+                value={supplierSearch}
+                onChange={(e) => handleSupplierChange(e.target.value)}
+                placeholder="Buscar por proveedor..."
+                className="w-full pl-9 pr-3 py-3 text-sm bg-white border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-600 mb-1.5">Producto en la compra</p>
+            <SmartSearchSelect<Product>
+              items={products}
+              value={productFilter}
+              onChange={(id) => updateParams({ productId: id || null, page: null })}
+              getId={(product) => product.id}
+              getLabel={(product) => product.name}
+              getSubLabel={(product) => product.unit}
+              searchFields={(product) => [product.name]}
+              placeholder="Buscar producto por nombre..."
+              emptyText="No se encontraron productos con ese nombre"
+            />
+          </div>
         </div>
+        {productFilter && (
+          <p className="text-xs text-amber-800" role="status">
+            Mostrando compras que contienen el producto seleccionado, resaltado en amarillo. Los totales corresponden a las compras completas.
+          </p>
+        )}
 
         {/* Filtro por entidad fiscal */}
         {fiscalEntities.length > 0 && (

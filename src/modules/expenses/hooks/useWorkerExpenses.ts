@@ -1,7 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { workerExpenseService } from '../services/workerExpenseService';
-import type { WorkerExpenseReportStatus } from '../../../shared/types';
+import type { WorkerExpenseReportStatus, WorkerExpenseReport } from '../../../shared/types';
+
+function errorMessage(err: any, fallback: string) {
+  const message = err.response?.data?.message;
+  return Array.isArray(message) ? message.join('. ') : message || fallback;
+}
 
 export function useMyWorkerExpenseReport(month: number, year: number) {
   return useQuery({
@@ -14,11 +19,12 @@ export function useSaveWorkerExpenseEntries() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: workerExpenseService.saveEntries,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['worker-expenses', 'my-report'] });
+    onSuccess: async (report: WorkerExpenseReport) => {
+      qc.setQueryData(['worker-expenses', 'my-report', report.month, report.year], report);
+      await qc.invalidateQueries({ queryKey: ['worker-expenses'] });
       toast.success('Gastos guardados');
     },
-    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al guardar gastos'),
+    onError: (err: any) => toast.error(errorMessage(err, 'Error al guardar gastos')),
   });
 }
 
@@ -26,11 +32,12 @@ export function useSubmitWorkerExpenseReport() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: workerExpenseService.submitReport,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['worker-expenses'] });
+    onSuccess: async (report: WorkerExpenseReport) => {
+      qc.setQueryData(['worker-expenses', 'my-report', report.month, report.year], report);
+      await qc.invalidateQueries({ queryKey: ['worker-expenses'] });
       toast.success('Reporte enviado para revisión');
     },
-    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al enviar reporte'),
+    onError: (err: any) => toast.error(errorMessage(err, 'Error al enviar reporte')),
   });
 }
 
@@ -43,23 +50,33 @@ export function useWorkerExpenseBudget(workerId: string | undefined) {
 }
 
 export function useWorkerExpenseBudgets() {
-  return useQuery({ queryKey: ['worker-expenses', 'budgets'], queryFn: workerExpenseService.getAllBudgets });
+  return useQuery({
+    queryKey: ['worker-expenses', 'budgets'],
+    queryFn: workerExpenseService.getAllBudgets,
+  });
 }
 
 export function useSetWorkerExpenseBudget() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: workerExpenseService.setBudget,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['worker-expenses', 'budget'] });
-      qc.invalidateQueries({ queryKey: ['worker-expenses', 'budgets'] });
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['worker-expenses', 'budget'] }),
+        qc.invalidateQueries({ queryKey: ['worker-expenses', 'budgets'] }),
+      ]);
       toast.success('Tope de viáticos actualizado');
     },
-    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al actualizar tope'),
+    onError: (err: any) => toast.error(errorMessage(err, 'Error al actualizar tope')),
   });
 }
 
-export function useWorkerExpenseReports(params?: { workerId?: string; month?: number; year?: number; status?: WorkerExpenseReportStatus }) {
+export function useWorkerExpenseReports(params?: {
+  workerId?: string;
+  month?: number;
+  year?: number;
+  status?: WorkerExpenseReportStatus;
+}) {
   return useQuery({
     queryKey: ['worker-expenses', 'reports', params],
     queryFn: () => workerExpenseService.getReports(params),
@@ -78,11 +95,30 @@ export function useReviewWorkerExpenseReport() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: workerExpenseService.reviewReport,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['worker-expenses', 'reports'] });
-      qc.invalidateQueries({ queryKey: ['worker-expenses', 'report'] });
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['worker-expenses'] });
       toast.success('Reporte revisado');
     },
-    onError: (err: any) => toast.error(err.response?.data?.message || 'Error al revisar reporte'),
+    onError: async (err: any) => {
+      toast.error(errorMessage(err, 'Error al revisar reporte'));
+      if (err.response?.status === 409)
+        await qc.invalidateQueries({ queryKey: ['worker-expenses'] });
+    },
+  });
+}
+
+export function useSetWorkerExpenseAdvance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: workerExpenseService.setAdvance,
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['worker-expenses'] });
+      toast.success('Adelanto confirmado');
+    },
+    onError: async (err: any) => {
+      toast.error(errorMessage(err, 'Error al guardar adelanto'));
+      if (err.response?.status === 409)
+        await qc.invalidateQueries({ queryKey: ['worker-expenses'] });
+    },
   });
 }

@@ -116,8 +116,8 @@ export function ExportClientStatementButton({ client, credits, variant = 'button
                 <div className="flex items-center gap-2">
                   {loading && <Loader2 size={11} className="animate-spin" />}
                   <div>
-                    <div className="font-medium text-gray-800">Resumen por fecha</div>
-                    <div className="text-[10px] text-gray-500">Listado de cuentas con totales (PDF)</div>
+                    <div className="font-medium text-gray-800">Resumen de cuenta</div>
+                    <div className="text-[10px] text-gray-500">Créditos, abonos y saldo por moneda (PDF)</div>
                   </div>
                 </div>
               </button>

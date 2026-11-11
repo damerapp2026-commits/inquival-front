@@ -1496,7 +1496,7 @@ export function POSPage() {
                 className="flex-1 mt-2 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-semibold transition-colors shadow-sm flex items-center justify-center gap-2"
               >
                 <CreditCard size={18} />
-                Comprar
+                Vender
               </button>
             </div>
           </div>

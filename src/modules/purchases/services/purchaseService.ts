@@ -1,5 +1,17 @@
 import { api } from '../../../shared/services/api';
 
+export interface PriceCatalogCalculation {
+  exchangeRate: number;
+  distributorMargin: number;
+  billingMargin: number;
+  unitPriceSinIgvUsd: number;
+  unitPriceSinIgvPen: number;
+  unitPriceConIgvUsd: number;
+  unitPriceConIgvPen: number;
+  tentativePrice: number;
+  billingPrice: number;
+}
+
 export interface UpdatePurchaseFullPayload {
   reason: string;
   updatedAt?: string;
@@ -69,6 +81,7 @@ export const purchaseService = {
   updatePriceCatalog: (
     productId: string,
     data: {
+      calculation?: PriceCatalogCalculation;
       unitPriceSinIgvUsd?: number;
       unitPriceSinIgvPen?: number;
       unitPriceConIgvUsd?: number;

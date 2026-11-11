@@ -34,7 +34,7 @@ export type WorkerExpenseCategory = 'ALOJAMIENTO' | 'TRANSPORTE' | 'COMBUSTIBLE'
 export type WorkerExpenseReportStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
 export interface WorkerExpenseBudget { id?: string; workerId: string; alojamiento: number; transporte: number; combustible: number; alimentacion: number; otros: number; updatedAt?: string; }
 export interface WorkerExpenseEntry { date: string; description?: string; invoiceNumber?: string; category: WorkerExpenseCategory; amount: number; }
-export interface WorkerExpenseReport { id: string; workerId: string; workerName?: string; month: number; year: number; depositedAmount?: number; status: WorkerExpenseReportStatus; entries: WorkerExpenseEntry[]; reviewedBy?: string; reviewNotes?: string; submittedAt?: string; reviewedAt?: string; createdAt?: string; updatedAt?: string; }
+export interface WorkerExpenseReport { version: number; advanceConfirmedBy?: string; advanceConfirmedAt?: string; history?: { action: string; actorId: string; at: string; note?: string; previousAmount?: number; amount?: number }[]; id: string; workerId: string; workerName?: string; month: number; year: number; depositedAmount?: number; status: WorkerExpenseReportStatus; entries: WorkerExpenseEntry[]; reviewedBy?: string; reviewNotes?: string; submittedAt?: string; reviewedAt?: string; createdAt?: string; updatedAt?: string; }
 
 export interface AccountPayableInstallment { id?: string; amount: number; dueDate: string; status: 'PENDING' | 'PAID'; paidDate?: string; numeroUnico?: string; }
 export interface AccountPayablePayment {
