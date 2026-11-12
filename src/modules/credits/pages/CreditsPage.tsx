@@ -8,11 +8,12 @@ import { EditCreditItemsModal } from '../components/EditCreditItemsModal';
 import { EditCreditPaymentModal } from '../components/EditCreditPaymentModal';
 import { ExportClientStatementButton } from '../components/ExportClientStatementButton';
 import { downloadCreditsSummaryPdf, downloadCreditsDetailedPdf } from '../utils/creditsPdf';
-import { CreditCard, DollarSign, Edit2, Trash2, ChevronDown, ChevronRight, Search, User, Eye, ShoppingBag, FileDown, CalendarClock, History, Wrench } from 'lucide-react';
-import { useNavigate, Link } from 'react-router-dom';
+import { CreditCard, DollarSign, Edit2, Trash2, ChevronDown, ChevronRight, Search, User, Eye, ShoppingBag, FileDown, CalendarClock, CalendarDays, History, List, Wrench } from 'lucide-react';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { RegisterHistoricalCreditModal } from '../components/RegisterHistoricalCreditModal';
+import { CreditCalendar } from '../components/CreditCalendar';
 import type { CreditAccount, Client, CreditPayment } from '../../../shared/types';
-import { formatDateEs } from '../../../shared/utils/date.util';
+import { daysUntilDate, formatDateEs, toLocalDateString } from '../../../shared/utils/date.util';
 import { creditCurrency, formatMoney } from '../utils/money';
 
 type Status = 'PENDING' | 'PARTIAL' | 'PAID';
@@ -37,11 +38,9 @@ const statusLabels: Record<Status, { label: string; class: string }> = {
 
 function getDueState(dueDate?: string, status?: Status): { label: string; class: string; days: number | null } {
   if (!dueDate) return { label: '—', class: 'text-gray-400', days: null };
-  if (status === 'PAID') return { label: new Date(dueDate).toLocaleDateString('es-PE'), class: 'text-gray-400', days: null };
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const due = new Date(dueDate.slice(0, 10) + 'T00:00:00');
-  const days = Math.ceil((due.getTime() - today.getTime()) / 86400000);
-  const label = due.toLocaleDateString('es-PE');
+  const label = formatDateEs(dueDate);
+  if (status === 'PAID') return { label, class: 'text-gray-400', days: null };
+  const days = daysUntilDate(dueDate);
   if (days < 0) return { label: `${label} · vencido ${-days}d`, class: 'text-red-600 font-medium', days };
   if (days === 0) return { label: `${label} · hoy`, class: 'text-red-500 font-medium', days };
   if (days <= 7) return { label: `${label} · ${days}d`, class: 'text-orange-600', days };
@@ -52,8 +51,11 @@ const PAGE_SIZE = 10;
 
 export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const calendarView = searchParams.get('creditView') === 'calendar';
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'' | Status>('');
+  const [currencyFilter, setCurrencyFilter] = useState<'ALL' | 'PEN' | 'USD'>('ALL');
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -70,20 +72,24 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   const { data: detailCredit } = useCreditById(showDetailModal && selectedCredit ? selectedCredit.id : '');
   const fullCredit: CreditAccount | null = detailCredit || selectedCredit;
 
-  const { data, isLoading } = useCredits({ limit: 100000, status: statusFilter || undefined });
-  const { data: clientsData } = useClients({ limit: 500 });
+  const { data, isLoading, isError, refetch } = useCredits({ limit: 100000, status: statusFilter || undefined });
+  const { data: clientsData, isLoading: clientsLoading, isError: clientsError, refetch: refetchClients } = useClients({ limit: 100000 });
   const deleteCreditMutation = useDeleteCredit();
   const editCreditMutation = useEditCredit();
 
   const credits: CreditAccount[] = data?.data || [];
   const clients: Client[] = clientsData?.data || [];
+  const filteredCredits = useMemo(() => credits.filter(credit =>
+    (currencyFilter === 'ALL' || creditCurrency(credit.currency) === currencyFilter)
+    && (!calendarView || ((credit.status === 'PENDING' || credit.status === 'PARTIAL') && credit.pendingAmount > 0)),
+  ), [credits, currencyFilter, calendarView]);
 
   const clientMap = useMemo(() => new Map<string, Client>(clients.map((c: Client) => [c.id, c])), [clients]);
   const getClientName = (id: string) => clientMap.get(id)?.name || 'N/A';
 
   const groups: ClientGroup[] = useMemo(() => {
     const byClient = new Map<string, CreditAccount[]>();
-    for (const credit of credits) {
+    for (const credit of filteredCredits) {
       const arr = byClient.get(credit.clientId) || [];
       arr.push(credit);
       byClient.set(credit.clientId, arr);
@@ -123,7 +129,17 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
       : result;
 
     return filtered.sort((a, b) => b.pendingAmount - a.pendingAmount);
-  }, [credits, clientMap, search, statusFilter]);
+  }, [filteredCredits, clientMap, search]);
+  const calendarCredits = useMemo(() => groups.flatMap(group => group.credits), [groups]);
+
+  const changeView = (view: 'list' | 'calendar') => {
+    if (view === 'calendar' && statusFilter === 'PAID') setStatusFilter('');
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      if (view === 'calendar') next.set('creditView', view); else next.delete('creditView');
+      return next;
+    }, { replace: true });
+  };
 
   const totalPages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -165,7 +181,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
 
   const openEditDue = (credit: CreditAccount) => {
     setEditDueCredit(credit);
-    setEditDueDate(credit.dueDate ? credit.dueDate.slice(0, 10) : '');
+    setEditDueDate(credit.dueDate ? toLocalDateString(credit.dueDate) : '');
   };
 
   const handleSaveDueDate = async () => {
@@ -178,11 +194,11 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   return (
     <div>
       {!asTab && (
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap gap-3 items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <CreditCard size={24} /> Créditos
+          <CreditCard size={24} /> Cuentas por Cobrar
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
         <Link
           to="/credits/migrate"
           className="inline-flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-sm font-medium hover:bg-amber-100"
@@ -257,7 +273,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
       />
 
       {asTab && (
-        <div className="flex items-center justify-end gap-2 mb-4">
+        <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
           <Link
             to="/credits/migrate"
             className="inline-flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-sm font-medium hover:bg-amber-100"
@@ -317,6 +333,17 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
         </div>
       )}
 
+      <nav aria-label="Vistas de créditos" className="flex flex-wrap gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit max-w-full">
+        <button type="button" aria-current={!calendarView ? 'page' : undefined} onClick={() => changeView('list')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${!calendarView ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          <List size={16} /> Listado
+        </button>
+        <button type="button" aria-current={calendarView ? 'page' : undefined} onClick={() => changeView('calendar')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${calendarView ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          <CalendarDays size={16} /> Calendario de cobros
+        </button>
+      </nav>
+
       <div className="mb-4 flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[240px] max-w-md">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -332,6 +359,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
           />
         </div>
         <select
+          aria-label="Estado del crédito"
           value={statusFilter}
           onChange={(e) => {
             setStatusFilter(e.target.value as any);
@@ -339,16 +367,37 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
           }}
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
         >
-          <option value="">Todos los estados</option>
+          <option value="">{calendarView ? 'Pendientes y parciales' : 'Todos los estados'}</option>
           <option value="PENDING">Pendiente</option>
           <option value="PARTIAL">Parcial</option>
-          <option value="PAID">Pagado</option>
+          {!calendarView && <option value="PAID">Pagado</option>}
         </select>
+        <div role="group" aria-label="Moneda de créditos" className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          {(['ALL', 'PEN', 'USD'] as const).map(currency => (
+            <button key={currency} type="button" aria-pressed={currencyFilter === currency}
+              onClick={() => { setCurrencyFilter(currency); setPage(1); }}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${currencyFilter === currency ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+              {currency === 'ALL' ? 'Todas' : currency === 'PEN' ? 'S/ Soles' : '$ Dólares'}
+            </button>
+          ))}
+        </div>
         <div className="text-sm text-gray-500 ml-auto">
           {groups.length} {groups.length === 1 ? 'cliente' : 'clientes'}
         </div>
       </div>
 
+      {isError || clientsError ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+          <p role="alert" className="text-sm text-red-600">No se pudieron cargar los créditos o los clientes.</p>
+          <button type="button" onClick={() => { void refetch(); void refetchClients(); }} className="mt-3 text-sm font-medium text-primary-700 hover:underline">Reintentar</button>
+        </div>
+      ) : calendarView ? (
+        isLoading || clientsLoading ? <div role="status" className="p-8 text-center text-gray-500">Cargando calendario de cobros...</div> : (
+          <CreditCalendar credits={calendarCredits} getClientName={getClientName} onView={openDetail}
+            filterKey={JSON.stringify([search, statusFilter, currencyFilter])} />
+        )
+      ) : (
+      <>
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-gray-500">Cargando...</div>
@@ -541,6 +590,8 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
       </div>
 
       <Pagination page={currentPage} totalPages={totalPages} onPageChange={setPage} />
+      </>
+      )}
 
       {batchClient && (
         <BatchPaymentModal

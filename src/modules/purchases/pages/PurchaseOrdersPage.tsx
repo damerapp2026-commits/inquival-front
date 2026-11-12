@@ -12,6 +12,7 @@ import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities
 import { useProducts } from '../../products/hooks/useProducts';
 import { useDeletePurchaseOrder, usePurchaseOrders, useUpdatePurchaseOrderStatus } from '../hooks/usePurchases';
 import { downloadPurchaseOrderPdf } from '../utils/purchaseOrderPdf';
+import { purchaseOrderAmounts } from '../utils/purchaseOrderAmounts';
 import { PurchaseOrderDetailModal } from '../components/PurchaseOrderDetailModal';
 
 const STATUS_META: Record<PurchaseOrderStatus, { label: string; className: string }> = {
@@ -72,8 +73,8 @@ export function PurchaseOrdersPage() {
     },
     {
       key: 'createdAt',
-      header: 'Fecha',
-      render: (o: PurchaseOrder) => formatDateEs(o.createdAt, {
+      header: 'Fecha de pedido',
+      render: (o: PurchaseOrder) => formatDateEs(o.issueDate || o.createdAt, {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
@@ -91,9 +92,10 @@ export function PurchaseOrdersPage() {
     {
       key: 'totalCost',
       header: 'Total',
-      render: (o: PurchaseOrder) => (
-        o.totalCostUsd ? `$ ${o.totalCostUsd.toFixed(2)}` : `S/ ${o.totalCost.toFixed(2)}`
-      ),
+      render: (o: PurchaseOrder) => {
+        const { currency, total } = purchaseOrderAmounts(o, products);
+        return `${currency === 'USD' ? 'US$' : 'S/'} ${total.toFixed(2)}`;
+      },
     },
     {
       key: 'status',

@@ -23,8 +23,12 @@ import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities
 import { useProducts } from '../../products/hooks/useProducts';
 import { useSuppliers } from '../../suppliers/hooks/useSuppliers';
 import { useCreatePurchaseOrder } from '../hooks/usePurchases';
+import { calculatePurchaseOrderAmounts, roundOrderMoney } from '../utils/purchaseOrderAmounts';
+import { numberToWords } from '../../quotes/utils/numberToWords';
 import {
   addDaysToDate,
+  PURCHASE_ORDER_CONDITIONS,
+  PURCHASE_ORDER_CREDIT_DAYS,
   serializePurchaseOrderDetails,
   type PurchaseOrderPaymentForm,
 } from '../utils/purchaseOrderDetails';
@@ -109,10 +113,12 @@ export function NewPurchaseOrderPage() {
   const [deliveryPlace, setDeliveryPlace] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [transport, setTransport] = useState('Directo (a cargo del proveedor)');
+  const [transportAddress, setTransportAddress] = useState('');
   const [paymentForm, setPaymentForm] = useState<PurchaseOrderPaymentForm>('CONTADO');
   const [paymentType, setPaymentType] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
   const [creditDays, setCreditDays] = useState(30);
   const [requestedBy, setRequestedBy] = useState('');
+  const [approvedBy, setApprovedBy] = useState('');
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<OrderItem[]>([emptyItem()]);
 
@@ -125,6 +131,7 @@ export function NewPurchaseOrderPage() {
   }, [requestedBy, user?.fullName]);
 
   const selectedSupplier = suppliers.find((supplier) => supplier.id === supplierId);
+  const selectedFiscalEntity = fiscalEntities.find(entity => entity.id === fiscalEntityId);
   const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const companyMap = useMemo(() => new Map(companies.map((company) => [company.id, company])), [companies]);
   const productOptions = products.map((product) => ({
@@ -146,32 +153,15 @@ export function NewPurchaseOrderPage() {
     const ids = [...new Set(items.map((item) => item.companyId).filter(Boolean))];
     return ids.map((id) => companyMap.get(id)).filter((company): company is Company => !!company);
   }, [companyMap, items]);
-  const inferredDeliveryPlace = selectedWarehouses.map((company) => company.name).join(', ');
   const inferredDeliveryAddress = selectedWarehouses.map((company) => company.address).filter(Boolean).join(' / ');
 
-  const totals = useMemo(() => {
-    let subtotal = 0;
-    let igv = 0;
-    let total = 0;
-    items.forEach((item) => {
-      const lineTotal = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
-      total += lineTotal;
-      if (appliesIgv(productMap.get(item.productId))) {
-        const lineBase = lineTotal / 1.18;
-        subtotal += lineBase;
-        igv += lineTotal - lineBase;
-      } else {
-        subtotal += lineTotal;
-      }
-    });
-    return {
-      subtotal: Math.round(subtotal * 100) / 100,
-      igv: Math.round(igv * 100) / 100,
-      total: Math.round(total * 100) / 100,
-    };
-  }, [items, productMap]);
+  const totals = useMemo(() => calculatePurchaseOrderAmounts(items.map(item => ({
+    productId: item.productId, quantity: Number(item.quantity) || 0,
+    unitPriceConIgv: roundOrderMoney(Number(item.unitPrice) || 0),
+  })), products), [items, products]);
 
-  const dueDate = paymentType === 'CREDITO' ? addDaysToDate(issueDate, creditDays) : '';
+  const dueDate = paymentType === 'CREDITO' && creditDays > 0 ? addDaysToDate(issueDate, creditDays) : '';
+  const standardCreditDays = PURCHASE_ORDER_CREDIT_DAYS.some(days => days === creditDays);
 
   const handleSupplierChange = (id: string) => {
     setSupplierId(id);
@@ -221,15 +211,19 @@ export function NewPurchaseOrderPage() {
       return;
     }
     if (!issueDate) {
-      toast.error('Selecciona la fecha de emisión');
+      toast.error('Selecciona la fecha de pedido');
       return;
     }
     if (quotationValidUntil && quotationValidUntil < issueDate) {
-      toast.error('La vigencia de la cotización no puede ser anterior a la emisión');
+      toast.error('La vigencia de la cotización no puede ser anterior al pedido');
       return;
     }
     if (!validItems.length || validItems.length !== items.length) {
       toast.error('Completa almacén, producto y cantidad en cada línea');
+      return;
+    }
+    if (paymentType === 'CREDITO' && (!Number.isInteger(creditDays) || creditDays < 1 || creditDays > 3650)) {
+      toast.error('Ingresa un plazo de crédito válido en días');
       return;
     }
 
@@ -237,13 +231,14 @@ export function NewPurchaseOrderPage() {
       supplierContact,
       supplierPhone,
       quotationValidUntil,
-      deliveryPlace: deliveryPlace.trim() || inferredDeliveryPlace,
+      deliveryPlace: deliveryPlace.trim(),
       deliveryAddress: deliveryAddress.trim() || inferredDeliveryAddress,
       transport,
+      transportAddress,
       paymentForm,
       creditDays: paymentType === 'CREDITO' ? creditDays : undefined,
       requestedBy,
-      approvedBy: '',
+      approvedBy,
       observations: notes,
     });
 
@@ -259,17 +254,15 @@ export function NewPurchaseOrderPage() {
       paymentScheduleType: paymentType === 'CREDITO' ? 'SINGLE_DATE' : undefined,
       dueDate: paymentType === 'CREDITO' ? dueDate : undefined,
       notes: detailsNotes,
-      items: validItems.map((item) => {
-        const unitPriceConIgv = Math.round((Number(item.unitPrice) || 0) * 100) / 100;
-        const product = productMap.get(item.productId);
-        const unitPriceSinIgv = Math.round((appliesIgv(product) ? unitPriceConIgv / 1.18 : unitPriceConIgv) * 100) / 100;
+      items: validItems.map((item, index) => {
+        const line = totals.lines[index];
         return {
           companyId: item.companyId,
           productId: item.productId,
           quantity: Number(item.quantity),
-          unitCost: unitPriceConIgv,
-          unitPriceSinIgv,
-          unitPriceConIgv,
+          unitCost: line.unitPrice,
+          unitPriceSinIgv: line.unitPriceSinIgv,
+          unitPriceConIgv: line.unitPrice,
         };
       }),
     };
@@ -296,6 +289,19 @@ export function NewPurchaseOrderPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
+        <FormSection title="Empresa receptora" description="Empresa a cuyo nombre se emite la orden de compra" icon={Building2}>
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <label className="block">
+              <span className="text-xs font-medium text-gray-600">Empresa receptora</span>
+              <SearchableSelect options={fiscalEntityOptions} value={fiscalEntityId} onChange={setFiscalEntityId} placeholder="Seleccionar empresa" minChars={0} className="mt-1 px-3 py-2 rounded-lg" />
+            </label>
+            {selectedFiscalEntity && <div className="rounded-lg bg-primary-50 p-3 text-sm text-primary-900">
+              <p className="font-semibold">{selectedFiscalEntity.legalName}</p>
+              <p>RUC: {selectedFiscalEntity.ruc}</p>
+              {selectedFiscalEntity.address && <p className="text-xs mt-1">{selectedFiscalEntity.address}</p>}
+            </div>}
+          </div>
+        </FormSection>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
           <FormSection title="Proveedor" description="Razón social y datos de contacto" icon={UserRound}>
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -338,10 +344,10 @@ export function NewPurchaseOrderPage() {
             </div>
           </FormSection>
 
-          <FormSection title="Fecha y moneda" description="Emisión y vigencia de la cotización" icon={CalendarDays}>
+          <FormSection title="Fecha y moneda" description="Fecha del pedido y vigencia de la cotización" icon={CalendarDays}>
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">Fecha de emisión</span>
+                <span className="text-xs font-medium text-gray-600">Fecha de pedido</span>
                 <input type="date" required value={issueDate} onChange={(event) => setIssueDate(event.target.value)} className={inputClass} />
               </label>
               <label className="block">
@@ -371,8 +377,8 @@ export function NewPurchaseOrderPage() {
           <FormSection title="Punto de llegada" description="Destino y modalidad de transporte" icon={MapPin}>
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">Entrega / destino</span>
-                <input value={deliveryPlace} onChange={(event) => setDeliveryPlace(event.target.value)} className={inputClass} placeholder={inferredDeliveryPlace || 'Se completará según el almacén'} />
+                <span className="text-xs font-medium text-gray-600">Referencia del punto de llegada</span>
+                <input value={deliveryPlace} onChange={(event) => setDeliveryPlace(event.target.value)} className={inputClass} placeholder="Local, sucursal o referencia (opcional)" />
               </label>
               <label className="block">
                 <span className="text-xs font-medium text-gray-600">Transporte</span>
@@ -381,6 +387,10 @@ export function NewPurchaseOrderPage() {
               <label className="block sm:col-span-2">
                 <span className="text-xs font-medium text-gray-600">Dirección de entrega</span>
                 <input value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} className={inputClass} placeholder={inferredDeliveryAddress || 'Se completará según el almacén'} />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="text-xs font-medium text-gray-600">Dirección del transportista</span>
+                <input value={transportAddress} onChange={event => setTransportAddress(event.target.value)} className={inputClass} placeholder="Agencia o sucursal del transportista (opcional)" />
               </label>
               {selectedWarehouses.length > 0 && (
                 <div className="sm:col-span-2 flex flex-wrap gap-2">
@@ -394,13 +404,16 @@ export function NewPurchaseOrderPage() {
             </div>
           </FormSection>
 
-          <FormSection title="Condiciones y facturación" description="Forma, condición, plazo y empresa receptora" icon={CreditCard}>
+          <FormSection title="Condiciones de pago" description="Forma, condición y plazo del pedido" icon={CreditCard}>
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
                 <span className="text-xs font-medium text-gray-600">Forma de pago</span>
                 <div className="mt-1 flex flex-wrap gap-2">
                   {(['CONTADO', 'LETRA', 'FACTURA'] as const).map((option) => (
-                    <button key={option} type="button" onClick={() => setPaymentForm(option)} className={`px-3 py-2 rounded-lg border text-xs font-semibold ${paymentForm === option ? 'border-primary-300 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
+                    <button key={option} type="button" aria-pressed={paymentForm === option} onClick={() => {
+                      setPaymentForm(option);
+                      setPaymentType(option === 'CONTADO' ? 'CONTADO' : 'CREDITO');
+                    }} className={`px-3 py-2 rounded-lg border text-xs font-semibold ${paymentForm === option ? 'border-primary-300 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
                       {option.charAt(0) + option.slice(1).toLowerCase()}
                     </button>
                   ))}
@@ -410,7 +423,10 @@ export function NewPurchaseOrderPage() {
                 <span className="text-xs font-medium text-gray-600">Condición de pago</span>
                 <div className="mt-1 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
                   {(['CONTADO', 'CREDITO'] as const).map((option) => (
-                    <button key={option} type="button" onClick={() => setPaymentType(option)} className={`px-4 py-1.5 rounded-md text-sm font-medium ${paymentType === option ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500'}`}>
+                    <button key={option} type="button" aria-pressed={paymentType === option} onClick={() => {
+                      setPaymentType(option);
+                      setPaymentForm(option === 'CONTADO' ? 'CONTADO' : paymentForm === 'CONTADO' ? 'FACTURA' : paymentForm);
+                    }} className={`px-4 py-1.5 rounded-md text-sm font-medium ${paymentType === option ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500'}`}>
                       {option === 'CONTADO' ? 'Contado' : 'Crédito'}
                     </button>
                   ))}
@@ -419,21 +435,21 @@ export function NewPurchaseOrderPage() {
               {paymentType === 'CREDITO' && (
                 <label className="block">
                   <span className="text-xs font-medium text-gray-600">Plazo de crédito</span>
-                  <select value={creditDays} onChange={(event) => setCreditDays(Number(event.target.value))} className={inputClass}>
-                    <option value={30}>30 días</option>
-                    <option value={60}>60 días</option>
-                    <option value={150}>150 días</option>
+                  <select value={standardCreditDays ? creditDays : 'custom'} onChange={event => setCreditDays(event.target.value === 'custom' ? 0 : Number(event.target.value))} className={inputClass}>
+                    {PURCHASE_ORDER_CREDIT_DAYS.map(days => <option key={days} value={days}>{days} días</option>)}
+                    <option value="custom">Otro plazo</option>
                   </select>
-                  <span className="mt-1 block text-[11px] text-gray-500">Vence: {dueDate.split('-').reverse().join('/')}</span>
+                  {!standardCreditDays && <input type="number" aria-label="Plazo personalizado en días" min="1" max="3650" step="1" required value={creditDays || ''} onChange={event => setCreditDays(Number(event.target.value))} className={inputClass} placeholder="Número de días" />}
+                  {dueDate && <span className="mt-1 block text-[11px] text-gray-500">Vence: {dueDate.split('-').reverse().join('/')}</span>}
                 </label>
               )}
-              <label className="block sm:col-span-2">
-                <span className="text-xs font-medium text-gray-600">Empresa receptora</span>
-                <SearchableSelect options={fiscalEntityOptions} value={fiscalEntityId} onChange={setFiscalEntityId} placeholder="Seleccionar empresa" minChars={0} className="mt-1 px-3 py-2 rounded-lg" />
-              </label>
-              <label className="block sm:col-span-2">
+              <label className="block">
                 <span className="text-xs font-medium text-gray-600">Solicitado por</span>
                 <input value={requestedBy} onChange={(event) => setRequestedBy(event.target.value)} className={inputClass} placeholder="Nombre del solicitante" />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">Aprobado por</span>
+                <input value={approvedBy} onChange={event => setApprovedBy(event.target.value)} className={inputClass} placeholder="Nombre o firma pendiente" />
               </label>
             </div>
           </FormSection>
@@ -449,7 +465,7 @@ export function NewPurchaseOrderPage() {
             {items.map((item, index) => {
               const product = productMap.get(item.productId);
               return (
-                <div key={index} className="p-4 grid grid-cols-1 lg:grid-cols-[1fr_1.4fr_110px_155px_130px_40px] gap-3 items-end">
+                <div key={index} className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[minmax(140px,1fr)_minmax(160px,1.4fr)_80px_120px_100px_120px_40px] gap-3 items-end">
                   <label className="block">
                     <span className="text-xs font-medium text-gray-600">Almacén destino</span>
                     <SearchableSelect options={companyOptions} value={item.companyId} onChange={(value) => updateItem(index, { companyId: value })} placeholder="Almacén" minChars={0} className="mt-1 px-3 py-2 rounded-lg" />
@@ -467,11 +483,15 @@ export function NewPurchaseOrderPage() {
                     <input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateItem(index, { unitPrice: Number(event.target.value) })} className={inputClass} />
                   </label>
                   <div>
+                    <span className="text-xs font-medium text-gray-600">IGV incluido</span>
+                    <div className="mt-1 px-3 py-2 bg-gray-50 border border-gray-100 rounded-lg text-sm tabular-nums">{money(totals.lines[index].igv, currency)}</div>
+                    {product && !appliesIgv(product) && <span className="text-[10px] text-amber-600">{product.taxType === 'EXONERADO' ? 'Exonerado' : 'Inafecto'}</span>}
+                  </div>
+                  <div>
                     <span className="text-xs font-medium text-gray-600">Importe</span>
                     <div className="mt-1 px-3 py-2 bg-gray-50 border border-gray-100 rounded-lg text-sm font-semibold text-gray-800">
-                      {money(item.quantity * item.unitPrice, currency)}
+                      {money(totals.lines[index].total, currency)}
                     </div>
-                    {product && !appliesIgv(product) && <span className="text-[10px] text-amber-600">{product.taxType === 'EXONERADO' ? 'Exonerado' : 'Inafecto'}</span>}
                   </div>
                   <button type="button" onClick={() => removeItem(index)} disabled={items.length === 1} className="h-10 w-10 inline-flex items-center justify-center rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400" title="Quitar">
                     <Trash2 size={16} />
@@ -487,6 +507,7 @@ export function NewPurchaseOrderPage() {
               <div className="flex justify-between border-t border-gray-200 pt-2 text-base font-bold text-primary-700"><dt>Total estimado</dt><dd className="tabular-nums">{money(totals.total, currency)}</dd></div>
             </dl>
           </div>
+          <p className="px-4 pb-4 text-xs text-gray-600"><span className="font-semibold">Son: </span>{numberToWords(totals.total, currency)}.</p>
         </FormSection>
 
         <FormSection title="Observaciones" description="Indicaciones adicionales para el proveedor" icon={Building2}>
@@ -494,6 +515,11 @@ export function NewPurchaseOrderPage() {
             <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className={inputClass} placeholder="Condiciones especiales, instrucciones de entrega u otras observaciones" />
           </div>
         </FormSection>
+
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs text-gray-600">
+          <p className="font-semibold text-gray-700 mb-2">Condiciones de entrega</p>
+          <ol className="list-decimal pl-4 space-y-1">{PURCHASE_ORDER_CONDITIONS.map(condition => <li key={condition}>{condition}</li>)}</ol>
+        </div>
 
         <div className="flex items-center justify-end gap-3 pb-4">
           <Link to="/purchases?tab=orders" className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">

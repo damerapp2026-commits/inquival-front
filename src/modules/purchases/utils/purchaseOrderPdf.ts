@@ -2,7 +2,8 @@ import { formatDateEs } from '../../../shared/utils/date.util';
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import type { Company, FiscalEntity, Product, PurchaseOrder } from '../../../shared/types';
 import { numberToWords } from '../../quotes/utils/numberToWords';
-import { getPurchaseOrderDetails } from './purchaseOrderDetails';
+import { getPurchaseOrderDetails, PURCHASE_ORDER_CONDITIONS } from './purchaseOrderDetails';
+import { purchaseOrderAmounts } from './purchaseOrderAmounts';
 
 let pdfMakePromise: Promise<any> | null = null;
 function loadPdfMake() {
@@ -49,19 +50,15 @@ interface BuildParams extends PurchaseOrderPdfParams {
   logoDataUrl?: string | null;
 }
 
-const BRAND_BLUE = '#25638c';
-const BRAND_BLUE_DARK = '#174766';
-const SECTION_FILL = '#dbe5ec';
+const BRAND_GREEN = '#537c36';
+const BRAND_GREEN_DARK = '#365424';
+const SECTION_FILL = '#eef3e9';
 const BORDER_GRAY = '#94a3b8';
 const TEXT_DARK = '#111827';
 const TEXT_MUTED = '#64748b';
 
-const roundMoney = (value: number) => Math.round(value * 100) / 100;
-
 const formatDate = (value?: string | Date) =>
   formatDateEs(value, { day: '2-digit', month: '2-digit', year: 'numeric' }) || '—';
-
-const selected = (active: boolean) => active ? '[X]' : '[ ]';
 
 const borderedLayout = {
   hLineColor: () => BORDER_GRAY,
@@ -74,22 +71,21 @@ const borderedLayout = {
   paddingRight: () => 4,
 };
 
-function buildDocDefinition({ order, products, companies, fiscalEntity, logoDataUrl }: BuildParams) {
+export function buildPurchaseOrderPdfDefinition({ order, products, companies, fiscalEntity, logoDataUrl }: BuildParams) {
   const productById = new Map(products.map((product) => [product.id, product]));
   const companyById = new Map(companies.map((company) => [company.id, company]));
   const details = getPurchaseOrderDetails(order);
-  const currency = order.currency || (order.totalCostUsd != null ? 'USD' : 'PEN');
+  const { currency, lines, subtotal, igv, total } = purchaseOrderAmounts(order, products);
   const symbol = currency === 'USD' ? 'US$' : 'S/';
-  const total = roundMoney(currency === 'USD' && order.totalCostUsd != null ? order.totalCostUsd : order.totalCost);
   const headerName = fiscalEntity?.legalName || COMPANY_INFO.legalName || 'EMPRESA';
   const headerRuc = fiscalEntity?.ruc || COMPANY_INFO.ruc || '—';
   const headerAddress = fiscalEntity?.address || COMPANY_INFO.address || '';
   const warehouses = [...new Set(order.items.map((item) => item.companyId || order.companyId).filter(Boolean))]
     .map((id) => companyById.get(id))
     .filter((company): company is Company => !!company);
-  const warehouseNames = warehouses.map((company) => company.name).join(', ') || 'Almacén indicado por línea';
+  const warehouseNames = warehouses.map((company) => company.name).join(', ');
   const warehouseAddresses = warehouses.map((company) => company.address).filter(Boolean).join(' / ');
-  const deliveryPlace = details.deliveryPlace || warehouseNames;
+  const deliveryPlace = details.deliveryPlace === warehouseNames ? '' : details.deliveryPlace;
   const deliveryAddress = details.deliveryAddress || warehouseAddresses || headerAddress || 'Por coordinar';
   const transport = details.transport || 'Directo (a cargo del proveedor)';
   const statusLabel: Record<string, string> = {
@@ -99,16 +95,9 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
     CONVERTED: 'Convertida',
   };
 
-  let taxableGross = 0;
-  let nonTaxableGross = 0;
   const rows = order.items.map((item, index) => {
     const product = productById.get(item.productId);
-    const company = companyById.get(item.companyId || order.companyId);
-    const unitPrice = Number(item.unitPriceConIgv ?? item.unitCost ?? item.unitPriceSinIgv ?? 0);
-    const lineTotal = roundMoney(item.quantity * unitPrice);
-    const isTaxable = !product?.taxType || product.taxType === 'GRAVADO';
-    if (isTaxable) taxableGross += lineTotal;
-    else nonTaxableGross += lineTotal;
+    const line = lines[index];
     return [
       { text: String(index + 1).padStart(2, '0'), alignment: 'center', fontSize: 7.5 },
       {
@@ -117,19 +106,19 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
           { text: product?.activeIngredient || product?.description || ' ', fontSize: 7, color: TEXT_MUTED },
         ],
       },
-      { text: company?.name || '—', fontSize: 7.5 },
       { text: item.quantity.toFixed(2), alignment: 'center', fontSize: 7.5 },
       { text: (product?.unit || 'UND').toUpperCase().slice(0, 8), alignment: 'center', fontSize: 7.5 },
-      { text: `${symbol} ${unitPrice.toFixed(2)}`, alignment: 'right', fontSize: 7.5 },
-      { text: `${symbol} ${lineTotal.toFixed(2)}`, alignment: 'right', fontSize: 7.5, bold: true },
+      { text: `${symbol} ${line.unitPrice.toFixed(2)}`, alignment: 'right', fontSize: 7.5 },
+      { text: `${symbol} ${line.igv.toFixed(2)}`, alignment: 'right', fontSize: 7.5 },
+      { text: `${symbol} ${line.total.toFixed(2)}`, alignment: 'right', fontSize: 7.5, bold: true },
     ];
   });
 
   while (rows.length < 4) {
     rows.push([
       { text: ' ', alignment: 'center', fontSize: 7.5 },
-      { text: ' ', fontSize: 7.5 },
-      { text: ' ', fontSize: 7.5 },
+      { text: ' ', alignment: 'left', fontSize: 7.5 },
+      { text: ' ', alignment: 'center', fontSize: 7.5 },
       { text: ' ', alignment: 'center', fontSize: 7.5 },
       { text: ' ', alignment: 'center', fontSize: 7.5 },
       { text: ' ', alignment: 'right', fontSize: 7.5 },
@@ -137,17 +126,15 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
     ]);
   }
 
-  const calculatedGross = roundMoney(taxableGross + nonTaxableGross);
-  const effectiveTaxableGross = calculatedGross > 0 && Math.abs(calculatedGross - total) > 0.02
-    ? roundMoney(taxableGross * (total / calculatedGross))
-    : roundMoney(taxableGross);
-  const effectiveNonTaxableGross = roundMoney(total - effectiveTaxableGross);
-  const taxableBase = roundMoney(effectiveTaxableGross / 1.18);
-  const subtotal = roundMoney(taxableBase + effectiveNonTaxableGross);
-  const igv = roundMoney(total - subtotal);
   const creditDays = details.creditDays ? `${details.creditDays} días` : '—';
   const paymentType = order.paymentType || 'CONTADO';
-  const paymentForm = details.paymentForm || 'CONTADO';
+  const paymentForm = details.paymentForm.charAt(0) + details.paymentForm.slice(1).toLowerCase();
+  const paymentCondition = paymentType === 'CREDITO' ? 'Crédito' : paymentType === 'BONIFICACION' ? 'Bonificación' : 'Contado';
+
+  const info = (label: string, value: string) => ({ stack: [
+    { text: label, style: 'dataLabel', margin: [0, 0, 0, 2] },
+    { text: value, style: 'dataValue' },
+  ], margin: [2, 2] });
 
   return {
     pageSize: 'A4',
@@ -162,8 +149,8 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
               {
                 width: '*',
                 stack: [
-                  { text: headerName.toUpperCase(), bold: true, fontSize: 13, color: TEXT_DARK, margin: [0, 3, 0, 2] },
-                  { text: `RUC: ${headerRuc}`, fontSize: 7.5, color: TEXT_DARK },
+                  { text: 'EMPRESA RECEPTORA', fontSize: 7, color: BRAND_GREEN_DARK, bold: true, margin: [0, 2, 0, 3] },
+                  { text: headerName.toUpperCase(), bold: true, fontSize: 12, color: TEXT_DARK, margin: [0, 0, 0, 3] },
                   ...(headerAddress ? [{ text: headerAddress, fontSize: 7.5, color: TEXT_DARK }] : []),
                   ...(COMPANY_INFO.phone ? [{ text: `Tel. ${COMPANY_INFO.phone}`, fontSize: 7.5, color: TEXT_DARK }] : []),
                 ],
@@ -175,10 +162,10 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
             table: {
               widths: ['*'],
               body: [
-                [{ text: `RUC: ${headerRuc}`, alignment: 'right', bold: true, fontSize: 8, color: 'white', fillColor: BRAND_BLUE, margin: [4, 1] }],
-                [{ text: 'ORDEN DE COMPRA', alignment: 'center', bold: true, fontSize: 15, color: TEXT_DARK, margin: [3, 4, 3, 1] }],
+                [{ text: `RUC: ${headerRuc}`, alignment: 'center', bold: true, fontSize: 10, color: BRAND_GREEN_DARK, fillColor: SECTION_FILL, margin: [4, 2] }],
+                [{ text: 'ORDEN DE COMPRA', alignment: 'center', bold: true, fontSize: 15, color: BRAND_GREEN_DARK, margin: [3, 4, 3, 1] }],
                 [{ text: order.orderNumber, alignment: 'center', bold: true, fontSize: 10, color: TEXT_DARK }],
-                [{ text: statusLabel[order.status] || order.status, alignment: 'center', fontSize: 8, color: order.status === 'CANCELLED' ? '#dc2626' : BRAND_BLUE_DARK, margin: [3, 0, 3, 4] }],
+                [{ text: statusLabel[order.status] || order.status, alignment: 'center', fontSize: 8, color: order.status === 'CANCELLED' ? '#dc2626' : BRAND_GREEN_DARK, margin: [3, 0, 3, 4] }],
               ],
             },
             layout: borderedLayout,
@@ -186,84 +173,62 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
         ],
       },
       {
-        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 1.2, lineColor: BRAND_BLUE_DARK }],
+        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 1.2, lineColor: BRAND_GREEN }],
         margin: [0, 8, 0, 6],
       },
       {
-        table: {
-          widths: [75, '*', 55, 115],
-          body: [
-            [{ text: 'PROVEEDOR', colSpan: 4, style: 'sectionTitle' }, {}, {}, {}],
-            [{ text: 'Nombre/Razón Social:', style: 'dataLabel' }, { text: order.supplier, colSpan: 3, style: 'dataValue' }, {}, {}],
-            [{ text: 'RUC:', style: 'dataLabel' }, { text: order.supplierRuc || '—', colSpan: 3, style: 'dataValue' }, {}, {}],
-            [{ text: 'Contacto:', style: 'dataLabel' }, { text: details.supplierContact || '—', style: 'dataValue' }, { text: 'Teléfono:', style: 'dataLabel' }, { text: details.supplierPhone || '—', style: 'dataValue' }],
-          ],
-        },
-        layout: borderedLayout,
+        columns: [
+          {
+            width: '*',
+            table: { widths: ['*'], body: [
+              [{ text: 'PROVEEDOR', style: 'sectionTitle' }],
+              [{ stack: [
+                { text: order.supplier, bold: true, fontSize: 9, margin: [0, 1, 0, 3] },
+                { text: `RUC: ${order.supplierRuc || '—'}`, style: 'dataValue', margin: [0, 0, 0, 3] },
+                { text: `Contacto: ${details.supplierContact || '—'}`, style: 'dataValue', margin: [0, 0, 0, 3] },
+                { text: `Teléfono: ${details.supplierPhone || '—'}`, style: 'dataValue' },
+              ], margin: [2, 2] }],
+            ] }, layout: borderedLayout,
+          },
+          { width: 12, text: '' },
+          {
+            width: '*',
+            table: { widths: ['*'], body: [
+              [{ text: 'PUNTO DE LLEGADA', style: 'sectionTitle' }],
+              [{ stack: [
+                ...(deliveryPlace ? [{ text: deliveryPlace, bold: true, fontSize: 9, margin: [0, 1, 0, 4] }] : []),
+                { text: deliveryAddress, style: 'dataValue', margin: [0, 2, 0, 4] },
+              ], margin: [2, 2] }],
+            ] }, layout: borderedLayout,
+          },
+        ],
       },
-      { text: '', margin: [0, 2] },
+      { text: '', margin: [0, 4] },
       {
         table: {
-          widths: [95, '*', 145, '*'],
+          widths: ['*', '*', '*'],
           body: [
-            [{ text: 'FECHA Y MONEDA', colSpan: 4, style: 'sectionTitle' }, {}, {}, {}],
-            [{ text: 'Fecha de emisión:', style: 'dataLabel' }, { text: formatDate(order.issueDate || order.createdAt), style: 'dataValue' }, { text: 'Vencimiento de cotización:', style: 'dataLabel' }, { text: formatDate(details.quotationValidUntil), style: 'dataValue' }],
-            [{ text: 'Moneda:', style: 'dataLabel' }, { text: currency === 'USD' ? 'USD — Dólares americanos' : 'PEN — Soles', colSpan: 3, style: 'dataValue' }, {}, {}],
+            [info('Fecha de pedido', formatDate(order.issueDate || order.createdAt)), info('Moneda', currency === 'USD' ? 'USD — Dólares americanos' : 'PEN — Soles'), info('Condición', paymentCondition)],
+            [info('Forma de pago', paymentForm), info('Plazo', paymentType === 'CREDITO' ? creditDays : 'Al contado'), info('Vencimiento de pago', paymentType === 'CREDITO' ? formatDate(order.dueDate) : '—')],
+            ...(details.quotationValidUntil ? [[{ ...info('Vencimiento de cotización', formatDate(details.quotationValidUntil)), colSpan: 3 }, {}, {}]] : []),
           ],
         },
         layout: borderedLayout,
       },
-      { text: '', margin: [0, 2] },
-      {
-        table: {
-          widths: [95, '*'],
-          body: [
-            [{ text: 'PUNTO DE LLEGADA', colSpan: 2, style: 'sectionTitle' }, {}],
-            [{ text: 'Entrega / destino:', style: 'dataLabel' }, { text: deliveryPlace, style: 'dataValue' }],
-            [{ text: 'Almacén:', style: 'dataLabel' }, { text: warehouseNames, style: 'dataValue' }],
-            [{ text: 'Dirección:', style: 'dataLabel' }, { text: deliveryAddress, style: 'dataValue' }],
-            [{ text: 'Transporte:', style: 'dataLabel' }, { text: transport, style: 'dataValue' }],
-          ],
-        },
-        layout: borderedLayout,
-      },
-      { text: '', margin: [0, 2] },
-      {
-        table: {
-          widths: [95, '*'],
-          body: [
-            [{ text: 'CONDICIONES DE PAGO', colSpan: 2, style: 'sectionTitle' }, {}],
-            [{ text: 'Forma de pago:', style: 'dataLabel' }, { text: `${selected(paymentForm === 'CONTADO')} Contado     ${selected(paymentForm === 'LETRA')} Letra     ${selected(paymentForm === 'FACTURA')} Factura`, style: 'dataValue' }],
-            [{ text: 'Condición:', style: 'dataLabel' }, { text: `${selected(paymentType === 'CONTADO')} Contado     ${selected(paymentType === 'CREDITO')} Crédito`, style: 'dataValue' }],
-            [{ text: 'Plazo:', style: 'dataLabel' }, { text: `${selected(details.creditDays === 30)} 30 días     ${selected(details.creditDays === 60)} 60 días     ${selected(details.creditDays === 150)} 150 días     Vencimiento: ${formatDate(order.dueDate)} (${creditDays})`, style: 'dataValue' }],
-          ],
-        },
-        layout: borderedLayout,
-      },
-      { text: '', margin: [0, 2] },
-      {
-        table: {
-          widths: [95, '*', 95, 115],
-          body: [
-            [{ text: 'DATOS DE FACTURACIÓN', colSpan: 4, style: 'sectionTitle' }, {}, {}, {}],
-            [{ text: 'Empresa receptora:', style: 'dataLabel' }, { text: headerName, style: 'dataValue' }, { text: 'RUC receptora:', style: 'dataLabel' }, { text: headerRuc, style: 'dataValue' }],
-          ],
-        },
-        layout: borderedLayout,
-      },
-      { text: '', margin: [0, 3] },
+      { text: 'PRODUCTOS SOLICITADOS', bold: true, fontSize: 9, color: BRAND_GREEN_DARK, margin: [0, 10, 0, 5] },
       {
         table: {
           headerRows: 1,
-          widths: [24, '*', 73, 34, 35, 55, 61],
+          dontBreakRows: true,
+          widths: [24, '*', 38, 32, 62, 57, 66],
           body: [
             [
               { text: 'ÍTEM', style: 'thead' },
               { text: 'DESCRIPCIÓN', style: 'thead' },
-              { text: 'ALMACÉN', style: 'thead' },
               { text: 'CANT.', style: 'thead' },
               { text: 'U.M.', style: 'thead' },
-              { text: 'P. UNIT.', style: 'thead' },
+              { text: 'P. UNIT.\nCON IGV', style: 'thead' },
+              { text: 'IGV\nINCLUIDO', style: 'thead' },
               { text: 'IMPORTE', style: 'thead' },
             ],
             ...rows,
@@ -274,17 +239,16 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
           fillColor: (row: number) => row === 0 ? SECTION_FILL : null,
         },
       },
+      { text: 'Precios e importes incluyen IGV cuando corresponde.', fontSize: 7, color: TEXT_MUTED, margin: [0, 4, 0, 0] },
       { text: `Son: ${numberToWords(total, currency).toLowerCase()}.`, fontSize: 7.5, color: TEXT_DARK, margin: [0, 5, 0, 3] },
       {
         columns: [
           {
             width: '*',
             stack: [
-              { text: 'NOTAS IMPORTANTES', bold: true, fontSize: 8, color: TEXT_DARK, margin: [0, 0, 0, 2] },
-              { text: '1. Toda guía de remisión o factura deberá incluir el N.° de la orden de compra correspondiente.', fontSize: 7 },
-              { text: '2. Los productos con fecha de vencimiento deberán mantener más de un año de vida útil, salvo indicación distinta.', fontSize: 7 },
-              { text: '3. La entrega posterior a la fecha acordada podrá ser rechazada.', fontSize: 7 },
-              { text: '4. No se aceptará mercadería cuyos precios no figuren en la orden de compra.', fontSize: 7 },
+              { text: 'TRANSPORTE Y OBSERVACIONES', bold: true, fontSize: 8, color: BRAND_GREEN_DARK, margin: [0, 0, 0, 4] },
+              { text: `Transporte: ${transport}`, fontSize: 7.5, margin: [0, 0, 0, 3] },
+              ...(details.transportAddress ? [{ text: `Dirección del transportista: ${details.transportAddress}`, fontSize: 7.5, margin: [0, 0, 0, 3] }] : []),
               ...(details.observations ? [{ text: `Observaciones: ${details.observations}`, fontSize: 7, bold: true, margin: [0, 3, 0, 0] }] : []),
             ],
           },
@@ -294,7 +258,7 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
             table: {
               widths: ['*', 70],
               body: [
-                [{ text: 'RESTRICCIONES Y RESUMEN', colSpan: 2, style: 'sectionTitle' }, {}],
+                [{ text: 'RESUMEN', colSpan: 2, style: 'sectionTitle' }, {}],
                 [{ text: 'Subtotal', fontSize: 8 }, { text: `${symbol} ${subtotal.toFixed(2)}`, alignment: 'right', fontSize: 8 }],
                 [{ text: 'I.G.V. (18%)', fontSize: 8 }, { text: `${symbol} ${igv.toFixed(2)}`, alignment: 'right', fontSize: 8 }],
                 [{ text: 'Total estimado', bold: true, fontSize: 8.5 }, { text: `${symbol} ${total.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 8.5 }],
@@ -303,6 +267,13 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
             layout: borderedLayout,
           },
         ],
+      },
+      {
+        stack: [
+          { text: 'CONDICIONES DE ENTREGA', bold: true, fontSize: 8, color: BRAND_GREEN_DARK, margin: [0, 0, 0, 4] },
+          ...PURCHASE_ORDER_CONDITIONS.map((condition, index) => ({ text: `${index + 1}. ${condition}`, fontSize: 7.5, margin: [0, 0, 0, 3] })),
+        ],
+        margin: [0, 12, 0, 4],
       },
       { text: '', margin: [0, 12] },
       {
@@ -345,5 +316,5 @@ function buildDocDefinition({ order, products, companies, fiscalEntity, logoData
 
 export async function downloadPurchaseOrderPdf(params: PurchaseOrderPdfParams) {
   const [pdfMake, logoDataUrl] = await Promise.all([loadPdfMake(), loadLogoDataUrl()]);
-  pdfMake.createPdf(buildDocDefinition({ ...params, logoDataUrl })).download(`${params.order.orderNumber}.pdf`);
+  await pdfMake.createPdf(buildPurchaseOrderPdfDefinition({ ...params, logoDataUrl })).download(`${params.order.orderNumber}.pdf`);
 }

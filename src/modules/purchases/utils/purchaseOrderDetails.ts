@@ -1,4 +1,5 @@
 import type { PurchaseOrder } from '../../../shared/types';
+import { addDaysToDate as addCalendarDays } from '../../../shared/utils/date.util';
 
 export type PurchaseOrderPaymentForm = 'CONTADO' | 'LETRA' | 'FACTURA';
 
@@ -9,6 +10,7 @@ export interface PurchaseOrderDetails {
   deliveryPlace: string;
   deliveryAddress: string;
   transport: string;
+  transportAddress: string;
   paymentForm: PurchaseOrderPaymentForm;
   creditDays?: number;
   requestedBy: string;
@@ -29,6 +31,7 @@ export const EMPTY_PURCHASE_ORDER_DETAILS: PurchaseOrderDetails = {
   deliveryPlace: '',
   deliveryAddress: '',
   transport: 'Directo (a cargo del proveedor)',
+  transportAddress: '',
   paymentForm: 'CONTADO',
   creditDays: undefined,
   requestedBy: '',
@@ -47,6 +50,14 @@ const asPositiveNumber = (value: unknown): number | undefined => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 };
 
+export const PURCHASE_ORDER_CREDIT_DAYS = [30, 45, 60, 150] as const;
+
+export const PURCHASE_ORDER_CONDITIONS = [
+  'Toda guía de remisión o factura deberá incluir el número de esta orden de compra.',
+  'Los productos solicitados deberán contar con más de un año de vida útil. La mercadería con una fecha de vencimiento menor a la indicada será devuelta.',
+  'No se aceptará mercadería cuyos productos o precios no figuren en esta orden de compra.',
+];
+
 export function serializePurchaseOrderDetails(details: PurchaseOrderDetails): string | undefined {
   const stored: StoredPurchaseOrderDetails = {
     supplierContact: details.supplierContact.trim(),
@@ -55,6 +66,7 @@ export function serializePurchaseOrderDetails(details: PurchaseOrderDetails): st
     deliveryPlace: details.deliveryPlace.trim(),
     deliveryAddress: details.deliveryAddress.trim(),
     transport: details.transport.trim(),
+    transportAddress: details.transportAddress.trim(),
     paymentForm: details.paymentForm,
     creditDays: asPositiveNumber(details.creditDays),
     requestedBy: details.requestedBy.trim(),
@@ -70,7 +82,8 @@ export function getPurchaseOrderDetails(order: PurchaseOrder): PurchaseOrderDeta
   const match = notes.match(META_PATTERN);
   if (match?.[1]) {
     try {
-      stored = JSON.parse(match[1]) as Partial<StoredPurchaseOrderDetails>;
+      const parsed = JSON.parse(match[1]);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) stored = parsed;
     } catch {
       stored = {};
     }
@@ -83,6 +96,7 @@ export function getPurchaseOrderDetails(order: PurchaseOrder): PurchaseOrderDeta
     deliveryPlace: asString(order.deliveryPlace) || asString(stored.deliveryPlace),
     deliveryAddress: asString(order.deliveryAddress) || asString(stored.deliveryAddress),
     transport: asString(order.transport) || asString(stored.transport),
+    transportAddress: asString(order.transportAddress) || asString(stored.transportAddress),
     paymentForm: asPaymentForm(order.paymentForm || stored.paymentForm),
     creditDays: asPositiveNumber(order.creditDays) || asPositiveNumber(stored.creditDays),
     requestedBy: asString(order.requestedBy) || asString(stored.requestedBy),
@@ -93,12 +107,6 @@ export function getPurchaseOrderDetails(order: PurchaseOrder): PurchaseOrderDeta
 
 export function addDaysToDate(date: string, days: number): string {
   if (!date || !Number.isFinite(days)) return '';
-  const [year, month, day] = date.split('-').map(Number);
-  const result = new Date(year, month - 1, day + days);
-  if (Number.isNaN(result.getTime())) return '';
-  return [
-    result.getFullYear(),
-    String(result.getMonth() + 1).padStart(2, '0'),
-    String(result.getDate()).padStart(2, '0'),
-  ].join('-');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00.000Z`))) return '';
+  return addCalendarDays(date, days);
 }

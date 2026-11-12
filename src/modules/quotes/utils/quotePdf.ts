@@ -1,8 +1,9 @@
 import type { Quote, Product, Company, Client } from '../../../shared/types';
 import { numberToWords } from './numberToWords';
 import { COMPANY_INFO } from '../../../config/companyInfo';
-import { getQuoteItemProductName, getQuoteItemProductUnit } from './quoteItemDetails';
+import { getQuoteItemProductName, getQuoteItemProductUnit, getQuoteItemTaxType } from './quoteItemDetails';
 import { getQuoteCommercialDetails } from './quoteDetails';
+import { formatDateEs } from '../../../shared/utils/date.util';
 
 let pdfMakePromise: Promise<any> | null = null;
 function loadPdfMake() {
@@ -54,14 +55,7 @@ interface BuildParams extends GenerateParams {
   logoDataUrl?: string | null;
 }
 
-const formatDate = (d?: string | Date) => {
-  if (!d) return '—';
-  const raw = d instanceof Date ? d.toISOString() : d;
-  const dateKey = raw.slice(0, 10);
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
-  if (!match) return '—';
-  return `${match[3]}/${match[2]}/${match[1]}`;
-};
+const formatDate = (date?: string | Date) => formatDateEs(date, { day: '2-digit', month: '2-digit', year: 'numeric' }) || '—';
 
 const IGV_RATE = 0.18;
 const BRAND_GREEN_DARK = '#15803d';
@@ -208,16 +202,10 @@ export function buildQuotePdfDefinition({ quote, products, company, client, vend
   const hasInstallments = commercial.paymentTerm === 'CRÉDITO'
     && quote.paymentScheduleType === 'INSTALLMENTS'
     && creditInstallments.length > 0;
-  const commercialNoteParts = [`Forma de pago: ${commercial.paymentTerm}`];
-  if (commercial.paymentTerm === 'CRÉDITO') {
-    commercialNoteParts.push(`Plazo: ${quote.creditDays ? `${quote.creditDays} días` : '—'}`);
-    commercialNoteParts.push(`Cuotas: ${hasInstallments ? creditInstallments.length : 1}`);
-  }
-  const commercialNote = `${commercialNoteParts.join(', ')}${commercial.observations ? `. ${commercial.observations}` : ''}`;
-
-  const isExonerado = (taxType?: string) => taxType === 'EXONERADO' || taxType === 'INAFECTO';
-  const gravadoTotal = quote.items.filter(it => !isExonerado(getProduct(it.productId)?.taxType)).reduce((s, it) => s + it.subtotal, 0);
-  const exoneradoTotal = quote.items.filter(it => isExonerado(getProduct(it.productId)?.taxType)).reduce((s, it) => s + it.subtotal, 0);
+  const taxType = (item: Quote['items'][number]) => getQuoteItemTaxType(item, getProduct(item.productId)) || 'GRAVADO';
+  const gravadoTotal = quote.items.filter(item => !['EXONERADO', 'INAFECTO'].includes(taxType(item))).reduce((sum, item) => sum + item.subtotal, 0);
+  const exoneradoTotal = quote.items.filter(item => taxType(item) === 'EXONERADO').reduce((sum, item) => sum + item.subtotal, 0);
+  const inafectoTotal = quote.items.filter(item => taxType(item) === 'INAFECTO').reduce((sum, item) => sum + item.subtotal, 0);
   const opGravadas = Math.round((gravadoTotal / (1 + IGV_RATE)) * 100) / 100;
   const igv = Math.round((gravadoTotal - opGravadas) * 100) / 100;
 
@@ -227,7 +215,7 @@ export function buildQuotePdfDefinition({ quote, products, company, client, vend
       { text: idx + 1, alignment: 'center', fontSize: 8 },
       { text: getQuoteItemProductName(it, p), alignment: 'left', fontSize: 8 },
       { text: it.quantity.toFixed(2), alignment: 'center', fontSize: 8 },
-      { text: (getQuoteItemProductUnit(it, p) || 'UND').toUpperCase().slice(0, 4), alignment: 'center', fontSize: 8 },
+      { text: (getQuoteItemProductUnit(it, p) || 'UND').toUpperCase(), alignment: 'center', fontSize: 8 },
       { text: it.unitPrice.toFixed(2), alignment: 'right', fontSize: 8 },
       { text: it.subtotal.toFixed(2), alignment: 'right', fontSize: 8 },
     ];
@@ -313,11 +301,11 @@ export function buildQuotePdfDefinition({ quote, products, company, client, vend
             ],
             [
               { text: 'E-mail', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: clientEmail, fontSize: 8 },
-              { text: '', fontSize: 8 }, { text: '', fontSize: 8 }, { text: '', fontSize: 8 },
+              { text: 'Moneda', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: effectiveCurrency === 'USD' ? 'USD — Dólares americanos' : 'PEN — Soles', fontSize: 8 },
             ],
             [
               { text: 'Fecha Emisión', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: formatDate(quote.issueDate), fontSize: 8 },
-              { text: 'Fecha Vencimiento', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: formatDate(quote.validUntil), fontSize: 8 },
+              { text: 'Venc. cotización', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: formatDate(quote.validUntil), fontSize: 8 },
             ],
           ],
         },
@@ -387,9 +375,13 @@ export function buildQuotePdfDefinition({ quote, products, company, client, vend
                   widths: [90, 5, '*'],
                   body: [
                     [{ text: 'Condición de Venta', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercial.paymentTerm, fontSize: 8 }],
+                    ...(commercial.paymentTerm === 'CRÉDITO' ? [
+                      [{ text: 'Plazo', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: quote.creditDays ? `${quote.creditDays} días` : '—', fontSize: 8 }],
+                      [{ text: 'Cuotas', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: String(hasInstallments ? creditInstallments.length : 1), fontSize: 8 }],
+                    ] : []),
                     [{ text: 'Tiempo de Entrega', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercial.deliveryTime || '—', fontSize: 8 }],
                     [{ text: 'Lugar de Entrega', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercial.deliveryPlace || clientAddress, fontSize: 8 }],
-                    [{ text: 'Nota', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercialNote, fontSize: 8 }],
+                    ...(commercial.observations ? [[{ text: 'Observaciones', bold: true, fontSize: 8 }, { text: ':', fontSize: 8 }, { text: commercial.observations, fontSize: 8 }]] : []),
                   ],
                 },
                 layout: {
@@ -415,6 +407,11 @@ export function buildQuotePdfDefinition({ quote, products, company, client, vend
                   { text: 'OP. EXONERADAS', bold: true, fillColor: TABLE_HEADER_FILL, fontSize: 9, alignment: 'right', margin: [4, 3] },
                   { text: currencySymbol, fontSize: 9, alignment: 'center', margin: [0, 3] },
                   { text: exoneradoTotal.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
+                ]] : []),
+                ...(inafectoTotal > 0 ? [[
+                  { text: 'OP. INAFECTAS', bold: true, fillColor: TABLE_HEADER_FILL, fontSize: 9, alignment: 'right', margin: [4, 3] },
+                  { text: currencySymbol, fontSize: 9, alignment: 'center', margin: [0, 3] },
+                  { text: inafectoTotal.toFixed(2), fontSize: 9, alignment: 'right', margin: [0, 3] },
                 ]] : []),
                 [
                   { text: 'I.G.V. 18%', bold: true, fillColor: TABLE_HEADER_FILL, fontSize: 9, alignment: 'right', margin: [4, 3] },
@@ -483,6 +480,13 @@ export function buildQuotePdfDefinition({ quote, products, company, client, vend
         margin: [2, 8, 2, 0],
       },
     ],
+    footer: (currentPage: number, pageCount: number) => ({
+      columns: [
+        { text: quote.quoteNumber, fontSize: 7, color: '#64748b' },
+        { text: `Página ${currentPage} de ${pageCount}`, alignment: 'right', fontSize: 7, color: '#64748b' },
+      ],
+      margin: [24, 0, 24, 10],
+    }),
     styles: {
       companyName: { fontSize: 18, bold: true, color: '#111827', margin: [0, 0, 0, 2] },
       companyDetail: { fontSize: 10, color: '#1f2937', margin: [0, 1.5, 0, 0], lineHeight: 1.1 },
@@ -494,10 +498,10 @@ export function buildQuotePdfDefinition({ quote, products, company, client, vend
 
 export async function downloadQuotePdf(params: GenerateParams) {
   const [pdfMake, logoDataUrl] = await Promise.all([loadPdfMake(), loadLogoDataUrl()]);
-  pdfMake.createPdf(buildQuotePdfDefinition({ ...params, logoDataUrl })).download(`${params.quote.quoteNumber}.pdf`);
+  await pdfMake.createPdf(buildQuotePdfDefinition({ ...params, logoDataUrl })).download(`${params.quote.quoteNumber}.pdf`);
 }
 
 export async function printQuotePdf(params: GenerateParams) {
   const [pdfMake, logoDataUrl] = await Promise.all([loadPdfMake(), loadLogoDataUrl()]);
-  pdfMake.createPdf(buildQuotePdfDefinition({ ...params, logoDataUrl })).open();
+  await pdfMake.createPdf(buildQuotePdfDefinition({ ...params, logoDataUrl })).open();
 }

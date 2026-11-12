@@ -2,7 +2,9 @@ import { Building2, CalendarDays, CreditCard, Download, MapPin, Package, UserRou
 import { Modal } from '../../../shared/components/Modal';
 import type { Company, FiscalEntity, Product, PurchaseOrder, PurchaseOrderStatus } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
-import { getPurchaseOrderDetails } from '../utils/purchaseOrderDetails';
+import { getPurchaseOrderDetails, PURCHASE_ORDER_CONDITIONS } from '../utils/purchaseOrderDetails';
+import { purchaseOrderAmounts } from '../utils/purchaseOrderAmounts';
+import { numberToWords } from '../../quotes/utils/numberToWords';
 
 interface PurchaseOrderDetailModalProps {
   order: PurchaseOrder | null;
@@ -19,8 +21,6 @@ const STATUS_META: Record<PurchaseOrderStatus, { label: string; className: strin
   CANCELLED: { label: 'Cancelada', className: 'bg-red-100 text-red-700' },
   CONVERTED: { label: 'Convertida', className: 'bg-primary-100 text-primary-700' },
 };
-
-const roundMoney = (value: number) => Math.round(value * 100) / 100;
 
 function DetailSection({ title, icon: Icon, children }: { title: string; icon: typeof UserRound; children: React.ReactNode }) {
   return (
@@ -56,30 +56,14 @@ export function PurchaseOrderDetailModal({
   const productMap = new Map(products.map((product) => [product.id, product]));
   const companyMap = new Map(companies.map((company) => [company.id, company]));
   const details = getPurchaseOrderDetails(order);
-  const currency = order.currency || (order.totalCostUsd != null ? 'USD' : 'PEN');
+  const { currency, lines, subtotal, igv, total } = purchaseOrderAmounts(order, products);
   const symbol = currency === 'USD' ? 'US$' : 'S/';
-  const total = roundMoney(currency === 'USD' && order.totalCostUsd != null ? order.totalCostUsd : order.totalCost);
   const warehouses = [...new Set(order.items.map((item) => item.companyId || order.companyId).filter(Boolean))]
     .map((id) => companyMap.get(id))
     .filter((company): company is Company => !!company);
   const warehouseNames = warehouses.map((company) => company.name).join(', ') || '—';
   const warehouseAddresses = warehouses.map((company) => company.address).filter(Boolean).join(' / ');
 
-  let taxableGross = 0;
-  let nonTaxableGross = 0;
-  order.items.forEach((item) => {
-    const product = productMap.get(item.productId);
-    const unitPrice = Number(item.unitPriceConIgv ?? item.unitCost ?? item.unitPriceSinIgv ?? 0);
-    const lineTotal = item.quantity * unitPrice;
-    if (!product?.taxType || product.taxType === 'GRAVADO') taxableGross += lineTotal;
-    else nonTaxableGross += lineTotal;
-  });
-  const calculatedGross = taxableGross + nonTaxableGross;
-  const effectiveTaxableGross = calculatedGross > 0 && Math.abs(calculatedGross - total) > 0.02
-    ? taxableGross * (total / calculatedGross)
-    : taxableGross;
-  const subtotal = roundMoney((effectiveTaxableGross / 1.18) + (total - effectiveTaxableGross));
-  const igv = roundMoney(total - subtotal);
   const status = STATUS_META[order.status];
   const paymentFormLabel = details.paymentForm.charAt(0) + details.paymentForm.slice(1).toLowerCase();
 
@@ -92,7 +76,8 @@ export function PurchaseOrderDetailModal({
               <span className="font-mono text-xl font-bold text-primary-800">{order.orderNumber}</span>
               <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${status.className}`}>{status.label}</span>
             </div>
-            <p className="text-sm text-gray-500 mt-1">Orden emitida el {formatDateEs(order.issueDate || order.createdAt, { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+            <p className="text-sm text-gray-500 mt-1">Fecha de pedido: {formatDateEs(order.issueDate || order.createdAt, { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+            {fiscalEntity && <p className="text-xs text-gray-600 mt-2">{fiscalEntity.legalName} · RUC: {fiscalEntity.ruc}</p>}
           </div>
           <button type="button" onClick={() => onDownload(order)} className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-primary-200 text-primary-700 hover:bg-primary-50 text-sm font-semibold">
             <Download size={16} /> Descargar PDF
@@ -111,7 +96,7 @@ export function PurchaseOrderDetailModal({
 
           <DetailSection title="Fecha y moneda" icon={CalendarDays}>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3">
-              <DetailItem label="Fecha de emisión">{formatDateEs(order.issueDate || order.createdAt)}</DetailItem>
+              <DetailItem label="Fecha de pedido">{formatDateEs(order.issueDate || order.createdAt)}</DetailItem>
               <DetailItem label="Vencimiento de cotización">{details.quotationValidUntil ? formatDateEs(details.quotationValidUntil) : '—'}</DetailItem>
               <DetailItem label="Moneda" wide>{currency === 'USD' ? 'USD — Dólares americanos' : 'PEN — Soles'}</DetailItem>
             </dl>
@@ -119,10 +104,11 @@ export function PurchaseOrderDetailModal({
 
           <DetailSection title="Punto de llegada" icon={MapPin}>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3">
-              <DetailItem label="Entrega / destino" wide>{details.deliveryPlace || warehouseNames}</DetailItem>
-              <DetailItem label="Almacén" wide>{warehouseNames}</DetailItem>
-              <DetailItem label="Dirección" wide>{details.deliveryAddress || warehouseAddresses || '—'}</DetailItem>
+              {details.deliveryPlace && details.deliveryPlace !== warehouseNames && <DetailItem label="Referencia" wide>{details.deliveryPlace}</DetailItem>}
+              <DetailItem label="Dirección de entrega" wide>{details.deliveryAddress || warehouseAddresses || '—'}</DetailItem>
+              <DetailItem label="Almacenes destino" wide>{warehouseNames}</DetailItem>
               <DetailItem label="Transporte" wide>{details.transport || 'Directo (a cargo del proveedor)'}</DetailItem>
+              {details.transportAddress && <DetailItem label="Dirección del transportista" wide>{details.transportAddress}</DetailItem>}
             </dl>
           </DetailSection>
 
@@ -152,18 +138,17 @@ export function PurchaseOrderDetailModal({
                 <tr>
                   <th className="px-3 py-2 text-center text-[11px] font-bold text-gray-500">Ítem</th>
                   <th className="px-3 py-2 text-left text-[11px] font-bold text-gray-500">Descripción</th>
-                  <th className="px-3 py-2 text-left text-[11px] font-bold text-gray-500">Almacén</th>
                   <th className="px-3 py-2 text-right text-[11px] font-bold text-gray-500">Cant.</th>
                   <th className="px-3 py-2 text-center text-[11px] font-bold text-gray-500">U.M.</th>
-                  <th className="px-3 py-2 text-right text-[11px] font-bold text-gray-500">P. unit.</th>
+                  <th className="px-3 py-2 text-right text-[11px] font-bold text-gray-500">P. unit. con IGV</th>
+                  <th className="px-3 py-2 text-right text-[11px] font-bold text-gray-500">IGV incluido</th>
                   <th className="px-3 py-2 text-right text-[11px] font-bold text-gray-500">Importe</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {order.items.map((item, index) => {
                   const product = productMap.get(item.productId);
-                  const company = companyMap.get(item.companyId || order.companyId);
-                  const unitPrice = Number(item.unitPriceConIgv ?? item.unitCost ?? item.unitPriceSinIgv ?? 0);
+                  const line = lines[index];
                   return (
                     <tr key={`${item.productId}-${index}`}>
                       <td className="px-3 py-2.5 text-center text-gray-500">{String(index + 1).padStart(2, '0')}</td>
@@ -171,17 +156,19 @@ export function PurchaseOrderDetailModal({
                         <div className="font-semibold text-gray-800">{product?.name || item.productId}</div>
                         {product?.activeIngredient && <div className="text-xs text-gray-500 mt-0.5">{product.activeIngredient}</div>}
                       </td>
-                      <td className="px-3 py-2.5 text-gray-600">{company?.name || '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums">{item.quantity.toFixed(2)}</td>
                       <td className="px-3 py-2.5 text-center">{product?.unit || 'UND'}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{symbol} {unitPrice.toFixed(2)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{symbol} {(item.quantity * unitPrice).toFixed(2)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{symbol} {line.unitPrice.toFixed(2)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{symbol} {line.igv.toFixed(2)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{symbol} {line.total.toFixed(2)}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          <p className="mt-3 text-xs text-gray-500">Precios e importes incluyen IGV cuando corresponde.</p>
+          <p className="mt-2 text-xs text-gray-600"><span className="font-semibold">Son: </span>{numberToWords(total, currency)}.</p>
           <div className="mt-4 flex flex-col md:flex-row gap-4 md:justify-between md:items-start">
             <div className="text-xs text-gray-500 max-w-2xl">
               {details.observations ? <p><span className="font-semibold text-gray-700">Observaciones:</span> {details.observations}</p> : <p>Sin observaciones adicionales.</p>}
@@ -197,9 +184,7 @@ export function PurchaseOrderDetailModal({
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
           <p className="font-bold uppercase tracking-wide mb-1.5">Notas importantes</p>
           <ol className="list-decimal pl-4 space-y-1">
-            <li>La guía de remisión o factura debe incluir el número de esta orden.</li>
-            <li>Los productos con vencimiento deben mantener más de un año de vida útil, salvo indicación distinta.</li>
-            <li>La mercadería y sus precios deben coincidir con lo indicado en la orden.</li>
+            {PURCHASE_ORDER_CONDITIONS.map(condition => <li key={condition}>{condition}</li>)}
           </ol>
         </div>
       </div>

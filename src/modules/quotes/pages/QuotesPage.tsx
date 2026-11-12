@@ -103,7 +103,10 @@ export function QuotesPage() {
     products,
     company: getCompany(q.companyId),
     client: getClient(q.clientId),
-    vendor: { name: q.sellerName || user?.fullName, email: q.sellerId === user?.id ? user?.email : undefined },
+    vendor: {
+      name: q.sellerName || ((q.sellerId || q.createdBy) === user?.id ? user?.fullName : undefined),
+      email: (q.sellerId || q.createdBy) === user?.id ? user?.email : undefined,
+    },
   });
 
   const columns = [
