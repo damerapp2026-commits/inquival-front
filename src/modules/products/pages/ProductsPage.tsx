@@ -108,10 +108,10 @@ export function ProductsPage() {
 
   const queryClient = useQueryClient();
   const hasProductFilters = !!(debouncedSearch || debouncedIngredient || laboratoryFilter || categoryFilter);
-  const { data, isLoading } = useProducts({
+  const { data, isLoading, isError } = useProducts({
     page: hasProductFilters ? 1 : page,
     limit: hasProductFilters ? 10000 : 20,
-  });
+  }, { allPages: hasProductFilters });
   const { data: priceTiers } = usePriceTiers();
   const { data: categories } = useCategories();
   const { data: laboratories } = useLaboratories();
@@ -793,6 +793,19 @@ export function ProductsPage() {
           {cats.filter((c: any) => c.isActive).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <LabCombobox labs={labs} value={laboratoryFilter} onChange={(id) => { setLaboratoryFilter(id); setPage(1); }} placeholder="Todos los laboratorios" emptyLabel="Todos los laboratorios" className="" />
+      </div>
+      <div role="status" className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        <span className="inline-flex items-center gap-1.5 rounded-lg bg-primary-50 px-3 py-2 text-primary-700">
+          {isLoading ? 'Calculando total de productos...' : isError ? 'No se pudo calcular el total de productos' : (
+            <>
+              Total de productos:
+              <strong className="tabular-nums">{total.toLocaleString('es-PE')}</strong>
+            </>
+          )}
+        </span>
+        {hasProductFilters && !isLoading && !isError && (
+          <span className="text-gray-500">Con los filtros aplicados</span>
+        )}
       </div>
       <DataTable columns={columns} data={products} isLoading={isLoading} compact />
       <Pagination page={page} totalPages={hasProductFilters ? 1 : Math.ceil(total / 20)} onPageChange={setPage} />
