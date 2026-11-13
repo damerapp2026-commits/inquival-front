@@ -30,6 +30,17 @@ export const fmtPrice = (n: number): string => {
   return Math.abs(n - r2) < 1e-9 ? n.toFixed(2) : n.toFixed(4);
 };
 
+/** New purchase lines start from the current product cost, in the form currency. */
+export function productReferenceCost(product: Product | undefined, currency: 'PEN' | 'USD', exchangeRate: number | null): number | undefined {
+  const cost = product?.lastCostPrice;
+  if (cost == null || !Number.isFinite(cost) || cost < 0) return undefined;
+  const sourceCurrency = product?.lastCostCurrency;
+  if (sourceCurrency !== 'PEN' && sourceCurrency !== 'USD') return undefined;
+  if (sourceCurrency === currency) return cost;
+  if (!exchangeRate || !Number.isFinite(exchangeRate) || exchangeRate <= 0) return undefined;
+  return Math.round((sourceCurrency === 'USD' ? cost * exchangeRate : cost / exchangeRate) * 10000) / 10000;
+}
+
 export interface PurchaseFormItem {
   companyId: string;
   productId: string;

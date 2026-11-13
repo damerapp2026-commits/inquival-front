@@ -537,7 +537,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
           if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
         }}
         disabled={isSaving}
-        title={isFromFallback ? `Precio guardado (${fallbackSource}). Editá para sobreescribir solo en este catálogo.` : undefined}
+        title={isFromFallback ? `Precio guardado (${fallbackSource}). Edita para actualizar la tarifa de venta en productos, ventas y cotizaciones.` : undefined}
         className={`w-20 px-1.5 py-1 border border-transparent rounded text-right tabular-nums focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-200 disabled:opacity-50 ${bgClass}`}
       />
     );
@@ -707,7 +707,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
           <FileSpreadsheet size={16} className="text-primary-600" />
           <div>
             <h3 className="text-sm font-semibold text-gray-700">Catálogo de precios por proveedor</h3>
-            <p className="text-xs text-gray-500">Última compra con costo según F. Emisión. Sin emisión, se usa F. Recepción. También puedes guardar precios de catálogo para productos sin compras.</p>
+            <p className="text-xs text-gray-500">Última compra con costo según F. Emisión. Sin emisión, se usa F. Recepción. Puedes guardar precios sin compras. USD s/IGV actualiza el costo de referencia; P. Final actualiza la tarifa de venta para ventas y cotizaciones.</p>
           </div>
         </div>
 

@@ -25,6 +25,7 @@ import { getTodayDateString, formatDateEs, addDaysToDate } from '../../../shared
 import {
   blurOnWheel,
   fmtPrice,
+  productReferenceCost,
   emptyItem,
   recalcItem,
   itemAppliesIgv,
@@ -303,6 +304,9 @@ export function PurchaseFormBody({
       item.precioVenta = catalogPrice;
       item.markupPercent = 0;
       item.precioVentaMode = catalogPrice > 0 ? 'direct' : 'markup';
+      const referenceCost = productReferenceCost(products.find(product => product.id === value), currency, exchangeRate);
+      item.unitPriceSinIgv = referenceCost ?? 0;
+      item.unitPriceSinIgvInput = referenceCost == null ? '' : fmtPrice(referenceCost);
     }
     const costoFields = ['unitPriceSinIgv', 'markupPercent', 'precioVenta', 'productId'];
     if (costoFields.includes(field)) item = recalcItem(item, currency, exchangeRate, itemAppliesIgv(item.productId, products));

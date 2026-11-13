@@ -22,6 +22,7 @@ async function main() {
       { id: 'without-purchase', name: 'Producto sin compras', taxType: 'GRAVADO', prices: [{ priceTierId: 'distributor', price: 37 }] },
       { id: 'without-purchase-exempt', name: 'Producto exonerado sin compras', taxType: 'EXONERADO', prices: [] },
     ];
+    products.forEach(product => { product.isActive = true; product.unit = 'UND'; });
     const costs = {
       'pen-exempt': { currency: 'PEN', sin: 60, con: 60 },
       'pen-taxed': { currency: 'PEN', sin: 84.75, con: 100 },
@@ -37,7 +38,9 @@ async function main() {
       if (ep === '/auth/me') data = { id: 'admin', role: 'ADMIN', fullName: 'Prueba', isActive: true };
       else if (ep === '/business-settings') data = {};
       else if (ep === '/products') data = { data: products, total: products.length };
-      else if (ep === '/price-tiers') data = [{ id: 'distributor', name: 'Distribuidor', priority: 1 }];
+      else if (ep === '/companies') data = [{ id: 'company', name: 'Almacén de prueba', isActive: true }];
+      else if (ep === '/stock/by-product') data = products.map(product => ({ productId: product.id, totalQuantity: 10, byCompany: [{ companyId: 'company', quantity: 10 }] }));
+      else if (ep === '/price-tiers') data = [{ id: 'distributor', name: 'Distribuidor', priority: 1, isActive: true }];
       else if (ep === '/lookup/tipo-cambio') data = { venta: 3.4, fecha: '2026-11-11' };
       else if (ep === '/purchases/price-catalog') {
         if (catalogGate) await catalogGate;
@@ -64,12 +67,21 @@ async function main() {
         cost.con = (usd ? values.unitPriceConIgvUsd : values.unitPriceConIgvPen) ?? cost.con;
         if (payload.calculation) cost.calculation = payload.calculation;
         if (payload.precioMinorista != null) cost.precioMinorista = payload.precioMinorista;
+        const product = products.find(product => product.id === productId);
+        product.lastCostPrice = cost.sin;
+        product.lastCostCurrency = cost.currency;
+        if (payload.precioMinorista != null) {
+          product.lastSalePrice = payload.precioMinorista;
+          product.lastSaleCurrency = 'PEN';
+          product.prices = [{ priceTierId: 'distributor', price: payload.precioMinorista }];
+        }
         assert.ok(Number.isFinite(cost.sin) && Number.isFinite(cost.con));
         data = { updated: true };
       }
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data }) });
     });
     const page = await context.newPage();
+    page.setDefaultTimeout(10000);
     page.on('pageerror', error => errors.push(error.message));
     const input = (product, field = 'USD s/IGV') => page.getByRole('spinbutton', { name: `${field} de ${product}`, exact: true });
     const rowValues = async product => {
@@ -191,6 +203,36 @@ async function main() {
     assert.equal(costs['without-purchase-exempt'].calculation.unitPriceConIgvPen, 36);
     assert.deepEqual(errors, []);
     console.log('PASS products without purchases save on Enter/blur and retain costs, factors and final prices after reload');
+
+    await page.goto(`${base}/products?view=stock-valued`);
+    const valued = page.locator('tbody tr').filter({ has: page.getByText('Producto sin compras', { exact: true }) });
+    await valued.waitFor();
+    assert.match(await valued.textContent(), /\$ 4\.95/);
+    assert.match(await valued.textContent(), /49\.50/);
+    await page.goto(`${base}/pos`);
+    const card = page.getByRole('button').filter({ has: page.getByText('Producto sin compras', { exact: true }) });
+    await card.waitFor();
+    assert.match(await card.textContent(), /40\.00/);
+    await page.goto(`${base}/quotes/new`);
+    const search = page.getByPlaceholder('Buscar producto por nombre o principio activo…');
+    await page.getByRole('button', { name: 'Agregar primera línea', exact: true }).click();
+    await search.first().fill('Producto sin compras');
+    const option = page.getByRole('button').filter({ has: page.getByText('Producto sin compras', { exact: true }) });
+    await option.waitFor();
+    assert.match(await option.textContent(), /40\.00/);
+    await option.click();
+    assert.ok(await page.locator('input[type=number]').evaluateAll(inputs => inputs.some(input => Number(input.value) === 40)));
+    await page.goto(`${base}/purchases/new`);
+    await page.getByRole('button', { name: '$ Dólares', exact: true }).click();
+    const purchaseSearch = page.getByPlaceholder('Buscar producto...', { exact: true });
+    await purchaseSearch.fill('Producto sin compras');
+    await page.getByText('Producto sin compras', { exact: true }).click();
+    await page.getByPlaceholder('0.0000', { exact: true }).waitFor();
+    const purchaseCost = Number(await page.getByPlaceholder('0.0000', { exact: true }).inputValue());
+    assert.equal(purchaseCost, 4.95);
+    assert.ok(await page.locator('input[type=number]').evaluateAll(inputs => inputs.some(input => Number(input.value) === 40)));
+    assert.deepEqual(errors, []);
+    console.log('PASS synchronized costs in stock valuation/purchases and final prices in POS/quotations/purchases');
     await context.close();
   } finally { await browser.close(); }
 }
