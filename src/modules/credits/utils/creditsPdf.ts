@@ -3,6 +3,7 @@ import { formatDateEs } from '../../../shared/utils/date.util';
 import { buildClientStatementDocument } from './clientStatementPdf';
 import { loadClientStatementAssets } from './clientStatementAssets';
 import { COMPANY_INFO } from '../../../config/companyInfo';
+import type { ClientStatementPeriod } from './clientStatementPeriod';
 
 let pdfMakePromise: Promise<any> | null = null;
 function loadPdfMake() {
@@ -490,6 +491,8 @@ interface ClientStatementParams {
   client: Client;
   credits: CreditAccount[];
   mode: 'summary' | 'detailed';
+  period?: ClientStatementPeriod;
+  creditIds?: string[];
 }
 
 const slugify = (s: string) =>
@@ -501,16 +504,16 @@ const slugify = (s: string) =>
     .replace(/^_+|_+$/g, '')
     .slice(0, 40);
 
-export async function downloadClientStatementPdf({ client, credits, mode }: ClientStatementParams) {
+export async function downloadClientStatementPdf({ client, credits, mode, period, creditIds }: ClientStatementParams) {
   const pdfMake = await loadPdfMake();
   const company = { ...COMPANY_INFO };
   const assets = await loadClientStatementAssets(pdfMake, company.logoUrl);
   const stamp = new Date().toISOString().slice(0, 10);
-  const fileStem = `estado_cuenta_${slugify(client.name || 'cliente')}_${stamp}`;
+  const fileStem = `estado_cuenta_${slugify(client.name || 'cliente')}_${period ? `${period.from}_al_${period.to}` : stamp}`;
 
-  const docDef = buildClientStatementDocument({ client, credits, mode, company, ...assets });
+  const docDef = buildClientStatementDocument({ client, credits, mode, period, creditIds, company, ...assets });
 
-  pdfMake.createPdf(docDef).download(`${fileStem}.pdf`);
+  await pdfMake.createPdf(docDef).download(`${fileStem}.pdf`);
 }
 
 /* ─────────────────────────────────────────────
@@ -521,12 +524,15 @@ interface ClientHistoryParams {
   client: Client;
   sales: Sale[];
   credits: CreditAccount[];
+  period?: ClientStatementPeriod;
+  creditIds?: string[];
 }
 
-export async function downloadClientHistoryPdf({ client, sales, credits }: ClientHistoryParams) {
+export async function downloadClientHistoryPdf({ client, sales, credits, period, creditIds }: ClientHistoryParams) {
   const pdfMake = await loadPdfMake();
   const company = { ...COMPANY_INFO };
   const assets = await loadClientStatementAssets(pdfMake, company.logoUrl);
   const stamp = new Date().toISOString().slice(0, 10);
-  pdfMake.createPdf(buildClientStatementDocument({ client, sales, credits, company, ...assets })).download(`historial_${slugify(client.name || 'cliente')}_${stamp}.pdf`);
+  const suffix = period ? `${period.from}_al_${period.to}` : stamp;
+  await pdfMake.createPdf(buildClientStatementDocument({ client, sales, credits, period, creditIds, company, ...assets })).download(`historial_${slugify(client.name || 'cliente')}_${suffix}.pdf`);
 }

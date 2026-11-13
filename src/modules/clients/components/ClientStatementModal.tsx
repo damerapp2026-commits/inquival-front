@@ -1,7 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { Modal } from '../../../shared/components/Modal';
-import { useSales } from '../../sales/hooks/useSales';
-import { useClientCredits } from '../../credits/hooks/useCredits';
+import { useQuery } from '@tanstack/react-query';
+import { getStatementCredits, getStatementSales } from '../../credits/services/clientStatementService';
+import { ClientStatementPeriodFilter } from '../../credits/components/ClientStatementPeriodFilter';
+import { ClientStatementAccountSelector } from '../../credits/components/ClientStatementAccountSelector';
+import { filterStatementCredits, selectClientStatementData, selectedStatementPeriod, statementPeriodError, statementPeriodSelection } from '../../credits/utils/clientStatementPeriod';
+import type { ClientStatementSelection } from '../../credits/utils/clientStatementPeriod';
+import { creditCurrency, formatMoney, saleCurrencyAmount } from '../../credits/utils/money';
 import { formatDateEs } from '../../../shared/utils/date.util';
 import { ChevronDown, ChevronRight, ShoppingBag, CheckCircle2, Clock, FileDown, Loader2 } from 'lucide-react';
 import { downloadClientHistoryPdf } from '../../credits/utils/creditsPdf';
@@ -11,12 +16,14 @@ import type { Client, Sale, CreditAccount } from '../../../shared/types';
 interface Props {
   client: Client | null;
   onClose: () => void;
+  selection?: ClientStatementSelection;
+  onSelectionChange?: (selection: ClientStatementSelection) => void;
 }
 
-export function ClientStatementModal({ client, onClose }: Props) {
+export function ClientStatementModal({ client, onClose, selection, onSelectionChange }: Props) {
   return (
     <Modal isOpen={!!client} onClose={onClose} title={`Detalle de cuenta — ${client?.name || ''}`} size="xl">
-      {client && <ClientStatementContent client={client} />}
+      {client && <ClientStatementContent key={client.id} client={client} selection={selection} onSelectionChange={onSelectionChange} />}
     </Modal>
   );
 }
@@ -33,16 +40,30 @@ function statusBadge(credit: CreditAccount) {
   return { label: 'Pendiente', cls: 'bg-orange-100 text-orange-700' };
 }
 
-function ClientStatementContent({ client }: { client: Client }) {
-  const { data: salesData, isLoading: loadingSales } = useSales({ clientId: client.id, limit: 500, excludeCancelled: 'true' });
-  const { data: creditsData, isLoading: loadingCredits } = useClientCredits(client.id, { limit: 200 });
+function CreditAmounts({ credits, field }: { credits: CreditAccount[]; field: 'totalAmount' | 'paidAmount' | 'pendingAmount' }) {
+  const currencies = (['PEN', 'USD'] as const).filter(currency => credits.some(credit => creditCurrency(credit.currency) === currency));
+  if (!currencies.length) return <span>—</span>;
+  return <>{currencies.map(currency => <div key={currency}>{formatMoney(credits.filter(credit => creditCurrency(credit.currency) === currency).reduce((sum, credit) => sum + Math.round(credit[field] * 100), 0) / 100, currency)}</div>)}</>;
+}
+
+function ClientStatementContent({ client, selection: controlledSelection, onSelectionChange }: { client: Client; selection?: ClientStatementSelection; onSelectionChange?: (selection: ClientStatementSelection) => void }) {
+  const { data: salesData, isLoading: loadingSales, isError: salesError, refetch: refetchSales } = useQuery({ queryKey: ['sales', 'client', client.id, 'statement'], queryFn: () => getStatementSales(client.id) });
+  const { data: creditsData, isLoading: loadingCredits, isError: creditsError, refetch: refetchCredits } = useQuery({ queryKey: ['credits', 'client', client.id, 'statement'], queryFn: () => getStatementCredits(client.id) });
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [localSelection, setLocalSelection] = useState<ClientStatementSelection>(() => ({ period: statementPeriodSelection() }));
+  const currentSelection = controlledSelection ?? localSelection;
+  const changeSelection = onSelectionChange ?? setLocalSelection;
+  const periodSelection = currentSelection.period;
+  const selectedCreditIds = currentSelection.creditIds;
+  const period = selectedStatementPeriod(periodSelection);
+  const periodError = statementPeriodError(period);
 
   const handleExportPdf = async () => {
+    if (periodError) return;
     setExporting(true);
     try {
-      await downloadClientHistoryPdf({ client, sales: allSales, credits: allCredits });
+      await downloadClientHistoryPdf({ client, sales: sourceSales, credits: sourceCredits, period, creditIds: selectedCreditIds });
       toast.success('PDF generado');
     } catch {
       toast.error('Error al generar el PDF');
@@ -51,16 +72,19 @@ function ClientStatementContent({ client }: { client: Client }) {
     }
   };
 
-  const allSales: Sale[] = useMemo(
-    () => ((salesData as any)?.data || []).slice().sort((a: Sale, b: Sale) => b.date.localeCompare(a.date)),
+  const sourceSales: Sale[] = useMemo(
+    () => (salesData || []).slice().sort((a, b) => b.date.localeCompare(a.date)),
     [salesData],
   );
 
-  const allCredits: CreditAccount[] = useMemo(
-    () => (Array.isArray(creditsData) ? creditsData : ((creditsData as any)?.data || []))
-      .filter((c: CreditAccount) => c.totalAmount > 0),
+  const sourceCredits: CreditAccount[] = useMemo(
+    () => (creditsData || []).filter(credit => credit.totalAmount > 0),
     [creditsData],
   );
+  const selection = periodError ? { credits: [], sales: [] } : selectClientStatementData(sourceCredits, sourceSales, period, selectedCreditIds);
+  const allCredits = selection.credits;
+  const allSales = selection.sales;
+  const periodCredits = periodError ? [] : filterStatementCredits(sourceCredits, period);
 
   // Map saleId → CreditAccount for O(1) lookup in each row
   const creditBySaleId = useMemo(() => {
@@ -71,16 +95,17 @@ function ClientStatementContent({ client }: { client: Client }) {
     return map;
   }, [allCredits]);
 
-  const sym = (sale: Sale) => sale.currency === 'USD' ? '$' : 'S/';
-  const dispTotal = (sale: Sale) => sale.currency === 'USD' && sale.totalUsd != null ? sale.totalUsd : sale.total;
+  const saleMoney = (sale: Sale, pen: number, usd?: number) => {
+    const value = saleCurrencyAmount(sale, pen, usd);
+    return value == null ? 'No registrado' : formatMoney(value, sale.currency);
+  };
 
   const totalPen = allSales.filter(s => s.currency !== 'USD').reduce((a, s) => a + s.total, 0);
-  const totalUsd = allSales.filter(s => s.currency === 'USD').reduce((a, s) => a + dispTotal(s), 0);
-  const creditSales = allSales.filter(s => s.isCredit);
+  const usdSales = allSales.filter(sale => sale.currency === 'USD');
+  const usdValues = usdSales.map(sale => saleCurrencyAmount(sale, sale.total, sale.totalUsd));
+  const totalUsd = usdValues.some(value => value == null) ? undefined : usdValues.reduce<number>((sum, value) => sum + value!, 0);
   const pendingCredits = allCredits.filter(c => c.status !== 'PAID');
   const totalPending = pendingCredits.reduce((a, c) => a + c.pendingAmount, 0);
-  const totalPaidCredit = allCredits.reduce((a, c) => a + c.paidAmount, 0);
-  const totalCreditAmount = allCredits.reduce((a, c) => a + c.totalAmount, 0);
 
   if (loadingSales || loadingCredits) {
     return (
@@ -90,32 +115,36 @@ function ClientStatementContent({ client }: { client: Client }) {
     );
   }
 
+  if (salesError || creditsError) return <div className="py-5 text-center"><p role="alert" className="text-sm text-red-600">No se pudo cargar el historial completo del cliente.</p><button type="button" onClick={() => { void refetchSales(); void refetchCredits(); }} className="mt-3 text-sm text-primary-700 hover:underline">Reintentar</button></div>;
+
   return (
     <div className="space-y-5 max-h-[70vh] overflow-y-auto overflow-x-hidden pr-1">
+      <ClientStatementPeriodFilter value={periodSelection} onChange={value => { changeSelection({ period: value, creditIds: selectedCreditIds }); setExpandedSaleId(null); }} disabled={exporting} />
+      <ClientStatementAccountSelector credits={periodCredits} value={selectedCreditIds} onChange={value => { changeSelection({ period: periodSelection, creditIds: value }); setExpandedSaleId(null); }} disabled={exporting} />
       {/* Resumen */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-blue-50 rounded-xl p-3 text-center">
           <div className="text-[11px] text-blue-600 font-semibold uppercase tracking-wider mb-1">Total ventas</div>
           <div className="font-bold text-blue-800 tabular-nums text-sm">
             {totalPen > 0 && <div>S/ {totalPen.toFixed(2)}</div>}
-            {totalUsd > 0 && <div className="text-emerald-700">$ {totalUsd.toFixed(2)}</div>}
-            {totalPen === 0 && totalUsd === 0 && <div className="text-gray-400">—</div>}
+            {usdSales.length > 0 && <div className="text-emerald-700">{totalUsd == null ? 'USD sin importe registrado' : formatMoney(totalUsd, 'USD')}</div>}
+            {totalPen === 0 && !usdSales.length && <div className="text-gray-400">—</div>}
           </div>
           <div className="text-[10px] text-blue-500 mt-0.5">{allSales.length} ventas</div>
         </div>
         <div className="bg-orange-50 rounded-xl p-3 text-center">
           <div className="text-[11px] text-orange-600 font-semibold uppercase tracking-wider mb-1">En crédito</div>
-          <div className="font-bold text-orange-800 tabular-nums text-sm">S/ {totalCreditAmount.toFixed(2)}</div>
-          <div className="text-[10px] text-orange-500 mt-0.5">{creditSales.length} al crédito</div>
+          <div className="font-bold text-orange-800 tabular-nums text-sm"><CreditAmounts credits={allCredits} field="totalAmount" /></div>
+          <div className="text-[10px] text-orange-500 mt-0.5">{allCredits.length} cuentas</div>
         </div>
         <div className="bg-green-50 rounded-xl p-3 text-center">
           <div className="text-[11px] text-green-600 font-semibold uppercase tracking-wider mb-1">Abonado</div>
-          <div className="font-bold text-green-800 tabular-nums text-sm">S/ {totalPaidCredit.toFixed(2)}</div>
+          <div className="font-bold text-green-800 tabular-nums text-sm"><CreditAmounts credits={allCredits} field="paidAmount" /></div>
           <div className="text-[10px] text-green-500 mt-0.5">{allCredits.filter(c => c.status === 'PAID').length} cuentas pagadas</div>
         </div>
         <div className={`rounded-xl p-3 text-center ${totalPending > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
           <div className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${totalPending > 0 ? 'text-red-600' : 'text-gray-500'}`}>Pendiente</div>
-          <div className={`font-bold tabular-nums text-sm ${totalPending > 0 ? 'text-red-700' : 'text-gray-400'}`}>S/ {totalPending.toFixed(2)}</div>
+          <div className={`font-bold tabular-nums text-sm ${totalPending > 0 ? 'text-red-700' : 'text-gray-400'}`}><CreditAmounts credits={allCredits} field="pendingAmount" /></div>
           <div className={`text-[10px] mt-0.5 ${totalPending > 0 ? 'text-red-400' : 'text-gray-400'}`}>{pendingCredits.length} cuenta{pendingCredits.length !== 1 ? 's' : ''}</div>
         </div>
       </div>
@@ -129,7 +158,7 @@ function ClientStatementContent({ client }: { client: Client }) {
           <button
             type="button"
             onClick={handleExportPdf}
-            disabled={exporting || allSales.length === 0}
+            disabled={exporting || !!periodError || (allSales.length === 0 && allCredits.length === 0)}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 transition-colors"
           >
             {exporting ? <Loader2 size={12} className="animate-spin" /> : <FileDown size={12} />}
@@ -158,7 +187,6 @@ function ClientStatementContent({ client }: { client: Client }) {
                   const hasItems = (sale.items?.length ?? 0) > 0;
                   const isExpandable = hasItems || (sale.isCredit && !!credit);
                   const label = voucherLabel(sale.voucherType);
-                  const currSym = sym(sale);
 
                   return (
                     <React.Fragment key={sale.id}>
@@ -183,7 +211,7 @@ function ClientStatementContent({ client }: { client: Client }) {
                         </td>
                         <td className="px-3 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap">
                           <span className={sale.currency === 'USD' ? 'text-emerald-700' : 'text-gray-800'}>
-                            {currSym} {dispTotal(sale).toFixed(2)}
+                            {saleMoney(sale, sale.total, sale.totalUsd)}
                           </span>
                         </td>
                         <td className="px-3 py-2.5">
@@ -232,10 +260,10 @@ function ClientStatementContent({ client }: { client: Client }) {
                                           <td className="px-3 py-1.5 text-gray-800">{item.productName || item.productId}</td>
                                           <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{item.quantity}</td>
                                           <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
-                                            {currSym} {(item.unitPriceUsd ?? item.unitPrice).toFixed(2)}
+                                            {saleMoney(sale, item.unitPrice, item.unitPriceUsd)}
                                           </td>
                                           <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-gray-800">
-                                            {currSym} {(item.subtotalUsd ?? item.subtotal).toFixed(2)}
+                                            {saleMoney(sale, item.subtotal, item.subtotalUsd)}
                                           </td>
                                         </tr>
                                       ))}
@@ -251,7 +279,8 @@ function ClientStatementContent({ client }: { client: Client }) {
                                 const pct = credit.totalAmount > 0
                                   ? Math.min(100, (credit.paidAmount / credit.totalAmount) * 100)
                                   : 0;
-                                const initialAmount = (sale.payments || []).reduce((s, p) => s + p.amount, 0);
+                                const initialParts = (sale.payments || []).map(payment => saleCurrencyAmount(sale, payment.amount, payment.amountUsd));
+                                const initialAmount = initialParts.some(value => value == null) ? undefined : initialParts.reduce<number>((sum, value) => sum + value!, 0);
 
                                 return (
                                   <div className={`rounded-lg border overflow-hidden ${isPending ? 'border-orange-200' : 'border-green-200'}`}>
@@ -268,22 +297,22 @@ function ClientStatementContent({ client }: { client: Client }) {
                                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                                         <div>
                                           <div className="text-[10px] text-gray-400 mb-0.5">Total</div>
-                                          <div className="font-semibold text-gray-800 tabular-nums">{currSym} {dispTotal(sale).toFixed(2)}</div>
+                                          <div className="font-semibold text-gray-800 tabular-nums">{saleMoney(sale, sale.total, sale.totalUsd)}</div>
                                         </div>
                                         <div>
                                           <div className="text-[10px] text-gray-400 mb-0.5">Inicial</div>
                                           <div className="font-semibold text-blue-600 tabular-nums">
-                                            {initialAmount > 0 ? `${currSym} ${initialAmount.toFixed(2)}` : '—'}
+                                            {initialAmount == null ? 'No registrado' : initialAmount > 0 ? formatMoney(initialAmount, sale.currency) : '—'}
                                           </div>
                                         </div>
                                         <div>
                                           <div className="text-[10px] text-gray-400 mb-0.5">Abonos</div>
-                                          <div className="font-semibold text-green-600 tabular-nums">S/ {credit.paidAmount.toFixed(2)}</div>
+                                          <div className="font-semibold text-green-600 tabular-nums">{formatMoney(credit.paidAmount, credit.currency)}</div>
                                         </div>
                                         <div>
                                           <div className="text-[10px] text-gray-400 mb-0.5">Pendiente</div>
                                           <div className={`font-bold tabular-nums ${isPending ? 'text-red-600' : 'text-gray-400'}`}>
-                                            S/ {credit.pendingAmount.toFixed(2)}
+                                            {formatMoney(credit.pendingAmount, credit.currency)}
                                           </div>
                                         </div>
                                       </div>
@@ -316,7 +345,7 @@ function ClientStatementContent({ client }: { client: Client }) {
                                                   {payment.receivedByName && <span className="text-gray-400 truncate">· {payment.receivedByName}</span>}
                                                   {payment.notes && <span className="text-gray-400 italic truncate max-w-[100px]">· {payment.notes}</span>}
                                                 </div>
-                                                <span className="font-semibold tabular-nums text-green-700 sm:ml-2 flex-shrink-0">S/ {payment.amount.toFixed(2)}</span>
+                                                <span className="font-semibold tabular-nums text-green-700 sm:ml-2 flex-shrink-0">{formatMoney(payment.amount, credit.currency)}</span>
                                               </div>
                                             ))}
                                           </div>

@@ -1,7 +1,8 @@
 import type { Client, CreditAccount, CreditPayment, Sale } from '../../../shared/types';
 import { formatDateEs, getTodayDateString, toLocalDateString } from '../../../shared/utils/date.util';
-import { creditCurrency, type MoneyCurrency } from './money';
+import { creditCurrency, saleCurrencyAmount as saleAmount, type MoneyCurrency } from './money';
 import { COMPANY_INFO, type CompanyInfo } from '../../../config/companyInfo';
+import { selectClientStatementData, type ClientStatementPeriod } from './clientStatementPeriod';
 
 interface StatementParams {
   client: Client;
@@ -13,6 +14,8 @@ interface StatementParams {
   logoDataUrl?: string | null;
   logoHasPadding?: boolean;
   displayFont?: string;
+  period?: ClientStatementPeriod;
+  creditIds?: string[];
 }
 
 const INK = '#123c32';
@@ -31,13 +34,6 @@ const date = (value?: string) => formatDateEs(value, DATE_OPTIONS) || '—';
 const money = (value: number, currency?: string) => `${creditCurrency(currency) === 'USD' ? 'US$' : 'S/'} ${amount.format(value || 0)}`;
 const dayKey = (value?: string) => value ? toLocalDateString(value) || '9999-12-31' : '9999-12-31';
 const saleRef = (sale: Pick<Sale, 'id' | 'saleNumber'>) => sale.saleNumber || `NV-${sale.id.slice(-6).toUpperCase()}`;
-
-// Sale amounts are stored in PEN, with the original USD amount alongside them.
-function saleAmount(sale: Sale, pen: number, usd?: number): number | undefined {
-  if (sale.currency !== 'USD') return pen;
-  if (usd != null) return usd;
-  return sale.exchangeRate && sale.exchangeRate > 0 ? pen / sale.exchangeRate : undefined;
-}
 
 function status(credit: CreditAccount, today: string) {
   if (credit.pendingAmount <= 0) return { text: 'Pagado', color: GREEN };
@@ -328,11 +324,12 @@ function brandedHeader(company: CompanyInfo, logoDataUrl: string | null | undefi
 /** Client-facing report: each credit and its payments appear once, even for grouped sales. */
 export function buildClientStatementDocument({
   client, credits: inputCredits, sales: inputSales, mode = 'detailed', now = new Date(),
-  company = COMPANY_INFO, logoDataUrl, logoHasPadding = false, displayFont = 'Roboto',
+  company = COMPANY_INFO, logoDataUrl, logoHasPadding = false, displayFont = 'Roboto', period, creditIds,
 }: StatementParams) {
   const today = getTodayDateString(now);
-  const credits = [...new Map(inputCredits.map(c => [c.id, c])).values()].sort((a, b) => dayKey(a.createdAt).localeCompare(dayKey(b.createdAt)));
-  const sales = [...(inputSales || [])].filter(s => !s.isCancelled).sort((a, b) => dayKey(a.date).localeCompare(dayKey(b.date)));
+  const selection = selectClientStatementData(inputCredits, inputSales, period, creditIds);
+  const credits = [...new Map(selection.credits.map(c => [c.id, c])).values()].sort((a, b) => dayKey(a.createdAt).localeCompare(dayKey(b.createdAt)));
+  const sales = selection.sales.sort((a, b) => dayKey(a.date).localeCompare(dayKey(b.date)));
   const salesById = new Map(sales.map(s => [s.id, s]));
   const accountBySale = new Map<string, number>();
   credits.forEach((credit, index) => (credit.saleIds || []).forEach(id => accountBySale.set(id, index + 1)));
@@ -355,14 +352,16 @@ export function buildClientStatementDocument({
           { stack: [
             { text: 'FECHA DE EMISIÓN', style: 'eyebrow' },
             { text: date(today), style: 'display', bold: true, fontSize: 12, margin: [0, 3, 0, 5] },
-            { text: 'OPERACIONES INCLUIDAS', style: 'eyebrow' },
-            { text: dates.length ? `${date(dates[0])} al ${date(dates[dates.length - 1])}` : 'Sin movimientos', fontSize: 8.5, color: MUTED, margin: [0, 3, 0, 0] },
+            { text: period ? 'PERIODO SELECCIONADO' : 'OPERACIONES INCLUIDAS', style: 'eyebrow' },
+            { text: period ? `${date(period.from)} al ${date(period.to)}` : dates.length ? `${date(dates[0])} al ${date(dates[dates.length - 1])}` : 'Sin movimientos', fontSize: 8.5, color: MUTED, margin: [0, 3, 0, 0] },
           ], fillColor: PALE },
         ]],
       },
       layout: { hLineWidth: () => 0, vLineWidth: (i: number) => i === 0 ? 3 : 0, vLineColor: () => GOLD, paddingLeft: () => 12, paddingRight: () => 12, paddingTop: () => 8, paddingBottom: () => 8 },
     },
     { text: `${inputSales ? `${sales.length} compras   ·   ` : ''}${credits.length} cuentas   ·   ${openCount} con saldo   ·   ${credits.reduce((sum, c) => sum + (c.payments?.length || 0), 0)} abonos con detalle`, fontSize: 9, bold: true, color: GREEN, margin: [0, 6, 0, 0] },
+    ...(period ? [{ text: 'El periodo selecciona las cuentas por su fecha de creación y las compras por su fecha de venta. Los abonos y saldos de las cuentas seleccionadas están actualizados a la fecha de emisión de este reporte.', style: 'note', margin: [0, 5, 0, 0] }] : []),
+    ...(creditIds !== undefined ? [{ text: 'Este reporte incluye únicamente las cuentas seleccionadas y sus compras asociadas dentro del periodo.', style: 'note', margin: [0, 5, 0, 0] }] : []),
     heading(1, 'Resumen financiero', 'Monto al crédito − Abonos aplicados = Saldo por pagar'),
     ...summary(credits, today),
     { text: credits.length ? 'El monto al crédito es lo financiado después de la inicial. Los abonos reducen esa deuda; las compras al contado no aumentan el saldo. Soles y dólares se presentan por separado.' : 'No hay cuentas de crédito incluidas en este reporte.', style: 'note' },
