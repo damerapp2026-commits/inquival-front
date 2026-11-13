@@ -1,3 +1,4 @@
+import { branchStorageKey } from '../../../shared/utils/branchStorage';
 import { useEffect, useMemo, useState } from 'react';
 import { Search, Loader2, FileSpreadsheet, X, Check, AlertTriangle, DollarSign, RotateCcw } from 'lucide-react';
 import { usePriceCatalog, useUpdatePriceCatalog } from '../../purchases/hooks/usePurchases';
@@ -27,7 +28,7 @@ interface GlobalRates {
 
 const loadRates = (): GlobalRates => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(branchStorageKey(STORAGE_KEY));
     if (!raw) return { tcOverride: null, margenDist: DEFAULT_MARGEN_DIST, margenFinal: DEFAULT_MARGEN_FINAL };
     const parsed = JSON.parse(raw);
     return {
@@ -153,7 +154,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
   const margenFinal = rates.margenFinal;
 
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(rates)); } catch { /* ignore */ }
+    try { localStorage.setItem(branchStorageKey(STORAGE_KEY), JSON.stringify(rates)); } catch { /* ignore */ }
   }, [rates]);
 
   const categories: any[] = Array.isArray(categoriesData) ? categoriesData : (categoriesData as any)?.data || [];

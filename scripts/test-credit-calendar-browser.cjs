@@ -41,7 +41,8 @@ async function fixture(browser, mobile = false) {
     const request = route.request(), url = new URL(request.url()), ep = url.pathname.replace(/^\/api/, '');
     if (request.method() !== 'GET') { writes.push(ep); return route.abort(); }
     let data = [];
-    if (ep === '/auth/me') data = { id: 'admin', role: 'ADMIN', fullName: 'Prueba', isActive: true };
+    if (ep === '/branches') data = [{ id: '000000000000000000000001', name: 'Principal', isActive: true, isDefault: true }];
+    else if (ep === '/auth/me') data = { id: 'admin', role: 'ADMIN', fullName: 'Prueba', isActive: true };
     else if (ep === '/business-settings') data = {};
     else if (ep === '/accounts-payable/alerts') data = { overdue: [], upcoming: [] };
     else if (ep === '/clients') data = { data: clients, total: clients.length };

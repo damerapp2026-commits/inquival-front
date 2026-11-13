@@ -71,7 +71,8 @@ export interface AgreementInstallment { id?: string; amount: number; dueDate: st
 export interface AgreementPayment { id?: string; amount: number; paymentDate: string; codigoTransferencia: string; notes?: string; registeredBy?: string; registeredByName?: string; }
 export interface PaymentAgreement { id: string; supplier: string; invoices: AgreementInvoice[]; totalAmount: number; paidAmount: number; pendingAmount: number; status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CANCELLED'; paymentScheduleType: 'SINGLE_DATE' | 'INSTALLMENTS'; currency?: 'PEN' | 'USD'; dueDate?: string; installments: AgreementInstallment[]; payments: AgreementPayment[]; notes?: string; cancellationReason?: string; cancelledAt?: string; createdAt: string; }
 export type UserRole = 'ADMIN' | 'VENDEDOR' | 'VENDEDOR_CAMPO';
-export interface User { id: string; username: string; email?: string; fullName: string; role: UserRole; isActive?: boolean; createdAt?: string; updatedAt?: string; }
+export interface User { id: string; username: string; email?: string; fullName: string; role: UserRole; branchId?: string; isActive?: boolean; createdAt?: string; updatedAt?: string; }
+export interface Branch { id: string; name: string; address?: string; phone?: string; isDefault: boolean; isActive: boolean; createdAt?: string; }
 
 export interface StockAdjustment { id: string; productId: string; companyId: string; type: 'INCREASE' | 'DECREASE'; quantity: number; reason: string; previousQuantity: number; newQuantity: number; adjustedBy?: string; date: string; createdAt: string; }
 

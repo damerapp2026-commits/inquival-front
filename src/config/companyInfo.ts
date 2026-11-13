@@ -1,3 +1,4 @@
+import { DEFAULT_BRANCH_ID, getActiveBranchId } from '../shared/utils/branchStorage';
 export interface BankAccount {
   bank: string;
   currency: 'PEN' | 'USD';
@@ -49,7 +50,9 @@ const DEFAULT_COMPANY_INFO: CompanyInfo = {
   plin: undefined,
 };
 
-export const COMPANY_INFO: CompanyInfo = { ...DEFAULT_COMPANY_INFO };
+export const COMPANY_INFO: CompanyInfo = { ...DEFAULT_COMPANY_INFO,
+  ...(getActiveBranchId() === DEFAULT_BRANCH_ID ? {} : { legalName: '', salesEmail: '', detraccionAccount: undefined }),
+};
 
 export function setCompanyInfo(next: Partial<CompanyInfo>): void {
   Object.assign(COMPANY_INFO, {
@@ -57,9 +60,9 @@ export function setCompanyInfo(next: Partial<CompanyInfo>): void {
     ...next,
     logoUrl: next.logoUrl || DEFAULT_COMPANY_INFO.logoUrl,
     bankAccounts: next.bankAccounts ?? [],
-    salesEmail: next.salesEmail || DEFAULT_COMPANY_INFO.salesEmail,
+    salesEmail: next.salesEmail || (getActiveBranchId() === DEFAULT_BRANCH_ID ? DEFAULT_COMPANY_INFO.salesEmail : ''),
     detraccionAccount: next.detraccionAccount?.accountNumber
       ? next.detraccionAccount
-      : DEFAULT_COMPANY_INFO.detraccionAccount,
+      : getActiveBranchId() === DEFAULT_BRANCH_ID ? DEFAULT_COMPANY_INFO.detraccionAccount : undefined,
   });
 }

@@ -1,3 +1,5 @@
+import { useBranch } from '../../../app/providers/BranchProvider';
+import { DEFAULT_BRANCH_ID } from '../../../shared/utils/branchStorage';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUsers, useCreateUser, useUpdateUser, useChangePassword, useToggleUserStatus } from '../hooks/useUsers';
@@ -18,6 +20,7 @@ interface UserCommissionRow {
 
 export function UsersPage() {
   const queryClient = useQueryClient();
+  const { branches, currentBranch } = useBranch();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search);
@@ -28,7 +31,7 @@ export function UsersPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [passwordUser, setPasswordUser] = useState<User | null>(null);
 
-  const params: any = { page, limit: 20, search: debouncedSearch };
+  const params: any = { page, limit: 20, search: debouncedSearch, allBranches: true };
   if (roleFilter) params.role = roleFilter;
   if (statusFilter) params.isActive = statusFilter;
 
@@ -39,8 +42,8 @@ export function UsersPage() {
   const changePassword = useChangePassword();
   const toggleStatus = useToggleUserStatus();
 
-  const [createForm, setCreateForm] = useState({ username: '', email: '', password: '', fullName: '', role: 'VENDEDOR' });
-  const [editForm, setEditForm] = useState({ fullName: '', role: '', username: '', email: '' });
+  const [createForm, setCreateForm] = useState({ username: '', email: '', password: '', fullName: '', role: 'VENDEDOR', branchId: currentBranch?.id || DEFAULT_BRANCH_ID });
+  const [editForm, setEditForm] = useState({ fullName: '', role: '', username: '', email: '', branchId: DEFAULT_BRANCH_ID });
   const [passwordForm, setPasswordForm] = useState({ newPassword: '' });
 
   const allProducts: Product[] = useMemo(() => {
@@ -73,13 +76,13 @@ export function UsersPage() {
   }, [editingUser, allProducts]);
 
   const openCreate = () => {
-    setCreateForm({ username: '', email: '', password: '', fullName: '', role: 'VENDEDOR' });
+    setCreateForm({ username: '', email: '', password: '', fullName: '', role: 'VENDEDOR', branchId: currentBranch?.id || DEFAULT_BRANCH_ID });
     setShowCreateModal(true);
   };
 
   const openEdit = (user: User) => {
     setEditingUser(user);
-    setEditForm({ fullName: user.fullName, role: user.role, username: user.username, email: user.email || '' });
+    setEditForm({ fullName: user.fullName, role: user.role, username: user.username, email: user.email || '', branchId: user.branchId || DEFAULT_BRANCH_ID });
   };
 
   const closeEdit = () => {
@@ -95,13 +98,13 @@ export function UsersPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload: any = { username: createForm.username, password: createForm.password, fullName: createForm.fullName, role: createForm.role };
+    const payload: any = { username: createForm.username, password: createForm.password, fullName: createForm.fullName, role: createForm.role, branchId: createForm.branchId };
     if (createForm.email) payload.email = createForm.email;
     await createUser.mutateAsync(payload);
     setShowCreateModal(false);
   };
 
-  const isSellerRole = editForm.role === 'VENDEDOR' || editForm.role === 'VENDEDOR_CAMPO';
+  const isSellerRole = (editForm.role === 'VENDEDOR' || editForm.role === 'VENDEDOR_CAMPO') && editForm.branchId === currentBranch?.id;
 
   const productsById = useMemo(() => {
     const map = new Map<string, Product>();
@@ -168,7 +171,7 @@ export function UsersPage() {
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
-    const payload: any = { fullName: editForm.fullName, role: editForm.role, username: editForm.username };
+    const payload: any = { fullName: editForm.fullName, role: editForm.role, username: editForm.username, branchId: editForm.branchId };
     if (editForm.email) payload.email = editForm.email;
     else payload.email = '';
     try {
@@ -196,6 +199,7 @@ export function UsersPage() {
   const columns = [
     { key: 'fullName', header: 'Nombre' },
     { key: 'username', header: 'Usuario' },
+    { key: 'branchId', header: 'Sucursal', render: (item: User) => item.role === 'ADMIN' ? 'Todas (admin)' : branches.find(b => b.id === (item.branchId || DEFAULT_BRANCH_ID))?.name || 'No disponible' },
     { key: 'email', header: 'Email', render: (item: User) => <span>{item.email || '-'}</span> },
     {
       key: 'role', header: 'Rol', render: (item: User) => {
@@ -290,6 +294,10 @@ export function UsersPage() {
               <option value="VENDEDOR_CAMPO">Vendedor de Campo</option>
               <option value="ADMIN">Admin</option>
             </select>
+              <label className="block text-sm font-medium text-gray-700 mt-3 mb-1">{createForm.role === 'ADMIN' ? 'Sucursal inicial' : 'Sucursal asignada'}</label>
+              <select aria-label="Sucursal del usuario" value={createForm.branchId} onChange={(e) => setCreateForm({ ...createForm, branchId: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
+                {branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
           </div>
           <p className="text-xs text-gray-500 -mt-2">
             Las comisiones por producto las podés asignar después, editando al usuario.
@@ -322,6 +330,10 @@ export function UsersPage() {
                 <option value="VENDEDOR">Vendedor</option>
                 <option value="VENDEDOR_CAMPO">Vendedor de Campo</option>
                 <option value="ADMIN">Admin</option>
+              </select>
+              <label className="block text-sm font-medium text-gray-700 mt-3 mb-1">{editForm.role === 'ADMIN' ? 'Sucursal inicial' : 'Sucursal asignada'}</label>
+              <select aria-label="Sucursal del usuario" value={editForm.branchId} onChange={(e) => setEditForm({ ...editForm, branchId: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
+                {branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
               </select>
             </div>
           </div>

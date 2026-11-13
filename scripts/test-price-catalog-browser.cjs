@@ -35,7 +35,8 @@ async function main() {
     await context.route('**/api/**', async route => {
       const request = route.request(), ep = new URL(request.url()).pathname.replace(/^\/api/, '');
       let data = [];
-      if (ep === '/auth/me') data = { id: 'admin', role: 'ADMIN', fullName: 'Prueba', isActive: true };
+      if (ep === '/branches') data = [{ id: '000000000000000000000001', name: 'Principal', isActive: true, isDefault: true }];
+    else if (ep === '/auth/me') data = { id: 'admin', role: 'ADMIN', fullName: 'Prueba', isActive: true };
       else if (ep === '/business-settings') data = {};
       else if (ep === '/products') data = { data: products, total: products.length };
       else if (ep === '/companies') data = [{ id: 'company', name: 'Almacén de prueba', isActive: true }];

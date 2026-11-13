@@ -63,7 +63,8 @@ async function fixture(browser, options = {}) {
         contentType: 'application/json',
         body: JSON.stringify({ message }),
       });
-    if (ep === '/auth/me')
+    if (ep === '/branches') data = [{ id: '000000000000000000000001', name: 'Principal', isActive: true, isDefault: true }];
+    else if (ep === '/auth/me')
       data = {
         id: role === 'ADMIN' ? 'admin' : 'worker-a',
         role,

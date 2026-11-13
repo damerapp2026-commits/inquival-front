@@ -1,3 +1,4 @@
+import { branchStorageKey } from '../../../shared/utils/branchStorage';
 import { lazy, Suspense, useState, useMemo, useEffect, useRef } from 'react';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useProducts } from '../../products/hooks/useProducts';
@@ -87,7 +88,7 @@ const POS_DRAFT_KEY = 'inquival:pos:draft:v1';
 
 function readPosDraft(): PosDraft | null {
   try {
-    const raw = window.localStorage.getItem(POS_DRAFT_KEY);
+    const raw = window.localStorage.getItem(branchStorageKey(POS_DRAFT_KEY));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PosDraft;
     return {
@@ -102,7 +103,7 @@ function readPosDraft(): PosDraft | null {
 
 function writePosDraft(draft: PosDraft) {
   try {
-    window.localStorage.setItem(POS_DRAFT_KEY, JSON.stringify(draft));
+    window.localStorage.setItem(branchStorageKey(POS_DRAFT_KEY), JSON.stringify(draft));
   } catch {
     // Storage can be unavailable in private mode; the POS should keep working.
   }
@@ -110,7 +111,7 @@ function writePosDraft(draft: PosDraft) {
 
 function clearPosDraft() {
   try {
-    window.localStorage.removeItem(POS_DRAFT_KEY);
+    window.localStorage.removeItem(branchStorageKey(POS_DRAFT_KEY));
   } catch {
     // ignore
   }
