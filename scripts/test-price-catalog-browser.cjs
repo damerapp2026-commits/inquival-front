@@ -5,7 +5,7 @@ assert.match(base, /^http:\/\/(127\.0\.0\.1|localhost):\d+$/);
 const r2 = value => Math.round(value * 100) / 100;
 
 async function main() {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH });
   try {
     const context = await browser.newContext({ serviceWorkers: 'block' });
     await context.addInitScript(() => {
@@ -19,6 +19,8 @@ async function main() {
       { id: 'pen-exempt', name: 'Humus PEN', taxType: 'EXONERADO', prices: [{ priceTierId: 'distributor', price: 50 }] },
       { id: 'pen-taxed', name: 'Urea PEN', taxType: 'GRAVADO', prices: [] },
       { id: 'usd-taxed', name: 'Urea USD', taxType: 'GRAVADO', prices: [] },
+      { id: 'without-purchase', name: 'Producto sin compras', taxType: 'GRAVADO', prices: [{ priceTierId: 'distributor', price: 37 }] },
+      { id: 'without-purchase-exempt', name: 'Producto exonerado sin compras', taxType: 'EXONERADO', prices: [] },
     ];
     const costs = {
       'pen-exempt': { currency: 'PEN', sin: 60, con: 60 },
@@ -39,15 +41,15 @@ async function main() {
       else if (ep === '/lookup/tipo-cambio') data = { venta: 3.4, fecha: '2026-11-11' };
       else if (ep === '/purchases/price-catalog') {
         if (catalogGate) await catalogGate;
-        data = products.map(product => {
+        data = products.filter(product => costs[product.id]).map(product => {
           const cost = costs[product.id], usd = cost.currency === 'USD';
           return {
             productId: product.id, productName: product.name, currency: cost.currency,
-            taxType: product.taxType, lastPurchaseDate: '2026-11-10', supplierName: 'Proveedor',
+            taxType: product.taxType, lastPurchaseDate: cost.manual ? undefined : '2026-11-10', supplierName: cost.manual ? 'Sin compras registradas' : 'Proveedor',
             calculation: cost.calculation, precioMinorista: cost.precioMinorista,
             // Same API contract as MongoPurchaseRepository: PEN purchases return no USD prices.
-            unitPriceSinIgvPen: usd ? r2(cost.sin * cost.exchangeRate) : cost.sin,
-            unitPriceConIgvPen: usd ? r2(cost.con * cost.exchangeRate) : cost.con,
+            unitPriceSinIgvPen: cost.calculation?.unitPriceSinIgvPen ?? (usd ? r2(cost.sin * cost.exchangeRate) : cost.sin),
+            unitPriceConIgvPen: cost.calculation?.unitPriceConIgvPen ?? (usd ? r2(cost.con * cost.exchangeRate) : cost.con),
             ...(usd ? { unitPriceSinIgvUsd: cost.sin, unitPriceConIgvUsd: cost.con, exchangeRate: cost.exchangeRate } : {}),
           };
         });
@@ -55,7 +57,8 @@ async function main() {
         const productId = ep.split('/').at(-1), payload = request.postDataJSON();
         writes.push({ productId, payload });
         if (failSave) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'Fallo de guardado simulado' }) });
-        const cost = costs[productId], usd = cost.currency === 'USD';
+        const cost = costs[productId] ||= { currency: 'USD', manual: true };
+        const usd = cost.currency === 'USD';
         const values = payload.calculation || payload;
         cost.sin = (usd ? values.unitPriceSinIgvUsd : values.unitPriceSinIgvPen) ?? cost.sin;
         cost.con = (usd ? values.unitPriceConIgvUsd : values.unitPriceConIgvPen) ?? cost.con;
@@ -163,6 +166,31 @@ async function main() {
     await waitValue('Humus PEN', '65.00', 'Precio final');
     assert.deepEqual(errors, []);
     console.log('PASS failed save keeps the draft and can be retried');
+
+    // A product with opening stock but no purchase must also persist its catalog row.
+    await input('Producto sin compras').fill('4.95');
+    const manualPreview = await rowValues('Producto sin compras');
+    assert.equal(manualPreview.inputs.at(-1), '37.00');
+    await input('Producto sin compras').press('Enter');
+    await page.getByText('Guardado', { exact: true }).waitFor();
+    await reload();
+    await waitValue('Producto sin compras', '4.95');
+    assert.deepEqual(await rowValues('Producto sin compras'), manualPreview);
+    const manualRow = page.locator('tbody tr').filter({ has: page.getByTitle('Producto sin compras', { exact: true }) });
+    await manualRow.getByText('Precio de catálogo', { exact: true }).waitFor();
+    assert.match(await manualRow.locator('td').nth(10).textContent(), /—/);
+    await input('Producto sin compras', 'Precio final').fill('40');
+    await input('Producto sin compras', 'Precio final').press('Tab');
+    await page.getByText('Guardado', { exact: true }).waitFor();
+    await reload();
+    await waitValue('Producto sin compras', '40.00', 'Precio final');
+    await waitValue('Producto sin compras', '4.95');
+    await save('Producto exonerado sin compras', '10');
+    await reload();
+    await waitValue('Producto exonerado sin compras', '10.00', 'USD c/IGV');
+    assert.equal(costs['without-purchase-exempt'].calculation.unitPriceConIgvPen, 36);
+    assert.deepEqual(errors, []);
+    console.log('PASS products without purchases save on Enter/blur and retain costs, factors and final prices after reload');
     await context.close();
   } finally { await browser.close(); }
 }

@@ -252,7 +252,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
         lastPurchaseDate: row?.lastPurchaseDate,
         documentSeries: row?.documentSeries,
         documentNumber: row?.documentNumber,
-        hasPurchase: !!row,
+        hasPurchase: !!row?.lastPurchaseDate,
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -707,7 +707,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
           <FileSpreadsheet size={16} className="text-primary-600" />
           <div>
             <h3 className="text-sm font-semibold text-gray-700">Catálogo de precios por proveedor</h3>
-            <p className="text-xs text-gray-500">Última compra con costo según F. Emisión. Sin emisión, se usa F. Recepción.</p>
+            <p className="text-xs text-gray-500">Última compra con costo según F. Emisión. Sin emisión, se usa F. Recepción. También puedes guardar precios de catálogo para productos sin compras.</p>
           </div>
         </div>
 
@@ -818,6 +818,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
                     </td>
                     <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">
                       <div>{fmtDate(r.lastPurchaseDate)}</div>
+                      {!r.hasPurchase && (r.calculation || r.precioMinorista != null) && <div className="text-[10px] text-gray-400">Precio de catálogo</div>}
                       {r.documentSeries && r.documentNumber && (
                         <div className="text-[10px] text-gray-400">{r.documentSeries}-{r.documentNumber}</div>
                       )}
