@@ -18,7 +18,8 @@ async function setup(browser, mobile = false) {
       const payload = request.postDataJSON();
       data = { ...fixture.order, ...payload };
       orders.push(data);
-    } else if (ep === '/auth/me') data = { id: 'admin', role: 'ADMIN', fullName: 'Administrador de prueba', isActive: true };
+    } else if (ep === '/branches') data = [{ id: '000000000000000000000001', name: 'Principal', isActive: true, isDefault: true }];
+    else if (ep === '/auth/me') data = { id: 'admin', role: 'ADMIN', fullName: 'Administrador de prueba', isActive: true };
     else if (ep === '/business-settings') data = {};
     else if (ep === '/accounts-payable/alerts') data = { overdue: [], upcoming: [] };
     else if (ep === '/companies') data = fixture.companies;
@@ -55,10 +56,10 @@ async function main() {
     await page.getByLabel('Aprobado por', { exact: true }).fill('Jefe de compras');
     await page.getByRole('button', { name: 'Letra', exact: true }).click();
     assert.equal(await page.getByRole('button', { name: 'Crédito', exact: true }).getAttribute('aria-pressed'), 'true');
-    await page.getByRole('combobox').selectOption('custom');
+    await page.locator('form').getByRole('combobox').selectOption('custom');
     await page.getByLabel('Plazo personalizado en días', { exact: true }).fill('20');
     await page.getByText('Vence: 02/12/2026', { exact: true }).waitFor();
-    await page.getByRole('combobox').selectOption('45');
+    await page.locator('form').getByRole('combobox').selectOption('45');
     await page.getByText('Vence: 27/12/2026', { exact: true }).waitFor();
 
     await page.getByPlaceholder('Almacén', { exact: true }).first().click();

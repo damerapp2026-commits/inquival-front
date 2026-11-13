@@ -1,3 +1,4 @@
+import { branchStorageKey } from '../../../shared/utils/branchStorage';
 import { toLocalDateString } from '../../../shared/utils/date.util';
 import type React from 'react';
 import type { Purchase, PurchaseItem, Product } from '../../../shared/types';
@@ -159,7 +160,7 @@ const isCurrency = (value: unknown): value is 'PEN' | 'USD' => value === 'PEN' |
 
 export function readPurchaseCreateDraft(fallback: PurchaseInitial): PurchaseInitial | null {
   try {
-    const raw = window.localStorage.getItem(PURCHASE_CREATE_DRAFT_KEY);
+    const raw = window.localStorage.getItem(branchStorageKey(PURCHASE_CREATE_DRAFT_KEY));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PurchaseCreateDraft>;
     if (!parsed.state || !isCurrency(parsed.currency)) return null;
@@ -189,7 +190,7 @@ export function writePurchaseCreateDraft(initial: PurchaseInitial) {
       ...initial,
       savedAt: new Date().toISOString(),
     };
-    window.localStorage.setItem(PURCHASE_CREATE_DRAFT_KEY, JSON.stringify(draft));
+    window.localStorage.setItem(branchStorageKey(PURCHASE_CREATE_DRAFT_KEY), JSON.stringify(draft));
   } catch {
     // Storage can be unavailable in private mode; the form should keep working.
   }
@@ -197,7 +198,7 @@ export function writePurchaseCreateDraft(initial: PurchaseInitial) {
 
 export function clearPurchaseCreateDraft() {
   try {
-    window.localStorage.removeItem(PURCHASE_CREATE_DRAFT_KEY);
+    window.localStorage.removeItem(branchStorageKey(PURCHASE_CREATE_DRAFT_KEY));
   } catch {
     // ignore
   }

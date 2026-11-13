@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../../shared/services/api';
 import type { User } from '../../shared/types';
+import { clearActiveBranch, DEFAULT_BRANCH_ID, setActiveBranchId } from '../../shared/utils/branchStorage';
 
 interface AuthContextType {
   user: User | null;
@@ -26,6 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(data.data);
     } catch {
       localStorage.removeItem('token');
+      clearActiveBranch();
       setToken(null);
     } finally { setIsLoading(false); }
   }, [token]);
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = data.data;
     // No reutilizar datos privados de la cuenta anterior al cambiar de usuario.
     queryClient.clear();
+    setActiveBranchId(res.user.branchId || DEFAULT_BRANCH_ID);
     localStorage.setItem('token', res.accessToken);
     setToken(res.accessToken);
     setUser(res.user);
@@ -44,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     queryClient.clear();
+    clearActiveBranch();
     localStorage.removeItem('token');
     setToken(null);
     setUser(null);

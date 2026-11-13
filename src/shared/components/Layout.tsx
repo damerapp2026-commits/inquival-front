@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { AccountPayable, ProductLot } from '../types';
 import { UpdateBanner } from './UpdateBanner';
+import { BranchSelector } from './BranchSelector';
 
 type NavItem = { path: string; label: string; icon: any; roles?: string[] };
 type NavSection = { label: string; items: NavItem[] };
@@ -284,10 +285,11 @@ export function Layout() {
               alt="Inquiven"
               className="lg:hidden w-12 h-12 object-contain bg-white rounded-lg p-1"
             />
-            <span className="lg:hidden text-white text-lg font-bold tracking-wide">INQUIVEN</span>
+            <span className="hidden sm:inline lg:hidden text-white text-lg font-bold tracking-wide">INQUIVEN</span>
           </div>
 
           <div className="flex items-center gap-3">
+            <BranchSelector />
             <div className="relative" ref={bellRef}>
               <button
                 onClick={() => setBellOpen(!bellOpen)}

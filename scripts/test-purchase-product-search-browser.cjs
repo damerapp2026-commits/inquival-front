@@ -41,7 +41,8 @@ async function fixture(browser, mobile = false) {
       return route.abort();
     }
     let data = [];
-    if (ep === '/auth/me') data = { id: 'admin', role: 'ADMIN', fullName: 'Prueba', isActive: true };
+    if (ep === '/branches') data = [{ id: '000000000000000000000001', name: 'Principal', isActive: true, isDefault: true }];
+    else if (ep === '/auth/me') data = { id: 'admin', role: 'ADMIN', fullName: 'Prueba', isActive: true };
     else if (ep === '/business-settings') data = {};
     else if (ep === '/companies') data = [{ id: 'company', name: 'Almacén de prueba' }];
     else if (ep === '/products') data = { data: products, total: products.length };
