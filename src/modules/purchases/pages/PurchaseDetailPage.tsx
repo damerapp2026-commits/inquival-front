@@ -162,6 +162,7 @@ function AccountPayableSection({ ap, title = 'Cuenta por Pagar' }: { ap: Account
                 <div key={idx} className="px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-sm">
                   <div className="flex items-center justify-between">
                     <div>
+                      {pmt.isInitialPayment && <span className="mr-2 text-xs font-semibold text-primary-700">Abono inicial</span>}
                       {hasCurrencyConversion ? (
                         <span className="font-medium text-gray-800">
                           {pmtSym} {Number(pmt.receivedAmount ?? pmt.amount).toFixed(2)}
@@ -171,7 +172,7 @@ function AccountPayableSection({ ap, title = 'Cuenta por Pagar' }: { ap: Account
                       ) : (
                         <span className="font-medium text-gray-800">{sym} {pmt.amount.toFixed(2)}</span>
                       )}
-                      {pmt.notes && <span className="ml-2 text-xs text-gray-500">{pmt.notes}</span>}
+                      {pmt.notes && !pmt.isInitialPayment && <span className="ml-2 text-xs text-gray-500">{pmt.notes}</span>}
                     </div>
                     <span className="text-xs text-gray-400">
                       {pmt.paymentDate ? formatDateEs(pmt.paymentDate, { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}

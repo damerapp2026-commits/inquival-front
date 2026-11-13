@@ -60,6 +60,7 @@ export interface AccountPayablePayment {
   paymentDate: string;
   codigoTransferencia?: string;
   notes?: string;
+  isInitialPayment?: boolean;
   registeredBy?: string;
   registeredByName?: string;
 }

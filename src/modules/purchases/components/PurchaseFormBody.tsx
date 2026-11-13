@@ -30,6 +30,7 @@ import {
   recalcItem,
   itemAppliesIgv,
   purchasePayableTotal,
+  purchaseInitialPaymentAmount,
   splitPurchaseInstallments,
   type PurchaseFormItem,
   type PurchaseInitial,
@@ -97,6 +98,14 @@ export interface PurchaseSubmitPayload {
   date: string;
   paymentType: 'CONTADO' | 'CREDITO' | 'BONIFICACION';
   paymentMethodId?: string;
+  initialPayment?: {
+    amount: number;
+    paymentCurrency: 'PEN' | 'USD';
+    exchangeRate?: number;
+    paymentDate: string;
+    paymentMethodId: string;
+    codigoTransferencia?: string;
+  };
   addToStock?: boolean;
   paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS';
   detraccion?: boolean;
@@ -175,7 +184,9 @@ export function PurchaseFormBody({
   }, [fiscalEntities.length]);
 
   // Al registrar una compra nueva en USD, sugerir el tipo de cambio SUNAT del día
-  const { data: tipoCambioData, isError: tipoCambioError } = useTodayTipoCambio(mode === 'create' && currency === 'USD');
+  const hasInitialPayment = mode === 'create' && affectsCash && form.paymentType === 'CREDITO' && form.initialPayment.enabled;
+  const initialPaymentNeedsRate = hasInitialPayment && (currency !== form.initialPayment.paymentCurrency || form.initialPayment.paymentCurrency === 'USD');
+  const { data: tipoCambioData, isError: tipoCambioError } = useTodayTipoCambio(mode === 'create' && (currency === 'USD' || initialPaymentNeedsRate));
   const tipoCambioUnavailable = mode === 'create' && (
     tipoCambioError || tipoCambioData?.isFallback === true || tipoCambioData?.source === 'ESTIMADO'
   );
@@ -187,6 +198,12 @@ export function PurchaseFormBody({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipoCambioData, currency, mode]);
+
+  useEffect(() => {
+    if (!initialPaymentNeedsRate || form.initialPayment.exchangeRate != null) return;
+    const rate = exchangeRate || tipoCambioData?.venta;
+    if (rate && rate > 0) setForm(prev => ({ ...prev, initialPayment: { ...prev.initialPayment, exchangeRate: rate } }));
+  }, [initialPaymentNeedsRate, form.initialPayment.exchangeRate, exchangeRate, tipoCambioData?.venta]);
 
   useEffect(() => {
     if (!onDraftChange) return;
@@ -205,6 +222,11 @@ export function PurchaseFormBody({
     const defaultMethod = paymentMethods.find((m) => m.name.toLowerCase() === 'efectivo') || paymentMethods[0];
     setForm((prev) => prev.paymentMethodId ? prev : { ...prev, paymentMethodId: defaultMethod.id });
   }, [form.paymentMethodId, form.paymentType, paymentMethods]);
+  useEffect(() => {
+    if (!hasInitialPayment || form.initialPayment.paymentMethodId || paymentMethods.length === 0) return;
+    const method = paymentMethods.find(m => m.name.toLowerCase() === 'efectivo') || paymentMethods[0];
+    setForm(prev => ({ ...prev, initialPayment: { ...prev.initialPayment, paymentMethodId: method.id } }));
+  }, [hasInitialPayment, form.initialPayment.paymentMethodId, paymentMethods]);
   const [labResolving, setLabResolving] = useState(false);
   const [installmentGen, setInstallmentGen] = useState(() => ({
     count: initial.state.installments.length || 6,
@@ -349,7 +371,11 @@ export function PurchaseFormBody({
     : documentTotal;
   const detraccionAmountPen = Math.round(totalInPen * 0.015 * 100) / 100;
   const netAfterDetraccion = purchasePayableTotal(documentTotal, true);
-  const creditTotal = purchasePayableTotal(documentTotal, hasDetraccion);
+  const supplierTotal = purchasePayableTotal(documentTotal, hasDetraccion);
+  const initialPaymentAmount = hasInitialPayment
+    ? purchaseInitialPaymentAmount(form.initialPayment.amount, form.initialPayment.paymentCurrency, currency, form.initialPayment.exchangeRate)
+    : 0;
+  const creditTotal = Math.round((supplierTotal - (initialPaymentAmount || 0)) * 100) / 100;
 
   const itemsSubtotal = Math.round(form.items.reduce((s, i) => s + (i.quantity * i.costoAdquisicion || 0), 0) * 100) / 100;
 
@@ -359,6 +385,10 @@ export function PurchaseFormBody({
   const generateInstallments = () => {
     const { count, intervalDays, firstDaysFromPurchase } = installmentGen;
     if (count < 1) { toast.error('Ingresa al menos 1 cuota'); return; }
+    if (hasInitialPayment && (initialPaymentAmount == null || initialPaymentAmount <= 0)) {
+      toast.error('Completa el abono inicial y el tipo de cambio antes de generar las letras');
+      return;
+    }
     if (!creditTotal || creditTotal <= 0) { toast.error('Primero ingresa el monto total de la compra'); return; }
     // Las cuotas se cuentan desde la fecha de EMISIÓN de la factura (fecha legal del
     // crédito), con fallback a la fecha de recepción si no se indicó.
@@ -478,11 +508,11 @@ export function PurchaseFormBody({
     if (
       mode === 'create' &&
       affectsCash &&
-      form.paymentType === 'CONTADO' &&
-      effectiveCashDate === getTodayDateString() &&
+      (form.paymentType === 'CONTADO' || hasInitialPayment) &&
+      (hasInitialPayment ? form.initialPayment.paymentDate : effectiveCashDate) === getTodayDateString() &&
       cashRegisterToday?.status === 'CLOSED'
     ) {
-      toast.error('La caja del día está cerrada. No se pueden registrar compras al contado.');
+      toast.error('La caja del día está cerrada. No se pueden registrar pagos de compras.');
       return;
     }
     if (affectsCash && form.paymentType === 'CONTADO' && !form.paymentMethodId) {
@@ -515,10 +545,24 @@ export function PurchaseFormBody({
       toast.error('Indica el motivo del cambio (mínimo 5 caracteres)');
       return;
     }
+    if (hasInitialPayment) {
+      if (initialPaymentAmount == null || initialPaymentAmount <= 0) {
+        toast.error('Ingresa un abono inicial válido y su tipo de cambio cuando corresponda');
+        return;
+      }
+      if (creditTotal <= 0) {
+        toast.error('El abono inicial debe ser menor al saldo al proveedor. Para pagar todo, selecciona Contado');
+        return;
+      }
+      if (!form.initialPayment.paymentMethodId || !form.initialPayment.paymentDate) {
+        toast.error('Indica el método y la fecha del abono inicial');
+        return;
+      }
+    }
     if (form.paymentType === 'CREDITO' && form.paymentScheduleType === 'INSTALLMENTS') {
       const sumInst = form.installments.reduce((s, i) => s + (i.amount || 0), 0);
       if (Math.round(sumInst * 100) !== Math.round(creditTotal * 100)) {
-        toast.error(`Las cuotas (${creditSymbol} ${sumInst.toFixed(2)}) deben sumar el saldo al proveedor (${creditSymbol} ${creditTotal.toFixed(2)})${hasDetraccion ? ', después de la detracción' : ''}`);
+        toast.error(`Las cuotas (${creditSymbol} ${sumInst.toFixed(2)}) deben sumar el saldo pendiente (${creditSymbol} ${creditTotal.toFixed(2)})${hasInitialPayment ? ', después del abono inicial' : hasDetraccion ? ', después de la detracción' : ''}`);
         return;
       }
     }
@@ -560,6 +604,15 @@ export function PurchaseFormBody({
     if (form.supplierId) payload.supplierId = form.supplierId;
     if (form.supplierRuc) payload.supplierRuc = form.supplierRuc;
     if (form.paymentType === 'CREDITO') {
+      if (hasInitialPayment) {
+        const payment = form.initialPayment;
+        payload.initialPayment = {
+          amount: payment.amount, paymentCurrency: payment.paymentCurrency,
+          exchangeRate: initialPaymentNeedsRate ? payment.exchangeRate! : undefined,
+          paymentDate: payment.paymentDate, paymentMethodId: payment.paymentMethodId,
+          codigoTransferencia: payment.codigoTransferencia || undefined,
+        };
+      }
       payload.paymentScheduleType = form.paymentScheduleType;
       if (form.paymentScheduleType === 'SINGLE_DATE') payload.dueDate = form.dueDate;
       if (form.paymentScheduleType === 'INSTALLMENTS') {
@@ -1041,7 +1094,7 @@ export function PurchaseFormBody({
           {hasDetraccion && (
             <div className="mb-3 flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
               <Percent size={12} />
-              <span>Las letras deben sumar <span className="font-semibold">{creditSymbol} {creditTotal.toFixed(2)}</span>, después de descontar la detracción.</span>
+              <span>Saldo al proveedor después de la detracción: <span className="font-semibold">{creditSymbol} {supplierTotal.toFixed(2)}</span>.</span>
             </div>
           )}
           <div>
@@ -1100,11 +1153,81 @@ export function PurchaseFormBody({
 
           {form.paymentType === 'CREDITO' && (
             <div className="mt-4 space-y-3 bg-orange-50 p-3 rounded-lg border border-orange-200">
+              {mode === 'create' && affectsCash && (
+                <div className="bg-white border border-orange-200 rounded-lg p-3 space-y-3">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer">
+                    <input type="checkbox" checked={form.initialPayment.enabled}
+                      onChange={e => setForm(prev => ({ ...prev, initialPayment: { ...prev.initialPayment, enabled: e.target.checked, paymentCurrency: currency } }))}
+                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                    Registrar abono inicial / a cuenta
+                  </label>
+                  <p className="text-xs text-gray-500">Registra el adelanto pagado al proveedor y programa el saldo restante.</p>
+                  {hasInitialPayment && (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="block text-xs font-medium text-gray-600">
+                          Moneda del abono
+                          <select value={form.initialPayment.paymentCurrency}
+                            onChange={e => setForm(prev => ({ ...prev, initialPayment: { ...prev.initialPayment, paymentCurrency: e.target.value as 'PEN' | 'USD', exchangeRate: null } }))}
+                            className="mt-1 w-full px-3 py-2 border rounded-lg text-sm bg-white">
+                            <option value="PEN">S/ Soles</option>
+                            <option value="USD">$ Dólares</option>
+                          </select>
+                        </label>
+                        <label className="block text-xs font-medium text-gray-600">
+                          Monto del abono ({form.initialPayment.paymentCurrency === 'USD' ? 'USD' : 'PEN'})
+                          <input type="number" min="0.01" step="0.01" required value={form.initialPayment.amount || ''}
+                            onChange={e => setForm(prev => ({ ...prev, initialPayment: { ...prev.initialPayment, amount: parseFloat(e.target.value) || 0 } }))}
+                            onWheel={blurOnWheel} placeholder="0.00"
+                            className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" />
+                        </label>
+                        {initialPaymentNeedsRate && (
+                          <label className="block text-xs font-medium text-gray-600">
+                            Tipo de cambio del abono (S/ por US$ 1)
+                            <input type="number" min="0.000001" step="any" required value={form.initialPayment.exchangeRate ?? ''}
+                              onChange={e => setForm(prev => ({ ...prev, initialPayment: { ...prev.initialPayment, exchangeRate: parseFloat(e.target.value) || null } }))}
+                              onWheel={blurOnWheel} className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" />
+                          </label>
+                        )}
+                        <label className="block text-xs font-medium text-gray-600">
+                          Método de pago del abono
+                          <select required value={form.initialPayment.paymentMethodId}
+                            onChange={e => setForm(prev => ({ ...prev, initialPayment: { ...prev.initialPayment, paymentMethodId: e.target.value } }))}
+                            className="mt-1 w-full px-3 py-2 border rounded-lg text-sm bg-white">
+                            <option value="">Seleccionar método...</option>
+                            {paymentMethods.map(method => <option key={method.id} value={method.id}>{method.name}</option>)}
+                          </select>
+                        </label>
+                        <label className="block text-xs font-medium text-gray-600">
+                          Fecha del abono
+                          <input type="date" required value={form.initialPayment.paymentDate}
+                            onChange={e => setForm(prev => ({ ...prev, initialPayment: { ...prev.initialPayment, paymentDate: e.target.value } }))}
+                            className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" />
+                        </label>
+                        <label className="block text-xs font-medium text-gray-600">
+                          N° de operación (opcional)
+                          <input value={form.initialPayment.codigoTransferencia}
+                            onChange={e => setForm(prev => ({ ...prev, initialPayment: { ...prev.initialPayment, codigoTransferencia: e.target.value } }))}
+                            className="mt-1 w-full px-3 py-2 border rounded-lg text-sm" />
+                        </label>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1.5">
+                        <div className="flex justify-between text-gray-600"><span>Total de la factura</span><span>{creditSymbol} {documentTotal.toFixed(2)}</span></div>
+                        {hasDetraccion && <div className="flex justify-between text-gray-600"><span>Detracción</span><span>− {creditSymbol} {(documentTotal - supplierTotal).toFixed(2)}</span></div>}
+                        <div className="flex justify-between text-green-700"><span>Abono en {currency === 'USD' ? 'dólares' : 'soles'}</span><span>{initialPaymentAmount == null ? 'Completa el abono' : `− ${creditSymbol} ${initialPaymentAmount.toFixed(2)}`}</span></div>
+                        <div className={`flex justify-between border-t pt-1.5 font-semibold ${creditTotal <= 0 ? 'text-red-600' : 'text-gray-900'}`}><span>Saldo pendiente</span><span>{initialPaymentAmount == null ? '—' : `${creditSymbol} ${creditTotal.toFixed(2)}`}</span></div>
+                      </div>
+                      {initialPaymentAmount != null && creditTotal <= 0 && <p className="text-xs text-red-600">El abono debe ser menor al saldo al proveedor. Para pagar todo, selecciona Contado.</p>}
+                      <p className="text-xs text-gray-500">El abono se registrará en caja en la fecha indicada. Las letras o el pago único cubrirán el saldo pendiente.</p>
+                    </>
+                  )}
+                </div>
+              )}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Modalidad</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Modalidad del saldo</label>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => setForm({ ...form, paymentScheduleType: 'SINGLE_DATE', installments: [] })} className={`flex-1 py-1.5 rounded text-xs font-medium border ${form.paymentScheduleType === 'SINGLE_DATE' ? 'border-orange-400 bg-white text-orange-700' : 'border-gray-200 text-gray-500'}`}>Fecha única</button>
-                  <button type="button" onClick={() => setForm({ ...form, paymentScheduleType: 'INSTALLMENTS', dueDate: '' })} className={`flex-1 py-1.5 rounded text-xs font-medium border ${form.paymentScheduleType === 'INSTALLMENTS' ? 'border-orange-400 bg-white text-orange-700' : 'border-gray-200 text-gray-500'}`}>Cuotas</button>
+                  <button type="button" onClick={() => setForm({ ...form, paymentScheduleType: 'INSTALLMENTS', dueDate: '' })} className={`flex-1 py-1.5 rounded text-xs font-medium border ${form.paymentScheduleType === 'INSTALLMENTS' ? 'border-orange-400 bg-white text-orange-700' : 'border-gray-200 text-gray-500'}`}>Letras / cuotas</button>
                 </div>
               </div>
               {form.paymentScheduleType === 'SINGLE_DATE' && (
@@ -1235,11 +1358,11 @@ export function PurchaseFormBody({
         )}
 
         {/* Barra de acciones sticky */}
-        <div className="fixed bottom-0 left-0 right-0 lg:left-64 bg-white border-t border-gray-200 px-4 lg:px-8 py-3 z-10 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
+        <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 lg:left-64 bg-white border-t border-gray-200 px-4 lg:px-8 py-3 z-10 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
           <div className="flex items-center justify-between gap-3 max-w-full">
             <div className="text-xs text-gray-500 hidden sm:block">
               {form.items.length} producto{form.items.length !== 1 ? 's' : ''}
-              {creditTotal > 0 && <> · {hasDetraccion ? 'Saldo al proveedor' : 'Total'} <span className="font-semibold text-gray-700">{creditSymbol} {creditTotal.toFixed(2)}</span></>}
+              {creditTotal > 0 && <> · {hasInitialPayment ? 'Saldo pendiente' : hasDetraccion ? 'Saldo al proveedor' : 'Total'} <span className="font-semibold text-gray-700">{creditSymbol} {creditTotal.toFixed(2)}</span></>}
               {mode === 'edit' && originalTotalForDiff > 0 && diff !== 0 && (
                 <span className={`ml-2 font-semibold ${diff > 0 ? 'text-red-600' : 'text-green-700'}`}>
                   Δ {diff > 0 ? '+' : ''}{creditSymbol} {diff.toFixed(2)}

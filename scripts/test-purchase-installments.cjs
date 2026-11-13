@@ -7,7 +7,7 @@ require.extensions['.ts'] = (module, filename) => {
   const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } });
   module._compile(compiled.outputText, filename);
 };
-const { purchasePayableTotal, splitPurchaseInstallments } = require('../src/modules/purchases/utils/purchaseForm.ts');
+const { purchasePayableTotal, splitPurchaseInstallments, purchaseInitialPaymentAmount, buildInitialCreate } = require('../src/modules/purchases/utils/purchaseForm.ts');
 
 test('720 with 1.5% generates two letters of 354.60; without detracción, two of 360', () => {
   assert.equal(purchasePayableTotal(720, true), 709.2);
@@ -30,4 +30,27 @@ test('half-cent detracción is rounded before subtracting; invalid letter counts
   assert.deepEqual(splitPurchaseInstallments(0.02, 3), []);
   assert.deepEqual(splitPurchaseInstallments(100, 0), []);
   assert.deepEqual(splitPurchaseInstallments(100, 1.5), []);
+});
+
+test('initial payments leave only the remaining debt for the letters, in either invoice currency', () => {
+  for (const currency of ['PEN', 'USD']) {
+    const paid = purchaseInitialPaymentAmount(600, currency, currency, currency === 'USD' ? 3.75 : null);
+    assert.equal(paid, 600);
+    assert.deepEqual(splitPurchaseInstallments(1000 - paid, 2), [200, 200]);
+  }
+  const paid = purchaseInitialPaymentAmount(600, 'PEN', 'PEN', null);
+  assert.deepEqual(splitPurchaseInstallments(purchasePayableTotal(1000, true) - paid, 2), [192.5, 192.5]);
+});
+
+test('cross-currency advances convert into invoice currency and round to cents', () => {
+  assert.equal(purchaseInitialPaymentAmount(2250, 'PEN', 'USD', 3.75), 600);
+  assert.equal(purchaseInitialPaymentAmount(160, 'USD', 'PEN', 3.75), 600);
+  assert.equal(purchaseInitialPaymentAmount(600, 'PEN', 'USD', 3.75), 160);
+  assert.equal(purchaseInitialPaymentAmount(600, 'PEN', 'USD', 3.447), 174.06);
+  for (const rate of [null, 0, -1, Infinity, NaN]) {
+    assert.equal(purchaseInitialPaymentAmount(600, 'PEN', 'USD', rate), null);
+    assert.equal(purchaseInitialPaymentAmount(600, 'USD', 'USD', rate), null);
+  }
+  assert.equal(purchaseInitialPaymentAmount(-1, 'PEN', 'PEN', null), null);
+  assert.equal(buildInitialCreate('2026-11-13').state.initialPayment.enabled, false);
 });

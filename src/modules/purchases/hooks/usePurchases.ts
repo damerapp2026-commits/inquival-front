@@ -73,7 +73,10 @@ export function useCreatePurchase() {
       qc.invalidateQueries({ queryKey: ['product-lots'] });
       toast.success('Compra registrada');
     },
-    onError: (err: any) => toast.error(err.response?.data?.message?.[0] || 'Error'),
+    onError: (err: any) => {
+      const message = err.response?.data?.message;
+      toast.error((Array.isArray(message) ? message[0] : message) || 'Error al registrar la compra');
+    },
   });
 }
 export function useCreatePurchaseOrder() {

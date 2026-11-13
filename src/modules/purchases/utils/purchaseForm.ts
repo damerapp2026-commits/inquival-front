@@ -12,6 +12,31 @@ export function purchasePayableTotal(total: number, detraccion: boolean): number
   return (cents - (detraccion ? Math.round(cents * DETRACCION_RATE) : 0)) / 100;
 }
 
+/** Importe del abono en la moneda de la factura. null indica datos incompletos. */
+export function purchaseInitialPaymentAmount(amount: number, paymentCurrency: 'PEN' | 'USD', currency: 'PEN' | 'USD', exchangeRate: number | null): number | null {
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const needsRate = paymentCurrency !== currency || paymentCurrency === 'USD';
+  if (needsRate && (!exchangeRate || !Number.isFinite(exchangeRate) || exchangeRate <= 0)) return null;
+  const received = Math.round(amount * 100) / 100;
+  const value = paymentCurrency === currency ? received : currency === 'USD' ? received / exchangeRate! : received * exchangeRate!;
+  return Math.round(value * 100) / 100;
+}
+
+export interface PurchaseInitialPaymentForm {
+  enabled: boolean;
+  amount: number;
+  paymentCurrency: 'PEN' | 'USD';
+  exchangeRate: number | null;
+  paymentDate: string;
+  paymentMethodId: string;
+  codigoTransferencia: string;
+}
+
+export const emptyPurchaseInitialPayment = (today: string, currency: 'PEN' | 'USD' = 'PEN'): PurchaseInitialPaymentForm => ({
+  enabled: false, amount: 0, paymentCurrency: currency, exchangeRate: null,
+  paymentDate: today, paymentMethodId: '', codigoTransferencia: '',
+});
+
 export function splitPurchaseInstallments(total: number, count: number): number[] {
   const cents = Math.round((total + Number.EPSILON) * 100);
   if (!Number.isInteger(count) || count < 1 || count > cents) return [];
@@ -123,6 +148,7 @@ export interface PurchaseFormState {
   laboratoryId: string;
   paymentType: 'CONTADO' | 'CREDITO' | 'BONIFICACION';
   paymentMethodId: string;
+  initialPayment: PurchaseInitialPaymentForm;
   addToStock: boolean;
   paymentScheduleType: 'SINGLE_DATE' | 'INSTALLMENTS';
   detraccion: boolean;
@@ -169,6 +195,7 @@ export function readPurchaseCreateDraft(fallback: PurchaseInitial): PurchaseInit
       state: {
         ...fallback.state,
         ...parsed.state,
+        initialPayment: { ...fallback.state.initialPayment, ...parsed.state.initialPayment },
         items: Array.isArray(parsed.state.items) && parsed.state.items.length
           ? parsed.state.items.map((item) => ({ ...emptyItem(), ...item }))
           : fallback.state.items,
@@ -256,6 +283,7 @@ export function purchaseToFormState(purchase: Purchase, products: Product[]): Pu
     laboratoryId: (purchase as any).laboratoryId || '',
     paymentType: purchase.paymentType,
     paymentMethodId: purchase.paymentMethodId || '',
+    initialPayment: emptyPurchaseInitialPayment(dateInputStr(purchase.issueDate || purchase.date), currency),
     addToStock: purchase.addToStock !== false,
     paymentScheduleType: purchase.paymentScheduleType || 'SINGLE_DATE',
     detraccion: purchase.detraccion || false,
@@ -296,6 +324,7 @@ export function buildInitialCreate(today: string): PurchaseInitial {
       laboratoryId: '',
       paymentType: 'CONTADO',
       paymentMethodId: '',
+      initialPayment: emptyPurchaseInitialPayment(today, 'USD'),
       addToStock: true,
       paymentScheduleType: 'SINGLE_DATE',
       detraccion: false,
