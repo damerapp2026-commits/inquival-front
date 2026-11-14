@@ -1176,22 +1176,17 @@ export function POSPage() {
           </div>
           <div className="flex items-center gap-2">
             <Tag size={16} className="text-gray-400" />
-            <span className="text-sm text-gray-500 shrink-0">Rango:</span>
-            {isSellerRole ? (
-              <span className="flex-1 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
-                {tierById.get(tierId)?.name || '—'}
-              </span>
-            ) : (
-              <select
-                value={tierId}
-                onChange={(e) => setTierId(e.target.value)}
-                className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white"
-              >
-                {tiers.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            )}
+            <label htmlFor="pos-price-tier" className="text-sm text-gray-500 shrink-0">Rango:</label>
+            <select
+              id="pos-price-tier"
+              value={tierId}
+              onChange={(e) => setTierId(e.target.value)}
+              className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white"
+            >
+              {tiers.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
           </div>
 
           {/* Toggles: USD y Cortesía */}
