@@ -496,7 +496,6 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                       return c ? (
                         <ExportClientStatementButton
                           client={c}
-                          credits={group.credits}
                           variant="icon"
                         />
                       ) : null;

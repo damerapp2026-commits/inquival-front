@@ -1,6 +1,6 @@
 import type { Client, CreditAccount, CreditPayment, Sale } from '../../../shared/types';
 import { formatDateEs, getTodayDateString, toLocalDateString } from '../../../shared/utils/date.util';
-import { creditCurrency, saleCurrencyAmount as saleAmount, type MoneyCurrency } from './money';
+import { creditCurrency, saleCurrencyAmount as saleAmount } from './money';
 import { COMPANY_INFO, type CompanyInfo } from '../../../config/companyInfo';
 import { selectClientStatementData, type ClientStatementPeriod } from './clientStatementPeriod';
 
@@ -68,17 +68,6 @@ const tableLayout = {
 
 const th = (text: string, alignment = 'left') => ({ text, bold: true, fontSize: 8.5, color: 'white', fillColor: GREEN, alignment });
 const spanning = (node: any, count: number) => [{ ...node, colSpan: count }, ...Array.from({ length: count - 1 }, () => ({}))];
-
-function metrics(total: number, paid: number, pending: number, currency: MoneyCurrency) {
-  return {
-    columns: [
-      { stack: [{ text: 'Monto al crédito', style: 'label' }, { text: money(total, currency), style: 'metric' }] },
-      { stack: [{ text: 'Abonos aplicados', style: 'label' }, { text: money(paid, currency), style: 'metric', color: GREEN }] },
-      { stack: [{ text: 'Saldo por pagar', style: 'label' }, { text: money(pending, currency), style: 'metric', color: pending > 0 ? AMBER : GREEN }] },
-    ],
-    columnGap: 12,
-  };
-}
 
 function creditReferences(credit: CreditAccount, salesById: Map<string, Sale>): string[] {
   const details = new Map((credit.saleDetails || []).map(sale => [sale.saleId, sale]));
@@ -171,7 +160,7 @@ function purchaseTable(sales: Sale[], accountBySale: Map<string, number>) {
           paymentLines.push({ text: `Pagado al comprar: ${money(initial, sale.currency)}`, bold: true, color: GREEN });
           if (methods.length) paymentLines.push({ text: `Método de pago: ${methods.join(' + ')}`, color: MUTED });
         }
-        if (account != null) paymentLines.push({ text: `Los abonos posteriores están en la cuenta ${String(account).padStart(2, '0')}.`, color: MUTED });
+        if (account != null) paymentLines.push({ text: `Los abonos posteriores están en la cuenta ${String(account).padStart(2, '0')} del resumen de abonos.`, color: MUTED });
         if (sale.sellerName) paymentLines.push({ text: `Atendido por: ${sale.sellerName}`, color: MUTED });
         return {
           table: {
@@ -242,33 +231,20 @@ function paymentDetail(payment: CreditPayment, credit: CreditAccount): string {
   return lines.join('\n') || '—';
 }
 
-function accountDetail(credit: CreditAccount, index: number, salesById: Map<string, Sale>, today: string, includeProducts: boolean) {
-  const badge = status(credit, today);
+function accountPayments(credit: CreditAccount, index: number, salesById: Map<string, Sale>) {
   const payments = [...(credit.payments || [])].sort((a, b) => dayKey(a.paymentDate).localeCompare(dayKey(b.paymentDate)));
   const refs = creditReferences(credit, salesById);
   const previousPaid = Math.round((credit.paidAmount - payments.reduce((sum, p) => sum + p.amount, 0)) * 100) / 100;
   const body: any[][] = [
     spanning({
       stack: [
-        { columns: [
-          { text: `Cuenta ${String(index + 1).padStart(2, '0')}${credit.name ? ` · ${credit.name}` : ''}`, style: 'display', bold: true, fontSize: 12, color: 'white', width: '*' },
-          { text: badge.text, bold: true, color: GOLD, alignment: 'right', width: 78, fontSize: 9 },
-        ], columnGap: 10 },
-        { text: `Fecha: ${date(credit.createdAt)}   ·   ${credit.dueDate ? `Vencimiento: ${date(credit.dueDate)}` : 'Sin vencimiento registrado'}`, fontSize: 8.5, color: '#d9eddf', margin: [0, 6, 0, 0] },
+        { text: `Cuenta ${String(index + 1).padStart(2, '0')}${credit.name ? ` · ${credit.name}` : ''}`, style: 'display', bold: true, fontSize: 12, color: 'white' },
+        ...(refs.length ? [{ text: `Ventas de esta cuenta: ${refs.join(' · ')}`, fontSize: 9, color: '#d9eddf', margin: [0, 5, 0, 0] }] : []),
       ],
       fillColor: INK,
     }, 4),
-    spanning({ ...metrics(credit.totalAmount, credit.paidAmount, credit.pendingAmount, creditCurrency(credit.currency)), fillColor: PALE, margin: [0, 5, 0, 5] }, 4),
     [th('Fecha de pago'), th('Método de pago'), th('Monto aplicado', 'right'), th('Detalle del abono')],
   ];
-  if (refs.length) body.push(spanning({ text: `Ventas de esta cuenta: ${refs.join(' · ')}`, fontSize: 9, bold: true, color: TEAL, fillColor: '#edf5f8' }, 4));
-  if (includeProducts) {
-    for (const sale of credit.saleDetails || []) {
-      if (sale.items?.length) body.push(spanning({
-        text: sale.items.map(item => `${item.quantity} × ${item.productName}`).join(' · '), fontSize: 8.5, color: MUTED,
-      }, 4));
-    }
-  }
   body.push(...payments.map(payment => [
     { text: date(payment.paymentDate), bold: true },
     { text: payment.paymentMethodName || 'No registrado' },
@@ -283,7 +259,7 @@ function accountDetail(credit: CreditAccount, index: number, salesById: Map<stri
   // Normal payment rows stay together; exceptionally long notes may flow across pages.
   const keepRowsTogether = body.every(row => row.every(cell => typeof cell.text !== 'string' || cell.text.length < 1000));
   return {
-    table: { headerRows: 3, keepWithHeaderRows: 1, dontBreakRows: keepRowsTogether, widths: [65, 91, 86, '*'], body },
+    table: { headerRows: 2, keepWithHeaderRows: 1, dontBreakRows: keepRowsTogether, widths: [65, 91, 86, '*'], body },
     layout: tableLayout,
     margin: [0, 0, 0, 14],
   };
@@ -362,20 +338,30 @@ export function buildClientStatementDocument({
     { text: `${inputSales ? `${sales.length} compras   ·   ` : ''}${credits.length} cuentas   ·   ${openCount} con saldo   ·   ${credits.reduce((sum, c) => sum + (c.payments?.length || 0), 0)} abonos con detalle`, fontSize: 9, bold: true, color: GREEN, margin: [0, 6, 0, 0] },
     ...(period ? [{ text: 'El periodo selecciona las cuentas por su fecha de creación y las compras por su fecha de venta. Los abonos y saldos de las cuentas seleccionadas están actualizados a la fecha de emisión de este reporte.', style: 'note', margin: [0, 5, 0, 0] }] : []),
     ...(creditIds !== undefined ? [{ text: 'Este reporte incluye únicamente las cuentas seleccionadas y sus compras asociadas dentro del periodo.', style: 'note', margin: [0, 5, 0, 0] }] : []),
-    heading(1, 'Resumen financiero', 'Monto al crédito − Abonos aplicados = Saldo por pagar'),
+    heading(1, 'Resumen de cuenta', 'Monto al crédito − Abonos aplicados = Saldo por pagar'),
     ...summary(credits, today),
     { text: credits.length ? 'El monto al crédito es lo financiado después de la inicial. Los abonos reducen esa deuda; las compras al contado no aumentan el saldo. Soles y dólares se presentan por separado.' : 'No hay cuentas de crédito incluidas en este reporte.', style: 'note' },
   ];
-  let section = 2;
   if (credits.length) {
-    content.push(heading(section++, 'Tus cuentas de crédito', 'Consulta el estado, el vencimiento y lo que falta pagar de cada cuenta.'), accountSummary(credits, salesById, today));
+    content.push({ ...accountSummary(credits, salesById, today), margin: [0, 10, 0, 0] });
   }
-  if (mode === 'detailed' && sales.length) {
-    content.push(heading(section++, 'Detalle de compras', 'Productos, cantidades y precios. Cada venta indica su inicial y su forma de pago.', true), purchaseTable(sales, accountBySale));
-  }
-  if (mode === 'detailed' && credits.length) {
-    content.push(heading(section, 'Abonos por cuenta', 'Fecha, método, monto y observaciones de cada abono. Las cuentas agrupadas se muestran una sola vez.', true));
-    content.push(...credits.map((credit, index) => accountDetail(credit, index, salesById, today, inputSales === undefined)));
+  if (mode === 'detailed') {
+    let section = 2;
+    // Credit-only callers may have stored product details without a loaded sales record.
+    const storedSales = inputSales === undefined ? credits.flatMap(credit => (credit.saleDetails || []).map(sale => ({
+      table: { headerRows: 1, widths: ['*'], body: [
+        [{ text: `${sale.saleNumber || saleRef({ id: sale.saleId })} · ${date(sale.date)}`, bold: true, color: TEAL, fillColor: PALE }],
+        [{ text: sale.items?.length ? sale.items.map(item => `${item.quantity} × ${item.productName}`).join(' · ') : 'Sin detalle de productos registrado.', color: MUTED }],
+      ] }, layout: tableLayout, margin: [0, 0, 0, 12],
+    }))) : [];
+    if (sales.length || storedSales.length) {
+      content.push(heading(section++, 'Detalle de ventas', 'Productos, cantidades y precios. Los abonos posteriores se muestran en la última sección.', true));
+      content.push(...(sales.length ? [purchaseTable(sales, accountBySale)] : storedSales));
+    }
+    if (credits.length) {
+      content.push(heading(section, 'Resumen de abonos', 'Fecha, método, monto y observaciones de cada abono. Cada cuenta se muestra una sola vez.', true));
+      content.push(...credits.map((credit, index) => accountPayments(credit, index, salesById)));
+    }
   }
   if (!sales.length && !credits.length) content.push({ text: 'No hay operaciones para mostrar.', margin: [0, 20, 0, 0], color: MUTED });
   return {

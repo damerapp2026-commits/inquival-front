@@ -10,18 +10,17 @@ import { Modal } from '../../../shared/components/Modal';
 import { ClientStatementPeriodFilter } from './ClientStatementPeriodFilter';
 import { ClientStatementAccountSelector } from './ClientStatementAccountSelector';
 import { filterStatementCredits, selectClientStatementData, selectedStatementPeriod, statementPeriodError, statementPeriodSelection } from '../utils/clientStatementPeriod';
-import type { Client, CreditAccount } from '../../../shared/types';
+import type { Client } from '../../../shared/types';
 
 interface Props {
   client: Client;
-  credits?: CreditAccount[];
   variant?: 'button' | 'icon';
   label?: string;
 }
 
 const MENU_WIDTH = 240;
 
-export function ExportClientStatementButton({ client, credits, variant = 'button', label = 'Estado de cuenta' }: Props) {
+export function ExportClientStatementButton({ client, variant = 'button', label = 'Estado de cuenta' }: Props) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -35,9 +34,9 @@ export function ExportClientStatementButton({ client, credits, variant = 'button
   const { data: loadedCredits, isLoading: loadingCredits, isError: creditsError, refetch } = useQuery({
     queryKey: ['credits', 'client', client.id, 'statement'],
     queryFn: () => getStatementCredits(client.id),
-    enabled: showSummaryModal && credits === undefined,
+    enabled: showSummaryModal,
   });
-  const availableCredits = credits ?? loadedCredits ?? [];
+  const availableCredits = loadedCredits ?? [];
   const periodCredits = periodError ? [] : filterStatementCredits(availableCredits, period);
   const exportCredits = periodError ? [] : selectClientStatementData(availableCredits, undefined, period, selectedCreditIds).credits;
 
@@ -159,13 +158,14 @@ export function ExportClientStatementButton({ client, credits, variant = 'button
         <div className="space-y-4">
           <p className="text-sm font-medium text-gray-700">{client.name}</p>
           <ClientStatementPeriodFilter value={periodSelection} onChange={setPeriodSelection} disabled={loading} />
-          {loadingCredits && credits === undefined ? <p role="status" className="text-sm text-gray-500">Cargando cuentas del cliente...</p>
-            : creditsError && credits === undefined ? <div className="text-sm text-red-600"><p role="alert">No se pudieron cargar las cuentas.</p><button type="button" onClick={() => { void refetch(); }} className="mt-2 text-primary-700 hover:underline">Reintentar</button></div>
-            : <ClientStatementAccountSelector credits={periodCredits} value={selectedCreditIds} onChange={setSelectedCreditIds} disabled={loading} />}
-          {!loadingCredits && !creditsError && !periodError && !periodCredits.length && <p className="text-sm text-gray-500">No hay cuentas creadas en el periodo seleccionado.</p>}
+          {loadingCredits ? <p role="status" className="text-sm text-gray-500">Cargando cuentas del cliente...</p>
+            : creditsError ? <div className="text-sm text-red-600"><p role="alert">No se pudieron cargar las cuentas.</p><button type="button" onClick={() => { void refetch(); }} className="mt-2 text-primary-700 hover:underline">Reintentar</button></div>
+            : <ClientStatementAccountSelector credits={periodCredits} value={selectedCreditIds} onChange={setSelectedCreditIds} disabled={loading}
+                totalAccounts={new Set(availableCredits.map(credit => credit.id)).size} periodError={periodError}
+                onShowAll={period ? () => setPeriodSelection(statementPeriodSelection('all')) : undefined} />}
           <div className="flex flex-wrap justify-end gap-2">
             <button type="button" disabled={loading} onClick={() => setShowSummaryModal(false)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 disabled:opacity-50">Cancelar</button>
-            <button type="button" disabled={loading || loadingCredits || (creditsError && credits === undefined) || !!periodError || !exportCredits.length} onClick={() => { void handleExportSummary(); }} className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+            <button type="button" disabled={loading || loadingCredits || creditsError || !!periodError || !exportCredits.length} onClick={() => { void handleExportSummary(); }} className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
               {loading ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />} {loading ? 'Generando...' : 'Descargar PDF'}
             </button>
           </div>

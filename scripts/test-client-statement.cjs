@@ -18,6 +18,41 @@ function rows(node) {
   return [...(node.table?.body || []), ...Object.values(node).flatMap(rows)];
 }
 
+test('detailed PDF has one account summary, then sales, then payments without repeated balances', () => {
+  const doc = buildClientStatementDocument(fixture);
+  const headings = doc.content.filter(node => node.headlineLevel === 1);
+  assert.deepEqual(headings.map(node => texts(node)[1]), ['Resumen de cuenta', 'Detalle de ventas', 'Resumen de abonos']);
+  assert.deepEqual(headings.map(node => texts(node)[0]), ['01', '02', '03']);
+  const salesIndex = doc.content.indexOf(headings[1]);
+  const paymentsIndex = doc.content.indexOf(headings[2]);
+  const firstSection = texts(doc.content.slice(0, salesIndex));
+  const salesSection = texts(doc.content.slice(salesIndex, paymentsIndex));
+  const paymentsSection = texts(doc.content.slice(paymentsIndex));
+  assert.ok(firstSection.includes('Cuenta / Vencimiento'));
+  assert.ok(firstSection.includes('S/ 700.00'));
+  assert.ok(salesSection.includes('Abono granulado · saco de 50 kg'));
+  assert.ok(salesSection.includes('Inicial: US$ 100.00'));
+  assert.ok(!salesSection.some(text => text.includes('Primer abono · recibido en tienda')));
+  assert.ok(paymentsSection.includes('Primer abono · recibido en tienda'));
+  assert.ok(paymentsSection.includes('Segundo abono · operación de ejemplo 002'));
+  for (const repeated of ['Monto al crédito', 'Abonos aplicados', 'Saldo por pagar', 'Cuenta / Vencimiento', 'Producto / Presentación']) {
+    assert.ok(!paymentsSection.includes(repeated), repeated);
+  }
+  const summary = buildClientStatementDocument({ ...fixture, mode: 'summary', sales: undefined });
+  assert.deepEqual(summary.content.filter(node => node.headlineLevel === 1).map(node => texts(node)[1]), ['Resumen de cuenta']);
+  for (const value of ['S/ 700.00', 'US$ 200.00', 'Cuenta / Vencimiento']) assert.ok(texts(summary).includes(value));
+});
+
+test('stored sale products stay in the sales section for credit-only exports', () => {
+  const credit = { ...fixture.credits[0], saleDetails: [{ saleId: 'NV-000127', saleNumber: 'NV-000127', date: '2026-10-28', total: 1500, items: fixture.sales[0].items }] };
+  const doc = buildClientStatementDocument({ ...fixture, credits: [credit], sales: undefined });
+  const paymentStart = doc.content.findIndex(node => node.headlineLevel === 1 && texts(node).includes('Resumen de abonos'));
+  const product = '3 × Abono granulado · saco de 50 kg · 1 × Fertilizante foliar · caja de 12 unidades';
+  assert.ok(texts(doc.content.slice(0, paymentStart)).includes(product));
+  assert.ok(!texts(doc.content.slice(paymentStart)).includes(product));
+  assert.equal(texts(doc).filter(text => text.includes('Primer abono · recibido en tienda')).length, 1);
+});
+
 test('balances keep PEN and USD separate and include historical accounts', () => {
   const doc = buildClientStatementDocument(fixture);
   const pen = doc.content.find(node => texts(node).includes('SOLES · PEN'));
@@ -70,6 +105,6 @@ test('summary preserves balances without repeating payment details; empty and pa
   const empty = texts(buildClientStatementDocument({ ...fixture, credits: [], sales: [] }));
   assert.ok(empty.includes('No hay operaciones para mostrar.'));
   const paid = texts(buildClientStatementDocument({ ...fixture, credits: [fixture.credits[2]], sales: [] }));
-  assert.ok(paid.includes('Pagado'));
+  assert.ok(paid.some(text => text.startsWith('Pagado ·')));
   assert.ok(paid.includes('Sin saldo pendiente en estas cuentas'));
 });

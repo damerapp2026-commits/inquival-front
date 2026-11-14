@@ -219,6 +219,7 @@ export function POSPage() {
   const [showQuickClient, setShowQuickClient] = useState(false);
   const [creditName, setCreditName] = useState('');
   const [creditDueDays, setCreditDueDays] = useState('');
+  const [creditDueDate, setCreditDueDate] = useState('');
   const { data: clientsData } = useClients(
     { limit: 500 },
     { enabled: showCheckout || showQuickClient || !!clientId },
@@ -253,16 +254,19 @@ export function POSPage() {
   }, [currency, tipoCambioData]);
 
   const computedDueDate = (() => {
-    const days = parseInt(creditDueDays, 10);
-    if (!Number.isFinite(days) || days <= 0) return '';
-    const [yy, mm, dd] = saleDate.split('-').map(Number);
-    const d = new Date(yy, (mm || 1) - 1, dd || 1);
-    d.setDate(d.getDate() + days);
-    const yyyy = d.getFullYear();
-    const mmStr = String(d.getMonth() + 1).padStart(2, '0');
-    const ddStr = String(d.getDate()).padStart(2, '0');
-    return `${yyyy}-${mmStr}-${ddStr}`;
+    if (creditDueDate) return creditDueDate;
+    const days = Number(creditDueDays);
+    if (!Number.isSafeInteger(days) || days <= 0) return '';
+    const date = new Date(Date.parse(`${saleDate}T00:00:00.000Z`) + days * 86400000);
+    if (!Number.isFinite(date.getTime())) return '';
+    const result = date.toISOString().slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(result) ? result : '';
   })();
+  const creditDueDateError = !/^\d{4}-\d{2}-\d{2}$/.test(computedDueDate)
+    ? 'Selecciona la fecha de vencimiento del crédito para continuar.'
+    : computedDueDate < saleDate
+      ? 'El vencimiento no puede ser anterior a la fecha de venta.'
+      : undefined;
   const searchRef = useRef<HTMLInputElement>(null);
   const [successSale, setSuccessSale] = useState<VoucherSnapshot | null>(null);
   const [voucherPreview, setVoucherPreview] = useState<VoucherSnapshot | null>(null);
@@ -721,6 +725,7 @@ export function POSPage() {
     setIsCredit(false);
     setCreditName('');
     setCreditDueDays('');
+    setCreditDueDate('');
     setIsCourtesy(effectiveIsCourtesy);
     setSplitPayments(effectiveIsCourtesy ? [] : [{ paymentMethodId, amount: 0 }]);
     setCheckoutStep(1);
@@ -748,6 +753,7 @@ export function POSPage() {
       // pure bonificación: no payment needed
     } else if (isCredit) {
       if (!clientId) { toast.error('Selecciona un cliente para la venta a crédito'); return; }
+      if (creditDueDateError) { toast.error(creditDueDateError); return; }
       if (creditOverLimit) {
         toast.error(`Esta venta supera el límite de crédito del cliente (S/ ${creditLimit.toFixed(2)})`);
         return;
@@ -912,6 +918,7 @@ export function POSPage() {
       setIsCredit(false);
       setCreditName('');
       setCreditDueDays('');
+      setCreditDueDate('');
       setSaleDate(todayLocal);
       setIsCourtesy(false);
       setCurrency('PEN');
@@ -1801,16 +1808,35 @@ export function POSPage() {
                         )}
                         <div className="space-y-2">
                           <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">
-                              Plazo de pago <span className="text-gray-400 font-normal">(opcional)</span>
+                            <label htmlFor="pos-credit-due-date" className="block text-xs font-medium text-gray-600 mb-1">
+                              Fecha de vencimiento <span className="text-orange-600">(obligatoria)</span>
+                            </label>
+                            <input
+                              id="pos-credit-due-date"
+                              type="date"
+                              required
+                              min={saleDate}
+                              max="9999-12-31"
+                              value={computedDueDate}
+                              onChange={(e) => { setCreditDueDate(e.target.value); setCreditDueDays(''); }}
+                              aria-invalid={!!creditDueDateError}
+                              aria-describedby={creditDueDateError ? 'pos-credit-due-date-error' : undefined}
+                              className="w-full min-w-0 px-4 py-3 border-2 border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                            />
+                            {creditDueDateError && <p id="pos-credit-due-date-error" className="mt-1.5 text-xs text-red-600">{creditDueDateError}</p>}
+                          </div>
+                          <div>
+                            <label htmlFor="pos-credit-due-days" className="block text-xs font-medium text-gray-600 mb-1">
+                              O calcular el vencimiento por días
                             </label>
                             <div className="relative">
                               <input
+                                id="pos-credit-due-days"
                                 type="number"
                                 min={1}
                                 step={1}
                                 value={creditDueDays}
-                                onChange={(e) => setCreditDueDays(e.target.value.replace(/\D/g, ''))}
+                                onChange={(e) => { setCreditDueDays(e.target.value); setCreditDueDate(''); }}
                                 placeholder="Ej: 30"
                                 className="w-full px-4 py-3 pr-16 border-2 border-orange-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
                               />
@@ -1996,7 +2022,7 @@ export function POSPage() {
                   </button>
                   <button
                     onClick={confirmSale}
-                    disabled={createSale.isPending || creditOverLimit || downPaymentExceedsTotal}
+                    disabled={createSale.isPending || creditOverLimit || downPaymentExceedsTotal || (isCredit && !isCourtesy && !!creditDueDateError)}
                     className={`flex-1 py-3.5 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed font-bold text-base transition-colors shadow-sm flex items-center justify-center gap-2 ${
                       isCourtesy ? 'bg-violet-600 hover:bg-violet-700' : isCredit ? 'bg-orange-500 hover:bg-orange-600' : currency === 'USD' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-primary-600 hover:bg-primary-700'
                     }`}

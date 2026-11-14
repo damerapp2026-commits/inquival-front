@@ -38,69 +38,31 @@ function itemDispSub(s: { currency?: string }, item: { subtotal: number; subtota
   return s.currency === 'USD' && item.subtotalUsd != null ? item.subtotalUsd : item.subtotal;
 }
 
-function daysInMonth(year: number, month: number) {
-  return new Date(year, month, 0).getDate();
-}
-
-function isoToDisplayDate(value: string) {
-  const [year, month, day] = value.split('-');
-  return year && month && day ? `${day}/${month}/${year}` : value;
-}
-
-function formatDateDraft(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
-
-function displayToIsoDate(value: string) {
-  const digits = value.replace(/\D/g, '');
-  if (digits.length !== 8) return null;
-  const day = Number(digits.slice(0, 2));
-  const month = Number(digits.slice(2, 4));
-  const year = Number(digits.slice(4, 8));
-  if (year < 2000 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
-
-function DateTextInput({ value, onChange, ariaLabel }: { value: string; onChange: (value: string) => void; ariaLabel: string }) {
-  const [draft, setDraft] = useState(isoToDisplayDate(value));
+function DateFilterInput({ value, onChange, ariaLabel }: { value: string; onChange: (value: string) => void; ariaLabel: string }) {
+  const [draft, setDraft] = useState(value);
 
   useEffect(() => {
-    setDraft(isoToDisplayDate(value));
+    setDraft(value);
   }, [value]);
-
-  const commit = () => {
-    const next = displayToIsoDate(draft);
-    if (!next) {
-      setDraft(isoToDisplayDate(value));
-      toast.error(`Fecha inválida en ${ariaLabel.toLowerCase()}`);
-      return;
-    }
-    onChange(next);
-  };
 
   return (
     <input
-      type="text"
-      inputMode="numeric"
-      placeholder="dd/mm/aaaa"
+      type="date"
+      min="2000-01-01"
+      max="9999-12-31"
       value={draft}
       onChange={(e) => {
-        const raw = e.target.value.replace(/[^\d/]/g, '').slice(0, 10);
-        const inputType = (e.nativeEvent as InputEvent).inputType || '';
-        setDraft(inputType.startsWith('delete') ? raw : formatDateDraft(raw));
+        const next = e.target.value;
+        setDraft(next);
+        if (next && e.target.validity.valid) onChange(next);
       }}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          commit();
-          e.currentTarget.blur();
+      onBlur={(e) => {
+        if (!e.target.value || !e.target.validity.valid) {
+          setDraft(value);
+          toast.error(`Fecha inválida en ${ariaLabel.toLowerCase()}`);
         }
       }}
-      className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+      className="w-full min-w-0 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white [color-scheme:light]"
       aria-label={ariaLabel}
     />
   );
@@ -1040,7 +1002,7 @@ export function SalesPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Desde</label>
-                <DateTextInput
+                <DateFilterInput
                   value={startDate}
                   onChange={setStartDate}
                   ariaLabel="Desde"
@@ -1048,7 +1010,7 @@ export function SalesPage() {
               </div>
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Hasta</label>
-                <DateTextInput
+                <DateFilterInput
                   value={endDate}
                   onChange={setEndDate}
                   ariaLabel="Hasta"

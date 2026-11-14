@@ -120,7 +120,9 @@ function ClientStatementContent({ client, selection: controlledSelection, onSele
   return (
     <div className="space-y-5 max-h-[70vh] overflow-y-auto overflow-x-hidden pr-1">
       <ClientStatementPeriodFilter value={periodSelection} onChange={value => { changeSelection({ period: value, creditIds: selectedCreditIds }); setExpandedSaleId(null); }} disabled={exporting} />
-      <ClientStatementAccountSelector credits={periodCredits} value={selectedCreditIds} onChange={value => { changeSelection({ period: periodSelection, creditIds: value }); setExpandedSaleId(null); }} disabled={exporting} />
+      <ClientStatementAccountSelector credits={periodCredits} value={selectedCreditIds} onChange={value => { changeSelection({ period: periodSelection, creditIds: value }); setExpandedSaleId(null); }} disabled={exporting}
+        totalAccounts={new Set(sourceCredits.map(credit => credit.id)).size} periodError={periodError}
+        onShowAll={period ? () => { changeSelection({ period: statementPeriodSelection('all'), creditIds: selectedCreditIds }); setExpandedSaleId(null); } : undefined} />
       {/* Resumen */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-blue-50 rounded-xl p-3 text-center">
