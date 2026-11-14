@@ -56,7 +56,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const calendarView = searchParams.get('creditView') === 'calendar';
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'PENDING' | 'PAID'>('PENDING');
+  const [statusFilter, setStatusFilter] = useState<'' | 'PENDING' | 'PAID'>('PENDING');
   const [currencyFilter, setCurrencyFilter] = useState<'ALL' | 'PEN' | 'USD'>('ALL');
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -82,7 +82,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   const credits: CreditAccount[] = data?.data || [];
   const clients: Client[] = clientsData?.data || [];
   const filteredCredits = useMemo(() => credits.filter(credit =>
-    (statusFilter === 'PAID' ? credit.status === 'PAID' : credit.status === 'PENDING' || credit.status === 'PARTIAL')
+    (!statusFilter || (statusFilter === 'PAID' ? credit.status === 'PAID' : credit.status === 'PENDING' || credit.status === 'PARTIAL'))
     && (currencyFilter === 'ALL' || creditCurrency(credit.currency) === currencyFilter)
     && (!calendarView || ((credit.status === 'PENDING' || credit.status === 'PARTIAL') && credit.pendingAmount > 0)),
   ), [credits, statusFilter, currencyFilter, calendarView]);
@@ -136,7 +136,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   const calendarCredits = useMemo(() => groups.flatMap(group => group.credits), [groups]);
 
   const changeView = (view: 'list' | 'calendar') => {
-    if (view === 'calendar' && statusFilter === 'PAID') setStatusFilter('PENDING');
+    if (view === 'calendar' && statusFilter !== 'PENDING') setStatusFilter('PENDING');
     setSearchParams(previous => {
       const next = new URLSearchParams(previous);
       if (view === 'calendar') next.set('creditView', view); else next.delete('creditView');
@@ -365,11 +365,12 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
           aria-label="Estado del crédito"
           value={statusFilter}
           onChange={(e) => {
-            setStatusFilter(e.target.value as 'PENDING' | 'PAID');
+            setStatusFilter(e.target.value as '' | 'PENDING' | 'PAID');
             setPage(1);
           }}
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
         >
+          {!calendarView && <option value="">Todos</option>}
           <option value="PENDING">Pendiente</option>
           {!calendarView && <option value="PAID">Pagado</option>}
         </select>

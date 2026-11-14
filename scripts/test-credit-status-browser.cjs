@@ -75,7 +75,7 @@ async function main() {
   try {
     const f = await fixture(browser), { page } = f;
     const status = page.getByLabel('Estado del crédito', { exact: true });
-    assert.deepEqual(await status.locator('option').allTextContents(), ['Pendiente', 'Pagado']);
+    assert.deepEqual(await status.locator('option').allTextContents(), ['Todos', 'Pendiente', 'Pagado']);
     assert.equal(await status.inputValue(), 'PENDING');
     assert.equal(await page.getByRole('button', { name: /^Cuentas de / }).count(), 10);
     const ana = page.getByRole('button', { name: 'Cuentas de Ana Agricultora', exact: true });
@@ -115,6 +115,27 @@ async function main() {
     }
     console.log('PASS both PDFs export every matching client from all pages while the last page is selected');
 
+    await status.selectOption('');
+    await page.getByText('24 clientes', { exact: true }).waitFor();
+    await ana.getByText('3 cuentas', { exact: true }).waitFor();
+    await ana.getByText('S/ 300.00', { exact: true }).waitFor();
+    await ana.getByText('S/ 130.00', { exact: true }).waitFor();
+    await page.getByRole('table').getByText('Cuenta cancelada de Ana', { exact: true }).waitFor();
+    for (const label of ['Resumen por fecha', 'Detallado']) {
+      const text = await exportText(page, label, path.join(output, `${label}-all-statuses.pdf`));
+      for (const name of ['Ana Agricultora', 'Bruno con abonos', 'Carla sin deuda', 'Cliente 01', 'Cliente 21']) assert.ok(text.includes(name));
+      assert.match(text, /S\/ 811\.00/);
+      assert.match(text, /S\/ 285\.00/);
+      assert.match(text, /S\/ 526\.00/);
+      assert.doesNotMatch(text, /Estado: Pendiente|Parcial/);
+    }
+    await page.getByRole('button', { name: 'Calendario de cobros', exact: true }).click();
+    await page.getByRole('region', { name: 'Calendario de cobros', exact: true }).waitFor();
+    assert.equal(await status.inputValue(), 'PENDING');
+    assert.deepEqual(await status.locator('option').allTextContents(), ['Pendiente']);
+    await page.getByRole('button', { name: 'Listado', exact: true }).click();
+    console.log('PASS Todos combines pending, partially paid and paid accounts with matching PDF totals; the collection calendar keeps outstanding accounts only');
+
     await status.selectOption('PAID');
     await page.getByText('2 clientes', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Cuentas de Carla sin deuda', exact: true }).waitFor();
@@ -133,7 +154,12 @@ async function main() {
     const mobile = await fixture(browser, true);
     await mobile.page.getByPlaceholder('Buscar cliente...').fill('Bruno');
     await mobile.page.getByText('S/ 125.00', { exact: true }).waitFor();
-    assert.deepEqual(await mobile.page.getByLabel('Estado del crédito', { exact: true }).locator('option').allTextContents(), ['Pendiente', 'Pagado']);
+    assert.deepEqual(await mobile.page.getByLabel('Estado del crédito', { exact: true }).locator('option').allTextContents(), ['Todos', 'Pendiente', 'Pagado']);
+    await mobile.page.getByPlaceholder('Buscar cliente...').fill('');
+    await mobile.page.getByLabel('Estado del crédito', { exact: true }).selectOption('');
+    await mobile.page.getByText('24 clientes', { exact: true }).waitFor();
+    await mobile.page.getByPlaceholder('Buscar cliente...').fill('Carla');
+    await mobile.page.getByRole('button', { name: 'Cuentas de Carla sin deuda', exact: true }).waitFor();
     assert.ok(await mobile.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     assert.deepEqual(mobile.writes, []);
     assert.deepEqual(mobile.errors, []);
