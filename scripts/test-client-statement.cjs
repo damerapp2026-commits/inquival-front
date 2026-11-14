@@ -53,6 +53,16 @@ test('stored sale products stay in the sales section for credit-only exports', (
   assert.equal(texts(doc).filter(text => text.includes('Primer abono · recibido en tienda')).length, 1);
 });
 
+test('credit-only PDFs tolerate legacy sale IDs and sales without identifiers', () => {
+  const credit = { ...fixture.credits[0], saleIds: [], saleDetails: [
+    { id: '000000000000000000000123', date: '2026-10-28', items: [{ quantity: 1, productName: 'Producto de venta antigua' }] },
+    { date: '2026-10-29', items: [{ quantity: 2, productName: 'Producto sin referencia' }] },
+  ] };
+  const content = texts(buildClientStatementDocument({ ...fixture, credits: [credit], sales: undefined })).join('\n');
+  for (const value of ['Venta sin número (00000123)', 'Venta sin número', 'Producto de venta antigua', 'Producto sin referencia']) assert.ok(content.includes(value), value);
+  assert.ok(!content.includes('NV-000123'));
+});
+
 test('balances keep PEN and USD separate and include historical accounts', () => {
   const doc = buildClientStatementDocument(fixture);
   const pen = doc.content.find(node => texts(node).includes('SOLES · PEN'));

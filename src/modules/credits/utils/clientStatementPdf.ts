@@ -3,6 +3,7 @@ import { formatDateEs, getTodayDateString, toLocalDateString } from '../../../sh
 import { creditCurrency, saleCurrencyAmount as saleAmount } from './money';
 import { COMPANY_INFO, type CompanyInfo } from '../../../config/companyInfo';
 import { selectClientStatementData, type ClientStatementPeriod } from './clientStatementPeriod';
+import { creditSaleLabel } from './creditReference';
 
 interface StatementParams {
   client: Client;
@@ -33,7 +34,8 @@ const amount = new Intl.NumberFormat('es-PE', { minimumFractionDigits: 2, maximu
 const date = (value?: string) => formatDateEs(value, DATE_OPTIONS) || '—';
 const money = (value: number, currency?: string) => `${creditCurrency(currency) === 'USD' ? 'US$' : 'S/'} ${amount.format(value || 0)}`;
 const dayKey = (value?: string) => value ? toLocalDateString(value) || '9999-12-31' : '9999-12-31';
-const saleRef = (sale: Pick<Sale, 'id' | 'saleNumber'>) => sale.saleNumber || `NV-${sale.id.slice(-6).toUpperCase()}`;
+const saleRef = (sale: { id?: string; saleId?: string; saleNumber?: string }) =>
+  creditSaleLabel({ saleId: sale.saleId || sale.id, saleNumber: sale.saleNumber });
 
 function status(credit: CreditAccount, today: string) {
   if (credit.pendingAmount <= 0) return { text: 'Pagado', color: GREEN };
@@ -350,7 +352,7 @@ export function buildClientStatementDocument({
     // Credit-only callers may have stored product details without a loaded sales record.
     const storedSales = inputSales === undefined ? credits.flatMap(credit => (credit.saleDetails || []).map(sale => ({
       table: { headerRows: 1, widths: ['*'], body: [
-        [{ text: `${sale.saleNumber || saleRef({ id: sale.saleId })} · ${date(sale.date)}`, bold: true, color: TEAL, fillColor: PALE }],
+        [{ text: `${saleRef(sale)} · ${date(sale.date)}`, bold: true, color: TEAL, fillColor: PALE }],
         [{ text: sale.items?.length ? sale.items.map(item => `${item.quantity} × ${item.productName}`).join(' · ') : 'Sin detalle de productos registrado.', color: MUTED }],
       ] }, layout: tableLayout, margin: [0, 0, 0, 12],
     }))) : [];
