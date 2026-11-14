@@ -39,10 +39,10 @@ const formatDate = (d?: string | Date) =>
 const money = (n: number) => `S/ ${(n || 0).toFixed(2)}`;
 
 const statusLabel = (s: string) =>
-  s === 'PAID' ? 'Pagado' : s === 'PARTIAL' ? 'Parcial' : 'Pendiente';
+  s === 'PAID' ? 'Pagado' : 'Pendiente';
 
 const statusColor = (s: string) =>
-  s === 'PAID' ? '#059669' : s === 'PARTIAL' ? '#2563eb' : '#d97706';
+  s === 'PAID' ? '#059669' : '#d97706';
 
 interface ExportParams {
   credits: CreditAccount[];

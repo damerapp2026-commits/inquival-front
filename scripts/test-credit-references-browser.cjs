@@ -113,7 +113,7 @@ async function main() {
         await page.goto(`${base}${route}`);
         await page.getByRole('button', { name: `Cuentas de ${otherClient.name}`, exact: true }).click();
         await page.getByRole('table').getByText('NI02-00000007', { exact: true }).waitFor();
-        await page.getByRole('table').getByText('NI02-00000008', { exact: true }).waitFor();
+        assert.equal(await page.getByRole('table').getByText('NI02-00000008', { exact: true }).count(), 0);
         await page.getByLabel('Estado del crédito', { exact: true }).selectOption('PAID');
         await page.getByRole('table').getByText('NI02-00000008', { exact: true }).waitFor();
         assert.equal(await page.getByRole('table').getByText('NI02-00000007', { exact: true }).count(), 0);

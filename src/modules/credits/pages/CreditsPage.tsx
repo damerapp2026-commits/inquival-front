@@ -34,7 +34,7 @@ interface ClientGroup {
 
 const statusLabels: Record<Status, { label: string; class: string }> = {
   PENDING: { label: 'Pendiente', class: 'bg-yellow-100 text-yellow-800' },
-  PARTIAL: { label: 'Parcial', class: 'bg-blue-100 text-blue-800' },
+  PARTIAL: { label: 'Pendiente', class: 'bg-yellow-100 text-yellow-800' },
   PAID: { label: 'Pagado', class: 'bg-primary-100 text-primary-800' },
 };
 
@@ -56,7 +56,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const calendarView = searchParams.get('creditView') === 'calendar';
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'' | Status>('');
+  const [statusFilter, setStatusFilter] = useState<'PENDING' | 'PAID'>('PENDING');
   const [currencyFilter, setCurrencyFilter] = useState<'ALL' | 'PEN' | 'USD'>('ALL');
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -74,7 +74,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   const { data: detailCredit } = useCreditById(showDetailModal && selectedCredit ? selectedCredit.id : '');
   const fullCredit: CreditAccount | null = detailCredit || selectedCredit;
 
-  const { data, isLoading, isError, refetch } = useCredits({ limit: 100000, status: statusFilter || undefined });
+  const { data, isLoading, isError, refetch } = useCredits({ limit: 100000 });
   const { data: clientsData, isLoading: clientsLoading, isError: clientsError, refetch: refetchClients } = useClients({ limit: 100000 });
   const deleteCreditMutation = useDeleteCredit();
   const editCreditMutation = useEditCredit();
@@ -82,9 +82,10 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   const credits: CreditAccount[] = data?.data || [];
   const clients: Client[] = clientsData?.data || [];
   const filteredCredits = useMemo(() => credits.filter(credit =>
-    (currencyFilter === 'ALL' || creditCurrency(credit.currency) === currencyFilter)
+    (statusFilter === 'PAID' ? credit.status === 'PAID' : credit.status === 'PENDING' || credit.status === 'PARTIAL')
+    && (currencyFilter === 'ALL' || creditCurrency(credit.currency) === currencyFilter)
     && (!calendarView || ((credit.status === 'PENDING' || credit.status === 'PARTIAL') && credit.pendingAmount > 0)),
-  ), [credits, currencyFilter, calendarView]);
+  ), [credits, statusFilter, currencyFilter, calendarView]);
 
   const clientMap = useMemo(() => new Map<string, Client>(clients.map((c: Client) => [c.id, c])), [clients]);
   const getClientName = (id: string) => clientMap.get(id)?.name || 'N/A';
@@ -135,7 +136,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
   const calendarCredits = useMemo(() => groups.flatMap(group => group.credits), [groups]);
 
   const changeView = (view: 'list' | 'calendar') => {
-    if (view === 'calendar' && statusFilter === 'PAID') setStatusFilter('');
+    if (view === 'calendar' && statusFilter === 'PAID') setStatusFilter('PENDING');
     setSearchParams(previous => {
       const next = new URLSearchParams(previous);
       if (view === 'calendar') next.set('creditView', view); else next.delete('creditView');
@@ -364,14 +365,12 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
           aria-label="Estado del crédito"
           value={statusFilter}
           onChange={(e) => {
-            setStatusFilter(e.target.value as any);
+            setStatusFilter(e.target.value as 'PENDING' | 'PAID');
             setPage(1);
           }}
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
         >
-          <option value="">{calendarView ? 'Pendientes y parciales' : 'Todos los estados'}</option>
           <option value="PENDING">Pendiente</option>
-          <option value="PARTIAL">Parcial</option>
           {!calendarView && <option value="PAID">Pagado</option>}
         </select>
         <div role="group" aria-label="Moneda de créditos" className="flex gap-1 bg-gray-100 rounded-lg p-1">

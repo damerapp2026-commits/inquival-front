@@ -101,11 +101,9 @@ async function main() {
     await expectRowCount(panel, 1);
     await page.getByPlaceholder('Buscar cliente...').fill('');
     await panel.getByText('Crédito dólares', { exact: true }).waitFor();
-    await page.getByLabel('Estado del crédito', { exact: true }).selectOption('PARTIAL');
-    await panel.getByText('Crédito de hoy', { exact: true }).waitFor();
-    await expectRowCount(panel, 1);
-    await page.getByLabel('Estado del crédito', { exact: true }).selectOption('');
-    await panel.getByText('Crédito dólares', { exact: true }).waitFor();
+    assert.equal(await page.getByLabel('Estado del crédito', { exact: true }).inputValue(), 'PENDING');
+    assert.deepEqual(await page.getByLabel('Estado del crédito', { exact: true }).locator('option').allTextContents(), ['Pendiente']);
+    await expectRowCount(panel, 2);
 
     await calendar.getByRole('button', { name: '15 de noviembre de 2026: 12 créditos por cobrar', exact: true }).click();
     await expectRowCount(panel, 10);
@@ -131,7 +129,7 @@ async function main() {
     await page.getByText('Ana Agricultora', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Calendario de cobros', exact: true }).click();
     await calendar.getByRole('group', { name: 'Vence hoy', exact: true }).getByText('S/ 120.00', { exact: true }).waitFor();
-    assert.equal(await page.getByLabel('Estado del crédito', { exact: true }).inputValue(), '');
+    assert.equal(await page.getByLabel('Estado del crédito', { exact: true }).inputValue(), 'PENDING');
     await page.goto(`${base}/credits?creditView=calendar`);
     await page.getByRole('heading', { name: 'Cuentas por Cobrar', exact: true }).waitFor();
     await calendar.getByRole('heading', { name: 'noviembre de 2026', exact: true }).waitFor();
