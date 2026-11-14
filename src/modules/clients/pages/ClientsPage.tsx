@@ -5,7 +5,7 @@ import { Modal } from '../../../shared/components/Modal';
 import { Pagination } from '../../../shared/components/Pagination';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useDniLookup, useRucLookup } from '../../../shared/hooks/useLookup';
-import { Plus, Search, Edit2, Trash2, Users, Loader2, AlertTriangle, UserCheck, UserX, Contact, MapPin, CreditCard, ChevronDown } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Users, Loader2, AlertTriangle, UserCheck, UserX, Contact, MapPin, CreditCard, ChevronDown, Download } from 'lucide-react';
 import type { Client } from '../../../shared/types';
 import { clientService } from '../services/clientService';
 import { ExportClientStatementButton } from '../../credits/components/ExportClientStatementButton';
@@ -15,6 +15,7 @@ import { ClientHistoryPanel } from '../components/ClientHistoryPanel';
 import { FixedScrollbar } from '../../../shared/components/FixedScrollbar';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import toast from 'react-hot-toast';
+import { getTodayDateString } from '../../../shared/utils/date.util';
 
 export function ClientsPage() {
   const { user } = useAuth();
@@ -32,6 +33,7 @@ export function ClientsPage() {
   const [editing, setEditing] = useState<Client | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
   const [confirmText, setConfirmText] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   const { data, isLoading } = useClients({ page, limit: 20, search: debouncedSearch });
   const createClient = useCreateClient();
@@ -154,6 +156,50 @@ export function ClientsPage() {
   const confirmRequired = deleteTarget?.documentNumber || deleteTarget?.name || '';
   const canConfirmDelete = confirmText.trim() === confirmRequired.trim();
 
+  const handleExportExcel = async () => {
+    if (exporting) return;
+    const exportSearch = search.trim();
+    setExporting(true);
+    try {
+      const result = await clientService.getAllPages({ limit: 1000, search: exportSearch || undefined });
+      if (!result.data.length) {
+        toast.error(exportSearch ? 'No hay clientes para exportar con esta búsqueda.' : 'No hay clientes para exportar.');
+        return;
+      }
+      const XLSX = await import('xlsx');
+      const rows = result.data.map(client => ({
+        'Nombre o razón social': client.name,
+        'DNI/RUC': String(client.documentNumber || ''),
+        'Teléfono': String(client.phone || ''),
+        'Correo': client.email || '',
+        'Dirección': client.address || '',
+        'Departamento': client.department || '',
+        'Provincia': client.province || '',
+        'Distrito': client.district || client.city || '',
+        'Caserío': client.hamlet || '',
+        'Límite de crédito': client.creditLimit ?? '',
+        'Moneda del límite': client.creditLimitCurrency || 'PEN',
+        'Estado': client.isActive ? 'Activo' : 'Inactivo',
+      }));
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      worksheet['!cols'] = [40, 18, 18, 32, 50, 22, 22, 22, 24, 20, 20, 12].map(wch => ({ wch }));
+      worksheet['!autofilter'] = { ref: worksheet['!ref']! };
+      rows.forEach((_, index) => {
+        const cell = worksheet[`J${index + 2}`];
+        if (cell?.t === 'n') cell.z = '0.00';
+      });
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Clientes');
+      XLSX.writeFile(workbook, `clientes_${getTodayDateString()}${exportSearch ? '_filtrados' : ''}.xlsx`);
+      toast.success(`${rows.length} cliente${rows.length === 1 ? '' : 's'} exportado${rows.length === 1 ? '' : 's'}`);
+    } catch (error: any) {
+      const message = error.response?.data?.message;
+      toast.error(Array.isArray(message) ? message[0] : message || error.message || 'No se pudieron exportar los clientes');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -169,9 +215,21 @@ export function ClientsPage() {
             </div>
           </div>
           {activeTab === 'datos' && (
-            <button onClick={openCreate} className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-medium shadow-sm transition-colors">
-              <Plus size={18} /> Nuevo Cliente
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                disabled={exporting}
+                title={search.trim() ? 'Exportar todos los clientes que coinciden con la búsqueda' : 'Exportar todos los clientes'}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 border border-emerald-200 text-emerald-700 bg-emerald-50 rounded-xl hover:bg-emerald-100 font-medium transition-colors disabled:opacity-60 disabled:cursor-wait"
+              >
+                {exporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+                {exporting ? 'Exportando…' : 'Exportar Excel'}
+              </button>
+              <button onClick={openCreate} className="flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-medium shadow-sm transition-colors">
+                <Plus size={18} /> Nuevo Cliente
+              </button>
+            </div>
           )}
         </div>
 

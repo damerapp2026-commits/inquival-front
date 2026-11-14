@@ -7,13 +7,13 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright')
 const client = { id: 'selector-client', name: 'Cliente prueba selección', isActive: true };
 const accounts = [
   { id: 'one', date: '2024-06-20', note: 'NI01-00003439', total: 1228, paid: 0 },
-  { id: 'two', date: '2024-06-14', note: 'NI01-00003438', total: 1512, paid: 0 },
+  { id: 'two', date: '2024-06-14', note: 'NI01-00003438', total: 1512, paid: 100 },
   { id: 'paid', date: '2024-07-01', note: 'NI01-00003437', total: 200, paid: 200, name: 'Campaña antigua' },
   { id: 'usd', date: '2024-05-30', note: 'NI01-00003436', total: 100, paid: 25, currency: 'USD' },
 ].map(row => ({ id: row.id, clientId: client.id, name: row.name, createdAt: `${row.date}T05:00:00Z`, saleIds: [`sale-${row.id}`],
   saleDetails: [{ saleId: `sale-${row.id}`, saleNumber: row.note, date: `${row.date}T05:00:00Z`, total: row.total, currency: row.currency || 'PEN', items: [] }],
   totalAmount: row.total, paidAmount: row.paid, pendingAmount: row.total - row.paid, currency: row.currency || 'PEN',
-  status: row.paid === row.total ? 'PAID' : row.paid ? 'PARTIAL' : 'PENDING', payments: [] }));
+  status: row.paid === row.total ? 'PAID' : row.paid ? 'PARTIAL' : 'PENDING', payments: row.paid ? [{ id: `payment-${row.id}`, amount: row.paid, paymentDate: '2024-08-01T05:00:00Z', paymentMethodName: 'Efectivo', notes: `Abono cuenta ${row.id}` }] : [] }));
 const sales = accounts.map(account => ({ id: account.saleIds[0], saleNumber: account.saleDetails[0].saleNumber,
   clientId: client.id, date: account.createdAt, createdAt: account.createdAt, total: account.totalAmount,
   currency: account.currency, totalUsd: account.currency === 'USD' ? account.totalAmount : undefined, items: [], payments: [], isCredit: true, voucherType: 'NONE' }));
@@ -44,10 +44,12 @@ async function setup(browser, base, mobile) {
   await page.goto(`${base}/clients?tab=creditos`);
   return { page, context, errors, writes, reads };
 }
-async function open(page, detailed = false) {
+async function open(page, mode = 'summary') {
   await page.getByTitle('Descargar estado de cuenta', { exact: true }).click();
-  await page.getByRole('button', { name: new RegExp(detailed ? '^Detallado' : '^Resumen de cuenta') }).click();
-  return page.getByRole('heading', { name: detailed ? `Detalle de cuenta — ${client.name}` : 'Exportar estado de cuenta', exact: true }).locator('../..');
+  const options = ['Resumen de cuenta', 'Detalle de ventas', 'Detalle de abonos'];
+  for (const option of options) assert.equal(await page.getByRole('button', { name: new RegExp('^' + option) }).count(), 1);
+  await page.getByRole('button', { name: new RegExp('^' + options[['summary', 'sales', 'payments'].indexOf(mode)]) }).click();
+  return page.getByRole('heading', { name: mode === 'sales' ? 'Exportar detalle de ventas' : mode === 'payments' ? 'Exportar detalle de abonos' : 'Exportar estado de cuenta', exact: true }).locator('../..');
 }
 async function download(page, button, filename) {
   const event = page.waitForEvent('download'); await button.click(); const result = await event;
@@ -93,18 +95,24 @@ async function main() {
       assert.equal(await modal.getByRole('checkbox', { name: /^Incluir NI01-00003438 del/ }).isChecked(), false);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'modal fits mobile viewport');
       await download(page, modal.getByRole('button', { name: 'Descargar PDF', exact: true }), `single-summary-${mobile ? 'mobile' : 'desktop'}.pdf`);
-      modal = await open(page, true);
+      modal = await open(page, 'sales');
       await modal.getByText('Se exportarán 1 de 4 cuentas del periodo.', { exact: true }).waitFor();
       const table = modal.getByRole('table');
       await table.getByText('NI01-00003439', { exact: true }).waitFor();
       assert.equal(await table.getByText('NI01-00003438', { exact: true }).count(), 0);
       await modal.getByLabel('Buscar cuenta para exportar', { exact: true }).fill('14/6/2024 1512,00');
       await modal.getByRole('button', { name: 'Quitar todas', exact: true }).click();
-      assert.equal(await modal.getByRole('button', { name: 'Exportar PDF', exact: true }).isDisabled(), true);
+      assert.equal(await modal.getByRole('button', { name: 'Descargar PDF', exact: true }).isDisabled(), true);
       await modal.getByRole('checkbox', { name: /^Incluir NI01-00003438 del/ }).check();
       await table.getByText('NI01-00003438', { exact: true }).waitFor();
       assert.equal(await table.getByText('NI01-00003439', { exact: true }).count(), 0);
-      await download(page, modal.getByRole('button', { name: 'Exportar PDF', exact: true }), `single-detail-${mobile ? 'mobile' : 'desktop'}.pdf`);
+      await download(page, modal.getByRole('button', { name: 'Descargar PDF', exact: true }), `single-detail-${mobile ? 'mobile' : 'desktop'}.pdf`);
+      const salesReads = f.reads.filter(ep => ep === '/sales').length;
+      modal = await open(page, 'payments');
+      await modal.getByText('Se exportarán 1 de 4 cuentas del periodo.', { exact: true }).waitFor();
+      assert.equal(await modal.getByRole('checkbox', { name: /^Incluir NI01-00003438 del/ }).isChecked(), true);
+      await download(page, modal.getByRole('button', { name: 'Descargar PDF', exact: true }), `single-payments-${mobile ? 'mobile' : 'desktop'}.pdf`);
+      assert.equal(f.reads.filter(ep => ep === '/sales').length, salesReads, 'payments export uses the account ledger without depending on sales requests');
       assert.deepEqual(f.errors, []); assert.deepEqual(f.writes, []); await f.context.close();
       console.log(`PASS ${mobile ? 'mobile' : 'desktop'}: empty period recovery, full client history, note/date/amount search, explicit single selection and matching PDF`);
     }

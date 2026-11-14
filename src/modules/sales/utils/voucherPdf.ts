@@ -1,6 +1,7 @@
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import { numberToWords } from '../../quotes/utils/numberToWords';
 import type { VoucherSnapshot } from '../components/VoucherPreviewModal';
+import { formatDateEs } from '../../../shared/utils/date.util';
 
 let pdfMakePromise: Promise<any> | null = null;
 function loadPdfMake() {
@@ -54,6 +55,10 @@ export function voucherTitle(type: string): string {
   return 'Nota de venta';
 }
 
+export function voucherSaleCondition(sale: Pick<VoucherSnapshot, 'isCredit'>): string {
+  return `CONDICIÓN DE VENTA: ${sale.isCredit ? 'CRÉDITO' : 'CONTADO'}`;
+}
+
 function formatDate(d: Date): string {
   return d.toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
@@ -68,6 +73,16 @@ const BORDER_GRAY = '#94a3b8';
 
 function dashedLine(width = 206) {
   return { canvas: [{ type: 'line', x1: 0, y1: 0, x2: width, y2: 0, dash: { length: 2 }, lineWidth: 0.5, lineColor: '#000' }], margin: [0, 4, 0, 4] };
+}
+
+function buildCreditNote(sale: VoucherSnapshot, compact = false): any[] {
+  const note = sale.isCredit ? sale.creditName?.trim() : '';
+  return note ? [{
+    stack: [
+      { text: 'NOTA', bold: true, color: '#475569', fontSize: compact ? 7 : 8, margin: [0, 0, 0, 3] },
+      { text: note, color: '#374151', fontSize: compact ? 8 : 9, lineHeight: 1.2 },
+    ], margin: [2, compact ? 6 : 10, 2, 4], unbreakable: note.length <= 600,
+  }] : [];
 }
 
 function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): any {
@@ -165,7 +180,7 @@ function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): a
 
   if (sale.isCredit) {
     content.push(dashedLine());
-    content.push({ text: 'VENTA A CRÉDITO', alignment: 'center', bold: true, color: '#b91c1c' });
+    content.push({ text: voucherSaleCondition(sale), alignment: 'center', bold: true, color: '#b91c1c' });
     if (anticipoSum > 0) {
       content.push({ text: 'Abonado a la fecha', bold: true, margin: [0, 3, 0, 0] });
       sale.payments.forEach((p) => {
@@ -187,12 +202,12 @@ function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): a
       margin: [0, 4, 0, 2],
     });
     if (sale.creditDueDate) {
-      const due = new Date(sale.creditDueDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const due = formatDateEs(sale.creditDueDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
       content.push({ columns: [{ text: 'Vence el', bold: true }, { text: due, alignment: 'right' }] });
     }
   } else if (sale.payments.length) {
     content.push(dashedLine());
-    content.push({ text: 'Forma de pago', bold: true });
+    content.push({ text: voucherSaleCondition(sale), bold: true, color: BRAND_GREEN });
     sale.payments.forEach((p) => {
       content.push({ columns: [{ text: p.methodName }, { text: `${sym} ${p.amount.toFixed(2)}`, alignment: 'right' }] });
     });
@@ -208,6 +223,7 @@ function buildTicketDocDef(sale: VoucherSnapshot, logoDataUrl: string | null): a
   }
 
   content.push(dashedLine());
+  content.push(...buildCreditNote(sale, true));
   content.push({ text: '¡Gracias por su preferencia!', alignment: 'center', fontSize: 9, color: '#555' });
   if (c.website) content.push({ text: c.website, alignment: 'center', fontSize: 8, color: '#555' });
 
@@ -326,7 +342,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
 
   const paymentsBody: any[] = [
     [{
-      text: sale.isCredit ? 'FORMA DE PAGO · CRÉDITO' : 'FORMA DE PAGO',
+      text: voucherSaleCondition(sale),
       colSpan: 3, bold: true, color: 'white',
       fillColor: sale.isCredit ? '#b91c1c' : BRAND_GREEN,
       fontSize: 9, margin: [4, 3],
@@ -359,7 +375,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
       { text: `${currencyLabel} ${pendingAmountA4.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 9, color: '#b91c1c' },
     ]);
     if (sale.creditDueDate) {
-      const due = new Date(sale.creditDueDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const due = formatDateEs(sale.creditDueDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
       paymentsBody.push([
         { text: 'Vence el', bold: true, fontSize: 8 },
         { text: ':', fontSize: 8 },
@@ -539,6 +555,7 @@ function buildA4DocDef(sale: VoucherSnapshot, logoDataUrl: string | null, size: 
         ],
       },
 
+      ...buildCreditNote(sale, isA5),
       ...buildBankAndWalletBlock(isA5),
     ],
     styles: {

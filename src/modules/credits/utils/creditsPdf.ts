@@ -2,6 +2,7 @@ import { creditAccountText, creditSaleLabel } from './creditReference';
 import type { CreditAccount, Client, Sale } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
 import { buildClientStatementDocument } from './clientStatementPdf';
+import type { ClientStatementMode } from './clientStatementPdf';
 import { loadClientStatementAssets } from './clientStatementAssets';
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import type { ClientStatementPeriod } from './clientStatementPeriod';
@@ -469,7 +470,8 @@ export async function downloadCreditsDetailedPdf(params: ExportParams) {
 interface ClientStatementParams {
   client: Client;
   credits: CreditAccount[];
-  mode: 'summary' | 'detailed';
+  mode: ClientStatementMode;
+  sales?: Sale[];
   period?: ClientStatementPeriod;
   creditIds?: string[];
 }
@@ -483,14 +485,15 @@ const slugify = (s: string) =>
     .replace(/^_+|_+$/g, '')
     .slice(0, 40);
 
-export async function downloadClientStatementPdf({ client, credits, mode, period, creditIds }: ClientStatementParams) {
+export async function downloadClientStatementPdf({ client, credits, sales, mode, period, creditIds }: ClientStatementParams) {
   const pdfMake = await loadPdfMake();
   const company = { ...COMPANY_INFO };
   const assets = await loadClientStatementAssets(pdfMake, company.logoUrl);
   const stamp = new Date().toISOString().slice(0, 10);
-  const fileStem = `estado_cuenta_${slugify(client.name || 'cliente')}_${period ? `${period.from}_al_${period.to}` : stamp}`;
+  const prefix = mode === 'sales' ? 'detalle_ventas' : mode === 'payments' ? 'detalle_abonos' : 'estado_cuenta';
+  const fileStem = `${prefix}_${slugify(client.name || 'cliente')}_${period ? `${period.from}_al_${period.to}` : stamp}`;
 
-  const docDef = buildClientStatementDocument({ client, credits, mode, period, creditIds, company, ...assets });
+  const docDef = buildClientStatementDocument({ client, credits, sales, mode, period, creditIds, company, ...assets });
 
   await pdfMake.createPdf(docDef).download(`${fileStem}.pdf`);
 }

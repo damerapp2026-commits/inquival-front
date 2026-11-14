@@ -18,6 +18,30 @@ function rows(node) {
   return [...(node.table?.body || []), ...Object.values(node).flatMap(rows)];
 }
 
+test('three separate export formats contain their own sections and preserve account selection', () => {
+  const modes = { summary: 'Resumen de cuenta', sales: 'Detalle de ventas', payments: 'Detalle de abonos' };
+  const before = structuredClone(fixture);
+  for (const [mode, expected] of Object.entries(modes)) {
+    const doc = buildClientStatementDocument({ ...fixture, mode, creditIds: ['grouped'] });
+    const content = texts(doc);
+    assert.deepEqual(doc.content.filter(node => node.headlineLevel === 1).map(node => texts(node)[1]), [expected]);
+    assert.ok(!content.some(text => text.includes('Compra en dólares')));
+    assert.ok(!content.some(text => text.includes('Saldo anterior cancelado')));
+    assert.equal(content.some(text => text.includes('Primer abono · recibido en tienda')), mode === 'payments');
+    assert.equal(content.includes('Abono granulado · saco de 50 kg'), mode === 'sales');
+    assert.equal(content.includes('Cuenta / Vencimiento'), mode === 'summary');
+    assert.equal(content.includes('SALDO POR PAGAR'), mode === 'summary');
+    if (mode === 'sales') assert.ok(!content.some(text => text.includes('Los abonos posteriores están')));
+    if (mode === 'payments') {
+      assert.equal(content.filter(text => text.includes('Primer abono · recibido en tienda')).length, 1);
+      assert.ok(!content.includes('Producto / Presentación'));
+      assert.ok(content.includes('S/ 500.00'));
+      assert.ok(content.includes('S/ 600.00'));
+    }
+  }
+  assert.deepEqual(fixture, before);
+});
+
 test('detailed PDF has one account summary, then sales, then payments without repeated balances', () => {
   const doc = buildClientStatementDocument(fixture);
   const headings = doc.content.filter(node => node.headlineLevel === 1);

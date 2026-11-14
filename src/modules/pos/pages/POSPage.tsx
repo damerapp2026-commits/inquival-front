@@ -829,6 +829,7 @@ export function POSPage() {
         amount: p.amount,
       })),
       isCredit,
+      creditName: isCredit ? creditName.trim() || undefined : undefined,
       creditDueDate: isCredit && computedDueDate ? computedDueDate : undefined,
       sellerName,
       clientName: clientById.get(clientId)?.name,

@@ -1394,6 +1394,8 @@ export function SalesPage() {
               amount: sale.currency === 'USD' && p.amountUsd != null ? p.amountUsd : p.amount,
             })),
             isCredit: sale.isCredit,
+            creditName: sale.creditName,
+            creditDueDate: sale.creditDueDate,
             sellerName,
             clientName: client?.name,
             clientDocument: client?.documentNumber,

@@ -45,7 +45,7 @@ async function fixture(browser, mobile = false) {
 async function open(page, format = 'Resumen de cuenta') {
   await page.getByTitle('Descargar estado de cuenta', { exact: true }).click();
   await page.getByRole('button', { name: new RegExp(`^${format}`) }).click();
-  return page.getByRole('heading', { name: format === 'Detallado' ? `Detalle de cuenta — ${client.name}` : 'Exportar estado de cuenta', exact: true }).locator('../..');
+  return page.getByRole('heading', { name: format === 'Detalle de ventas' ? 'Exportar detalle de ventas' : 'Exportar estado de cuenta', exact: true }).locator('../..');
 }
 async function setPeriod(modal, from, to) {
   await modal.getByLabel('Periodo', { exact: true }).selectOption('custom');
@@ -82,27 +82,29 @@ async function main() {
     assert.match(filename, /2026-10-01_al_2026-10-31/);
     console.log('PASS pagination, custom period, empty selection guard and summary PDF');
 
-    modal = await open(page, 'Detallado');
+    modal = await open(page, 'Detalle de ventas');
     assert.equal(await modal.getByLabel('Desde', { exact: true }).inputValue(), '2026-10-01');
     await modal.getByText('Se exportarán 1 de 2 cuentas del periodo.', { exact: true }).waitFor();
     await modal.getByText('NV-000127', { exact: true }).waitFor();
     assert.equal(await modal.getByText('NV-000143', { exact: true }).count(), 0);
     assert.equal(await modal.getByText('NV-000138', { exact: true }).count(), 0);
-    await download(page, modal.getByRole('button', { name: 'Exportar PDF', exact: true }), 'october-detail.pdf');
+    await download(page, modal.getByRole('button', { name: 'Descargar PDF', exact: true }), 'october-detail.pdf');
+    modal = await open(page, 'Detalle de ventas');
     await setPeriod(modal, '2026-11-01', '2026-11-30');
     await modal.getByText('Se exportarán 0 de 1 cuentas del periodo.', { exact: true }).waitFor();
-    assert.ok(await modal.getByRole('button', { name: 'Exportar PDF', exact: true }).isDisabled());
+    assert.ok(await modal.getByRole('button', { name: 'Descargar PDF', exact: true }).isDisabled());
     await modal.getByRole('checkbox', { name: /^Incluir Compra en dólares del/ }).check();
     await modal.getByText('NV-000143', { exact: true }).waitFor();
     await modal.getByText('$ 400.00', { exact: true }).first().waitFor();
-    await download(page, modal.getByRole('button', { name: 'Exportar PDF', exact: true }), 'november-usd-detail.pdf');
+    await download(page, modal.getByRole('button', { name: 'Descargar PDF', exact: true }), 'november-usd-detail.pdf');
     console.log('PASS criteria persist between formats, selected sales only, current balances and USD detail');
 
+    modal = await open(page, 'Detalle de ventas');
     await setPeriod(modal, '2027-01-01', '2027-01-31');
-    assert.ok(await modal.getByRole('button', { name: 'Exportar PDF', exact: true }).isDisabled());
+    assert.ok(await modal.getByRole('button', { name: 'Descargar PDF', exact: true }).isDisabled());
     await modal.getByLabel('Hasta', { exact: true }).fill('2026-01-01');
     await modal.getByRole('alert').waitFor();
-    assert.ok(await modal.getByRole('button', { name: 'Exportar PDF', exact: true }).isDisabled());
+    assert.ok(await modal.getByRole('button', { name: 'Descargar PDF', exact: true }).isDisabled());
     await modal.getByLabel('Periodo', { exact: true }).selectOption('all');
     await modal.getByLabel('Elegir cuentas específicas', { exact: true }).uncheck();
     await modal.getByText('Se exportarán 204 de 204 cuentas del periodo.', { exact: true }).waitFor();

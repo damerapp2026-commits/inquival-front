@@ -188,6 +188,8 @@ export function SaleDetailModal({ saleId, onClose, userRole }: SaleDetailModalPr
         amount: sale.currency === 'USD' && p.amountUsd != null ? p.amountUsd : p.amount,
       })),
       isCredit: sale.isCredit,
+      creditName: sale.creditName,
+      creditDueDate: sale.creditDueDate,
       sellerName,
       clientName: client?.name || sale.clientName,
       clientDocument: client?.documentNumber,

@@ -76,7 +76,13 @@ export function useEditCredit() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ creditId, data }: { creditId: string; data: any }) => creditService.edit(creditId, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['credits'] }); toast.success('Crédito actualizado'); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['credits'] });
+      qc.invalidateQueries({ queryKey: ['credit'] });
+      qc.invalidateQueries({ queryKey: ['sales'] });
+      qc.invalidateQueries({ queryKey: ['sale'] });
+      toast.success('Crédito actualizado');
+    },
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error al editar crédito'),
   });
 }

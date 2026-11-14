@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, FileText, Smartphone, FileText as FileIcon, Printer, ExternalLink, MessageCircle, Download, Loader2 } from 'lucide-react';
 import { COMPANY_INFO } from '../../../config/companyInfo';
-import { displayVoucherNumber, downloadVoucherPdf, openVoucherPdf, printVoucherPdf, voucherTitle } from '../utils/voucherPdf';
+import { displayVoucherNumber, downloadVoucherPdf, openVoucherPdf, printVoucherPdf, voucherSaleCondition, voucherTitle } from '../utils/voucherPdf';
 import { numberToWords } from '../../quotes/utils/numberToWords';
 import { saleService } from '../services/saleService';
 import toast from 'react-hot-toast';
+import { formatDateEs } from '../../../shared/utils/date.util';
 
 export interface VoucherSnapshot {
   id: string;
@@ -21,6 +22,7 @@ export interface VoucherSnapshot {
   baseImponible?: number;
   voucherNumber?: string;
   isCredit?: boolean;
+  creditName?: string;
   creditPaidAmount?: number;
   creditDueDate?: string | Date;
   /** Venta de cortesía (precio 0). */
@@ -41,6 +43,17 @@ function escapeHtml(s: string | undefined): string {
   if (!s) return '';
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+function creditNoteHtml(sale: VoucherSnapshot): string {
+  const note = sale.isCredit ? sale.creditName?.trim() : '';
+  return note ? `<section class="voucher-note"><div class="voucher-note-title">NOTA</div><div class="voucher-note-text">${escapeHtml(note)}</div></section>` : '';
+}
+
+const CREDIT_NOTE_CSS = `
+  .voucher-note { margin-top: 12px; padding: 8px 10px; border: 1px solid #cbd5e1; border-left: 3px solid #94a3b8; color: #374151; font-size: 10px; break-inside: avoid; }
+  .voucher-note-title { font-weight: 700; font-size: 9px; letter-spacing: .5px; margin-bottom: 3px; }
+  .voucher-note-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+`;
 
 export function resolveClientLocation(client?: { hamlet?: string; district?: string; province?: string; department?: string } | null): string | undefined {
   return client?.hamlet || client?.district || client?.province || client?.department || undefined;
@@ -94,12 +107,10 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
 
   const paidSoFar = sale.creditPaidAmount ?? sale.payments.reduce((s, p) => s + p.amount, 0);
   const pendingAmount = Math.max(0, totalDisplay - paidSoFar);
-  const dueDateFmt = sale.creditDueDate
-    ? new Date(sale.creditDueDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    : '';
+  const dueDateFmt = formatDateEs(sale.creditDueDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
   const creditBlock = sale.isCredit ? `
     <div class="hr"></div>
-    <div class="center bold credit-banner">VENTA A CRÉDITO</div>
+    <div class="center bold credit-banner">${voucherSaleCondition(sale)}</div>
     ${paidSoFar > 0 ? `
       <div class="bold" style="margin-top: 4px;">Abonado a la fecha</div>
       ${sale.payments.map((p) => `
@@ -118,7 +129,7 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
 
   const cashPaymentBlock = !sale.isCredit && paymentsRows ? `
     <div class="hr"></div>
-    <div class="bold">Forma de pago</div>
+    <div class="bold" style="color:#16a34a;">${voucherSaleCondition(sale)}</div>
     ${paymentsRows}
     ${sale.payments.length > 1 ? `<div class="kv bold" style="margin-top:2px;"><span>Total pagado</span><span>${sym} ${sale.payments.reduce((s, p) => s + p.amount, 0).toFixed(2)}</span></div>` : ''}
   ` : '';
@@ -149,6 +160,7 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   .credit-banner { letter-spacing: 1px; padding: 4px; border: 1px dashed #b91c1c; color: #b91c1c; }
   .logo-wrap { text-align: center; margin-bottom: 6px; }
   .logo-wrap img { max-width: 56mm; max-height: 22mm; object-fit: contain; }
+  ${CREDIT_NOTE_CSS}
 </style></head>
 <body>
   ${company.logoUrl ? `<div class="logo-wrap"><img src="${escapeHtml(company.logoUrl)}" alt="" onerror="this.parentNode.style.display='none'" /></div>` : ''}
@@ -184,6 +196,7 @@ function buildTicketHtml(sale: VoucherSnapshot): string {
   ${sale.isCourtesy ? `<div class="center bold" style="color:#059669;margin:4px 0;border:1px dashed #059669;padding:3px;">BONIFICACIÓN</div>` : ''}
   ${creditBlock}
   ${cashPaymentBlock}
+  ${creditNoteHtml(sale)}
   <div class="hr"></div>
   <div class="center muted">¡Gracias por su preferencia!</div>
   ${company.website ? `<div class="center muted">${escapeHtml(company.website)}</div>` : ''}
@@ -227,11 +240,8 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
 
   const paidSoFarA4 = sale.creditPaidAmount ?? sale.payments.reduce((s, p) => s + p.amount, 0);
   const pendingAmountA4 = Math.max(0, totalDisplay - paidSoFarA4);
-  const dueDateFmtA4 = sale.creditDueDate
-    ? new Date(sale.creditDueDate).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    : '';
+  const dueDateFmtA4 = formatDateEs(sale.creditDueDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
   const creditExtraA4 = sale.isCredit ? `
-    <tr><td colspan="3" class="credit-banner-a4">VENTA A CRÉDITO</td></tr>
     ${paidSoFarA4 > 0 && sale.creditPaidAmount !== undefined && sale.creditPaidAmount > sale.payments.reduce((s, p) => s + p.amount, 0) ? `
       <tr><td class="kv-key">Abonos posteriores</td><td class="kv-sep">:</td><td class="kv-val r">${sym} ${(sale.creditPaidAmount - sale.payments.reduce((s, p) => s + p.amount, 0)).toFixed(2)}</td></tr>
     ` : ''}
@@ -313,6 +323,7 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
 
   .panel { border: 1px solid #94a3b8; }
   .panel-title { background: #16a34a; color: #fff; padding: 5px 8px; font-weight: 700; font-size: 9px; letter-spacing: 0.4px; }
+  .panel-title.credit-condition { background: #b91c1c; }
   .panel table td { padding: 4px 8px; font-size: 8.5px; }
   .panel .kv-key { font-weight: 700; }
   .panel .kv-sep { width: 6px; }
@@ -334,7 +345,7 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
   .kv-mini { color: #6b7280; }
 
   .footer { margin-top: 24px; text-align: center; color: #6b7280; font-size: 9px; border-top: 1px dashed #cbd5e1; padding-top: 12px; }
-  .credit-banner-a4 { background: #fef2f2; color: #b91c1c; font-weight: 700; text-align: center; letter-spacing: 1px; padding: 5px; border-top: 1px dashed #b91c1c; border-bottom: 1px dashed #b91c1c; }
+  ${CREDIT_NOTE_CSS}
 </style></head>
 <body>
   <div class="header">
@@ -398,7 +409,7 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
     <div class="col-l">
       ${(paymentsRows || sale.isCredit) ? `
         <div class="panel">
-          <div class="panel-title">${sale.isCredit ? 'FORMA DE PAGO · CRÉDITO' : 'FORMA DE PAGO'}</div>
+          <div class="panel-title${sale.isCredit ? ' credit-condition' : ''}">${voucherSaleCondition(sale)}</div>
           <table class="pay-rows"><tbody>
             ${paymentsRows}
             ${sale.payments.length > 1 && !sale.isCredit ? `<tr><td class="kv-key"><b>Total pagado</b></td><td class="kv-sep">:</td><td class="kv-val r"><b>${sym} ${sale.payments.reduce((s, p) => s + p.amount, 0).toFixed(2)}</b></td></tr>` : ''}
@@ -425,6 +436,8 @@ function buildA4Html(sale: VoucherSnapshot, size: 'A4' | 'A5' = 'A4'): string {
       </div>
     </div>
   </div>
+
+  ${creditNoteHtml(sale)}
 
   ${(bankRows || walletRows) ? `
     <div class="pay-block">

@@ -578,6 +578,13 @@ function KardexTab({ products, companyList, onEditExpiration }: SubProps & { onE
             </div>
           )}
 
+          {Array.isArray(productLots) && productLots.length === 0 && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 print:hidden">
+              <p className="text-sm text-gray-600">Este producto no tiene lotes registrados.</p>
+              <button type="button" onClick={() => onEditExpiration({ productId: productIdParam, productName: selectedProduct?.name || '', companyId: companyId || undefined })}
+                className="rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700">Crear lote y vencimiento</button>
+            </div>
+          )}
           {Array.isArray(productLots) && productLots.length > 0 && (
             <div className="mt-4 border border-gray-300 bg-white print:hidden">
               <div className="bg-gray-50 px-3 py-2 border-b border-gray-300 flex items-center gap-2">

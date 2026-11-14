@@ -1,9 +1,12 @@
 import { branchStorageKey } from '../../../shared/utils/branchStorage';
 import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { Search, Loader2, FileSpreadsheet, X, Check, AlertTriangle, DollarSign, RotateCcw } from 'lucide-react';
 import { usePriceCatalog, useUpdatePriceCatalog } from '../../purchases/hooks/usePurchases';
 import type { PriceCatalogCalculation } from '../../purchases/services/purchaseService';
 import { useProducts } from '../hooks/useProducts';
+import { productService } from '../services/productService';
 import { useCategories } from '../../categories/hooks/useCategories';
 import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
@@ -75,6 +78,7 @@ interface MergedRow {
   calculation?: PriceCatalogCalculation;
   productId: string;
   productName: string;
+  isActive: boolean;
   laboratoryId?: string;
   laboratoryName?: string;
   categoryId?: string;
@@ -122,9 +126,11 @@ const fmtDate = (d?: string) => {
 };
 
 export function PriceCatalogView({ enabled, readOnly = false }: Props) {
+  const queryClient = useQueryClient();
   const { data: catalogData, isLoading: catalogLoading, isFetching: catalogFetching } = usePriceCatalog({ enabled });
   const { data: productsData, isLoading: productsLoading, isFetching: productsFetching } = useProducts(
-    enabled ? { page: 1, limit: 1000 } : undefined,
+    enabled ? { page: 1, limit: 1000, includeInactive: true } : undefined,
+    { allPages: true },
   );
   const { data: categoriesData } = useCategories();
   const { data: laboratoriesData } = useLaboratories();
@@ -141,6 +147,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [errorIds, setErrorIds] = useState<Set<string>>(new Set());
+  const [statusSavingIds, setStatusSavingIds] = useState<Set<string>>(new Set());
 
   const [rates, setRates] = useState<GlobalRates>(() => loadRates());
   const [tcInput, setTcInput] = useState<string>(() => {
@@ -235,6 +242,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
         calculation: row?.calculation,
         productId: p.id,
         productName: p.name,
+        isActive: p.isActive,
         laboratoryId: p.laboratoryId,
         laboratoryName: labName ?? row?.laboratoryName,
         categoryId: p.categoryId,
@@ -277,6 +285,26 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
 
   const isLoading = catalogLoading || productsLoading;
   const isFetching = catalogFetching || productsFetching;
+
+  const handleStatusChange = async (row: MergedRow) => {
+    if (readOnly || statusSavingIds.has(row.productId) || savingIds.has(row.productId)) return;
+    const isActive = !row.isActive;
+    setStatusSavingIds(previous => new Set(previous).add(row.productId));
+    try {
+      await productService.update(row.productId, { isActive });
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast.success(isActive ? 'Producto activado en el POS' : 'Producto desactivado del POS');
+    } catch (error: any) {
+      const message = error.response?.data?.message;
+      toast.error(Array.isArray(message) ? message[0] : message || 'No se pudo cambiar el estado del producto');
+    } finally {
+      setStatusSavingIds(previous => {
+        const next = new Set(previous);
+        next.delete(row.productId);
+        return next;
+      });
+    }
+  };
 
   const getInputValue = (row: MergedRow, field: EditableField): string => {
     const edited = edits[row.productId]?.[field];
@@ -746,7 +774,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
                 <th className="text-right px-2 py-2 font-medium bg-cyan-100 text-cyan-800">P. Final</th>
                 <th className="text-right px-2 py-2 font-medium bg-orange-100 text-orange-800">Facturación s/IGV</th>
                 <th className="text-right px-3 py-2 font-medium">Última compra</th>
-                <th className="text-center px-2 py-2 font-medium">Estado</th>
+                <th className="text-center px-2 py-2 font-medium min-w-[110px]">Estado</th>
               </tr>
             </thead>
             <tbody>
@@ -825,15 +853,36 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
                       )}
                     </td>
                     <td className="px-2 py-2 text-center whitespace-nowrap">
+                      {readOnly ? (
+                        <span className={r.isActive ? 'text-emerald-700' : 'text-gray-500'}>{r.isActive ? 'Activo' : 'Inactivo'}</span>
+                      ) : (
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={r.isActive}
+                          aria-label={`Mostrar ${r.productName} en el POS`}
+                          title={r.isActive ? 'Desactivar para ocultar en el POS' : 'Activar para mostrar en el POS'}
+                          disabled={statusSavingIds.has(r.productId) || isSaving}
+                          onClick={() => handleStatusChange(r)}
+                          className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 disabled:cursor-wait disabled:opacity-60 ${r.isActive ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                        >
+                          {statusSavingIds.has(r.productId) ? <Loader2 size={14} className="animate-spin" /> : (
+                            <span aria-hidden="true" className={`inline-flex w-6 rounded-full p-0.5 ${r.isActive ? 'bg-emerald-500' : 'bg-gray-400'}`}>
+                              <span className={`h-2.5 w-2.5 rounded-full bg-white transition-transform ${r.isActive ? 'translate-x-2.5' : ''}`} />
+                            </span>
+                          )}
+                          {statusSavingIds.has(r.productId) ? 'Guardando…' : r.isActive ? 'Activo' : 'Inactivo'}
+                        </button>
+                      )}
+                      <div className="mt-1">
                       {isSaving ? (
                         <span className="inline-flex items-center gap-1 text-gray-500" role="status"><Loader2 size={14} className="animate-spin" /> Guardando</span>
                       ) : hasError ? (
                         <span className="inline-flex items-center gap-1 text-red-600" role="status"><AlertTriangle size={14} /> No se pudo guardar</span>
                       ) : isSaved ? (
                         <span className="inline-flex items-center gap-1 text-emerald-600" role="status"><Check size={14} /> Guardado</span>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
+                      ) : null}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -843,6 +892,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
         </div>
 
         <div className="px-4 py-2 border-t border-gray-100 bg-gray-50/50 flex flex-wrap gap-3 text-[11px] text-gray-500">
+          <span>Estado: los productos activos aparecen en el POS; los inactivos quedan ocultos.</span>
           <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-200" /> Precio USD</span>
           <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-stone-100 border border-stone-200" /> Precio PEN</span>
           <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-emerald-100 border border-emerald-200" /> P. Tentativo (PEN c/IGV × {margenDist.toFixed(2)})</span>

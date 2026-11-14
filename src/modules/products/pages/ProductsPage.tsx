@@ -1020,7 +1020,7 @@ export function ProductsPage() {
       <Modal isOpen={showCatalogTypeModal} onClose={() => setShowCatalogTypeModal(false)} title="Generar catálogo PDF" size="lg">
         <div className="space-y-5">
           <p className="text-sm text-gray-600">
-            Elegí el formato del catálogo. Se generará con los filtros activos del listado
+            Elige cómo presentar tus productos. Ambos formatos usan letra más grande y los filtros activos del listado
             {hasProductFilters
               ? ` (${products.length} producto${products.length === 1 ? '' : 's'}).`
               : ' (catálogo completo).'}
@@ -1028,6 +1028,7 @@ export function ProductsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               type="button"
+              aria-pressed={catalogType === 'visual'}
               onClick={() => setCatalogType('visual')}
               className={`relative text-left p-4 rounded-xl border-2 transition-all ${catalogType === 'visual' ? 'border-emerald-500 bg-emerald-50/60 shadow-sm' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
             >
@@ -1039,11 +1040,12 @@ export function ProductsPage() {
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${catalogType === 'visual' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
                 <LayoutGrid size={20} />
               </div>
-              <div className="font-semibold text-gray-800 text-sm mb-1">Visual con fotos</div>
-              <div className="text-xs text-gray-500 leading-relaxed">Cards con imagen del producto, 3 por fila. Ideal para clientes.</div>
+              <div className="font-bold text-gray-900 text-base mb-1">Con fotos</div>
+              <div className="text-sm text-gray-600 leading-relaxed">Dos productos por fila, fotos amplias y nombres destacados. Presentación comercial para tus clientes.</div>
             </button>
             <button
               type="button"
+              aria-pressed={catalogType === 'list'}
               onClick={() => setCatalogType('list')}
               className={`relative text-left p-4 rounded-xl border-2 transition-all ${catalogType === 'list' ? 'border-emerald-500 bg-emerald-50/60 shadow-sm' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
             >
@@ -1055,8 +1057,8 @@ export function ProductsPage() {
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${catalogType === 'list' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
                 <ListIcon size={20} />
               </div>
-              <div className="font-semibold text-gray-800 text-sm mb-1">Lista compacta</div>
-              <div className="text-xs text-gray-500 leading-relaxed">Una fila por producto, sin imágenes. Ideal para uso interno.</div>
+              <div className="font-bold text-gray-900 text-base mb-1">Sin fotos</div>
+              <div className="text-sm text-gray-600 leading-relaxed">Una tabla clara con nombre, principio activo, laboratorio y presentación. Más fácil de leer e imprimir.</div>
             </button>
           </div>
           <div className="flex gap-3 justify-end pt-2 border-t border-gray-100">

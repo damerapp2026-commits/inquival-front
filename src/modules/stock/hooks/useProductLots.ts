@@ -18,6 +18,22 @@ export function useUpdateLotExpiration() {
   });
 }
 
+export function useCreateLotFromStock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: productLotService.createFromStock,
+    onSuccess: async () => {
+      await Promise.all(['product-lots', 'product-lots-by-product', 'product-lots-expiring', 'product-lots-all', 'stock-by-product-summary']
+        .map(key => qc.invalidateQueries({ queryKey: [key] })));
+      toast.success('Lote y vencimiento guardados');
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.message;
+      toast.error((Array.isArray(message) ? message[0] : message) || 'No se pudo crear el lote');
+    },
+  });
+}
+
 export function useProductLots(companyId: string, productId?: string) {
   return useQuery({
     queryKey: ['product-lots', companyId, productId],

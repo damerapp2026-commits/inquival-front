@@ -23,6 +23,8 @@ async function main() {
   for (const [filename, params] of [
     ['estado-cuenta-ejemplo.pdf', fixture],
     ['estado-cuenta-resumen.pdf', { ...fixture, sales: undefined, mode: 'summary' }],
+    ['detalle-ventas-ejemplo.pdf', { ...fixture, mode: 'sales' }],
+    ['detalle-abonos-ejemplo.pdf', { ...fixture, sales: undefined, mode: 'payments' }],
     ['estado-cuenta-vacio.pdf', { ...fixture, sales: [], credits: [] }],
     ['estado-cuenta-varias-paginas.pdf', {
       ...fixture,

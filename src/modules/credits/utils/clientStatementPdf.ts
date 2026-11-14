@@ -5,11 +5,13 @@ import { COMPANY_INFO, type CompanyInfo } from '../../../config/companyInfo';
 import { selectClientStatementData, type ClientStatementPeriod } from './clientStatementPeriod';
 import { creditSaleLabel } from './creditReference';
 
+export type ClientStatementMode = 'summary' | 'sales' | 'payments' | 'detailed';
+
 interface StatementParams {
   client: Client;
   credits: CreditAccount[];
   sales?: Sale[];
-  mode?: 'summary' | 'detailed';
+  mode?: ClientStatementMode;
   now?: Date;
   company?: CompanyInfo;
   logoDataUrl?: string | null;
@@ -125,7 +127,7 @@ function summary(credits: CreditAccount[], today: string) {
   });
 }
 
-function purchaseTable(sales: Sale[], accountBySale: Map<string, number>) {
+function purchaseTable(sales: Sale[], accountBySale: Map<string, number>, referencePayments = true) {
   const totals = (['PEN', 'USD'] as const).filter(currency => sales.some(sale => creditCurrency(sale.currency) === currency)).map(currency => {
     const values = sales.filter(sale => creditCurrency(sale.currency) === currency).map(sale => saleAmount(sale, sale.total, sale.totalUsd));
     const total = values.every(value => value != null) ? money(values.reduce<number>((sum, value) => sum + value!, 0), currency) : 'No disponible';
@@ -162,7 +164,7 @@ function purchaseTable(sales: Sale[], accountBySale: Map<string, number>) {
           paymentLines.push({ text: `Pagado al comprar: ${money(initial, sale.currency)}`, bold: true, color: GREEN });
           if (methods.length) paymentLines.push({ text: `Método de pago: ${methods.join(' + ')}`, color: MUTED });
         }
-        if (account != null) paymentLines.push({ text: `Los abonos posteriores están en la cuenta ${String(account).padStart(2, '0')} del resumen de abonos.`, color: MUTED });
+        if (referencePayments && account != null) paymentLines.push({ text: `Los abonos posteriores están en la cuenta ${String(account).padStart(2, '0')} del resumen de abonos.`, color: MUTED });
         if (sale.sellerName) paymentLines.push({ text: `Atendido por: ${sale.sellerName}`, color: MUTED });
         return {
           table: {
@@ -267,7 +269,14 @@ function accountPayments(credit: CreditAccount, index: number, salesById: Map<st
   };
 }
 
-function brandedHeader(company: CompanyInfo, logoDataUrl: string | null | undefined, mode: 'summary' | 'detailed', logoHasPadding: boolean) {
+const REPORT_TITLES: Record<ClientStatementMode, { label: string; title: string; footer: string }> = {
+  summary: { label: 'RESUMEN  /  CLIENTES', title: 'ESTADO DE\nCUENTA', footer: 'RESUMEN DE CUENTA' },
+  sales: { label: 'VENTAS  /  CLIENTES', title: 'DETALLE DE\nVENTAS', footer: 'DETALLE DE VENTAS' },
+  payments: { label: 'ABONOS  /  CLIENTES', title: 'DETALLE DE\nABONOS', footer: 'DETALLE DE ABONOS' },
+  detailed: { label: 'REPORTE DETALLADO  /  CLIENTES', title: 'ESTADO DE\nCUENTA', footer: 'ESTADO DE CUENTA  /  DETALLADO' },
+};
+
+function brandedHeader(company: CompanyInfo, logoDataUrl: string | null | undefined, mode: ClientStatementMode, logoHasPadding: boolean) {
   const contact = [
     company.ruc && `RUC: ${company.ruc}`, company.address,
     company.phone && `Tel.: ${company.phone}`, company.email || company.salesEmail, company.website,
@@ -285,9 +294,9 @@ function brandedHeader(company: CompanyInfo, logoDataUrl: string | null | undefi
           },
           {
             stack: [
-              { text: mode === 'summary' ? 'RESUMEN  /  CLIENTES' : 'REPORTE DETALLADO  /  CLIENTES', color: GOLD, bold: true, fontSize: 8, characterSpacing: 1 },
-              { text: 'ESTADO DE\nCUENTA', style: 'display', bold: true, fontSize: 25, color: 'white', lineHeight: 1, margin: [0, 5, 0, 4] },
-              { text: 'Compras · Créditos · Pagos', fontSize: 9, color: '#d9eddf' },
+              { text: REPORT_TITLES[mode].label, color: GOLD, bold: true, fontSize: 8, characterSpacing: 1 },
+              { text: REPORT_TITLES[mode].title, style: 'display', bold: true, fontSize: 25, color: 'white', lineHeight: 1, margin: [0, 5, 0, 4] },
+              { text: mode === 'sales' ? 'Productos · Cantidades · Precios' : mode === 'payments' ? 'Fechas · Métodos · Montos aplicados' : 'Compras · Créditos · Pagos', fontSize: 9, color: '#d9eddf' },
             ], fillColor: INK, margin: [14, 6, 10, 6],
           },
         ]],
@@ -337,18 +346,17 @@ export function buildClientStatementDocument({
       },
       layout: { hLineWidth: () => 0, vLineWidth: (i: number) => i === 0 ? 3 : 0, vLineColor: () => GOLD, paddingLeft: () => 12, paddingRight: () => 12, paddingTop: () => 8, paddingBottom: () => 8 },
     },
-    { text: `${inputSales ? `${sales.length} compras   ·   ` : ''}${credits.length} cuentas   ·   ${openCount} con saldo   ·   ${credits.reduce((sum, c) => sum + (c.payments?.length || 0), 0)} abonos con detalle`, fontSize: 9, bold: true, color: GREEN, margin: [0, 6, 0, 0] },
+    { text: mode === 'sales' ? `${sales.length} ventas   ·   ${credits.length} cuentas` : mode === 'payments' ? `${credits.length} cuentas   ·   ${credits.reduce((sum, c) => sum + (c.payments?.length || 0), 0)} abonos con detalle` : `${inputSales ? `${sales.length} compras   ·   ` : ''}${credits.length} cuentas   ·   ${openCount} con saldo   ·   ${credits.reduce((sum, c) => sum + (c.payments?.length || 0), 0)} abonos con detalle`, fontSize: 9, bold: true, color: GREEN, margin: [0, 6, 0, 0] },
     ...(period ? [{ text: 'El periodo selecciona las cuentas por su fecha de creación y las compras por su fecha de venta. Los abonos y saldos de las cuentas seleccionadas están actualizados a la fecha de emisión de este reporte.', style: 'note', margin: [0, 5, 0, 0] }] : []),
-    ...(creditIds !== undefined ? [{ text: 'Este reporte incluye únicamente las cuentas seleccionadas y sus compras asociadas dentro del periodo.', style: 'note', margin: [0, 5, 0, 0] }] : []),
-    heading(1, 'Resumen de cuenta', 'Monto al crédito − Abonos aplicados = Saldo por pagar'),
-    ...summary(credits, today),
-    { text: credits.length ? 'El monto al crédito es lo financiado después de la inicial. Los abonos reducen esa deuda; las compras al contado no aumentan el saldo. Soles y dólares se presentan por separado.' : 'No hay cuentas de crédito incluidas en este reporte.', style: 'note' },
+    ...(creditIds !== undefined ? [{ text: mode === 'payments' ? 'Este reporte incluye únicamente los abonos de las cuentas seleccionadas.' : mode === 'sales' ? 'Este reporte incluye únicamente las ventas asociadas a las cuentas seleccionadas dentro del periodo.' : 'Este reporte incluye únicamente las cuentas seleccionadas y sus compras asociadas dentro del periodo.', style: 'note', margin: [0, 5, 0, 0] }] : []),
   ];
-  if (credits.length) {
-    content.push({ ...accountSummary(credits, salesById, today), margin: [0, 10, 0, 0] });
+  if (mode === 'summary' || mode === 'detailed') {
+    content.push(heading(1, 'Resumen de cuenta', 'Monto al crédito − Abonos aplicados = Saldo por pagar'), ...summary(credits, today),
+      { text: credits.length ? 'El monto al crédito es lo financiado después de la inicial. Los abonos reducen esa deuda; las compras al contado no aumentan el saldo. Soles y dólares se presentan por separado.' : 'No hay cuentas de crédito incluidas en este reporte.', style: 'note' });
+    if (credits.length) content.push({ ...accountSummary(credits, salesById, today), margin: [0, 10, 0, 0] });
   }
-  if (mode === 'detailed') {
-    let section = 2;
+  if (mode === 'detailed' || mode === 'sales') {
+    let section = mode === 'detailed' ? 2 : 1;
     // Credit-only callers may have stored product details without a loaded sales record.
     const storedSales = inputSales === undefined ? credits.flatMap(credit => (credit.saleDetails || []).map(sale => ({
       table: { headerRows: 1, widths: ['*'], body: [
@@ -357,19 +365,25 @@ export function buildClientStatementDocument({
       ] }, layout: tableLayout, margin: [0, 0, 0, 12],
     }))) : [];
     if (sales.length || storedSales.length) {
-      content.push(heading(section++, 'Detalle de ventas', 'Productos, cantidades y precios. Los abonos posteriores se muestran en la última sección.', true));
-      content.push(...(sales.length ? [purchaseTable(sales, accountBySale)] : storedSales));
+      content.push(heading(section++, 'Detalle de ventas', mode === 'detailed' ? 'Productos, cantidades y precios. Los abonos posteriores se muestran en la última sección.' : 'Notas de venta, productos, cantidades, precios e importe de cada operación.', mode === 'detailed'));
+      content.push(...(sales.length ? [purchaseTable(sales, accountBySale, mode === 'detailed')] : storedSales));
+    } else if (mode === 'sales') {
+      content.push({ text: 'No hay ventas incluidas en este reporte.', color: MUTED, margin: [0, 16, 0, 0] });
     }
-    if (credits.length) {
+    if (mode === 'detailed' && credits.length) {
       content.push(heading(section, 'Resumen de abonos', 'Fecha, método, monto y observaciones de cada abono. Cada cuenta se muestra una sola vez.', true));
       content.push(...credits.map((credit, index) => accountPayments(credit, index, salesById)));
     }
+  }
+  if (mode === 'payments') {
+    content.push(heading(1, 'Detalle de abonos', 'Fecha, método, monto y observaciones de los abonos de cada cuenta.'));
+    content.push(...credits.map((credit, index) => accountPayments(credit, index, salesById)));
   }
   if (!sales.length && !credits.length) content.push({ text: 'No hay operaciones para mostrar.', margin: [0, 20, 0, 0], color: MUTED });
   return {
     pageSize: 'A4',
     pageMargins: [32, 40, 32, 50],
-    info: { title: `Estado de cuenta · ${client.name}`, author: company.legalName, subject: 'Compras, créditos y pagos del cliente' },
+    info: { title: `${REPORT_TITLES[mode].footer} · ${client.name}`, author: company.legalName, subject: 'Compras, créditos y pagos del cliente' },
     ...(logoDataUrl ? { images: { statementLogo: logoDataUrl } } : {}),
     content,
     defaultStyle: { font: 'Roboto', fontSize: 9.5, color: INK, lineHeight: 1.15 },
@@ -390,7 +404,7 @@ export function buildClientStatementDocument({
     header: (page: number) => page > 1 ? {
       columns: [
         { text: company.legalName.toUpperCase(), font: displayFont, bold: true, fontSize: 9, color: GREEN, width: 135 },
-        { text: 'ESTADO DE CUENTA  /  ' + (mode === 'summary' ? 'RESUMEN' : 'DETALLADO'), bold: true, fontSize: 8, color: MUTED, alignment: 'right' },
+        { text: REPORT_TITLES[mode].footer, bold: true, fontSize: 8, color: MUTED, alignment: 'right' },
       ], margin: [32, 18, 32, 0],
     } : null,
     footer: (page: number, pages: number) => ({
