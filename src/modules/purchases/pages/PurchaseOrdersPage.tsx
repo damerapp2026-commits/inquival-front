@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CheckCircle2, Download, Eye, FileText, Plus, RefreshCw, Search, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, Eye, FileText, Pencil, Plus, RefreshCw, Search, Trash2, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Modal } from '../../../shared/components/Modal';
@@ -134,6 +134,7 @@ export function PurchaseOrdersPage() {
           >
             <Download size={15} />
           </button>
+          {['PENDING', 'APPROVED'].includes(o.status) && <button type="button" onClick={e => { e.stopPropagation(); navigate(`/purchases/orders/${o.id}/edit`); }} title="Editar orden" className="text-gray-500 hover:text-primary-700"><Pencil size={15} /></button>}
           {o.status !== 'CONVERTED' && o.status !== 'CANCELLED' && (
             <button
               onClick={(e) => {

@@ -1,3 +1,5 @@
+import { CreditAccountReference } from './CreditAccountReference';
+import { creditAccountLabel } from '../utils/creditReference';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AlertCircle, CalendarClock, CalendarDays, ChevronLeft, ChevronRight, Clock, Eye, X } from 'lucide-react';
@@ -42,7 +44,7 @@ function CreditDueList({ entries, getClientName, onView, today }: {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-medium text-sm text-gray-800 break-words">{getClientName(credit.clientId)}</p>
-                  <p className="text-xs text-gray-500 mt-0.5 break-words">{credit.name || 'Crédito sin nombre'}</p>
+                  <p className="text-xs text-gray-500 mt-0.5 break-words"><CreditAccountReference credit={credit} /></p>
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-[11px] text-gray-500">Saldo pendiente</p>
@@ -62,7 +64,7 @@ function CreditDueList({ entries, getClientName, onView, today }: {
                 )}
                 {credit.status === 'PARTIAL' && <span className="rounded-full px-2 py-0.5 bg-blue-50 text-blue-700">Abono parcial</span>}
                 <button type="button" onClick={() => onView(credit)}
-                  aria-label={`Ver detalle de ${credit.name || 'crédito'} de ${getClientName(credit.clientId)}`}
+                  aria-label={`Ver detalle de ${creditAccountLabel(credit)} de ${getClientName(credit.clientId)}`}
                   className="inline-flex items-center gap-1 ml-auto px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100">
                   <Eye size={13} /> Ver detalle
                 </button>

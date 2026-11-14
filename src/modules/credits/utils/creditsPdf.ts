@@ -1,3 +1,4 @@
+import { creditAccountText, creditSaleLabel } from './creditReference';
 import type { CreditAccount, Client, Sale } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
 import { buildClientStatementDocument } from './clientStatementPdf';
@@ -42,25 +43,6 @@ const statusLabel = (s: string) =>
 
 const statusColor = (s: string) =>
   s === 'PAID' ? '#059669' : s === 'PARTIAL' ? '#2563eb' : '#d97706';
-
-const saleNoteLabel = (saleId: string, saleNumber?: string) =>
-  saleNumber || `NV-${(saleId || '').slice(-8).toUpperCase()}`;
-
-const creditHeaderLabel = (credit: CreditAccount): { text: string; derived: boolean } => {
-  if (credit.name) return { text: credit.name, derived: false };
-  const details = credit.saleDetails || [];
-  if (details.length === 0) {
-    const ids = credit.saleIds || [];
-    if (ids.length === 0) return { text: 'Sin nombre', derived: false };
-    if (ids.length === 1) return { text: saleNoteLabel(ids[0]), derived: true };
-    return { text: `${saleNoteLabel(ids[0])} +${ids.length - 1} más`, derived: true };
-  }
-  if (details.length === 1) return { text: saleNoteLabel(details[0].saleId, details[0].saleNumber), derived: true };
-  const first = saleNoteLabel(details[0].saleId, details[0].saleNumber);
-  const second = saleNoteLabel(details[1].saleId, details[1].saleNumber);
-  if (details.length === 2) return { text: `${first}, ${second}`, derived: true };
-  return { text: `${first}, ${second} +${details.length - 2} más`, derived: true };
-};
 
 interface ExportParams {
   credits: CreditAccount[];
@@ -175,7 +157,7 @@ function buildSummaryByDate({ credits, clients, filters, title, subtitle }: Expo
       .sort((a, b) => b.pendingAmount - a.pendingAmount)
       .map((c) => [
         { text: getClientName(c.clientId), fontSize: 8 },
-        { text: c.name || '—', fontSize: 8, color: GRAY, italics: !c.name },
+        { text: creditAccountText(c), fontSize: 8, color: GRAY },
         { text: money(c.totalAmount), fontSize: 8, alignment: 'right' },
         { text: money(c.paidAmount), fontSize: 8, alignment: 'right', color: '#059669' },
         { text: money(c.pendingAmount), fontSize: 8, alignment: 'right', color: '#dc2626', bold: true },
@@ -322,10 +304,7 @@ function buildDetailed({ credits, clients, filters, title, subtitle }: ExportPar
         table: {
           widths: ['*', 'auto', 'auto', 'auto', 'auto'],
           body: [[
-            (() => {
-              const label = creditHeaderLabel(credit);
-              return { text: label.text, fontSize: 9, bold: true, color: label.text === 'Sin nombre' ? GRAY : '#111827', italics: label.text === 'Sin nombre' };
-            })(),
+            { text: creditAccountText(credit), fontSize: 9, bold: true, color: '#111827' },
             { text: `Creado: ${formatDate(credit.createdAt)}`, fontSize: 8, color: '#111827', alignment: 'right' },
             { text: `Total: ${money(credit.totalAmount)}`, fontSize: 8, alignment: 'right' },
             { text: `Pend: ${money(credit.pendingAmount)}`, fontSize: 8, alignment: 'right', color: '#dc2626', bold: true },
@@ -360,7 +339,7 @@ function buildDetailed({ credits, clients, filters, title, subtitle }: ExportPar
         for (const sale of saleDetails) {
           itemRows.push([
             {
-              text: `Venta ${formatDate(sale.date)} · ${money(sale.total)}`,
+              text: `${creditSaleLabel(sale)} · ${formatDate(sale.date)} · ${money(sale.total)}`,
               fontSize: 7,
               color: GRAY,
               italics: true,

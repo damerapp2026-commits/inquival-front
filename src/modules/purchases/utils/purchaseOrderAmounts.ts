@@ -1,4 +1,4 @@
-import type { Product, PurchaseItem, PurchaseOrder } from '../../../shared/types';
+import type { Product, PurchaseOrderItem, PurchaseOrder } from '../../../shared/types';
 import { IGV_RATE } from './purchaseForm';
 
 export const roundOrderMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -7,14 +7,28 @@ export function purchaseOrderCurrency(order: Pick<PurchaseOrder, 'currency' | 't
   return order.currency || (order.totalCostUsd != null ? 'USD' : 'PEN');
 }
 
-export function calculatePurchaseOrderAmounts(items: PurchaseItem[], products: Product[], recordedTotal?: number) {
+export function calculatePurchaseOrderAmounts(items: PurchaseOrderItem[], products: Product[], recordedTotal?: number, priceIncludesIgv = true) {
   const productMap = new Map(products.map(product => [product.id, product]));
   let taxableCents = 0;
   let taxableBaseCents = 0;
+  let netTaxCents = 0;
   const lines = items.map(item => {
-    const product = productMap.get(item.productId);
+    const product = productMap.get(item.productId || '');
     const taxType = item.taxType || product?.taxType || 'GRAVADO';
     const taxable = taxType === 'GRAVADO';
+    if (!priceIncludesIgv) {
+      const unitPriceSinIgv = Number(item.unitPriceSinIgv ?? item.unitCost ?? 0);
+      const unitPrice = unitPriceSinIgv * (taxable ? 1 + IGV_RATE : 1);
+      const subtotal = roundOrderMoney(item.quantity * unitPriceSinIgv);
+      let igv = 0;
+      if (taxable) {
+        taxableBaseCents += Math.round(subtotal * 100);
+        const nextTaxCents = Math.round(taxableBaseCents * IGV_RATE);
+        igv = (nextTaxCents - netTaxCents) / 100;
+        netTaxCents = nextTaxCents;
+      }
+      return { unitPrice, unitPriceSinIgv, subtotal, igv, total: roundOrderMoney(subtotal + igv), taxType, taxable };
+    }
     const unitPrice = Number(item.unitPriceConIgv ?? item.unitCost ?? ((item.unitPriceSinIgv || 0) * (taxable ? 1 + IGV_RATE : 1)));
     const total = roundOrderMoney(item.quantity * unitPrice);
     let subtotal = total;
@@ -48,5 +62,5 @@ export function calculatePurchaseOrderAmounts(items: PurchaseItem[], products: P
 export function purchaseOrderAmounts(order: PurchaseOrder, products: Product[]) {
   const currency = purchaseOrderCurrency(order);
   const total = currency === 'USD' && order.totalCostUsd != null ? order.totalCostUsd : order.totalCost;
-  return { ...calculatePurchaseOrderAmounts(order.items, products, total), currency };
+  return { ...calculatePurchaseOrderAmounts(order.items, products, total, order.priceIncludesIgv !== false), currency };
 }

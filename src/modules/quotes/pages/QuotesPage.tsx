@@ -2,13 +2,15 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuotes, useUpdateQuoteStatus } from '../hooks/useQuotes';
 import { useProducts } from '../../products/hooks/useProducts';
+import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities';
+import { getQuoteIssuer } from '../utils/quoteIssuer';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useClients } from '../../clients/hooks/useClients';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
 import { ScrollText, Download, Printer, CheckCircle2, XCircle, ShoppingCart, Plus, Search, Calendar, Eye, X, Trash2, AlertTriangle, List, ChevronLeft, ChevronRight, Edit2 } from 'lucide-react';
-import type { Quote, QuoteStatus, Product, Company, Client } from '../../../shared/types';
+import type { Quote, QuoteStatus, Product, Company, Client, QuoteIssuer } from '../../../shared/types';
 import { downloadQuotePdf, printQuotePdf } from '../utils/quotePdf';
 import { getQuoteCommercialDetails } from '../utils/quoteDetails';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
@@ -55,6 +57,7 @@ export function QuotesPage() {
   const { data: allQuotesData } = useQuotes({ limit: 1000, sellerId: sellerScope });
   const { data: productsData } = useProducts({ limit: 10000 });
   const { data: companiesData } = useCompanies();
+  const { data: fiscalEntities = [] } = useFiscalEntities();
   const { data: clientsData } = useClients({ limit: 500 });
   const updateStatus = useUpdateQuoteStatus();
   const deleteMutation = useDeleteQuote();
@@ -102,6 +105,7 @@ export function QuotesPage() {
     quote: q,
     products,
     company: getCompany(q.companyId),
+    fiscalEntity: fiscalEntities.find(entity => entity.id === q.fiscalEntityId),
     client: getClient(q.clientId),
     vendor: {
       name: q.sellerName || ((q.sellerId || q.createdBy) === user?.id ? user?.fullName : undefined),
@@ -127,6 +131,10 @@ export function QuotesPage() {
       },
     },
     ...(!isSellerRole ? [{ key: 'sellerName', header: 'Vendedor', render: (q: Quote) => q.sellerName ? <span className="text-emerald-700 text-sm">{q.sellerName}</span> : <span className="text-gray-300">—</span> }] : []),
+    { key: 'issuer', header: 'Empresa', render: (q: Quote) => {
+      const issuer = q.issuer || fiscalEntities.find(entity => entity.id === q.fiscalEntityId);
+      return issuer ? <div className="min-w-[150px] max-w-xs text-xs text-gray-600"><p>{issuer.legalName}</p><p className="font-mono text-gray-400 mt-0.5">RUC {issuer.ruc}</p></div> : <span className="text-gray-400">—</span>;
+    } },
     { key: 'items', header: 'Items', render: (q: Quote) => <span className="text-sm text-gray-600">{q.items.length}</span> },
     { key: 'total', header: 'Total', render: (q: Quote) => <span className="font-medium text-gray-800">{q.currency === 'USD' ? 'US$' : 'S/'} {q.total.toFixed(2)}</span> },
     {
@@ -360,6 +368,7 @@ export function QuotesPage() {
       {viewQuote && (
         <QuoteDetailModal
           quote={viewQuote}
+          issuer={getQuoteIssuer(viewQuote, fiscalEntities.find(entity => entity.id === viewQuote.fiscalEntityId), getCompany(viewQuote.companyId))}
           products={products}
           client={getClient(viewQuote.clientId)}
           onClose={() => setViewQuote(null)}
@@ -528,6 +537,7 @@ function CreditCalendar({ allQuotes, clientById, onSelectQuote }: CreditCalendar
 
 interface QuoteDetailModalProps {
   quote: Quote;
+  issuer: QuoteIssuer;
   products: Product[];
   client?: Client;
   onClose: () => void;
@@ -535,7 +545,7 @@ interface QuoteDetailModalProps {
   onDownload: () => void;
 }
 
-function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownload }: QuoteDetailModalProps) {
+function QuoteDetailModal({ quote, issuer, products, client, onClose, onPrint, onDownload }: QuoteDetailModalProps) {
   const productById = useMemo(() => {
     const m: Record<string, Product> = {};
     products.forEach(p => { m[p.id] = p; });
@@ -598,6 +608,12 @@ function QuoteDetailModal({ quote, products, client, onClose, onPrint, onDownloa
 
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
 
+          <div className="rounded-xl border border-primary-100 bg-primary-50/50 p-3 text-sm">
+            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Empresa que cotiza</p>
+            <p className="font-semibold text-gray-800 mt-1">{issuer.legalName}</p>
+            {issuer.ruc && <p className="text-xs font-mono text-gray-500 mt-0.5">RUC {issuer.ruc}</p>}
+            {issuer.address && <p className="text-xs text-gray-500 mt-0.5">{issuer.address}</p>}
+          </div>
           {/* Info grid */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-3">

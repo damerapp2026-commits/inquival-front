@@ -17,8 +17,9 @@ function orderToInitial(order: PurchaseOrder): PurchaseInitial {
     const applyIgv = unitPriceConIgv > unitPriceSinIgv + 0.0001;
     const base = {
       ...emptyItem(),
-      companyId: item.companyId || order.companyId,
-      productId: item.productId,
+      companyId: item.companyId || order.companyId || '',
+      productId: item.productId || '',
+      requestedName: !item.productId ? item.productName : undefined,
       quantity: item.quantity,
       lotNumber: item.lotNumber || '',
       expirationDate: item.expirationDate ? toLocalDateString(item.expirationDate) : '',
@@ -98,6 +99,7 @@ export function ConvertPurchaseOrderPage() {
         </div>
       </div>
 
+      {(order as PurchaseOrder | undefined)?.items.some(item => !item.productId) && <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Para ingresar la mercadería al stock, vincula cada producto escrito en la orden con un producto del catálogo y selecciona su almacén de recepción.</p>}
       <PurchaseFormBody
         mode="create"
         initial={initial}

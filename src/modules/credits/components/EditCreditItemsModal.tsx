@@ -1,3 +1,4 @@
+import { creditAccountLabel, creditSaleLabel } from '../utils/creditReference';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../shared/components/Modal';
 import { useCreditById, useEditCreditItems } from '../hooks/useCredits';
@@ -18,6 +19,7 @@ interface EditableItem {
 
 interface EditableSale {
   saleId: string;
+  saleNumber?: string;
   date: Date;
   items: EditableItem[];
 }
@@ -43,6 +45,7 @@ export function EditCreditItemsModal({ credit, onClose }: Props) {
     }
     const mapped: EditableSale[] = sourceCredit.saleDetails.map((sale: any) => ({
       saleId: sale.saleId,
+      saleNumber: sale.saleNumber,
       date: sale.date,
       items: (sale.items || []).map((i: any) => ({
         productId: i.productId || i.product || '',
@@ -133,7 +136,7 @@ export function EditCreditItemsModal({ credit, onClose }: Props) {
   };
 
   return (
-    <Modal isOpen={!!credit} onClose={onClose} title={`Editar productos — ${sourceCredit?.name || 'Crédito'}`} size="xl">
+    <Modal isOpen={!!credit} onClose={onClose} title={`Editar productos — ${sourceCredit ? creditAccountLabel(sourceCredit) : 'Crédito'}`} size="xl">
       {isLoading && !sourceCredit?.saleDetails ? (
         <div className="py-8 text-center text-gray-500 text-sm">Cargando productos…</div>
       ) : sales.length === 0 ? (
@@ -179,7 +182,7 @@ export function EditCreditItemsModal({ credit, onClose }: Props) {
                   <div className="bg-gray-50 px-4 py-2 flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2 text-gray-600">
                       <ShoppingBag size={13} />
-                      <span className="font-medium">Venta {sIdx + 1}</span>
+                      <span className="font-medium">{creditSaleLabel(sale)}</span>
                       <span className="text-gray-400">·</span>
                       <span>{new Date(sale.date).toLocaleDateString('es-PE')}</span>
                     </div>

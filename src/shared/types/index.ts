@@ -20,11 +20,12 @@ export interface FiscalEntity { id: string; legalName: string; ruc: string; addr
 export type PurchaseDocumentType = 'FACTURA' | 'BOLETA' | 'GUIA' | 'NOTA_CREDITO' | 'OTRO';
 export interface Purchase { id: string; companyId: string; supplier: string; supplierId?: string; supplierRuc?: string; items: PurchaseItem[]; totalCost: number; totalCostUsd?: number; exchangeRate?: number; paymentType: 'CONTADO' | 'CREDITO' | 'BONIFICACION'; paymentMethodId?: string; paymentMethodName?: string; addToStock?: boolean; paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS'; dueDate?: string; installments?: { amount: number; dueDate: string; status?: string }[]; date: string; createdAt: string; documentType?: PurchaseDocumentType; documentSeries?: string; documentNumber?: string; issueDate?: string; grSeries?: string; grNumber?: string; grDate?: string; detraccion?: boolean; detraccionAmountPen?: number; detraccionDueDate?: string; fiscalEntityId?: string; }
 export interface PurchaseItem { productId: string; companyId?: string; quantity: number; unitCost?: number; unitPriceSinIgv?: number; unitPriceConIgv?: number; flete?: number; otrosCostos?: number; precioVenta?: number; precioMinorista?: number; precioEspecial?: number; markupPercent?: number; taxType?: string; lotNumber?: string; expirationDate?: string; }
+export interface PurchaseOrderItem extends Omit<PurchaseItem, 'productId'> { productId?: string; productName?: string; description?: string; unit?: string; }
 export type PurchaseOrderStatus = 'PENDING' | 'APPROVED' | 'CANCELLED' | 'CONVERTED';
 export interface PurchaseOrder {
-  id: string; orderNumber: string; companyId: string;
+  id: string; orderNumber: string; companyId?: string; priceIncludesIgv?: boolean;
   supplier: string; supplierId?: string; supplierRuc?: string; supplierContact?: string; supplierPhone?: string;
-  fiscalEntityId?: string; items: PurchaseItem[];
+  fiscalEntityId?: string; items: PurchaseOrderItem[];
   totalCost: number; totalCostUsd?: number; exchangeRate?: number; currency?: 'PEN' | 'USD';
   paymentType?: 'CONTADO' | 'CREDITO' | 'BONIFICACION'; paymentForm?: 'CONTADO' | 'LETRA' | 'FACTURA'; paymentMethodId?: string;
   paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS'; creditDays?: number; dueDate?: string;
@@ -41,7 +42,8 @@ export type QuoteStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'CON
 export interface QuoteItem { productId: string; productName?: string; name?: string; unit?: string; taxType?: string; product?: { name?: string; unit?: string; taxType?: string }; companyId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number; }
 export interface QuotePayment { paymentMethodName: string; amount: number; }
 export interface QuoteInstallment { amount: number; dueDate: string; }
-export interface Quote { id: string; quoteNumber: string; series: string; number: number; companyId?: string; clientId?: string; clientName?: string; clientDocumentType?: 'DNI' | 'RUC' | 'CE' | 'OTRO'; clientDocumentNumber?: string; clientContact?: string; clientEmail?: string; clientPhone?: string; clientAddress?: string; items: QuoteItem[]; total: number; notes?: string; internalNotes?: string; deliveryTime?: string; deliveryPlace?: string; status: QuoteStatus; issueDate: string; validUntil: string; convertedSaleId?: string; createdBy?: string; sellerId?: string; sellerName?: string; participantIds?: string[]; participantNames?: string[]; currency?: 'PEN' | 'USD'; exchangeRate?: number; paymentMethod?: string; creditDays?: number; paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS'; installments?: QuoteInstallment[]; payments?: QuotePayment[]; createdAt: string; }
+export interface QuoteIssuer { legalName: string; ruc: string; address?: string; }
+export interface Quote { id: string; quoteNumber: string; series: string; number: number; companyId?: string; fiscalEntityId?: string; issuer?: QuoteIssuer; clientId?: string; clientName?: string; clientDocumentType?: 'DNI' | 'RUC' | 'CE' | 'OTRO'; clientDocumentNumber?: string; clientContact?: string; clientEmail?: string; clientPhone?: string; clientAddress?: string; items: QuoteItem[]; total: number; notes?: string; internalNotes?: string; deliveryTime?: string; deliveryPlace?: string; status: QuoteStatus; issueDate: string; validUntil: string; convertedSaleId?: string; createdBy?: string; sellerId?: string; sellerName?: string; participantIds?: string[]; participantNames?: string[]; currency?: 'PEN' | 'USD'; exchangeRate?: number; paymentMethod?: string; creditDays?: number; paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS'; installments?: QuoteInstallment[]; payments?: QuotePayment[]; createdAt: string; }
 
 export type WorkerExpenseCategory = 'ALOJAMIENTO' | 'TRANSPORTE' | 'COMBUSTIBLE' | 'ALIMENTACION' | 'OTROS';
 export type WorkerExpenseReportStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';

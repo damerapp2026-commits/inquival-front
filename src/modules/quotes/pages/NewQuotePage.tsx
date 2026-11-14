@@ -5,6 +5,8 @@ import toast from 'react-hot-toast';
 import { useCreateQuote, useQuote, useUpdateQuote } from '../hooks/useQuotes';
 import { useDniLookup, useRucLookup, useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import { useProducts } from '../../products/hooks/useProducts';
+import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities';
+import { getQuoteIssuer } from '../utils/quoteIssuer';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useClients } from '../../clients/hooks/useClients';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
@@ -13,7 +15,7 @@ import { useUsers } from '../../users/hooks/useUsers';
 import { usePaymentMethods } from '../../payment-methods/hooks/usePaymentMethods';
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
-import type { Product, ProductPrice, Company, Client, PriceTier, QuotePayment, QuoteInstallment, Quote } from '../../../shared/types';
+import type { Product, ProductPrice, Company, Client, PriceTier, QuotePayment, QuoteInstallment, Quote, FiscalEntity } from '../../../shared/types';
 import { getQuoteItemProductName, getQuoteItemProductUnit, getQuoteItemTaxType, useQuoteProducts } from '../hooks/useQuoteProducts';
 import { parseLegacyQuoteNotes } from '../utils/quoteDetails';
 
@@ -47,6 +49,7 @@ interface CartLine {
 }
 
 interface CartPreload {
+  fiscalEntityId?: string;
   items: CartLine[];
   companyId?: string;
   tierId?: string;
@@ -69,6 +72,7 @@ export function NewQuotePage() {
 
   const { data: productsData } = useProducts({ limit: 10000 });
   const { data: companiesData } = useCompanies();
+  const { data: fiscalEntitiesData, isLoading: fiscalEntitiesLoading, isError: fiscalEntitiesError, refetch: refetchFiscalEntities } = useFiscalEntities();
   const { data: clientsData } = useClients({ limit: 500 });
   const { data: tiersData } = usePriceTiers();
   const { data: usersData } = useUsers({ limit: 200, isActive: true });
@@ -86,6 +90,9 @@ export function NewQuotePage() {
   }, [productsData]);
   const editQuoteItems = useMemo(() => (editQuote as Quote | undefined)?.items || [], [editQuote]);
   const { productById: editProductById, isLoading: editProductsLoading } = useQuoteProducts(editQuoteItems, products);
+
+  const fiscalEntities: FiscalEntity[] = useMemo(() => Array.isArray(fiscalEntitiesData) ? fiscalEntitiesData : [], [fiscalEntitiesData]);
+  const activeFiscalEntities = useMemo(() => fiscalEntities.filter(entity => entity.isActive !== false), [fiscalEntities]);
 
   const companies: Company[] = useMemo(() => {
     const list: Company[] = Array.isArray(companiesData) ? companiesData : [];
@@ -131,6 +138,7 @@ export function NewQuotePage() {
     ? (Array.isArray(clientSearchRaw) ? clientSearchRaw : (clientSearchRaw as any)?.data || [])
     : [];
 
+  const [fiscalEntityId, setFiscalEntityId] = useState(preload?.fiscalEntityId || '');
   const [companyId, setCompanyId] = useState(preload?.companyId || '');
   const [tierId, setTierId] = useState(preload?.tierId || '');
   const [sellerId, setSellerId] = useState(preload?.sellerId || user?.id || '');
@@ -164,6 +172,12 @@ export function NewQuotePage() {
 
   // Defaults once data arrives
   useEffect(() => {
+    if (isEditing || fiscalEntityId) return;
+    const defaultEntity = activeFiscalEntities.find(entity => entity.isDefault)
+      || (activeFiscalEntities.length === 1 ? activeFiscalEntities[0] : undefined);
+    if (defaultEntity) setFiscalEntityId(defaultEntity.id);
+  }, [isEditing, fiscalEntityId, activeFiscalEntities]);
+  useEffect(() => {
     if (!companyId && companies.length) setCompanyId(companies[0].id);
   }, [companies, companyId]);
   useEffect(() => {
@@ -190,6 +204,7 @@ export function NewQuotePage() {
       return toDateKey(new Date(issueParts[0], issueParts[1] - 1, issueParts[2] + quote.creditDays));
     })();
 
+    setFiscalEntityId(quote.fiscalEntityId || '');
     setCompanyId(quote.companyId || firstItem?.companyId || companies[0]?.id || '');
     setTierId(firstItem?.priceTier || tiers[0]?.id || '');
     setSellerId(quote.sellerId || user?.id || '');
@@ -477,8 +492,19 @@ export function NewQuotePage() {
     setProductSearch('');
   };
 
+  const originalQuote = editQuote as Quote | undefined;
+  const selectedFiscalEntity = fiscalEntities.find(entity => entity.id === fiscalEntityId);
+  const savedIssuerSelected = !!fiscalEntityId && originalQuote?.fiscalEntityId === fiscalEntityId;
+  const legacyIssuer = isEditing && !originalQuote?.fiscalEntityId;
+  const issuerSelectionValid = !fiscalEntitiesLoading && !fiscalEntitiesError && (
+    fiscalEntityId ? activeFiscalEntities.some(entity => entity.id === fiscalEntityId) || savedIssuerSelected
+      : legacyIssuer || activeFiscalEntities.length === 0
+  );
+  const issuer = getQuoteIssuer({ fiscalEntityId, issuer: savedIssuerSelected ? originalQuote?.issuer : undefined },
+    selectedFiscalEntity, companies.find(company => company.id === companyId));
+
   const canSave = lines.length > 0 && lines.every((l) => l.productId && l.quantity > 0 && l.unitPrice >= 0)
-    && !!companyId && !!tierId
+    && issuerSelectionValid && !!companyId && !!tierId
     && !!sellerId
     && (!!clientId || !!clientName.trim());
 
@@ -487,6 +513,7 @@ export function NewQuotePage() {
       if (!lines.length) toast.error('Agregá al menos un producto');
       else if (!clientId && !clientName.trim()) toast.error('Indicá el nombre del cliente');
       else if (!sellerId) toast.error('Seleccioná al responsable de la cotización');
+      else if (!issuerSelectionValid) toast.error('Selecciona la empresa que cotiza');
       else toast.error('Completá producto, cantidad y precio en cada línea');
       return;
     }
@@ -510,6 +537,7 @@ export function NewQuotePage() {
     }
     try {
       const payload = {
+        fiscalEntityId: fiscalEntityId || undefined,
         companyId,
         clientId: clientId || undefined,
         clientName: clientName.trim(),
@@ -590,6 +618,26 @@ export function NewQuotePage() {
           <p className="text-sm text-gray-500 mt-1">{isEditing ? 'Modifica los datos del cliente, productos y condiciones comerciales.' : 'Completá los datos del cliente y los productos. La cotización se genera en PDF al guardar.'}</p>
         </div>
       </div>
+
+      <section className="bg-white border border-gray-200 rounded-2xl p-5 mb-6">
+        <label className="block text-sm font-semibold text-gray-900" htmlFor="quote-fiscal-entity">Empresa que cotiza</label>
+        <p className="text-xs text-gray-500 mt-1 mb-3">Elige la razón social y el RUC que aparecerán en la cotización y en el PDF.</p>
+        {fiscalEntitiesLoading ? <p role="status" className="text-sm text-gray-500">Cargando empresas de la sede...</p>
+          : fiscalEntitiesError ? <div role="alert" className="text-sm text-red-600">No se pudieron cargar las empresas. <button type="button" onClick={() => void refetchFiscalEntities()} className="underline font-medium">Reintentar</button></div>
+          : <>
+              <select id="quote-fiscal-entity" required={!legacyIssuer && activeFiscalEntities.length > 0} value={fiscalEntityId} onChange={event => setFiscalEntityId(event.target.value)}
+                className="w-full max-w-2xl px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500">
+                <option value="" disabled={!legacyIssuer && activeFiscalEntities.length > 0}>{legacyIssuer ? 'Empresa anterior de la cotización' : activeFiscalEntities.length ? 'Selecciona una empresa' : 'Empresa de la configuración general'}</option>
+                {activeFiscalEntities.map(entity => <option key={entity.id} value={entity.id}>{entity.legalName} · RUC {entity.ruc}</option>)}
+                {savedIssuerSelected && !activeFiscalEntities.some(entity => entity.id === fiscalEntityId) && <option value={fiscalEntityId}>{originalQuote?.issuer?.legalName || selectedFiscalEntity?.legalName || 'Empresa guardada en esta cotización'} · RUC {originalQuote?.issuer?.ruc || selectedFiscalEntity?.ruc || '—'}</option>}
+              </select>
+              {(fiscalEntityId || legacyIssuer || activeFiscalEntities.length === 0) && <div className="mt-3 text-sm text-gray-700">
+                <p className="font-semibold">{issuer.legalName}</p>
+                {issuer.ruc && <p className="text-xs mt-0.5">RUC: {issuer.ruc}</p>}
+                {issuerSelectionValid && issuer.address && <p className="text-xs text-gray-500 mt-0.5">{issuer.address}</p>}
+              </div>}
+            </>}
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
         {/* ===================== MAIN COLUMN ===================== */}
@@ -1226,9 +1274,9 @@ export function NewQuotePage() {
             </div>
 
             <div className="text-sm">
-              <p className="font-semibold text-gray-800">{COMPANY_INFO.legalName || company?.name || '—'}</p>
-              {(COMPANY_INFO.ruc || company?.ruc) && <p className="text-xs text-gray-500 mt-0.5">RUC {COMPANY_INFO.ruc || company?.ruc}</p>}
-              {(COMPANY_INFO.address || company?.address) && <p className="text-xs text-gray-500 mt-0.5">{COMPANY_INFO.address || company?.address}</p>}
+              <p className="font-semibold text-gray-800">{issuerSelectionValid ? issuer.legalName : 'Selecciona la empresa que cotiza'}</p>
+              {issuerSelectionValid && issuer.ruc && <p className="text-xs text-gray-500 mt-0.5">RUC {issuer.ruc}</p>}
+              {issuerSelectionValid && issuer.address && <p className="text-xs text-gray-500 mt-0.5">{issuer.address}</p>}
               {(COMPANY_INFO.phone || company?.phone || COMPANY_INFO.email) && (
                 <p className="text-xs text-gray-500 mt-0.5">
                   {[COMPANY_INFO.phone || company?.phone, COMPANY_INFO.email].filter(Boolean).join(' · ')}

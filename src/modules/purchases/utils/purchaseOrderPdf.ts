@@ -81,12 +81,11 @@ export function buildPurchaseOrderPdfDefinition({ order, products, companies, fi
   const headerRuc = fiscalEntity?.ruc || COMPANY_INFO.ruc || '—';
   const headerAddress = fiscalEntity?.address || COMPANY_INFO.address || '';
   const warehouses = [...new Set(order.items.map((item) => item.companyId || order.companyId).filter(Boolean))]
-    .map((id) => companyById.get(id))
+    .map((id) => companyById.get(id || ''))
     .filter((company): company is Company => !!company);
   const warehouseNames = warehouses.map((company) => company.name).join(', ');
-  const warehouseAddresses = warehouses.map((company) => company.address).filter(Boolean).join(' / ');
   const deliveryPlace = details.deliveryPlace === warehouseNames ? '' : details.deliveryPlace;
-  const deliveryAddress = details.deliveryAddress || warehouseAddresses || headerAddress || 'Por coordinar';
+  const deliveryAddress = details.deliveryAddress || headerAddress || 'Por coordinar';
   const transport = details.transport || 'Directo (a cargo del proveedor)';
   const statusLabel: Record<string, string> = {
     PENDING: 'Pendiente',
@@ -96,20 +95,20 @@ export function buildPurchaseOrderPdfDefinition({ order, products, companies, fi
   };
 
   const rows = order.items.map((item, index) => {
-    const product = productById.get(item.productId);
+    const product = productById.get(item.productId || '');
     const line = lines[index];
     return [
       { text: String(index + 1).padStart(2, '0'), alignment: 'center', fontSize: 7.5 },
       {
         stack: [
-          { text: product?.name || item.productId, fontSize: 8, bold: true, color: TEXT_DARK },
-          { text: product?.activeIngredient || product?.description || ' ', fontSize: 7, color: TEXT_MUTED },
+          { text: item.productName || product?.name || item.productId || 'Producto solicitado', fontSize: 8, bold: true, color: TEXT_DARK },
+          { text: item.description || product?.activeIngredient || product?.description || (line.taxable ? ' ' : line.taxType), fontSize: 7, color: TEXT_MUTED },
         ],
       },
       { text: item.quantity.toFixed(2), alignment: 'center', fontSize: 7.5 },
-      { text: (product?.unit || 'UND').toUpperCase().slice(0, 8), alignment: 'center', fontSize: 7.5 },
+      { text: (item.unit || product?.unit || 'UND').toUpperCase().slice(0, 8), alignment: 'center', fontSize: 7.5 },
+      { text: `${symbol} ${line.unitPriceSinIgv.toFixed(2)}`, alignment: 'right', fontSize: 7.5 },
       { text: `${symbol} ${line.unitPrice.toFixed(2)}`, alignment: 'right', fontSize: 7.5 },
-      { text: `${symbol} ${line.igv.toFixed(2)}`, alignment: 'right', fontSize: 7.5 },
       { text: `${symbol} ${line.total.toFixed(2)}`, alignment: 'right', fontSize: 7.5, bold: true },
     ];
   });
@@ -215,6 +214,7 @@ export function buildPurchaseOrderPdfDefinition({ order, products, companies, fi
         },
         layout: borderedLayout,
       },
+      ...(paymentType === 'CREDITO' && order.installments?.length ? [{ text: `Cuotas: ${order.installments.map((i, index) => `${index + 1}. ${symbol} ${i.amount.toFixed(2)} — ${formatDate(i.dueDate)}`).join('   |   ')}`, fontSize: 7.5, margin: [0, 5, 0, 0] }] : []),
       { text: 'PRODUCTOS SOLICITADOS', bold: true, fontSize: 9, color: BRAND_GREEN_DARK, margin: [0, 10, 0, 5] },
       {
         table: {
@@ -227,8 +227,8 @@ export function buildPurchaseOrderPdfDefinition({ order, products, companies, fi
               { text: 'DESCRIPCIÓN', style: 'thead' },
               { text: 'CANT.', style: 'thead' },
               { text: 'U.M.', style: 'thead' },
+              { text: 'P. UNIT.\nSIN IGV', style: 'thead' },
               { text: 'P. UNIT.\nCON IGV', style: 'thead' },
-              { text: 'IGV\nINCLUIDO', style: 'thead' },
               { text: 'IMPORTE', style: 'thead' },
             ],
             ...rows,
@@ -239,7 +239,7 @@ export function buildPurchaseOrderPdfDefinition({ order, products, companies, fi
           fillColor: (row: number) => row === 0 ? SECTION_FILL : null,
         },
       },
-      { text: 'Precios e importes incluyen IGV cuando corresponde.', fontSize: 7, color: TEXT_MUTED, margin: [0, 4, 0, 0] },
+      { text: 'Base sin IGV + IGV = total. El impuesto se aplica solo a productos gravados.', fontSize: 7, color: TEXT_MUTED, margin: [0, 4, 0, 0] },
       { text: `Son: ${numberToWords(total, currency).toLowerCase()}.`, fontSize: 7.5, color: TEXT_DARK, margin: [0, 5, 0, 3] },
       {
         columns: [
@@ -259,7 +259,7 @@ export function buildPurchaseOrderPdfDefinition({ order, products, companies, fi
               widths: ['*', 70],
               body: [
                 [{ text: 'RESUMEN', colSpan: 2, style: 'sectionTitle' }, {}],
-                [{ text: 'Subtotal', fontSize: 8 }, { text: `${symbol} ${subtotal.toFixed(2)}`, alignment: 'right', fontSize: 8 }],
+                [{ text: 'Base sin IGV', fontSize: 8 }, { text: `${symbol} ${subtotal.toFixed(2)}`, alignment: 'right', fontSize: 8 }],
                 [{ text: 'I.G.V. (18%)', fontSize: 8 }, { text: `${symbol} ${igv.toFixed(2)}`, alignment: 'right', fontSize: 8 }],
                 [{ text: 'Total estimado', bold: true, fontSize: 8.5 }, { text: `${symbol} ${total.toFixed(2)}`, alignment: 'right', bold: true, fontSize: 8.5 }],
               ],

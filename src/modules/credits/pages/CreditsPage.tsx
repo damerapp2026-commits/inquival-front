@@ -12,6 +12,8 @@ import { CreditCard, DollarSign, Edit2, Trash2, ChevronDown, ChevronRight, Searc
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { RegisterHistoricalCreditModal } from '../components/RegisterHistoricalCreditModal';
 import { CreditCalendar } from '../components/CreditCalendar';
+import { CreditAccountReference } from '../components/CreditAccountReference';
+import { creditAccountLabel, creditAccountText, creditSaleLabel } from '../utils/creditReference';
 import type { CreditAccount, Client, CreditPayment } from '../../../shared/types';
 import { daysUntilDate, formatDateEs, toLocalDateString } from '../../../shared/utils/date.util';
 import { creditCurrency, formatMoney } from '../utils/money';
@@ -415,6 +417,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                 <div key={group.clientId}>
                   <div
                     role="button"
+                    aria-label={`Cuentas de ${group.clientName}`}
                     tabIndex={0}
                     onClick={() => toggleExpanded(group.clientId)}
                     onKeyDown={(e) => {
@@ -423,7 +426,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                         toggleExpanded(group.clientId);
                       }
                     }}
-                    className="w-full px-5 py-4 flex items-center gap-4 hover:bg-gray-50 transition-colors text-left cursor-pointer"
+                    className="w-full px-5 py-4 flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-4 hover:bg-gray-50 transition-colors text-left cursor-pointer"
                   >
                     <div className="text-gray-400">
                       {isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -431,7 +434,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                     <div className="w-10 h-10 rounded-full bg-primary-50 text-primary-700 flex items-center justify-center font-semibold text-sm shrink-0">
                       {group.clientName.slice(0, 2).toUpperCase()}
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-[140px] sm:min-w-0">
                       <div className="font-medium text-gray-800 truncate">{group.clientName}</div>
                       <div className="text-xs text-gray-500">
                         {group.credits.length} {group.credits.length === 1 ? 'cuenta' : 'cuentas'}
@@ -507,7 +510,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="text-xs text-gray-500 text-left">
-                              <th className="py-2 pr-3 font-medium">Cuenta</th>
+                              <th className="py-2 pr-3 font-medium">Cuenta / Nota de venta</th>
                               <th className="py-2 pr-3 font-medium">Fecha</th>
                               <th className="py-2 pr-3 font-medium">Vencimiento</th>
                               <th className="py-2 pr-3 font-medium">Total</th>
@@ -524,11 +527,11 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                               return (
                                 <tr key={c.id} className="hover:bg-white">
                                   <td className="py-2 pr-3">
-                                    {c.name ? (
-                                      <span className="font-medium text-gray-800">{c.name}</span>
-                                    ) : (
-                                      <span className="text-gray-400 italic">—</span>
-                                    )}
+                                    <button type="button" onClick={() => openDetail(c)}
+                                      aria-label={`Ver cuenta ${creditAccountLabel(c)}`}
+                                      className="min-w-[150px] max-w-xs text-left font-medium text-gray-800 hover:text-primary-700 hover:underline">
+                                      <CreditAccountReference credit={c} />
+                                    </button>
                                   </td>
                                   <td className="py-2 pr-3 text-gray-600">
                                     {new Date(c.createdAt).toLocaleDateString('es-PE')}
@@ -610,7 +613,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
               <div className="bg-gray-50 rounded-lg p-3">
                 <div className="text-xs text-gray-500">Cuenta</div>
                 <div className="text-sm font-medium text-gray-800">
-                  {fullCredit.name || <span className="italic text-gray-400">Sin nombre</span>}
+                  <CreditAccountReference credit={fullCredit} />
                 </div>
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
@@ -634,7 +637,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
                 {fullCredit.saleDetails.map((sale, sIdx) => (
                   <div key={sIdx} className="bg-gray-50 rounded-lg p-3">
                     <div className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
-                      <ShoppingBag size={12} /> Venta {sIdx + 1} — {new Date(sale.date).toLocaleDateString('es-PE')} · {formatMoney(sale.currency === 'USD' && sale.totalUsd != null ? sale.totalUsd : sale.total, sale.currency)}
+                      <ShoppingBag size={12} /> {creditSaleLabel(sale)} — {new Date(sale.date).toLocaleDateString('es-PE')} · {formatMoney(sale.currency === 'USD' && sale.totalUsd != null ? sale.totalUsd : sale.total, sale.currency)}
                     </div>
                     <div className="border border-gray-200 rounded overflow-hidden bg-white">
                       <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -720,7 +723,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
       <Modal isOpen={!!editDueCredit} onClose={() => setEditDueCredit(null)} title="Fecha límite de pago">
         <div className="space-y-4">
           <div className="bg-gray-50 p-3 rounded-lg text-sm">
-            <div>Cuenta: <span className="font-medium">{editDueCredit?.name || '—'}</span></div>
+            <div>Cuenta: <span className="font-medium">{editDueCredit ? creditAccountLabel(editDueCredit) : '—'}</span></div>
             <div>Pendiente: <span className="text-red-600 font-medium">{editDueCredit ? formatMoney(editDueCredit.pendingAmount, editDueCredit.currency) : '—'}</span></div>
           </div>
           <div>
@@ -759,6 +762,7 @@ export function CreditsPage({ asTab = false }: { asTab?: boolean }) {
           </div>
           <div className="bg-gray-50 p-3 rounded-lg text-sm">
             <div>Cliente: <span className="font-medium">{selectedCredit ? getClientName(selectedCredit.clientId) : ''}</span></div>
+            {selectedCredit && <div>Cuenta: <span className="font-medium">{creditAccountText(selectedCredit)}</span></div>}
             <div>Total: <span className="font-medium">{selectedCredit ? formatMoney(selectedCredit.totalAmount, selectedCredit.currency) : '—'}</span></div>
             <div>Pagado: <span className="text-primary-600">{selectedCredit ? formatMoney(selectedCredit.paidAmount, selectedCredit.currency) : '—'}</span></div>
             <div>Pendiente: <span className="text-red-600 font-medium">{selectedCredit ? formatMoney(selectedCredit.pendingAmount, selectedCredit.currency) : '—'}</span></div>

@@ -1,4 +1,5 @@
-import type { Quote, Product, Company, Client } from '../../../shared/types';
+import { getQuoteIssuer } from './quoteIssuer';
+import type { Quote, Product, Company, Client, FiscalEntity } from '../../../shared/types';
 import { numberToWords } from './numberToWords';
 import { COMPANY_INFO } from '../../../config/companyInfo';
 import { getQuoteItemProductName, getQuoteItemProductUnit, getQuoteItemTaxType } from './quoteItemDetails';
@@ -46,6 +47,7 @@ interface GenerateParams {
   quote: Quote;
   products: Product[];
   company?: Company;
+  fiscalEntity?: FiscalEntity;
   client?: Client;
   vendor?: { name?: string; phone?: string; email?: string };
   currency?: 'PEN' | 'USD';
@@ -178,16 +180,17 @@ function buildPaymentsBlock(quote: any, currencySymbol: string): any[] {
   ];
 }
 
-export function buildQuotePdfDefinition({ quote, products, company, client, vendor, currency, logoDataUrl }: BuildParams) {
+export function buildQuotePdfDefinition({ quote, products, company, fiscalEntity, client, vendor, currency, logoDataUrl }: BuildParams) {
   const getProduct = (id: string) => products.find(p => p.id === id);
   const commercial = getQuoteCommercialDetails(quote);
   const effectiveCurrency = quote.currency || currency || 'PEN';
   const currencySymbol = effectiveCurrency === 'USD' ? 'US$' : 'S/';
   const tcRate = quote.exchangeRate || 0;
-  const headerName = COMPANY_INFO.legalName || company?.name || 'EMPRESA';
-  const headerAddress = COMPANY_INFO.address || company?.address || '';
+  const issuer = getQuoteIssuer(quote, fiscalEntity, company);
+  const headerName = issuer.legalName;
+  const headerAddress = issuer.address || '';
   const headerPhone = COMPANY_INFO.phone || company?.phone || '';
-  const headerRuc = COMPANY_INFO.ruc || company?.ruc || '—';
+  const headerRuc = issuer.ruc || '—';
   const headerEmail = COMPANY_INFO.email || '';
   const clientName = quote.clientName || client?.name || '—';
   const clientDocumentNumber = quote.clientDocumentNumber || client?.documentNumber || '—';

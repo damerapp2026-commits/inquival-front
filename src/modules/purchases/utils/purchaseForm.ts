@@ -68,6 +68,7 @@ export function productReferenceCost(product: Product | undefined, currency: 'PE
 }
 
 export interface PurchaseFormItem {
+  requestedName?: string;
   companyId: string;
   productId: string;
   quantity: number;

@@ -15,10 +15,11 @@ interface SearchableSelectProps {
 export function SearchableSelect({ options, value, onChange, placeholder = 'Buscar...', required, className = '', minChars = 2 }: SearchableSelectProps) {
   const [search, setSearch] = useState('');
   const [isOpen, setIsOpen] = useState(false);
-  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
+  const [dropdownPos, setDropdownPos] = useState<{ top?: number; bottom?: number; left: number; width: number; maxHeight: number }>({ top: 0, left: 0, width: 0, maxHeight: 192 });
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const selectedLabel = options.find(o => o.value === value)?.label || '';
@@ -37,14 +38,28 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
 
   useEffect(() => {
     if (isOpen && displayFiltered.length > 0) {
-      optionRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
+      const option = optionRefs.current[highlightedIndex];
+      const dropdown = dropdownRef.current;
+      if (!option || !dropdown) return;
+      if (option.offsetTop < dropdown.scrollTop) dropdown.scrollTop = option.offsetTop;
+      else if (option.offsetTop + option.offsetHeight > dropdown.scrollTop + dropdown.clientHeight)
+        dropdown.scrollTop = option.offsetTop + option.offsetHeight - dropdown.clientHeight;
     }
   }, [highlightedIndex, isOpen, displayFiltered.length]);
 
   const updatePosition = useCallback(() => {
     if (inputRef.current) {
       const rect = inputRef.current.getBoundingClientRect();
-      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+      const below = window.innerHeight - rect.bottom - 8;
+      const above = rect.top - 8;
+      const openAbove = below < 192 && above > below;
+      const width = Math.min(rect.width, window.innerWidth - 16);
+      setDropdownPos({
+        top: openAbove ? undefined : rect.bottom + 4,
+        bottom: openAbove ? window.innerHeight - rect.top + 4 : undefined,
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), width,
+        maxHeight: Math.max(0, Math.min(192, openAbove ? above : below)),
+      });
     }
   }, []);
 
@@ -119,8 +134,8 @@ export function SearchableSelect({ options, value, onChange, placeholder = 'Busc
 
   const dropdown = isOpen ? createPortal(
     <div
-      id="ss-dropdown"
-      style={{ position: 'fixed', top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width, zIndex: 9999 }}
+      id="ss-dropdown" ref={dropdownRef}
+      style={{ position: 'fixed', ...dropdownPos, zIndex: 9999 }}
       className="bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto"
     >
       {search.length < minChars ? (

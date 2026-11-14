@@ -520,8 +520,8 @@ export function PurchaseFormBody({
       return;
     }
     if (!form.supplier.trim()) { toast.error('Selecciona un laboratorio'); return; }
-    const hasValidItems = form.items.some(i => i.productId && i.quantity > 0);
-    if (!hasValidItems) { toast.error('Agrega al menos un producto con cantidad mayor a 0'); return; }
+    const hasValidItems = form.items.length > 0 && form.items.every(i => i.productId && i.quantity > 0);
+    if (!hasValidItems) { toast.error('Selecciona un producto del catálogo y una cantidad mayor a 0 en cada línea'); return; }
     const missingCompany = form.items.find(i => !i.companyId);
     if (missingCompany) { toast.error('Selecciona el almacén destino para cada producto'); return; }
     const missingLot = form.items.find(i => {
@@ -782,6 +782,7 @@ export function PurchaseFormBody({
                   )}
                   <div className="grid grid-cols-12 gap-2 items-end pr-6">
                     <div className="col-span-12 sm:col-span-5">
+                      {item.requestedName && <p className="mb-2 text-xs text-amber-700">Solicitado: <strong>{item.requestedName}</strong></p>}
                       <label className="block text-xs text-gray-500 mb-1">Producto</label>
                       <div className="flex gap-1">
                         <div className="flex-1">

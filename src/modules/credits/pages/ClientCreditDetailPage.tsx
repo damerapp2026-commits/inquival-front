@@ -4,6 +4,8 @@ import { useClientCredits, useOpenClientCredits } from '../hooks/useCredits';
 import { useClients } from '../../clients/hooks/useClients';
 import { Pagination } from '../../../shared/components/Pagination';
 import { BatchPaymentModal } from '../components/BatchPaymentModal';
+import { CreditAccountReference } from '../components/CreditAccountReference';
+import { creditAccountText, creditSaleLabel } from '../utils/creditReference';
 import { ArrowLeft, DollarSign, ShoppingBag, Layers } from 'lucide-react';
 import type { CreditAccount, CreditPayment, Client } from '../../../shared/types';
 import { formatDateEs } from '../../../shared/utils/date.util';
@@ -51,7 +53,7 @@ export function ClientCreditDetailPage() {
         const existing = byGroup.get(payment.paymentGroupId);
         const slice = {
           creditId: credit.id,
-          creditName: credit.name || 'Sin nombre',
+          creditName: creditAccountText(credit),
           amount: payment.amount,
           currency: payment.currency || credit.currency,
         };
@@ -171,7 +173,7 @@ export function ClientCreditDetailPage() {
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${st.class}`}>{st.label}</span>
                   <span className="text-sm text-gray-500">{new Date(credit.createdAt).toLocaleDateString('es-PE')}</span>
-                  {credit.name && <span className="text-sm font-medium text-gray-700">· {credit.name}</span>}
+                  <span className="text-sm font-medium text-gray-700"><CreditAccountReference credit={credit} /></span>
                   {credit.dueDate && credit.status !== 'PAID' && (() => {
                     const today = new Date(); today.setHours(0, 0, 0, 0);
                     const due = new Date(credit.dueDate.slice(0, 10) + 'T00:00:00');
@@ -196,7 +198,7 @@ export function ClientCreditDetailPage() {
                   {credit.saleDetails.map((sale, sIdx) => (
                     <div key={sIdx} className="bg-gray-50 rounded-lg p-3">
                       <div className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
-                        <ShoppingBag size={12} /> Venta {sIdx + 1} — {new Date(sale.date).toLocaleDateString('es-PE')} · {formatMoney(sale.currency === 'USD' && sale.totalUsd != null ? sale.totalUsd : sale.total, sale.currency || credit.currency)}
+                        <ShoppingBag size={12} /> {creditSaleLabel(sale)} — {new Date(sale.date).toLocaleDateString('es-PE')} · {formatMoney(sale.currency === 'USD' && sale.totalUsd != null ? sale.totalUsd : sale.total, sale.currency || credit.currency)}
                       </div>
                       <div className="border rounded overflow-hidden">
                         <table className="min-w-full divide-y divide-gray-200 text-sm">

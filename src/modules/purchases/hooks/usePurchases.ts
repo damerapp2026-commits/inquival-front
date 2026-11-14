@@ -93,12 +93,28 @@ export function useCreatePurchaseOrder() {
     },
   });
 }
+export function useUpdatePurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: purchaseService.orders.update,
+    onSuccess: (order, vars) => {
+      qc.setQueryData(['purchase-order', vars.id], order);
+      qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      toast.success('Orden de compra actualizada');
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg.join('. ') : msg || 'Error al actualizar orden');
+    },
+  });
+}
 export function useUpdatePurchaseOrderStatus() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: purchaseService.orders.updateStatus,
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['purchase-orders'] });
+      qc.invalidateQueries({ queryKey: ['purchase-order', vars.id] });
       toast.success('Orden actualizada');
     },
     onError: (err: any) => toast.error(err.response?.data?.message || 'Error al actualizar orden'),

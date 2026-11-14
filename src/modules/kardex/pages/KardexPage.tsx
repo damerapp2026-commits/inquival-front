@@ -13,8 +13,9 @@ import { useLaboratories } from '../../laboratories/hooks/useLaboratories';
 import { useExpiringLots, useProductLotsByProduct } from '../../stock/hooks/useProductLots';
 import { DataTable } from '../../../shared/components/DataTable';
 import { Pagination } from '../../../shared/components/Pagination';
+import { EditLotExpirationModal, type LotExpirationTarget } from '../components/EditLotExpirationModal';
 import { ClipboardList, Search, ArrowUpCircle, ArrowDownCircle, X, Package, FileText, Download, Printer, ArrowLeft } from 'lucide-react';
-import type { Company, Product } from '../../../shared/types';
+import type { Company, Product, ProductLot } from '../../../shared/types';
 
 const MOVEMENT_LABELS: Record<string, { label: string; color: string; isEntry: boolean }> = {
   PURCHASE: { label: 'Compra', color: 'bg-primary-100 text-primary-800', isEntry: true },
@@ -54,6 +55,7 @@ export function KardexPage() {
   const tabParam = (searchParams.get('tab') as Tab) || 'kardex';
   const tab: Tab = tabParam === 'movimientos' ? 'movimientos' : 'kardex';
   const productIdParam = searchParams.get('productId') || '';
+  const [expirationTarget, setExpirationTarget] = useState<LotExpirationTarget | null>(null);
 
   const { data: companies } = useCompanies();
   const { data: productsData } = useProducts({ limit: 10000 });
@@ -112,12 +114,13 @@ export function KardexPage() {
 
         <div className="p-4">
           {tab === 'kardex' ? (
-            <KardexTab products={products} companyList={companyList} />
+            <KardexTab products={products} companyList={companyList} onEditExpiration={setExpirationTarget} />
           ) : (
             <MovementsTab products={products} companyList={companyList} />
           )}
         </div>
       </div>
+      {expirationTarget && <EditLotExpirationModal target={expirationTarget} companyList={companyList} onClose={() => setExpirationTarget(null)} />}
     </div>
   );
 }
@@ -127,7 +130,7 @@ interface SubProps {
   companyList: Company[];
 }
 
-function KardexTab({ products, companyList }: SubProps) {
+function KardexTab({ products, companyList, onEditExpiration }: SubProps & { onEditExpiration: (target: LotExpirationTarget) => void }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const productIdParam = searchParams.get('productId') || '';
   const [productSearch, setProductSearch] = useState('');
@@ -219,10 +222,10 @@ function KardexTab({ products, companyList }: SubProps) {
 
   const isEntry = (m: StockMovement) => MOVEMENT_LABELS[m.movementType]?.isEntry;
 
-  const lotByPurchaseId = new Map<string, any>();
+  const lotsByPurchaseId = new Map<string, ProductLot[]>();
   if (Array.isArray(productLots)) {
-    for (const lot of productLots as any[]) {
-      if (lot.purchaseId) lotByPurchaseId.set(lot.purchaseId, lot);
+    for (const lot of productLots as ProductLot[]) {
+      if (lot.purchaseId) lotsByPurchaseId.set(lot.purchaseId, [...(lotsByPurchaseId.get(lot.purchaseId) || []), lot]);
     }
   }
 
@@ -437,6 +440,7 @@ function KardexTab({ products, companyList }: SubProps) {
           companyId={companyId}
           productSearch={productSearch}
           onSelect={setSelectedProductId}
+          onEditExpiration={onEditExpiration}
         />
       ) : (
         <>
@@ -514,9 +518,9 @@ function KardexTab({ products, companyList }: SubProps) {
                   ) : (
                     displayMovements.map((m) => {
                       const entry = isEntry(m);
-                      const lot = m.movementType === 'PURCHASE' && m.referenceId
-                        ? lotByPurchaseId.get(m.referenceId)
-                        : undefined;
+                      const movementLots = m.movementType === 'PURCHASE' && m.referenceId
+                        ? (lotsByPurchaseId.get(m.referenceId) || []).filter(lot => lot.companyId === m.companyId)
+                        : [];
                       const priceColor = m.movementType === 'PURCHASE' ? 'text-red-600' :
                         m.movementType === 'SALE' ? 'text-green-600' : 'text-gray-700';
                       const hasPrice = typeof m.unitPrice === 'number' && m.unitPrice > 0;
@@ -528,18 +532,19 @@ function KardexTab({ products, companyList }: SubProps) {
                           </td>
                           <td className="border border-gray-300 px-2 py-1 text-gray-800">
                             <span className="block max-w-[320px] truncate" title={descFor(m)}>{descFor(m)}</span>
-                            {lot && (
-                              <span className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            {movementLots.map(lot => (
+                              <span key={lot.id} className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                 <span className="font-mono text-[11px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
                                   Lote: {lot.lotNumber}
                                 </span>
-                                {lot.expirationDate && (
-                                  <span className={`text-[11px] px-1.5 py-0.5 rounded border font-medium ${lotStatusKardex(lot.expirationDate).color}`}>
-                                    F.V. {formatDateEs(lot.expirationDate)}
-                                  </span>
-                                )}
+                                <button type="button" title="Cambiar fecha de vencimiento"
+                                  aria-label={`Cambiar vencimiento del lote ${lot.lotNumber} en ${getCompanyName(lot.companyId)}`}
+                                  onClick={() => onEditExpiration({ productId: productIdParam, productName: selectedProduct?.name || '', companyId: companyId || undefined, lotId: lot.id })}
+                                  className={`text-[11px] px-1.5 py-0.5 rounded border font-medium underline decoration-dotted underline-offset-2 hover:opacity-75 ${lotStatusKardex(lot.expirationDate).color}`}>
+                                  {lot.expirationDate ? `F.V. ${formatDateEs(lot.expirationDate)}` : 'Sin F.V.'}
+                                </button>
                               </span>
-                            )}
+                            ))}
                           </td>
                           <td className="border border-gray-300 px-2 py-1 text-center font-semibold text-primary-700">
                             {entry ? m.quantity : ''}
@@ -604,9 +609,14 @@ function KardexTab({ products, companyList }: SubProps) {
                             {lot.currentQuantity}
                           </td>
                           <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-700">
-                            {lot.expirationDate
-                              ? formatDateEs(lot.expirationDate, { day: '2-digit', month: '2-digit', year: 'numeric' })
-                              : '—'}
+                            <button type="button" title="Cambiar fecha de vencimiento"
+                              aria-label={`Cambiar vencimiento del lote ${lot.lotNumber} en ${lot.companyName || getCompanyName(lot.companyId)}`}
+                              onClick={() => onEditExpiration({ productId: productIdParam, productName: selectedProduct?.name || '', companyId: companyId || undefined, lotId: lot.id })}
+                              className="rounded px-1 py-0.5 underline decoration-dotted underline-offset-2 hover:bg-primary-50 hover:text-primary-700 focus-visible:ring-2 focus-visible:ring-primary-500">
+                              {lot.expirationDate
+                                ? formatDateEs(lot.expirationDate, { day: '2-digit', month: '2-digit', year: 'numeric' })
+                                : 'Sin fecha'}
+                            </button>
                           </td>
                           <td className="border border-gray-300 px-2 py-1.5 text-center text-gray-500">
                             {lot.receivedAt
@@ -636,9 +646,10 @@ interface ProductsListViewProps {
   companyId: string;
   productSearch: string;
   onSelect: (id: string) => void;
+  onEditExpiration: (target: LotExpirationTarget) => void;
 }
 
-function ProductsListView({ products, companyList, companyId, productSearch, onSelect }: ProductsListViewProps) {
+function ProductsListView({ products, companyList, companyId, productSearch, onSelect, onEditExpiration }: ProductsListViewProps) {
   const { data: stockSummary, isLoading: stockLoading } = useStockByProductSummary();
   const { data: laboratories } = useLaboratories();
   // Fetch all active lots with stock to find earliest upcoming expiration per product.
@@ -672,6 +683,7 @@ function ProductsListView({ products, companyList, companyId, productSearch, onS
 
   // Earliest (closest) upcoming expiration date per product.
   const earliestExpiryByProduct = new Map<string, string>();
+  const earliestLotByProduct = new Map<string, ProductLot>();
   if (Array.isArray(lotsData)) {
     for (const lot of lotsData as any[]) {
       if (!lot.expirationDate || !lot.productId) continue;
@@ -679,6 +691,7 @@ function ProductsListView({ products, companyList, companyId, productSearch, onS
       const prev = earliestExpiryByProduct.get(lot.productId);
       if (!prev || new Date(lot.expirationDate).getTime() < new Date(prev).getTime()) {
         earliestExpiryByProduct.set(lot.productId, lot.expirationDate);
+        earliestLotByProduct.set(lot.productId, lot);
       }
     }
   }
@@ -924,9 +937,16 @@ function ProductsListView({ products, companyList, companyId, productSearch, onS
                           : undefined
                       }
                     >
-                      {expiry
-                        ? formatDateEs(expiry, { day: '2-digit', month: '2-digit', year: 'numeric' })
-                        : '—'}
+                      <button type="button" title="Cambiar fecha de vencimiento" aria-label={`Cambiar vencimiento de ${p.name}`}
+                        onClick={event => {
+                          event.stopPropagation();
+                          onEditExpiration({ productId: p.id, productName: p.name, companyId: companyId || undefined, lotId: earliestLotByProduct.get(p.id)?.id });
+                        }}
+                        className="rounded px-1 py-0.5 underline decoration-dotted underline-offset-2 hover:bg-primary-50 hover:text-primary-700 focus-visible:ring-2 focus-visible:ring-primary-500">
+                        {expiry
+                          ? formatDateEs(expiry, { day: '2-digit', month: '2-digit', year: 'numeric' })
+                          : 'Sin fecha'}
+                      </button>
                     </td>
                   </tr>
                 );
@@ -1124,8 +1144,8 @@ function MovementsTab({ products, companyList }: SubProps) {
       key: 'description',
       header: 'Descripcion',
       render: (item: StockMovement) => (
-        <span className="text-sm text-gray-600 max-w-[200px] truncate block" title={item.description}>
-          {item.description}
+        <span className="text-sm text-gray-600 max-w-[200px] truncate block" title={item.displayDescription || item.description}>
+          {item.displayDescription || item.description}
         </span>
       ),
     },

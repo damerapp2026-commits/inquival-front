@@ -1,5 +1,22 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { productLotService } from '../services/productLotService';
+import toast from 'react-hot-toast';
+
+export function useUpdateLotExpiration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, expirationDate }: { id: string; expirationDate: string }) => productLotService.updateExpirationDate(id, expirationDate),
+    onSuccess: async () => {
+      await Promise.all(['product-lots', 'product-lots-by-product', 'product-lots-expiring', 'product-lots-all']
+        .map(key => qc.invalidateQueries({ queryKey: [key] })));
+      toast.success('Fecha de vencimiento actualizada');
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.message;
+      toast.error((Array.isArray(message) ? message[0] : message) || 'No se pudo actualizar el vencimiento');
+    },
+  });
+}
 
 export function useProductLots(companyId: string, productId?: string) {
   return useQuery({

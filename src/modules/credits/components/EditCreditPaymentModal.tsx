@@ -1,3 +1,4 @@
+import { CreditAccountReference } from './CreditAccountReference';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../shared/components/Modal';
 import { AlertCircle, CalendarDays, DollarSign, History, UserCheck } from 'lucide-react';
@@ -101,7 +102,7 @@ export function EditCreditPaymentModal({ isOpen, onClose, credit, payment }: Pro
         <div className="bg-gray-50 rounded-xl p-3 text-sm">
           <div className="flex justify-between">
             <span className="text-gray-500">Cuenta</span>
-            <span className="font-medium text-gray-800 truncate ml-2">{credit.name || 'Sin nombre'}</span>
+            <span className="font-medium text-gray-800 ml-2"><CreditAccountReference credit={credit} /></span>
           </div>
           <div className="flex justify-between mt-1">
             <span className="text-gray-500">Pendiente actual</span>

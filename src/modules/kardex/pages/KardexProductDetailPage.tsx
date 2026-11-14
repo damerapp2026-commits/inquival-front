@@ -38,6 +38,7 @@ interface StockMovement {
   referenceId?: string;
   referenceType?: string;
   description: string;
+  displayDescription?: string;
   date: string;
 }
 
@@ -190,8 +191,8 @@ function MovementsTab({ productId, companyList, getCompanyName }: TabProps) {
         return (
           <div className="flex items-start gap-2">
             <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dot}`}></span>
-            <span className="text-sm text-gray-700 max-w-[280px] truncate block" title={item.description}>
-              {item.description}
+            <span className="text-sm text-gray-700 max-w-[280px] truncate block" title={item.displayDescription || item.description}>
+              {item.displayDescription || item.description}
             </span>
           </div>
         );

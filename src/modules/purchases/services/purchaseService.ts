@@ -94,6 +94,7 @@ export const purchaseService = {
     getAll: (params?: any) => api.get('/purchases/orders', { params }).then((r) => r.data.data),
     getById: (id: string) => api.get(`/purchases/orders/${id}`).then((r) => r.data.data),
     create: (data: any) => api.post('/purchases/orders', data).then((r) => r.data.data),
+    update: ({ id, data }: { id: string; data: any }) => api.patch(`/purchases/orders/${id}`, data).then(r => r.data.data),
     updateStatus: ({ id, status }: { id: string; status: string }) =>
       api.patch(`/purchases/orders/${id}/status`, { status }).then((r) => r.data.data),
     convert: ({ id, purchaseId }: { id: string; purchaseId: string }) =>

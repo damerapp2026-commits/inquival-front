@@ -1,3 +1,5 @@
+import { CreditAccountReference } from './CreditAccountReference';
+import { creditAccountLabel } from '../utils/creditReference';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../../shared/components/Modal';
 import { AlertCircle, CalendarDays, DollarSign, History, Layers, Loader2, UserCheck } from 'lucide-react';
@@ -147,9 +149,9 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
     for (const row of selected) {
       const credit = payableCredits.find((c) => c.id === row.creditId);
       if (!credit) continue;
-      if (row.amount <= 0) errs.push(`Monto inválido para "${credit.name || 'sin nombre'}"`);
+      if (row.amount <= 0) errs.push(`Monto inválido para "${creditAccountLabel(credit)}"`);
       if (row.amount > credit.pendingAmount) {
-        errs.push(`"${credit.name || 'sin nombre'}" excede el pendiente (${formatMoney(credit.pendingAmount, currency)})`);
+        errs.push(`"${creditAccountLabel(credit)}" excede el pendiente (${formatMoney(credit.pendingAmount, currency)})`);
       }
     }
     return errs;
@@ -163,7 +165,7 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
       if (remaining <= 0) break;
       const apply = round2(Math.min(c.pendingAmount, remaining));
       if (apply <= 0) continue;
-      preview.push({ creditId: c.id, name: c.name || 'Sin nombre', amount: apply });
+      preview.push({ creditId: c.id, name: creditAccountLabel(c), amount: apply });
       remaining = round2(remaining - apply);
     }
     if (preview.length > 0 && remaining < 0) {
@@ -390,8 +392,8 @@ export function BatchPaymentModal({ isOpen, onClose, clientId, clientName, openC
                         className="w-4 h-4 text-primary-600 rounded"
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-gray-800 truncate">
-                          {credit.name || <span className="italic text-gray-400">Sin nombre</span>}
+                        <div className="text-sm font-medium text-gray-800">
+                          <CreditAccountReference credit={credit} />
                         </div>
                         <div className="text-xs text-gray-500">
                           {new Date(credit.createdAt).toLocaleDateString('es-PE')} · Pendiente {formatMoney(credit.pendingAmount, currency)}

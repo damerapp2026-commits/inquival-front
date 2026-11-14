@@ -82,7 +82,7 @@ for (const timezone of ['America/Lima', 'Asia/Tokyo', 'America/New_York']) {
   });
 }
 
-test('PDF follows the sketch: fiscal header, arrival address, tax column, amount in words and delivery terms', () => {
+test('PDF follows the sketch: fiscal header, arrival address, base and gross prices, amount in words and delivery terms', () => {
   const document = buildPurchaseOrderPdfDefinition(fixture);
   const all = nodes(document);
   const text = all.filter(node => typeof node.text === 'string').map(node => node.text).join('\n');
@@ -90,7 +90,8 @@ test('PDF follows the sketch: fiscal header, arrival address, tax column, amount
   assert.match(text, /RUC: 20614419631/);
   assert.match(text, /Fecha de pedido/);
   assert.match(text, /PUNTO DE LLEGADA/);
-  assert.match(text, /IGV\nINCLUIDO/);
+  assert.match(text, /P\. UNIT\.\nSIN IGV/);
+  assert.match(text, /P\. UNIT\.\nCON IGV/);
   assert.match(text, /Son: mil doscientos cuarenta con 00\/100 dólares americanos/);
   assert.match(text, /45 días/);
   assert.match(text, /27\/12\/2026/);
@@ -102,4 +103,32 @@ test('PDF follows the sketch: fiscal header, arrival address, tax column, amount
   assert.ok(itemTable.table.body.every(row => row.length === 7));
   const legacy = buildPurchaseOrderPdfDefinition({ ...fixture, order: { ...fixture.order, deliveryPlace: 'Almacén 2' } });
   assert.doesNotMatch(nodes(legacy).map(node => node.text || '').join('\n'), /Almacén 2/);
+});
+
+const hortus = require('./fixtures/purchase-order-hortus.cjs');
+test('Hortus net prices plus IGV match the supplied PDF, including an uncatalogued exempt product', () => {
+  const amounts = purchaseOrderAmounts(hortus.order, hortus.products);
+  assert.equal(amounts.subtotal, 4740);
+  assert.equal(amounts.igv, 540);
+  assert.equal(amounts.total, 5280);
+  assert.deepEqual(amounts.lines.map(i => i.total), [1274.4, 2265.6, 1740]);
+  const document = buildPurchaseOrderPdfDefinition(hortus);
+  const text = nodes(document).map(n => n.text || '').join('\n');
+  for (const value of ['Sandia Santa Matilde', 'Juan Caceda', 'Transportista de prueba', 'Agencia de prueba']) {
+    assert.ok(text.includes(value), value);
+  }
+  assert.match(text, /US\$ 4740\.00/);
+  assert.match(text, /US\$ 540\.00/);
+  assert.match(text, /US\$ 5280\.00/);
+  assert.doesNotMatch(text, /Almacén|undefined|OC_META/);
+});
+test('net rounding conserves cents across taxable, exempt, unaffected and fractional quantities', () => {
+  const amounts = calculatePurchaseOrderAmounts([
+    { productName: 'A', quantity: 1, unitPriceSinIgv: 0.03, taxType: 'GRAVADO' },
+    { productName: 'B', quantity: 1, unitPriceSinIgv: 0.03, taxType: 'GRAVADO' },
+    { productName: 'C', quantity: 0.5, unitPriceSinIgv: 87, taxType: 'EXONERADO' },
+    { productName: 'D', quantity: 2, unitPriceSinIgv: 10, taxType: 'INAFECTO' },
+  ], [], undefined, false);
+  assert.equal(amounts.subtotal, 63.56); assert.equal(amounts.igv, 0.01); assert.equal(amounts.total, 63.57);
+  assert.equal(amounts.lines.reduce((s, i) => s + Math.round(i.igv * 100), 0), 1);
 });

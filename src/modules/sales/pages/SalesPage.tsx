@@ -4,6 +4,7 @@ import { useQueries } from '@tanstack/react-query';
 import { useSales, useCreateSale, useCancelSale, useUpdateVoucher } from '../hooks/useSales';
 import { saleService } from '../services/saleService';
 import { useLoans, useCreateLoan, useReturnLoanItems } from '../../loans/hooks/useLoans';
+import { groupLoanItems } from '../../loans/utils/loanItems';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useClients } from '../../clients/hooks/useClients';
@@ -299,15 +300,15 @@ export function SalesPage() {
     loanType: 'OUTGOING' | 'INCOMING';
     borrowerName: string;
     notes: string;
-    items: { productId: string; companyId: string; quantity: number }[];
+    items: { productId: string; quantity: number }[];
   }>({
     loanType: 'OUTGOING',
     borrowerName: '',
     notes: '',
-    items: [{ productId: '', companyId: '', quantity: 0 }],
+    items: [{ productId: '', quantity: 0 }],
   });
 
-  const [returnForm, setReturnForm] = useState<{ items: { productId: string; companyId: string; quantity: number; max: number }[]; notes: string }>({ items: [], notes: '' });
+  const [returnForm, setReturnForm] = useState<{ items: { productId: string; quantity: number; max: number }[]; notes: string }>({ items: [], notes: '' });
 
   const saleTotal = form.items.reduce((s, i) => s + i.subtotal, 0);
   const isCredit = form.paymentMode === 'CREDIT';
@@ -471,11 +472,11 @@ export function SalesPage() {
 
   // Loan form handlers
   const openLoanCreate = () => {
-    setLoanForm({ loanType: 'OUTGOING', borrowerName: '', notes: '', items: [{ productId: '', companyId: '', quantity: 0 }] });
+    setLoanForm({ loanType: 'OUTGOING', borrowerName: '', notes: '', items: [{ productId: '', quantity: 0 }] });
     setShowLoanModal(true);
   };
 
-  const addLoanItem = () => setLoanForm(prev => ({ ...prev, items: [...prev.items, { productId: '', companyId: '', quantity: 0 }] }));
+  const addLoanItem = () => setLoanForm(prev => ({ ...prev, items: [...prev.items, { productId: '', quantity: 0 }] }));
   const removeLoanItem = (idx: number) => setLoanForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
 
   const updateLoanItem = (idx: number, field: string, value: any) => {
@@ -488,16 +489,20 @@ export function SalesPage() {
 
   const handleLoanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await createLoan.mutateAsync(loanForm);
-    setShowLoanModal(false);
+    try {
+      await createLoan.mutateAsync(loanForm);
+      setShowLoanModal(false);
+    } catch {
+      // El hook muestra el error; conservar los datos para corregir o reintentar.
+    }
   };
 
   // Return handlers
   const openReturn = (loan: Loan) => {
     setReturnForm({
-      items: loan.items
+      items: groupLoanItems(loan.items)
         .filter(i => i.quantity - i.returnedQuantity > 0)
-        .map(i => ({ productId: i.productId, companyId: i.companyId, quantity: 0, max: i.quantity - i.returnedQuantity })),
+        .map(i => ({ productId: i.productId, quantity: 0, max: Math.round((i.quantity - i.returnedQuantity) * 1e6) / 1e6 })),
       notes: '',
     });
     setReturningLoan(loan);
@@ -516,8 +521,12 @@ export function SalesPage() {
     if (!returningLoan) return;
     const itemsToReturn = returnForm.items.filter(i => i.quantity > 0).map(({ max, ...item }) => item);
     if (itemsToReturn.length === 0) return;
-    await returnLoanItems.mutateAsync({ loanId: returningLoan.id, data: { items: itemsToReturn, notes: returnForm.notes || undefined } });
-    setReturningLoan(null);
+    try {
+      await returnLoanItems.mutateAsync({ loanId: returningLoan.id, data: { items: itemsToReturn, notes: returnForm.notes || undefined } });
+      setReturningLoan(null);
+    } catch {
+      // Mantener abierta la devolución con las cantidades ingresadas.
+    }
   };
 
   const companyList = Array.isArray(companies) ? companies : [];
@@ -895,7 +904,7 @@ export function SalesPage() {
     { key: 'date', header: 'Fecha', render: (item: Loan) => formatDateEs(item.date) },
     { key: 'loanType', header: 'Tipo', render: (item: Loan) => loanTypeBadge(item.loanType) },
     { key: 'borrowerName', header: 'Tienda', render: (item: Loan) => item.borrowerName },
-    { key: 'items', header: 'Productos', render: (item: Loan) => item.items.map(i => `${getProductName(i.productId)} x${i.quantity}`).join(', ') },
+    { key: 'items', header: 'Productos', render: (item: Loan) => groupLoanItems(item.items).map(i => `${getProductName(i.productId)} x${i.quantity}`).join(', ') },
     { key: 'status', header: 'Estado', render: (item: Loan) => loanStatusBadge(item.status) },
     { key: 'actions', header: '', render: (item: Loan) => (
       <div className="flex items-center gap-2">
@@ -1786,8 +1795,8 @@ export function SalesPage() {
           </div>
           <div className={`rounded-lg px-3 py-2 text-xs ${loanForm.loanType === 'INCOMING' ? 'bg-orange-50 text-orange-700' : 'bg-purple-50 text-purple-700'}`}>
             {loanForm.loanType === 'INCOMING'
-              ? 'El stock de tu almacén aumenta al registrar. Al devolver, el stock disminuye.'
-              : 'El stock de tu almacén disminuye al registrar. Al devolver, el stock aumenta.'}
+              ? 'El stock del producto aumenta al registrar. Al devolverlo a la tienda, el stock disminuye.'
+              : 'El stock del producto disminuye al registrar. Cuando la tienda lo devuelve, el stock aumenta.'}
           </div>
 
           {/* Tienda (obligatorio) */}
@@ -1810,14 +1819,7 @@ export function SalesPage() {
                   {loanForm.items.length > 1 && (
                     <button type="button" onClick={() => removeLoanItem(idx)} className="absolute top-2 right-2 text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
                   )}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Almacén</label>
-                      <select value={item.companyId} onChange={(e) => updateLoanItem(idx, 'companyId', e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm bg-white" required>
-                        <option value="">Seleccionar...</option>
-                        {companyList.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Producto</label>
                       <SearchableSelect
@@ -1831,7 +1833,7 @@ export function SalesPage() {
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
-                      <input type="number" min="0.01" step="0.01" value={item.quantity || ''} onChange={(e) => updateLoanItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
+                      <input type="number" min="0.01" step="0.01" aria-label={`Cantidad a prestar ${idx + 1}`} value={item.quantity || ''} onChange={(e) => updateLoanItem(idx, 'quantity', parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 border rounded text-sm" required />
                     </div>
                   </div>
                 </div>
@@ -1889,17 +1891,15 @@ export function SalesPage() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Producto</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Almacén</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Prestado</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Devuelto</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Pendiente</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {viewingLoan.items.map((item, idx) => (
+                    {groupLoanItems(viewingLoan.items).map((item, idx) => (
                       <tr key={idx}>
                         <td className="px-3 py-2 font-medium">{getProductName(item.productId)}</td>
-                        <td className="px-3 py-2 text-gray-600">{getCompanyName(item.companyId)}</td>
                         <td className="px-3 py-2 text-right">{item.quantity}</td>
                         <td className="px-3 py-2 text-right text-primary-600">{item.returnedQuantity}</td>
                         <td className="px-3 py-2 text-right font-medium text-orange-600">{item.quantity - item.returnedQuantity}</td>
@@ -1921,8 +1921,11 @@ export function SalesPage() {
                         <span className="text-xs font-medium text-primary-700">Devolución #{idx + 1}</span>
                         <span className="text-xs text-gray-500">{formatDateEs(ret.date)}</span>
                       </div>
+                      <div className="text-sm font-medium text-gray-800 mb-1">
+                        {viewingLoan.loanType === 'INCOMING' ? 'A la tienda: ' : 'De la tienda: '}{viewingLoan.borrowerName}
+                      </div>
                       <div className="text-sm text-gray-700">
-                        {ret.items.map((ri, ridx) => (
+                        {groupLoanItems(ret.items).map((ri, ridx) => (
                           <span key={ridx}>{ridx > 0 ? ', ' : ''}{getProductName(ri.productId)} x{ri.quantity}</span>
                         ))}
                       </div>
@@ -1962,12 +1965,12 @@ export function SalesPage() {
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <span className="text-sm font-medium">{getProductName(item.productId)}</span>
-                        <span className="text-xs text-gray-500 ml-2">({getCompanyName(item.companyId)})</span>
                       </div>
                       <span className="text-xs text-gray-500">Máx: {item.max}</span>
                     </div>
                     <input
                       type="number"
+                      aria-label={`Cantidad a devolver de ${getProductName(item.productId)}`}
                       min="0"
                       max={item.max}
                       step="0.01"

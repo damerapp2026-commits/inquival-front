@@ -74,6 +74,7 @@ export function AppRoutes() {
         <Route path="purchases" element={<AdminOnly><Suspense fallback={<Loading />}><PurchasesPage /></Suspense></AdminOnly>} />
         <Route path="purchases/new" element={<AdminOnly><Suspense fallback={<Loading />}><NewPurchasePage /></Suspense></AdminOnly>} />
         <Route path="purchases/orders/new" element={<AdminOnly><Suspense fallback={<Loading />}><NewPurchaseOrderPage /></Suspense></AdminOnly>} />
+        <Route path="purchases/orders/:id/edit" element={<AdminOnly><Suspense fallback={<Loading />}><NewPurchaseOrderPage /></Suspense></AdminOnly>} />
         <Route path="purchases/orders/:id/convert" element={<AdminOnly><Suspense fallback={<Loading />}><ConvertPurchaseOrderPage /></Suspense></AdminOnly>} />
         <Route path="purchases/:id" element={<AdminOnly><Suspense fallback={<Loading />}><PurchaseDetailPage /></Suspense></AdminOnly>} />
         <Route path="purchases/:id/edit" element={<AdminOnly><Suspense fallback={<Loading />}><EditPurchasePage /></Suspense></AdminOnly>} />

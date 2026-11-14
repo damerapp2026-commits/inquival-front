@@ -101,3 +101,22 @@ for (const timezone of ['America/Lima', 'UTC', 'Asia/Tokyo']) {
     assert.doesNotMatch(content, /13\/11\/2026/);
   });
 }
+
+for (const issuer of [
+  { legalName: 'EMPRESA A S.A.C.', ruc: '20111111111', address: 'Dirección de Empresa A' },
+  { legalName: 'EMPRESA B S.A.C.', ruc: '20222222222', address: 'Dirección de Empresa B' },
+]) test(`uses the quote's saved issuer instead of general settings: ${issuer.legalName}`, () => {
+  const quote = { ...fixture.quote, fiscalEntityId: '000000000000000000000101', issuer };
+  const content = text(build({ quote, fiscalEntity: { id: quote.fiscalEntityId, legalName: 'Nombre actualizado', ruc: '20999999999', address: 'Dirección actualizada' },
+    company: { name: 'Almacén', ruc: '20888888888', address: 'Almacén de stock' } }));
+  for (const value of [issuer.legalName, issuer.ruc, issuer.address]) assert.ok(content.includes(value), value);
+  for (const value of [fixture.companyInfo.legalName, fixture.companyInfo.ruc, '20999999999', 'Almacén de stock']) assert.ok(!content.includes(value), value);
+});
+test('can print an ID-only quote from its matching issuer without substituting another company address', () => {
+  const issuer = { id: '000000000000000000000101', legalName: 'EMPRESA SIN DIRECCIÓN', ruc: '20333333333', isActive: true };
+  const content = text(build({ quote: { ...fixture.quote, fiscalEntityId: issuer.id }, fiscalEntity: issuer }));
+  assert.match(content, /EMPRESA SIN DIRECCIÓN/); assert.match(content, /20333333333/);
+  // The customer can share the branch address; check the issuer helper directly.
+  const { getQuoteIssuer } = require('../src/modules/quotes/utils/quoteIssuer.ts');
+  assert.equal(getQuoteIssuer({ fiscalEntityId: issuer.id }, issuer).address, undefined);
+});
