@@ -87,6 +87,17 @@ async function main() {
     assert.equal(await page.getByRole('spinbutton', { name: 'Precio final de Producto de prueba', exact: true }).inputValue(), '100.00');
     await page.reload();
     await waitChecked(false);
+    const statusFilter = page.getByLabel('Estado del producto', { exact: true });
+    await statusFilter.selectOption('inactive');
+    assert.equal(await page.getByRole('switch').count(), 2);
+    assert.equal(await toggle.getAttribute('aria-checked'), 'false');
+    await statusFilter.selectOption('active');
+    assert.equal(await toggle.count(), 0);
+    assert.equal(await page.getByRole('switch').count(), 1);
+    await page.getByRole('button', { name: 'Limpiar', exact: true }).click();
+    await waitChecked(false);
+    assert.equal(await statusFilter.inputValue(), 'all');
+    assert.equal(await page.getByRole('switch').count(), 3);
     await page.goto(`${base}/pos`);
     await page.getByRole('button').filter({ has: page.getByText('Otro producto activo', { exact: true }) }).waitFor();
     assert.equal(await targetCard.count(), 0);

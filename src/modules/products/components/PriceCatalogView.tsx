@@ -143,6 +143,7 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [laboratoryId, setLaboratoryId] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [edits, setEdits] = useState<Record<string, Partial<Record<EditableField, string>>>>({});
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
@@ -270,6 +271,8 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return merged.filter((r) => {
+      if (statusFilter === 'active' && !r.isActive) return false;
+      if (statusFilter === 'inactive' && r.isActive) return false;
       if (categoryId && r.categoryId !== categoryId) return false;
       if (laboratoryId && (r.laboratoryId || '') !== laboratoryId) return false;
       if (!term) return true;
@@ -278,10 +281,10 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
         r.activeIngredient?.toLowerCase().includes(term)
       );
     });
-  }, [merged, search, categoryId, laboratoryId]);
+  }, [merged, search, categoryId, laboratoryId, statusFilter]);
 
-  const clearFilters = () => { setSearch(''); setCategoryId(''); setLaboratoryId(''); };
-  const hasActiveFilters = !!(search || categoryId || laboratoryId);
+  const clearFilters = () => { setSearch(''); setCategoryId(''); setLaboratoryId(''); setStatusFilter('all'); };
+  const hasActiveFilters = !!(search || categoryId || laboratoryId || statusFilter !== 'all');
 
   const isLoading = catalogLoading || productsLoading;
   const isFetching = catalogFetching || productsFetching;
@@ -635,6 +638,16 @@ export function PriceCatalogView({ enabled, readOnly = false }: Props) {
           >
             <option value="">Todos los laboratorios</option>
             {laboratories.filter((l: any) => l.isActive).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+          <select
+            aria-label="Estado del producto"
+            value={statusFilter}
+            onChange={event => setStatusFilter(event.target.value as typeof statusFilter)}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+          >
+            <option value="all">Todos los estados</option>
+            <option value="active">Activos</option>
+            <option value="inactive">Inactivos</option>
           </select>
           {hasActiveFilters && (
             <button
