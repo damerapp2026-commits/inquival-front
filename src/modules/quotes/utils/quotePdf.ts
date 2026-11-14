@@ -1,4 +1,4 @@
-import { getQuoteIssuer } from './quoteIssuer';
+import { getQuoteIssuer, getQuotePaymentMethods } from './quoteIssuer';
 import type { Quote, Product, Company, Client, FiscalEntity } from '../../../shared/types';
 import { numberToWords } from './numberToWords';
 import { COMPANY_INFO } from '../../../config/companyInfo';
@@ -64,8 +64,8 @@ const BRAND_GREEN_DARK = '#15803d';
 const BORDER_GRAY = '#94a3b8';
 const TABLE_HEADER_FILL = '#dcfce7';
 
-function buildPaymentMethodsBlock(): any[] {
-  const { bankAccounts, detraccionAccount, yape, plin } = COMPANY_INFO;
+function buildPaymentMethodsBlock(paymentMethods: ReturnType<typeof getQuotePaymentMethods>): any[] {
+  const { bankAccounts, detraccionAccount, yape, plin } = paymentMethods;
   const hasAny = (bankAccounts && bankAccounts.length > 0) || detraccionAccount?.accountNumber || yape || plin;
   if (!hasAny) return [];
 
@@ -473,7 +473,7 @@ export function buildQuotePdfDefinition({ quote, products, company, fiscalEntity
       ] : []),
 
       ...buildPaymentsBlock(quote, currencySymbol),
-      ...buildPaymentMethodsBlock(),
+      ...buildPaymentMethodsBlock(getQuotePaymentMethods(quote, fiscalEntity)),
       {
         unbreakable: true,
         stack: [

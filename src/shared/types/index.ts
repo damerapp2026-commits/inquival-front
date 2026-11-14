@@ -1,3 +1,5 @@
+import type { BankAccount } from '../../config/companyInfo';
+
 export interface PaginatedResponse<T> { data: T[]; total: number; }
 export interface ApiResponse<T> { data: T; message: string; }
 
@@ -16,7 +18,7 @@ export interface SalePayment { paymentMethodId: string; paymentMethodName: strin
 export interface Sale { id: string; companyId?: string; clientId?: string; clientName?: string; items: SaleItem[]; total: number; voucherType: string; isCredit: boolean; payments: SalePayment[]; sellerId?: string; sellerName?: string; createdBy?: string; isCancelled?: boolean; cancelledBy?: string; cancelledAt?: string; cancelReason?: string; date: string; series?: string; number?: number; saleNumber?: string; createdAt: string; creditId?: string; creditStatus?: 'PENDING' | 'PARTIAL' | 'PAID'; creditPaidAmount?: number; creditPendingAmount?: number; creditTotalAmount?: number; isCourtesy?: boolean; currency?: string; exchangeRate?: number; totalUsd?: number; }
 export interface SaleItem { productId: string; productName?: string; companyId: string; quantity: number; priceTier: string; unitPrice: number; subtotal: number; unitPriceUsd?: number; subtotalUsd?: number; }
 export interface Supplier { id: string; ruc: string; businessName: string; address?: string; phone?: string; isActive: boolean; }
-export interface FiscalEntity { id: string; legalName: string; ruc: string; address?: string; isDefault: boolean; isActive: boolean; createdAt?: string; updatedAt?: string; }
+export interface FiscalEntity { id: string; legalName: string; ruc: string; address?: string; bankAccounts?: BankAccount[]; isDefault: boolean; isActive: boolean; createdAt?: string; updatedAt?: string; }
 export type PurchaseDocumentType = 'FACTURA' | 'BOLETA' | 'GUIA' | 'NOTA_CREDITO' | 'OTRO';
 export interface Purchase { id: string; companyId: string; supplier: string; supplierId?: string; supplierRuc?: string; items: PurchaseItem[]; totalCost: number; totalCostUsd?: number; exchangeRate?: number; paymentType: 'CONTADO' | 'CREDITO' | 'BONIFICACION'; paymentMethodId?: string; paymentMethodName?: string; addToStock?: boolean; paymentScheduleType?: 'SINGLE_DATE' | 'INSTALLMENTS'; dueDate?: string; installments?: { amount: number; dueDate: string; status?: string }[]; date: string; createdAt: string; documentType?: PurchaseDocumentType; documentSeries?: string; documentNumber?: string; issueDate?: string; grSeries?: string; grNumber?: string; grDate?: string; detraccion?: boolean; detraccionAmountPen?: number; detraccionDueDate?: string; fiscalEntityId?: string; }
 export interface PurchaseItem { productId: string; companyId?: string; quantity: number; unitCost?: number; unitPriceSinIgv?: number; unitPriceConIgv?: number; flete?: number; otrosCostos?: number; precioVenta?: number; precioMinorista?: number; precioEspecial?: number; markupPercent?: number; taxType?: string; lotNumber?: string; expirationDate?: string; }

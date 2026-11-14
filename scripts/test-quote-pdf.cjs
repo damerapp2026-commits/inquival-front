@@ -120,3 +120,41 @@ test('can print an ID-only quote from its matching issuer without substituting a
   const { getQuoteIssuer } = require('../src/modules/quotes/utils/quoteIssuer.ts');
   assert.equal(getQuoteIssuer({ fiscalEntityId: issuer.id }, issuer).address, undefined);
 });
+
+test('prints only the selected company bank accounts, preserving leading zeros and both currencies', () => {
+  const fiscalEntity = { id: '000000000000000000000101', legalName: 'EMPRESA B', ruc: '20222222222', bankAccounts: [
+    { bank: 'Banco B soles', currency: 'PEN', accountNumber: '001234567890', cci: '00200012345678900012', holder: 'Titular de B' },
+    { bank: 'Banco B dólares', currency: 'USD', accountNumber: '000098765432', holder: 'Titular de B' },
+  ] };
+  const quote = { ...fixture.quote, fiscalEntityId: fiscalEntity.id, issuer: { legalName: fiscalEntity.legalName, ruc: fiscalEntity.ruc } };
+  const content = text(build({ quote, fiscalEntity }));
+  for (const account of fiscalEntity.bankAccounts) {
+    assert.ok(content.includes(account.accountNumber));
+    assert.ok(content.includes(`${account.bank} (${account.currency})`));
+  }
+  assert.ok(content.includes(fiscalEntity.bankAccounts[0].cci));
+  for (const account of fixture.companyInfo.bankAccounts) assert.ok(!content.includes(account.accountNumber));
+  assert.doesNotMatch(content, /Yape|Plin|DETRACCIONES/);
+});
+
+test('bank changes update existing quote PDFs while the saved issuer identity stays unchanged', () => {
+  const fiscalEntity = { id: '000000000000000000000102', legalName: 'Nombre actualizado', ruc: '20222222222', bankAccounts: [
+    { bank: 'Banco actualizado', currency: 'PEN', accountNumber: '000222333', holder: 'Empresa B' },
+  ] };
+  const quote = { ...fixture.quote, fiscalEntityId: fiscalEntity.id, issuer: { legalName: 'Nombre guardado', ruc: '20222222222' } };
+  const content = text(build({ quote, fiscalEntity }));
+  assert.match(content, /Nombre guardado/);
+  assert.match(content, /000222333/);
+  assert.doesNotMatch(content, /Nombre actualizado/);
+  fiscalEntity.bankAccounts = [];
+  const cleared = text(build({ quote, fiscalEntity }));
+  assert.doesNotMatch(cleared, /000222333|FORMAS DE PAGO|CUENTA DE EJEMPLO/);
+});
+
+test('missing or mismatched company accounts never substitute global accounts or another company accounts', () => {
+  const quote = { ...fixture.quote, fiscalEntityId: '000000000000000000000103', issuer: { legalName: 'Empresa sin cuentas', ruc: '20333333333' } };
+  for (const fiscalEntity of [undefined, { id: quote.fiscalEntityId, bankAccounts: [] }, { id: '000000000000000000000104', bankAccounts: fixture.companyInfo.bankAccounts }]) {
+    const content = text(build({ quote, fiscalEntity }));
+    assert.doesNotMatch(content, /FORMAS DE PAGO|CUENTA DE EJEMPLO/);
+  }
+});

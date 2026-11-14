@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuotes, useUpdateQuoteStatus } from '../hooks/useQuotes';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities';
-import { getQuoteIssuer } from '../utils/quoteIssuer';
+import { getQuoteIssuer, getQuotePaymentMethods } from '../utils/quoteIssuer';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useClients } from '../../clients/hooks/useClients';
 import { useAuth } from '../../../app/providers/AuthProvider';
@@ -369,6 +369,7 @@ export function QuotesPage() {
         <QuoteDetailModal
           quote={viewQuote}
           issuer={getQuoteIssuer(viewQuote, fiscalEntities.find(entity => entity.id === viewQuote.fiscalEntityId), getCompany(viewQuote.companyId))}
+          bankAccounts={getQuotePaymentMethods(viewQuote, fiscalEntities.find(entity => entity.id === viewQuote.fiscalEntityId)).bankAccounts}
           products={products}
           client={getClient(viewQuote.clientId)}
           onClose={() => setViewQuote(null)}
@@ -538,6 +539,7 @@ function CreditCalendar({ allQuotes, clientById, onSelectQuote }: CreditCalendar
 interface QuoteDetailModalProps {
   quote: Quote;
   issuer: QuoteIssuer;
+  bankAccounts: ReturnType<typeof getQuotePaymentMethods>['bankAccounts'];
   products: Product[];
   client?: Client;
   onClose: () => void;
@@ -545,7 +547,7 @@ interface QuoteDetailModalProps {
   onDownload: () => void;
 }
 
-function QuoteDetailModal({ quote, issuer, products, client, onClose, onPrint, onDownload }: QuoteDetailModalProps) {
+function QuoteDetailModal({ quote, issuer, bankAccounts, products, client, onClose, onPrint, onDownload }: QuoteDetailModalProps) {
   const productById = useMemo(() => {
     const m: Record<string, Product> = {};
     products.forEach(p => { m[p.id] = p; });
@@ -613,6 +615,19 @@ function QuoteDetailModal({ quote, issuer, products, client, onClose, onPrint, o
             <p className="font-semibold text-gray-800 mt-1">{issuer.legalName}</p>
             {issuer.ruc && <p className="text-xs font-mono text-gray-500 mt-0.5">RUC {issuer.ruc}</p>}
             {issuer.address && <p className="text-xs text-gray-500 mt-0.5">{issuer.address}</p>}
+            {bankAccounts.length > 0 && (
+              <div className="mt-3 space-y-2 border-t border-primary-100 pt-3">
+                <p className="text-xs font-semibold text-gray-600">Cuentas bancarias</p>
+                {bankAccounts.map((account, index) => (
+                  <div key={index} className="text-xs text-gray-600 break-words">
+                    <p className="font-medium">{account.bank} · {account.currency}</p>
+                    <p className="font-mono">N° {account.accountNumber}</p>
+                    {account.cci && <p className="font-mono">CCI {account.cci}</p>}
+                    <p>{account.holder}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           {/* Info grid */}
           <div className="grid grid-cols-2 gap-4">

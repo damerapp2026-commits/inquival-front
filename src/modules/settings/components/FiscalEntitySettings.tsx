@@ -1,21 +1,24 @@
 import { useState } from 'react';
-import { Building2, Plus, Save, Star, StarOff, Pencil, X } from 'lucide-react';
+import { Building2, Plus, Save, Star, StarOff, Pencil, Trash2, X } from 'lucide-react';
 import { useFiscalEntities, useCreateFiscalEntity, useUpdateFiscalEntity } from '../../fiscal-entities/hooks/useFiscalEntities';
 import type { FiscalEntity } from '../../../shared/types';
+import type { BankAccount } from '../../../config/companyInfo';
 
 interface EntityForm {
   legalName: string;
   ruc: string;
   address: string;
+  bankAccounts: BankAccount[];
   isDefault: boolean;
   isActive: boolean;
 }
 
-const blankForm = (): EntityForm => ({ legalName: '', ruc: '', address: '', isDefault: false, isActive: true });
+const blankForm = (): EntityForm => ({ legalName: '', ruc: '', address: '', bankAccounts: [], isDefault: false, isActive: true });
 const entityToForm = (e: FiscalEntity): EntityForm => ({
   legalName: e.legalName,
   ruc: e.ruc,
   address: e.address || '',
+  bankAccounts: (e.bankAccounts || []).map(account => ({ ...account })),
   isDefault: e.isDefault,
   isActive: e.isActive,
 });
@@ -47,6 +50,7 @@ function EntityRow({ entity, onEdit }: { entity: FiscalEntity; onEdit: (e: Fisca
         </div>
         <p className="text-xs text-gray-500 mt-0.5">RUC {entity.ruc}</p>
         {entity.address && <p className="text-xs text-gray-400 mt-0.5 truncate">{entity.address}</p>}
+        {!!entity.bankAccounts?.length && <p className="text-xs text-gray-500 mt-1">{entity.bankAccounts.length} cuenta{entity.bankAccounts.length === 1 ? '' : 's'} bancaria{entity.bankAccounts.length === 1 ? '' : 's'}</p>}
       </div>
       <div className="flex items-center gap-1 shrink-0">
         {!entity.isDefault && (
@@ -63,6 +67,7 @@ function EntityRow({ entity, onEdit }: { entity: FiscalEntity; onEdit: (e: Fisca
         <button
           type="button"
           onClick={() => onEdit(entity)}
+          aria-label={`Editar ${entity.legalName}`}
           className="p-1.5 text-gray-400 hover:text-primary-600 rounded transition-colors"
         >
           <Pencil size={15} />
@@ -98,20 +103,27 @@ export function FiscalEntitySettings() {
     setEditing(null);
   };
 
-  const handleSave = async () => {
+  const invalidBanks = form.bankAccounts.some(account => !account.bank.trim() || !account.accountNumber.trim() || !account.holder.trim());
+  const updateBank = (index: number, patch: Partial<BankAccount>) => {
+    setForm(previous => ({ ...previous, bankAccounts: previous.bankAccounts.map((account, i) => i === index ? { ...account, ...patch } : account) }));
+  };
+
+  const handleSave = () => {
     if (!form.legalName.trim()) return;
     if (!form.ruc.trim()) return;
+    if (invalidBanks) return;
+    const payload = {
+      legalName: form.legalName.trim(), ruc: form.ruc.trim(), address: form.address.trim(), isDefault: form.isDefault,
+      bankAccounts: form.bankAccounts.map(account => ({
+        bank: account.bank.trim(), currency: account.currency, accountNumber: account.accountNumber.trim(),
+        cci: account.cci?.trim() || undefined, holder: account.holder.trim(),
+      })),
+    };
     if (editing) {
-      await updateMutation.mutateAsync({ id: editing.id, payload: form });
+      updateMutation.mutate({ id: editing.id, payload: { ...payload, isActive: form.isActive } }, { onSuccess: closeForm });
     } else {
-      await createMutation.mutateAsync({
-        legalName: form.legalName,
-        ruc: form.ruc,
-        address: form.address,
-        isDefault: form.isDefault,
-      });
+      createMutation.mutate(payload, { onSuccess: closeForm });
     }
-    closeForm();
   };
 
   const isPending = createMutation.isPending || updateMutation.isPending;
@@ -121,7 +133,7 @@ export function FiscalEntitySettings() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-base font-semibold text-gray-800">Entidades fiscales</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Empresas que figuran como receptor en las facturas de compra.</p>
+          <p className="text-xs text-gray-500 mt-0.5">Empresas para compras y cotizaciones, con sus propias cuentas bancarias.</p>
         </div>
         <button
           type="button"
@@ -210,6 +222,54 @@ export function FiscalEntitySettings() {
             </div>
           </div>
 
+          <section aria-label="Cuentas bancarias de la empresa" className="mt-5 border-t border-gray-200 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <h4 className="text-sm font-semibold text-gray-700">Cuentas bancarias</h4>
+              <button type="button" onClick={() => setForm(previous => ({ ...previous, bankAccounts: [...previous.bankAccounts, { bank: '', currency: 'PEN', accountNumber: '', cci: '', holder: previous.legalName }] }))}
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
+                <Plus size={14} /> Agregar cuenta
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">Se mostrarán en las cotizaciones de esta empresa.</p>
+            {!form.bankAccounts.length && <p className="text-sm text-gray-400">Esta empresa no tiene cuentas registradas.</p>}
+            <div className="space-y-3">
+              {form.bankAccounts.map((account, index) => (
+                <fieldset key={index} className="rounded-lg border border-gray-200 bg-white p-3">
+                  <legend className="sr-only">Cuenta bancaria {index + 1}</legend>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="text-xs font-medium text-gray-600">Banco *
+                      <input aria-label={`Banco de la cuenta ${index + 1}`} value={account.bank} onChange={event => updateBank(index, { bank: event.target.value })}
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                    </label>
+                    <label className="text-xs font-medium text-gray-600">Moneda
+                      <select aria-label={`Moneda de la cuenta ${index + 1}`} value={account.currency} onChange={event => updateBank(index, { currency: event.target.value as 'PEN' | 'USD' })}
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+                        <option value="PEN">Soles (PEN)</option><option value="USD">Dólares (USD)</option>
+                      </select>
+                    </label>
+                    <label className="text-xs font-medium text-gray-600">N° de cuenta *
+                      <input aria-label={`Número de la cuenta ${index + 1}`} type="text" value={account.accountNumber} onChange={event => updateBank(index, { accountNumber: event.target.value })}
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono" />
+                    </label>
+                    <label className="text-xs font-medium text-gray-600">CCI (opcional)
+                      <input aria-label={`CCI de la cuenta ${index + 1}`} type="text" value={account.cci || ''} onChange={event => updateBank(index, { cci: event.target.value })}
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono" />
+                    </label>
+                    <label className="text-xs font-medium text-gray-600 sm:col-span-2">Titular *
+                      <input aria-label={`Titular de la cuenta ${index + 1}`} value={account.holder} onChange={event => updateBank(index, { holder: event.target.value })}
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                    </label>
+                  </div>
+                  <div className="flex justify-end mt-3">
+                    <button type="button" aria-label={`Quitar cuenta bancaria ${index + 1}`} onClick={() => setForm(previous => ({ ...previous, bankAccounts: previous.bankAccounts.filter((_account, i) => i !== index) }))}
+                      className="inline-flex items-center gap-1 text-xs text-red-600 hover:text-red-700"><Trash2 size={13} /> Quitar cuenta</button>
+                  </div>
+                </fieldset>
+              ))}
+            </div>
+            {invalidBanks && <p className="mt-2 text-xs text-amber-700">Completa el banco, número y titular de cada cuenta.</p>}
+          </section>
+
           <div className="flex justify-end gap-2 mt-4">
             <button
               type="button"
@@ -221,7 +281,7 @@ export function FiscalEntitySettings() {
             <button
               type="button"
               onClick={handleSave}
-              disabled={isPending || !form.legalName.trim() || !form.ruc.trim()}
+              disabled={isPending || !form.legalName.trim() || !form.ruc.trim() || invalidBanks}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
             >
               <Save size={13} /> {isPending ? 'Guardando…' : 'Guardar'}

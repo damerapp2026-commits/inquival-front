@@ -6,7 +6,7 @@ import { useCreateQuote, useQuote, useUpdateQuote } from '../hooks/useQuotes';
 import { useDniLookup, useRucLookup, useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import { useProducts } from '../../products/hooks/useProducts';
 import { useFiscalEntities } from '../../fiscal-entities/hooks/useFiscalEntities';
-import { getQuoteIssuer } from '../utils/quoteIssuer';
+import { getQuoteIssuer, getQuotePaymentMethods } from '../utils/quoteIssuer';
 import { useCompanies } from '../../companies/hooks/useCompanies';
 import { useClients } from '../../clients/hooks/useClients';
 import { usePriceTiers } from '../../price-tiers/hooks/usePriceTiers';
@@ -502,6 +502,7 @@ export function NewQuotePage() {
   );
   const issuer = getQuoteIssuer({ fiscalEntityId, issuer: savedIssuerSelected ? originalQuote?.issuer : undefined },
     selectedFiscalEntity, companies.find(company => company.id === companyId));
+  const bankAccounts = issuerSelectionValid ? getQuotePaymentMethods({ fiscalEntityId }, selectedFiscalEntity).bankAccounts : [];
 
   const canSave = lines.length > 0 && lines.every((l) => l.productId && l.quantity > 0 && l.unitPrice >= 0)
     && issuerSelectionValid && !!companyId && !!tierId
@@ -1284,11 +1285,11 @@ export function NewQuotePage() {
               )}
             </div>
 
-            {COMPANY_INFO.bankAccounts.length > 0 && (
+            {bankAccounts.length > 0 && (
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Cuentas bancarias</h4>
                 <div className="space-y-2">
-                  {COMPANY_INFO.bankAccounts.map((acc, i) => (
+                  {bankAccounts.map((acc, i) => (
                     <div key={i} className="border border-gray-100 rounded-xl p-2.5 bg-gray-50/50">
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-semibold text-gray-800">{acc.bank}</p>

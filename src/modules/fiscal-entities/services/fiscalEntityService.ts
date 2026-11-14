@@ -1,10 +1,12 @@
 import { api } from '../../../shared/services/api';
 import type { FiscalEntity } from '../../../shared/types';
+import type { BankAccount } from '../../../config/companyInfo';
 
 export interface CreateFiscalEntityPayload {
   legalName: string;
   ruc: string;
   address?: string;
+  bankAccounts?: BankAccount[];
   isDefault?: boolean;
 }
 
@@ -12,6 +14,7 @@ export interface UpdateFiscalEntityPayload {
   legalName?: string;
   ruc?: string;
   address?: string;
+  bankAccounts?: BankAccount[];
   isDefault?: boolean;
   isActive?: boolean;
 }
