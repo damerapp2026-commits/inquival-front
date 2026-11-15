@@ -59,6 +59,8 @@ for (const timezone of ['America/Lima', 'UTC', 'Asia/Tokyo', 'America/New_York']
     assert.equal(dates.addDaysToDate('2026-12-31', 1), '2027-01-01');
     assert.equal(dates.addMonthsToDate('2026-05-31', -3), '2026-02-28');
     assert.equal(dates.addDaysToDate('2026-03-07', 2), '2026-03-09');
+    assert.equal(dates.dateWithPeruTime('2026-11-14', new Date('2026-11-15T03:00:14Z')).toISOString(), '2026-11-15T03:00:14.000Z');
+    assert.equal(dates.dateWithPeruTime('2026-11-15', new Date('2026-11-15T17:00:14Z')).toISOString(), '2026-11-15T17:00:14.000Z');
     assert.equal(dates.daysUntilDate('2026-11-01T00:00:00.000Z', '2026-10-31'), 1);
     assert.equal(dates.daysUntilDate('2026-10-31T00:00:00.000Z', '2026-10-31'), 0);
     assert.equal(dates.daysUntilDate('2026-10-31T05:00:00.000Z', '2026-11-01'), -1);

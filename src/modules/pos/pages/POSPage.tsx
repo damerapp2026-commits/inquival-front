@@ -22,6 +22,7 @@ import { useUsers } from '../../users/hooks/useUsers';
 import type { VoucherSnapshot } from '../../sales/components/VoucherPreviewModal';
 import { useTodayTipoCambio } from '../../../shared/hooks/useLookup';
 import { getQuoteItemProductName, getQuoteItemProductUnit, getQuoteItemTaxType, useQuoteProducts } from '../../quotes/hooks/useQuoteProducts';
+import { dateWithPeruTime, getTodayDateString } from '../../../shared/utils/date.util';
 
 const IGV_RATE = 0.18;
 const POS_PRODUCT_BATCH_SIZE = 120;
@@ -233,11 +234,7 @@ export function POSPage() {
 
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
   const [sellerId, setSellerId] = useState<string>(persistedDraft?.sellerId || '');
-  const todayLocal = (() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.toISOString().slice(0, 10);
-  })();
+  const todayLocal = getTodayDateString();
   const [saleDate, setSaleDate] = useState<string>(todayLocal);
   /** Venta de cortesía: solo ADMIN puede activar. Total = 0, sin pago. */
   const [isCourtesy, setIsCourtesy] = useState(false);
@@ -749,6 +746,10 @@ export function POSPage() {
   const sym = currency === 'USD' ? '$' : 'S/';
 
   const confirmSale = async () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(saleDate) || saleDate > getTodayDateString()) {
+      toast.error('La fecha de venta no puede ser posterior a hoy. Revisa la fecha seleccionada.');
+      return;
+    }
     if (isCourtesy) {
       // pure bonificación: no payment needed
     } else if (isCredit) {
@@ -803,9 +804,7 @@ export function POSPage() {
       || user?.fullName || user?.username
       || 'Sin asignar';
     // saleDate viene como YYYY-MM-DD; preservamos la hora actual al combinar.
-    const now = new Date();
-    const [yy, mm, dd] = saleDate.split('-').map(Number);
-    const saleDateObj = new Date(yy, (mm || 1) - 1, dd || 1, now.getHours(), now.getMinutes(), now.getSeconds());
+    const saleDateObj = dateWithPeruTime(saleDate);
     const saleSnapshotBase = {
       total: saleTotal,
       voucherType: saleVoucherType as VoucherSnapshot['voucherType'],

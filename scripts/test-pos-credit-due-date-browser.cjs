@@ -8,8 +8,8 @@ const product = { id: 'product', name: 'Producto prueba', unit: 'UND', taxType: 
 const client = { id: 'client', name: 'Cliente prueba', isActive: true };
 const draft = { cart: [{ productId: product.id, name: product.name, unit: 'UND', quantity: 1, unitPrice: 100, taxType: 'EXONERADO', sourceCompanyId: 'company' }], bonusItems: [], companyId: 'company', tierId: 'price', clientId: client.id };
 
-async function setup(browser, base, mobile, fromQuote) {
-  const context = await browser.newContext({ serviceWorkers: 'block', timezoneId: mobile ? 'Asia/Tokyo' : 'America/Lima', viewport: { width: mobile ? 390 : 1440, height: 1000 } });
+async function setup(browser, base, mobile, fromQuote, fixedTime) {
+  const context = await browser.newContext({ serviceWorkers: 'block', timezoneId: fixedTime ? 'UTC' : mobile ? 'Asia/Tokyo' : 'America/Lima', viewport: { width: mobile ? 390 : 1440, height: 1000 } });
   await context.addInitScript(value => {
     localStorage.setItem('token', 'pos-due-date-fixture');
     localStorage.setItem('inquival:pos:draft:v1', JSON.stringify(value));
@@ -45,15 +45,17 @@ async function setup(browser, base, mobile, fromQuote) {
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data }) });
   });
   const page = await context.newPage();
+  if (fixedTime) await page.clock.setFixedTime(new Date(fixedTime));
   page.setDefaultTimeout(15000);
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`${base}/pos${fromQuote ? '?fromQuote=quote' : ''}`);
   if (fromQuote) await page.getByText('Cotización C001-00000001 cargada', { exact: true }).waitFor();
   if (mobile) await page.getByRole('button', { name: /1 producto.*S\/ 100/ }).click();
   await page.getByRole('button', { name: 'Vender', exact: true }).click();
+  const initialDay = await page.locator('label[title="Fecha de la venta"] input').inputValue();
   await page.locator('label[title="Fecha de la venta"] input').fill('2026-11-14');
   await page.getByRole('button', { name: /^Siguiente/ }).click();
-  return { context, page, writes, errors, state };
+  return { context, page, writes, errors, state, initialDay };
 }
 
 async function main() {
@@ -112,6 +114,7 @@ async function main() {
       assert.equal(f.writes.length, 2);
       assert.equal(f.writes[1].payload.creditDueDate, '2026-12-20');
       assert.equal(f.writes[1].payload.creditName, note);
+      assert.equal(new Date(f.writes[1].payload.date).toLocaleDateString('en-CA', { timeZone: 'America/Lima' }), '2026-11-14');
       // Remove the intentionally triggered error toast before testing the mobile format tabs.
       await page.addStyleTag({ content: '[data-rht-toaster] { pointer-events: none !important; } [data-rht-toaster] * { pointer-events: none !important; }' });
       await page.getByRole('button', { name: /^Ver comprobante/ }).click();
@@ -163,6 +166,27 @@ async function main() {
     assert.deepEqual(f.errors, []);
     await f.context.close();
     console.log('PASS immediate payment does not require a credit due date');
+
+    const night = await setup(browser, base, false, false, '2026-11-15T03:00:14Z');
+    assert.equal(night.initialDay, '2026-11-14', 'at 22:00 in Peru a UTC browser must still show November 14');
+    await night.page.getByRole('button', { name: 'Atrás', exact: true }).click();
+    const saleDay = night.page.locator('label[title="Fecha de la venta"] input');
+    await saleDay.fill('2026-11-15');
+    await night.page.getByRole('button', { name: /^Siguiente/ }).click();
+    await night.page.getByPlaceholder('0.00', { exact: true }).fill('100');
+    night.state.fail = false;
+    await night.page.getByRole('button', { name: /^Confirmar ·/ }).click();
+    await night.page.getByText('La fecha de venta no puede ser posterior a hoy. Revisa la fecha seleccionada.', { exact: true }).waitFor();
+    assert.equal(night.writes.length, 0);
+    await night.page.getByRole('button', { name: 'Atrás', exact: true }).click();
+    await saleDay.fill('2026-11-14');
+    await night.page.getByRole('button', { name: /^Siguiente/ }).click();
+    await night.page.getByRole('button', { name: /^Confirmar ·/ }).click();
+    await night.page.getByRole('heading', { name: '¡Venta registrada!', exact: true }).waitFor();
+    assert.equal(night.writes[0].payload.date, '2026-11-15T03:00:14.000Z');
+    assert.deepEqual(night.errors, []);
+    await night.context.close();
+    console.log('PASS late-night Peru date, future date guard and exact sale timestamp in a UTC browser');
   } finally {
     if (browser) await browser.close();
     await server.close();

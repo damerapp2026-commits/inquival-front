@@ -5,6 +5,12 @@ export function getTodayDateString(now = new Date()): string {
   return now.toLocaleDateString('en-CA', { timeZone: TIMEZONE });
 }
 
+/** Combines the selected Peru calendar day with the current Peru time. */
+export function dateWithPeruTime(day: string, now = new Date()): Date {
+  const time = now.toLocaleTimeString('en-GB', { timeZone: TIMEZONE, hour12: false });
+  return new Date(`${day}T${time}-05:00`);
+}
+
 /**
  * Converts an ISO date string to its Peru-local YYYY-MM-DD representation,
  * for use as the value of an `<input type="date">`.
