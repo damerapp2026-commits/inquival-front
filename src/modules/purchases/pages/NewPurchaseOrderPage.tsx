@@ -9,10 +9,15 @@ import {
   MapPin,
   Package,
   Plus,
+  Search,
+  Loader2,
   Trash2,
   UserRound,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useRucLookup } from '../../../shared/hooks/useLookup';
+import { PurchaseOrderCreditSchedule } from '../components/PurchaseOrderCreditSchedule';
+import { orderInstallmentsError } from '../utils/purchaseOrderSchedule';
 import { useAuth } from '../../../app/providers/AuthProvider';
 import { SearchableSelect } from '../../../shared/components/SearchableSelect';
 import { SmartSearchSelect } from '../../../shared/components/SmartSearchSelect';
@@ -28,7 +33,6 @@ import { numberToWords } from '../../quotes/utils/numberToWords';
 import {
   addDaysToDate,
   PURCHASE_ORDER_CONDITIONS,
-  PURCHASE_ORDER_CREDIT_DAYS,
   serializePurchaseOrderDetails,
   getPurchaseOrderDetails,
   type PurchaseOrderPaymentForm,
@@ -101,6 +105,7 @@ export function NewPurchaseOrderPage() {
   const [hydratedId, setHydratedId] = useState('');
   const { user } = useAuth();
   const createOrder = useCreatePurchaseOrder();
+  const transportRucLookup = useRucLookup();
   const { data: suppliersData } = useSuppliers({ limit: 10000 });
   const { data: clientsData } = useClients({ limit: 10000 });
   const { data: fiscalEntitiesData } = useFiscalEntities();
@@ -127,6 +132,8 @@ export function NewPurchaseOrderPage() {
   const [deliveryPlace, setDeliveryPlace] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [transport, setTransport] = useState('Directo (a cargo del proveedor)');
+  const [transportRuc, setTransportRuc] = useState('');
+  const [paymentScheduleType, setPaymentScheduleType] = useState<'SINGLE_DATE' | 'INSTALLMENTS'>('SINGLE_DATE');
   const [transportAddress, setTransportAddress] = useState('');
   const [paymentForm, setPaymentForm] = useState<PurchaseOrderPaymentForm>('CONTADO');
   const [paymentType, setPaymentType] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
@@ -176,7 +183,8 @@ export function NewPurchaseOrderPage() {
     setIssueDate(toLocalDateString(order.issueDate || order.createdAt));
     setQuotationValidUntil(details.quotationValidUntil); setCurrency(amounts.currency);
     setDeliveryPlace(details.deliveryPlace); setDeliveryAddress(details.deliveryAddress);
-    setTransport(details.transport); setTransportAddress(details.transportAddress);
+    setTransport(details.transport); setTransportRuc(details.transportRuc); setTransportAddress(details.transportAddress);
+    setPaymentScheduleType(order.paymentScheduleType === 'INSTALLMENTS' || order.installments?.length ? 'INSTALLMENTS' : 'SINGLE_DATE');
     setPaymentType(order.paymentType === 'CREDITO' ? 'CREDITO' : 'CONTADO'); setPaymentForm(details.paymentForm);
     setInstallments((order.installments || []).map(i => ({ amount: i.amount, dueDate: toLocalDateString(i.dueDate) })));
     setCreditDays(details.creditDays || (order.dueDate ? Math.max(1, Math.round((Date.parse(toLocalDateString(order.dueDate)) - Date.parse(toLocalDateString(order.issueDate || order.createdAt))) / 86400000)) : 30)); setRequestedBy(details.requestedBy); setApprovedBy(details.approvedBy);
@@ -191,8 +199,25 @@ export function NewPurchaseOrderPage() {
     setHydratedId(order.id);
   }, [order, hydratedId, products, productMap, defaultFiscalEntityId, loadingProducts, productsError, requiresCatalogue]);
 
-  const dueDate = paymentType === 'CREDITO' && creditDays > 0 ? addDaysToDate(issueDate, creditDays) : '';
-  const standardCreditDays = PURCHASE_ORDER_CREDIT_DAYS.some(days => days === creditDays);
+  const hasInstallments = paymentType === 'CREDITO' && paymentScheduleType === 'INSTALLMENTS';
+  const dueDate = paymentType === 'CREDITO'
+    ? hasInstallments ? installments.map(i => i.dueDate).sort().pop() || '' : creditDays > 0 ? addDaysToDate(issueDate, creditDays) : ''
+    : '';
+  const orderCreditDays = hasInstallments && dueDate
+    ? Math.round((Date.parse(dueDate) - Date.parse(issueDate)) / 86400000)
+    : creditDays;
+
+  const searchTransportRuc = async () => {
+    if (!/^\d{11}$/.test(transportRuc)) {
+      toast.error('Ingresa los 11 dígitos del RUC del transportista');
+      return;
+    }
+    try {
+      const result = await transportRucLookup.mutateAsync(transportRuc);
+      if (result.razonSocial) setTransport(result.razonSocial);
+      if (result.direccion) setTransportAddress(result.direccion);
+    } catch { /* The lookup displays its error; manual entry remains available. */ }
+  };
 
   const handleSupplierChange = (id: string) => {
     setSupplierId(id);
@@ -249,15 +274,21 @@ export function NewPurchaseOrderPage() {
       toast.error('Completa el producto, la cantidad y el precio en cada línea');
       return;
     }
-    if (paymentType === 'CREDITO' && (!Number.isInteger(creditDays) || creditDays < 1 || creditDays > 3650)) {
+    if (transportRuc && !/^\d{11}$/.test(transportRuc)) {
+      toast.error('El RUC del transportista debe tener 11 dígitos');
+      return;
+    }
+    if (paymentType === 'CREDITO' && !hasInstallments && (!Number.isInteger(creditDays) || creditDays < 1 || creditDays > 3650)) {
       toast.error('Ingresa un plazo de crédito válido en días');
       return;
     }
 
-    if (paymentType === 'CREDITO' && installments.length && installments.some(i => !i.dueDate || !(i.amount > 0))) {
-      toast.error('Completa los montos y vencimientos de las cuotas.');
+    const scheduleError = hasInstallments ? orderInstallmentsError(installments, totals.total, issueDate) : undefined;
+    if (scheduleError) {
+      toast.error(scheduleError);
       return;
     }
+    if (transportRucLookup.isPending) return;
     const detailsNotes = serializePurchaseOrderDetails({
       supplierContact,
       supplierPhone,
@@ -265,9 +296,10 @@ export function NewPurchaseOrderPage() {
       deliveryPlace: deliveryPlace.trim(),
       deliveryAddress: deliveryAddress.trim(),
       transport,
+      transportRuc,
       transportAddress,
       paymentForm,
-      creditDays: paymentType === 'CREDITO' ? creditDays : undefined,
+      creditDays: paymentType === 'CREDITO' ? orderCreditDays : undefined,
       requestedBy,
       approvedBy,
       observations: notes,
@@ -288,9 +320,9 @@ export function NewPurchaseOrderPage() {
       documentNumber: order?.documentNumber,
       issueDate,
       paymentType,
-      paymentScheduleType: paymentType === 'CREDITO' ? (installments.length ? 'INSTALLMENTS' : 'SINGLE_DATE') : undefined,
-      installments: paymentType === 'CREDITO' ? installments : [],
-      dueDate: paymentType === 'CREDITO' ? (installments.length ? [...installments].map(i => i.dueDate).sort().pop() : dueDate) : undefined,
+      paymentScheduleType: paymentType === 'CREDITO' ? paymentScheduleType : undefined,
+      installments: hasInstallments ? installments : [],
+      dueDate: dueDate || undefined,
       notes: detailsNotes,
       items: validItems.map((item, index) => {
         const line = totals.lines[index];
@@ -324,7 +356,7 @@ export function NewPurchaseOrderPage() {
   if (id && (loadingOrder || (requiresCatalogue && loadingProducts) || (order && !(requiresCatalogue && productsError) && hydratedId !== order.id))) return <div className="p-8 text-center">Cargando orden...</div>;
   if (id && (orderError || (requiresCatalogue && productsError) || !order)) return <div className="p-8">No se pudo cargar la orden. <Link to="/purchases?tab=orders" className="text-primary-700 underline">Volver</Link></div>;
   if (order && !['PENDING', 'APPROVED'].includes(order.status)) return <div className="p-8">Esta orden ya no se puede editar. <Link to="/purchases?tab=orders" className="text-primary-700 underline">Volver</Link></div>;
-  const saving = createOrder.isPending || updateOrder.isPending;
+  const saving = createOrder.isPending || updateOrder.isPending || transportRucLookup.isPending;
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -447,9 +479,18 @@ export function NewPurchaseOrderPage() {
                 <span className="text-xs font-medium text-gray-600">Referencia del punto de llegada</span>
                 <input value={deliveryPlace} onChange={(event) => setDeliveryPlace(event.target.value)} className={inputClass} placeholder="Local, sucursal o referencia (opcional)" />
               </label>
-              <label className="block">
+              <div>
+                <label htmlFor="transport-ruc" className="text-xs font-medium text-gray-600">RUC del transportista</label>
+                <div className="mt-1 flex gap-2">
+                  <input id="transport-ruc" value={transportRuc} onChange={event => setTransportRuc(event.target.value.replace(/\D/g, ''))} disabled={transportRucLookup.isPending} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); if (!transportRucLookup.isPending) void searchTransportRuc(); } }} inputMode="numeric" maxLength={11} pattern="[0-9]{11}" className={`${inputClass} !mt-0 min-w-0`} placeholder="RUC de 11 dígitos (opcional)" />
+                  <button type="button" onClick={searchTransportRuc} disabled={transportRucLookup.isPending} aria-label="Buscar transportista por RUC" className="shrink-0 inline-flex items-center gap-1 px-3 rounded-lg border border-primary-200 text-primary-700 text-sm disabled:opacity-50">
+                    {transportRucLookup.isPending ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />} Buscar
+                  </button>
+                </div>
+              </div>
+              <label className="block sm:col-span-2">
                 <span className="text-xs font-medium text-gray-600">Transporte</span>
-                <input value={transport} onChange={(event) => setTransport(event.target.value)} className={inputClass} placeholder="Directo (a cargo del proveedor)" />
+                <input disabled={transportRucLookup.isPending} value={transport} onChange={(event) => setTransport(event.target.value)} className={inputClass} placeholder="Directo (a cargo del proveedor)" />
               </label>
               <label className="block sm:col-span-2">
                 <span className="text-xs font-medium text-gray-600">Dirección de entrega</span>
@@ -457,7 +498,7 @@ export function NewPurchaseOrderPage() {
               </label>
               <label className="block sm:col-span-2">
                 <span className="text-xs font-medium text-gray-600">Dirección del transportista</span>
-                <input value={transportAddress} onChange={event => setTransportAddress(event.target.value)} className={inputClass} placeholder="Agencia o sucursal del transportista (opcional)" />
+                <input disabled={transportRucLookup.isPending} value={transportAddress} onChange={event => setTransportAddress(event.target.value)} className={inputClass} placeholder="Agencia o sucursal del transportista (opcional)" />
               </label>
 
             </div>
@@ -491,24 +532,12 @@ export function NewPurchaseOrderPage() {
                   ))}
                 </div>
               </div>
-              {paymentType === 'CREDITO' && (
-                <label className="block">
-                  <span className="text-xs font-medium text-gray-600">Plazo de crédito</span>
-                  <select aria-label="Plazo de crédito" value={standardCreditDays ? creditDays : 'custom'} onChange={event => setCreditDays(event.target.value === 'custom' ? 0 : Number(event.target.value))} className={inputClass}>
-                    {PURCHASE_ORDER_CREDIT_DAYS.map(days => <option key={days} value={days}>{days} días</option>)}
-                    <option value="custom">Otro plazo</option>
-                  </select>
-                  {!standardCreditDays && <input type="number" aria-label="Plazo personalizado en días" min="1" max="3650" step="1" required value={creditDays || ''} onChange={event => setCreditDays(Number(event.target.value))} className={inputClass} placeholder="Número de días" />}
-                  {dueDate && <span className="mt-1 block text-[11px] text-gray-500">Vence: {dueDate.split('-').reverse().join('/')}</span>}
-                </label>
-              )}
-              {paymentType === 'CREDITO' && installments.length > 0 && <div className="sm:col-span-2 space-y-2">
-                <p className="text-xs font-medium text-gray-600">Cuotas de la orden</p>
-                {installments.map((installment, index) => <div key={index} className="grid grid-cols-2 gap-2">
-                  <input type="number" aria-label={`Monto cuota ${index + 1}`} min="0.01" step="0.01" value={installment.amount} onChange={e => setInstallments(current => current.map((i, idx) => idx === index ? { ...i, amount: Number(e.target.value) } : i))} className={inputClass} />
-                  <input type="date" aria-label={`Vencimiento cuota ${index + 1}`} value={installment.dueDate} onChange={e => setInstallments(current => current.map((i, idx) => idx === index ? { ...i, dueDate: e.target.value } : i))} className={inputClass} />
-                </div>)}
-              </div>}
+              {paymentType === 'CREDITO' && <PurchaseOrderCreditSchedule
+                issueDate={issueDate} total={totals.total} currency={currency}
+                scheduleType={paymentScheduleType} onScheduleTypeChange={setPaymentScheduleType}
+                creditDays={creditDays} onCreditDaysChange={setCreditDays}
+                installments={installments} onInstallmentsChange={setInstallments}
+              />}
               <label className="block">
                 <span className="text-xs font-medium text-gray-600">Solicitado por</span>
                 <input value={requestedBy} onChange={(event) => setRequestedBy(event.target.value)} className={inputClass} placeholder="Nombre del solicitante" />

@@ -10,6 +10,7 @@ const { calculatePurchaseOrderAmounts, purchaseOrderAmounts, purchaseOrderCurren
 const { serializePurchaseOrderDetails, getPurchaseOrderDetails, EMPTY_PURCHASE_ORDER_DETAILS, addDaysToDate } = require('../src/modules/purchases/utils/purchaseOrderDetails.ts');
 const { buildPurchaseOrderPdfDefinition } = require('../src/modules/purchases/utils/purchaseOrderPdf.ts');
 const { recalcItem, emptyItem } = require('../src/modules/purchases/utils/purchaseForm.ts');
+const { generateOrderInstallments, orderInstallmentsError } = require('../src/modules/purchases/utils/purchaseOrderSchedule.ts');
 const fixture = require('./fixtures/purchase-order.cjs');
 
 function nodes(value) {
@@ -56,7 +57,7 @@ test('net unit prices retain enough precision to preserve the order amount when 
 });
 
 test('contact, transport address, payment terms and signatures survive saving and reloading', () => {
-  const details = { ...EMPTY_PURCHASE_ORDER_DETAILS, ...fixture.details, transport: 'Agencia de transporte', transportAddress: 'Av. Prueba 123', approvedBy: 'Jefe de compras', observations: 'Entregar por la mañana.' };
+  const details = { ...EMPTY_PURCHASE_ORDER_DETAILS, ...fixture.details, transport: 'Agencia de transporte', transportRuc: '20100047218', transportAddress: 'Av. Prueba 123', approvedBy: 'Jefe de compras', observations: 'Entregar por la mañana.' };
   const notes = serializePurchaseOrderDetails(details);
   assert.deepEqual(getPurchaseOrderDetails({ ...fixture.order, notes }), details);
   const recovered = getPurchaseOrderDetails({ ...fixture.order, notes, supplierContact: 'Contacto actualizado' });
@@ -66,6 +67,7 @@ test('contact, transport address, payment terms and signatures survive saving an
     const legacy = getPurchaseOrderDetails({ ...fixture.order, notes: `[OC_META]${metadata}[/OC_META]\nNota anterior` });
     assert.equal(legacy.observations, 'Nota anterior');
     assert.equal(legacy.transportAddress, '');
+    assert.equal(legacy.transportRuc, '');
   }
 });
 
@@ -79,8 +81,38 @@ for (const timezone of ['America/Lima', 'Asia/Tokyo', 'America/New_York']) {
     assert.equal(addDaysToDate('2028-02-28', 1), '2028-02-29');
     assert.equal(addDaysToDate('invalid', 30), '');
     assert.equal(addDaysToDate('2026-11-12', NaN), '');
+    const generated = generateOrderInstallments(1000, '2026-12-21', { count: 3, intervalDays: 15, firstDays: 15 });
+    assert.deepEqual(generated, [{ amount: 333.34, dueDate: '2027-01-05' }, { amount: 333.33, dueDate: '2027-01-20' }, { amount: 333.33, dueDate: '2027-02-04' }]);
+    assert.equal(orderInstallmentsError(generated, 1000, '2026-12-21'), undefined);
+    assert.deepEqual(generateOrderInstallments(1000, '2028-02-09', { count: 2, intervalDays: 20, firstDays: 20 }).map(i => i.dueDate), ['2028-02-29', '2028-03-20']);
   });
 }
+
+test('credit schedule rejects incomplete dates, wrong totals and invalid generator parameters', () => {
+  const generated = generateOrderInstallments(10, '2026-11-17', { count: 2, intervalDays: 20, firstDays: 0 });
+  assert.equal(generated[0].dueDate, '2026-11-17');
+  for (const config of [{ count: 0, intervalDays: 15, firstDays: 15 }, { count: 37, intervalDays: 15, firstDays: 15 }, { count: 2, intervalDays: 0, firstDays: 15 }, { count: 2, intervalDays: 15.5, firstDays: 15 }, { count: 2, intervalDays: 15, firstDays: -1 }]) {
+    assert.deepEqual(generateOrderInstallments(100, '2026-11-17', config), []);
+  }
+  assert.deepEqual(generateOrderInstallments(0.01, '2026-11-17', { count: 2, intervalDays: 15, firstDays: 15 }), []);
+  assert.match(orderInstallmentsError([], 10, '2026-11-17'), /Genera/);
+  assert.match(orderInstallmentsError(generated, 20, '2026-11-17'), /suma/);
+  assert.match(orderInstallmentsError([{ amount: 10, dueDate: '2026-02-30' }], 10, '2026-01-01'), /fecha válida/);
+  assert.match(orderInstallmentsError([{ amount: 10, dueDate: '2026-11-16' }], 10, '2026-11-17'), /fecha válida/);
+  assert.match(orderInstallmentsError([{ amount: 10.001, dueDate: '2026-11-17' }], 10, '2026-11-17'), /dos decimales/);
+});
+
+test('PDF includes saved carrier RUC and every installment amount and payment date', () => {
+  const installments = generateOrderInstallments(1240, '2026-12-21', { count: 3, intervalDays: 20, firstDays: 20 });
+  const order = { ...fixture.order, paymentType: 'CREDITO', paymentScheduleType: 'INSTALLMENTS', installments, dueDate: installments[2].dueDate,
+    notes: serializePurchaseOrderDetails({ ...EMPTY_PURCHASE_ORDER_DETAILS, ...fixture.details, transportRuc: '20100047218' }) };
+  const all = nodes(buildPurchaseOrderPdfDefinition({ ...fixture, order }));
+  const text = all.map(n => n.text || '').join('\n');
+  assert.match(text, /RUC del transportista: 20100047218/);
+  for (const value of ['10/01/2027', '30/01/2027', '19/02/2027', '413.34', '413.33']) assert.ok(text.includes(value), value);
+  const schedule = all.find(n => n.table?.body?.[0]?.[1]?.text === 'FECHA DE PAGO');
+  assert.equal(schedule.table.body.length, 4);
+});
 
 test('PDF follows the sketch: fiscal header, arrival address, base and gross prices, amount in words and delivery terms', () => {
   const document = buildPurchaseOrderPdfDefinition(fixture);

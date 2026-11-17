@@ -214,7 +214,23 @@ export function buildPurchaseOrderPdfDefinition({ order, products, companies, fi
         },
         layout: borderedLayout,
       },
-      ...(paymentType === 'CREDITO' && order.installments?.length ? [{ text: `Cuotas: ${order.installments.map((i, index) => `${index + 1}. ${symbol} ${i.amount.toFixed(2)} — ${formatDate(i.dueDate)}`).join('   |   ')}`, fontSize: 7.5, margin: [0, 5, 0, 0] }] : []),
+      ...(paymentType === 'CREDITO' && order.installments?.length ? [{
+        margin: [0, 6, 0, 0],
+        table: {
+          headerRows: 1,
+          dontBreakRows: true,
+          widths: [45, '*', 95],
+          body: [
+            [{ text: 'CUOTA', style: 'thead' }, { text: 'FECHA DE PAGO', style: 'thead' }, { text: 'MONTO', style: 'thead' }],
+            ...order.installments.map((i, index) => [
+              { text: String(index + 1), fontSize: 8 },
+              { text: formatDate(i.dueDate), fontSize: 8 },
+              { text: `${symbol} ${i.amount.toFixed(2)}`, fontSize: 8, alignment: 'right' },
+            ]),
+          ],
+        },
+        layout: borderedLayout,
+      }] : []),
       { text: 'PRODUCTOS SOLICITADOS', bold: true, fontSize: 9, color: BRAND_GREEN_DARK, margin: [0, 10, 0, 5] },
       {
         table: {
@@ -248,6 +264,7 @@ export function buildPurchaseOrderPdfDefinition({ order, products, companies, fi
             stack: [
               { text: 'TRANSPORTE Y OBSERVACIONES', bold: true, fontSize: 8, color: BRAND_GREEN_DARK, margin: [0, 0, 0, 4] },
               { text: `Transporte: ${transport}`, fontSize: 7.5, margin: [0, 0, 0, 3] },
+              ...(details.transportRuc ? [{ text: `RUC del transportista: ${details.transportRuc}`, fontSize: 7.5, margin: [0, 0, 0, 3] }] : []),
               ...(details.transportAddress ? [{ text: `Dirección del transportista: ${details.transportAddress}`, fontSize: 7.5, margin: [0, 0, 0, 3] }] : []),
               ...(details.observations ? [{ text: `Observaciones: ${details.observations}`, fontSize: 7, bold: true, margin: [0, 3, 0, 0] }] : []),
             ],

@@ -110,6 +110,7 @@ export function PurchaseOrderDetailModal({
               {details.deliveryPlace && details.deliveryPlace !== warehouseNames && <DetailItem label="Referencia" wide>{details.deliveryPlace}</DetailItem>}
               <DetailItem label="Dirección de entrega" wide>{details.deliveryAddress || '—'}</DetailItem>
               <DetailItem label="Transporte" wide>{details.transport || 'Directo (a cargo del proveedor)'}</DetailItem>
+              {details.transportRuc && <DetailItem label="RUC del transportista" wide>{details.transportRuc}</DetailItem>}
               {details.transportAddress && <DetailItem label="Dirección del transportista" wide>{details.transportAddress}</DetailItem>}
             </dl>
           </DetailSection>

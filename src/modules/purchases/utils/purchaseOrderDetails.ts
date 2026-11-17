@@ -10,6 +10,7 @@ export interface PurchaseOrderDetails {
   deliveryPlace: string;
   deliveryAddress: string;
   transport: string;
+  transportRuc: string;
   transportAddress: string;
   paymentForm: PurchaseOrderPaymentForm;
   creditDays?: number;
@@ -31,6 +32,7 @@ export const EMPTY_PURCHASE_ORDER_DETAILS: PurchaseOrderDetails = {
   deliveryPlace: '',
   deliveryAddress: '',
   transport: 'Directo (a cargo del proveedor)',
+  transportRuc: '',
   transportAddress: '',
   paymentForm: 'CONTADO',
   creditDays: undefined,
@@ -50,7 +52,7 @@ const asPositiveNumber = (value: unknown): number | undefined => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 };
 
-export const PURCHASE_ORDER_CREDIT_DAYS = [30, 45, 60, 150] as const;
+export const PURCHASE_ORDER_CREDIT_DAYS = [15, 20, 30, 45, 60, 150] as const;
 
 export const PURCHASE_ORDER_CONDITIONS = [
   'Toda guía de remisión o factura deberá incluir el número de esta orden de compra.',
@@ -66,6 +68,7 @@ export function serializePurchaseOrderDetails(details: PurchaseOrderDetails): st
     deliveryPlace: details.deliveryPlace.trim(),
     deliveryAddress: details.deliveryAddress.trim(),
     transport: details.transport.trim(),
+    transportRuc: details.transportRuc?.trim() || '',
     transportAddress: details.transportAddress.trim(),
     paymentForm: details.paymentForm,
     creditDays: asPositiveNumber(details.creditDays),
@@ -96,6 +99,7 @@ export function getPurchaseOrderDetails(order: PurchaseOrder): PurchaseOrderDeta
     deliveryPlace: asString(order.deliveryPlace) || asString(stored.deliveryPlace),
     deliveryAddress: asString(order.deliveryAddress) || asString(stored.deliveryAddress),
     transport: asString(order.transport) || asString(stored.transport),
+    transportRuc: asString(stored.transportRuc),
     transportAddress: asString(order.transportAddress) || asString(stored.transportAddress),
     paymentForm: asPaymentForm(order.paymentForm || stored.paymentForm),
     creditDays: asPositiveNumber(order.creditDays) || asPositiveNumber(stored.creditDays),
